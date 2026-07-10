@@ -1060,9 +1060,28 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   }
   for (const eb of (opts.externalBursts ?? [])) addBurst(eb.buffID, eb.value);
 
+  // RAH burst-ordering: an active RAH must adapt to POST-command-burst armor resonances (matches pyfa).
+  // The engine runs the RAH inside calculate(), before these bursts are applied — so when an armor
+  // resonance burst (buff 13) coincides with an active RAH, re-run calculate() with the burst value
+  // handed to the engine's RAH handler (it applies buff 13 before adapting). We then skip our own
+  // buff-13 application below to avoid double-counting (the engine already put it on ship.attrs).
+  let engineAppliedArmorBurst = false;
+  const armorBurstEff = burstByType.get(13);
+  if (armorBurstEff) {
+    const hasActiveRAH = modItems.some(({ slot, fitItem }) =>
+      fitItem && isActive(slot.state) && (fitItem.effectIDs ?? []).includes(4928));
+    if (hasActiveRAH) {
+      fit._rahArmorBurstEff = armorBurstEff;
+      fit.calculate();
+      fit._rahArmorBurstEff = undefined;
+      engineAppliedArmorBurst = true;
+    }
+  }
+
   // Apply ship-attribute buffs (resonances, HP, sig, agility, sensor strength, scan res, etc.)
   // BEFORE we snapshot resists/HP below. Module-targeted buffs are applied later.
   for (const [buffID, eff] of burstByType) {
+    if (buffID === 13 && engineAppliedArmorBurst) continue; // already on ship.attrs from the RAH pass
     const def = WARFARE_BUFFS[buffID];
     if (!def || !def.ship || !eff) continue;
     for (const attrName of def.ship) {

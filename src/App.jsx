@@ -876,7 +876,16 @@ const BOOSTER_DRUGS=[
 const BOOSTER_NAME_SET=new Set(Object.values(BOOSTER_DATA).flatMap(s=>Object.values(s).flat()));
 // Agency 'X' YYn boosters (Overclocker SB7, Hardshell TB5, Pyrolancea DB3, etc.) aren't enumerated.
 const AGENCY_BOOSTER_RE=/^Agency '/;
-const isBoosterName=n=>BOOSTER_NAME_SET.has(n)||AGENCY_BOOSTER_RE.test(n);
+// Data-driven fallback: anything in the "Booster" group (303) is a booster, regardless of name.
+// Catches seasonal/faction drugs (Republic Mobility, Federation Hardpoint, …) the name list omits.
+// Implants share category 20 but sit in other groups, so group 303 cleanly excludes them.
+const BOOSTER_GROUP_ID=303;
+const isBoosterName=n=>{
+  if(BOOSTER_NAME_SET.has(n)||AGENCY_BOOSTER_RE.test(n))return true;
+  const t=tidByName(n);
+  const g=t?(TYPES[t]?.g??TYPES[t]?.group??TYPES[t]?.groupID):null;
+  return g===BOOSTER_GROUP_ID;
+};
 const IMPLANT_NAME_TO_SLOT=(()=>{const m=new Map();
   for(const dict of[ATTRIBUTE_IMPLANTS,HARDWIRING_IMPLANTS]){
     for(const[slotStr,sets]of Object.entries(dict)){
@@ -1790,7 +1799,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         return(<span style={{display:"inline-flex",alignItems:"center",fontSize:10,fontWeight:700,marginLeft:2}}>
                           {pct.map((v,i)=>(<span key={i}>
                             {i>0&&<span style={{color:C.textMute,margin:"0 3px"}}>/</span>}
-                            <span style={{color:cols[i]}}>{Math.round(v)}%</span>
+                            <span style={{color:cols[i]}}>{Number(v.toFixed(1))}%</span>
                           </span>))}
                         </span>);
                       })()}
@@ -1934,8 +1943,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         if((cs.cpuUsed??0)>(cs.cpuTotal??0)+0.01) issues.push({sev:"err",msg:`CPU overloaded by ${fr(cs.cpuUsed-cs.cpuTotal)} tf`});
         if((cs.pgUsed??0)>(cs.pgTotal??0)+0.01) issues.push({sev:"err",msg:`Powergrid overloaded by ${fr(cs.pgUsed-cs.pgTotal)} MW`});
         if((cs.calUsed??0)>(cs.calTotal??0)+0.01) issues.push({sev:"err",msg:`Calibration exceeded by ${fr(cs.calUsed-cs.calTotal)} points`});
-        const bayUsed=(drones??[]).reduce((s,d)=>s+(d.qty??0)*(d.volume??5),0);
-        const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*(d.bandwidth??5),0);
+        const _dRec=(d)=>TYPES[d.typeID]??TYPES[tidByName(d.name)];
+        const _dBW=(d)=>{const t=_dRec(d);return t?.attrs?.droneBandwidthUsed ?? t?.a?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
+        const _dVol=(d)=>{const t=_dRec(d);return t?.attrs?.volume ?? t?.a?.volume ?? d.volume ?? 5;};
+        const bayUsed=(drones??[]).reduce((s,d)=>s+(d.qty??0)*_dVol(d),0);
+        const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*_dBW(d),0);
         if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:`Drone bay over capacity by ${fr(bayUsed-cs.droneBay)} m³`});
         if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:`Drone bandwidth exceeded by ${fr(bwUsed-cs.droneBandwidth)} Mbit/s`});
         const hasErr=issues.some(i=>i.sev==="err");

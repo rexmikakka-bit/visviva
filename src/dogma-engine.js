@@ -559,6 +559,50 @@ export class Fit {
     const imp  = this._implants;
     const bst  = this._boosters;
 
+    // ── Booster bonuses (comprehensive) ──────────────────────────────────────────
+    // Combat boosters carry standard <X>Bonus attrs, but their dogma effects ship with EMPTY
+    // modifiers, so nothing applies them. Apply them here (PostPercent), matching pyfa. Runs BEFORE
+    // the RAH so the RAH adapts to buffed armor resonance. Resonance/ewar-resist bonuses are stacking-
+    // penalised (direct=false, shared group with modules); the rest are direct (unpenalised).
+    // Weapon/drone damage-RoF-range bonuses are NOT applied here — calc.js handles those on the
+    // weapon/drone side (so they aren't double-counted).
+    {
+      const B_PCT = [ // [attr, [shipTargets], direct]
+        // NOTE: velocityBonus, WarpSBonus, capNeedBonus, trackingSpeedBonus, armorDamageAmountBonus,
+        // damageMultiplierBonus/durationBonus and friends are intentionally NOT listed here — their
+        // booster dogma effects are NON-empty, so the effect pass in step 3 (line ~391) already applies
+        // them (verified vs pyfa: velocity eff394 265->278.3 = +5%, warp eff856 4.0->4.36 = +9%). Listing
+        // any of those below would DOUBLE-apply. Only the bonuses whose effects ship EMPTY belong here.
+        ['agilityBonus',             ['agility'],             true],
+        ['scanResolutionBonus',      ['scanResolution'],      true],
+        ['maxTargetRangeBonus',      ['maxTargetRange'],      true],
+        ['capacitorCapacityBonus',   ['capacitorCapacity'],   true],
+        ['capRechargeBonus',         ['rechargeRate'],        true],
+        ['signatureRadiusBonus',     ['signatureRadius'],     true],
+        ['shieldCapacityBonus',      ['shieldCapacity'],      true],
+        ['hullHpBonus',              ['hp'],                  true],
+        ['armorHpBonus',             ['armorHP'],             true],
+        ['armorHpBonus2',            ['armorHP'],             true],
+        ['energyWarfareResistanceBonus',   ['energyWarfareResistance'],   false],
+        // passive damage-resistance bonuses → shield+armor+hull resonance. Booster (drug) bonuses are
+        // a separate stacking group and are NOT penalised against modules/rigs/bursts (verified vs pyfa
+        // v2.67.0: Astarte armor EM 78.84→79.45 and Th 81.42→81.58 with direct=true, matching pyfa's
+        // 79.5/81.6 exactly; Kin/Exp unaffected as they carry no booster resist here).
+        ['passiveEmDamageResistanceBonus',        ['shieldEmDamageResonance','armorEmDamageResonance','emDamageResonance'], true],
+        ['passiveThermicDamageResistanceBonus',   ['shieldThermalDamageResonance','armorThermalDamageResonance','thermalDamageResonance'], true],
+        ['passiveKineticDamageResistanceBonus',   ['shieldKineticDamageResonance','armorKineticDamageResonance','kineticDamageResonance'], true],
+        ['passiveExplosiveDamageResistanceBonus', ['shieldExplosiveDamageResonance','armorExplosiveDamageResonance','explosiveDamageResonance'], true],
+      ];
+      for (const b of bst) {
+        const ba = b._td?.a ?? {};
+        for (const [attr, targets, direct] of B_PCT) {
+          const v = ba[attr];
+          if (!v) continue;
+          for (const t of targets) ship.attrs.applyMod(AID[t] ?? t, 6, v, direct);
+        }
+      }
+    }
+
     // ── Reactive Armor Hardener (Effect4928 'adaptiveArmorHardener') ──────────────────────────
     // CCP applies this in game code; Pyfa replicates it in Python (eos Effect4928). Each RAH
     // carries four armor*DamageResonance attrs (≈0.85 = 15% base) plus resistanceShiftAmount
@@ -576,8 +620,18 @@ export class Fit {
     const RAH_RES = ['armorEmDamageResonance','armorThermalDamageResonance',
                      'armorKineticDamageResonance','armorExplosiveDamageResonance'];
     const fitProfile = Array.isArray(this._damageProfile) ? this._damageProfile : null;
+    // Command bursts are applied by calc.js AFTER the engine runs, so by default the RAH would adapt
+    // to PRE-burst resonances. To match pyfa (which adapts to the post-burst profile), calc.js runs a
+    // second calculate() pass with this._rahArmorBurstEff set to the armor-resonance warfare-buff value
+    // (buff 13, already the strongest of own+projected). We apply it here — stacking-penalised with the
+    // hardeners/rigs, exactly as calc.js would — so ship.attrs.get(resonance) below is the post-burst
+    // value the RAH truly sees. calc.js then skips its own buff-13 application to avoid double-counting.
+    if (this._rahArmorBurstEff) {
+      for (const a of RAH_RES) ship.attrs.applyMod(AID[a] ?? a, 6, this._rahArmorBurstEff, false);
+    }
     for (const m of mods) {
-      if (m.state === 'offline') continue;
+      // RAH only adapts/contributes while ACTIVE (running) — an online-but-inactive RAH does nothing.
+      if (m.state !== 'active' && m.state !== 'overheated') continue;
       if (!(m.effectIDs ?? []).includes(4928)) continue;
 
       const modRes = RAH_RES.map(a => { const v = m.get(a); return (v == null || isNaN(v)) ? 0.85 : v; });
@@ -841,6 +895,38 @@ export class Fit {
               for (const d of this._drones) {
                 if (d.requiresSkill('Drones')) d.attrs.applyMod(AID[tAttr] ?? tAttr, 6, ex, true);
               }
+            }
+          }
+        }
+      }
+    }
+    // ── 5d. Asklepian implant set (implantSetSerpentis2) ─────────────────────────
+    // Each Asklepian member carries armorRepairBonus (attr2457: Alpha..Epsilon = 1..5, Omega = 0),
+    // applied to armor-repairer armorDamageAmount via Effect6708 (LocationRequiredSkillModifier,
+    // skill=Repair Systems) — the engine already ran that at BASE value. The set multiplier
+    // (Effect6706, implantSetSerpentis2 PreMul, domain=charID) is dispatcher-skipped, so amplify
+    // here: each member's effective bonus is raw*setProduct (full-set product ≈ 1.1^5·1.25 = 2.013).
+    // op6-direct stacks multiplicatively, so apply the ratio factor (1+raw*prod/100)/(1+raw/100)-1
+    // per member, reconstructing base+extra = (1+raw*prod/100). Targets local repairers (Repair
+    // Systems), matching Effect6708. Omega contributes to setProduct but has raw=0 → no extra.
+    {
+      const members = imp.filter(i => 'implantSetSerpentis2' in (i._td?.a ?? {}));
+      if (members.length >= 2) {
+        // The set product amplifying the LOCAL armor-rep bonus is the product of implantSetSerpentis2
+        // over the rep-bonus-carrying members (Alpha–Epsilon, ×1.1 each → 1.1^5 ≈ 1.6105 for a full
+        // set). The Omega completion implant (armorRepairBonus = 0, implantSetSerpentis2 = 1.25) does
+        // NOT amplify the local armor-repair amount in pyfa (verified vs v2.67.0), so it's excluded by
+        // filtering on a nonzero armorRepairBonus.
+        const repMembers = members.filter(i => (i.getBase('armorRepairBonus') ?? 0) > 0);
+        const setProduct = repMembers.reduce((p, i) => p * (i.getBase('implantSetSerpentis2') ?? 1), 1);
+        if (setProduct > 1) {
+          const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
+          for (const mi of repMembers) {
+            const raw = mi.getBase('armorRepairBonus') ?? 0; if (!raw) continue;
+            const ex = extraPct(raw); if (!ex) continue;
+            for (const m of mods) {
+              if (m.requiresSkill('Repair Systems'))
+                m.attrs.applyMod(AID.armorDamageAmount ?? 'armorDamageAmount', 6, ex, true);
             }
           }
         }
