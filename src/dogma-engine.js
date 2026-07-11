@@ -500,6 +500,16 @@ export class Fit {
           for (const m of this._modules) {
             if (Number(m.groupID) === Number(groupID)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
           }
+          // Loaded charges are location items too, and some hull bonuses target the CHARGE's group
+          // rather than the module's — e.g. the Minokawa's Force Auxiliary C5 bonus (Effect12835)
+          // filters on group 87 "Capacitor Booster Charge" and modifies capacitorBonus, an attribute
+          // that only exists on the charge (the Capacitor Booster module is group 76). Without this
+          // the bonus silently no-ops and cap-booster injection is understated.
+          for (const m of this._modules) {
+            if (m._charge && Number(m._charge.groupID) === Number(groupID)) {
+              m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            }
+          }
           // Subsystems are group-filtered location items too: a subsystem skill scales the
           // subsystem's own bonus attrs (e.g. Minmatar Offensive Systems → group 956 bonus2).
           for (const s of this._subsystems) {
@@ -928,6 +938,35 @@ export class Fit {
               if (m.requiresSkill('Repair Systems'))
                 m.attrs.applyMod(AID.armorDamageAmount ?? 'armorDamageAmount', 6, ex, true);
             }
+          }
+        }
+      }
+    }
+    // ── 5e. Nirvana implant set (ImplantSetNirvana) ──────────────────────────────
+    // Each Nirvana member carries shieldHpBonus (attr3015: Alpha..Epsilon = 1..5, Omega = none),
+    // applied to the ship's shieldCapacity via Effect8011 (ItemModifier) — which the engine already
+    // ran at BASE value. The set multiplier (Effect8013, ImplantSetNirvana PreMul on attr3015,
+    // domain=charID) is dispatcher-skipped, so amplify here, exactly as for the other sets.
+    //
+    // Unlike Asklepian, the FULL set product INCLUDING Omega applies here (1.1^5 x 1.25 = 2.0131,
+    // verified against pyfa v2.67.0: a Minokawa lands on 3.26M EHP with it, 3.11M without). The
+    // relevant difference is the target attribute: Nirvana feeds shieldCapacity (stackable), while
+    // Asklepian feeds armorDamageAmount (stacking-penalised) — see the note in 5d.
+    {
+      const members = imp.filter(i => 'ImplantSetNirvana' in (i._td?.a ?? {}));
+      if (members.length >= 2) {
+        const setProduct = members.reduce((p, i) => p * (i.getBase('ImplantSetNirvana') ?? 1), 1);
+        if (setProduct > 1) {
+          // op6-direct stacks multiplicatively, so add the exact ratio on top of the base bonus.
+          const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
+          // Only members that actually CARRY shieldHpBonus get amplified. Testing the value alone is
+          // not enough: attr3015 has a default of 1, so getBase() on the Omega (which doesn't have the
+          // attribute at all) returns 1 rather than 0 and would add a phantom +1%.
+          const hpMembers = members.filter(i => 'shieldHpBonus' in (i._td?.a ?? {}) && (i.getBase('shieldHpBonus') ?? 0) > 0);
+          for (const mi of hpMembers) {
+            const raw = mi.getBase('shieldHpBonus') ?? 0; if (!raw) continue;
+            const ex = extraPct(raw); if (!ex) continue;
+            ship.attrs.applyMod(AID.shieldCapacity ?? 'shieldCapacity', 6, ex, true);
           }
         }
       }

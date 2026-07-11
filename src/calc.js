@@ -1263,9 +1263,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     const ct = fitItem.get('duration') || fitItem.get('speed') || 0;
     const isInjector = fitItem.groupName === 'Capacitor Booster';
     if (!ct || (cn === 0 && !isInjector)) continue;
-    // Cap boosters: get charge's capacitorBonus directly (chargeProfile is for damage ammo)
+    // Cap boosters: get the charge's capacitorBonus from the ENGINE-COMPUTED charge, not the raw type
+    // data — hull bonuses can modify it (e.g. the Minokawa's +20%/level Force Auxiliary C5 bonus
+    // doubles a Navy Cap Booster 3200 to 6400 at level 5). Reading TYPES[] here ignored those bonuses.
     const injAmt = (() => {
       if (!isInjector || !slot.ammo) return 0;
+      const live = fitItem._charge?.get?.('capacitorBonus');
+      if (live != null && live > 0) return live;
       const _s=slot.ammo; const cTid = _s?(typeIDByName(_s)??tidByName(_s)??typeIDByName(_s.replace(/\s*\(\d+\)$/,''))??tidByName(_s.replace(/\s*\(\d+\)$/,''))):null;
       const cAttrs = cTid ? TYPES[cTid]?.attrs : null;
       return cAttrs?.['67'] ?? cAttrs?.capacitorBonus ?? cAttrs?.capacity ?? 0;
@@ -1339,17 +1343,29 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
     if (gn === 'Smart Bomb' || gn === 'Super Weapon') {
       // Smartbombs (AoE) and doomsday super weapons deal intrinsic damage each cycle (no charge). The
-      // engine applies duration reductions (Energy Pulse Weapons / titan RoF) and any damage bonuses,
-      // so DPS = damage / cycle straight off the fitted module.
+      // engine applies duration reductions (Energy Pulse Weapons / titan RoF) and any damage bonuses.
+      //
+      // Beam-type super weapons (Lancer lances, titan Reapers, the Bosonic Field Generator) don't land
+      // their damage once: they tick every doomsdayDamageCycleTime for doomsdayDamageDuration, so the
+      // em/th/kin/exp attrs are damage PER TICK. Total damage per activation = perTick × ticks, spread
+      // across the module's `duration`. Single-hit weapons (titan doomsdays, every smartbomb) have no
+      // tick attrs → ticks = 1, so their maths is unchanged.
+      // Volley stays at one tick's damage, which is what pyfa reports.
+      // e.g. 'Azmaru' lance: 25,500/tick × 15 ticks ÷ 300 s = 1,275 DPS (was 85 with ticks assumed 1).
       const durS = (fitItem.get('duration') ?? 0) / 1000;
       if (durS > 0) {
+        const beamDurMs   = fitItem.get('doomsdayDamageDuration')  ?? 0;
+        const beamCycleMs = fitItem.get('doomsdayDamageCycleTime') ?? 0;
+        const ticks = (beamDurMs > 0 && beamCycleMs > 0)
+          ? Math.max(1, Math.floor(beamDurMs / beamCycleMs))
+          : 1;
         const dEm=fitItem.get('emDamage')||0, dTh=fitItem.get('thermalDamage')||0,
               dKin=fitItem.get('kineticDamage')||0, dExp=fitItem.get('explosiveDamage')||0;
-        weaponDps.em  += dEm/durS;  weaponVolley.em  += dEm;
-        weaponDps.th  += dTh/durS;  weaponVolley.th  += dTh;
-        weaponDps.kin += dKin/durS; weaponVolley.kin += dKin;
-        weaponDps.exp += dExp/durS; weaponVolley.exp += dExp;
-        weaponDps.total    += (dEm+dTh+dKin+dExp)/durS;
+        weaponDps.em  += dEm*ticks/durS;  weaponVolley.em  += dEm;
+        weaponDps.th  += dTh*ticks/durS;  weaponVolley.th  += dTh;
+        weaponDps.kin += dKin*ticks/durS; weaponVolley.kin += dKin;
+        weaponDps.exp += dExp*ticks/durS; weaponVolley.exp += dExp;
+        weaponDps.total    += (dEm+dTh+dKin+dExp)*ticks/durS;
         weaponVolley.total += dEm+dTh+dKin+dExp;
       }
 
@@ -1395,7 +1411,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
       const charge = chargeProfile(slot.ammo);
       if (charge && charge.total > 0) {
-        const numShots = fitItem.get('numShots') ?? 0;
+        // numShots (shots per clip before reload) isn't a stored attr — derive it from the module's
+        // charge bay ÷ charge volume, same as any clip. reloadTime is engine-computed, so ship reload
+        // bonuses (Jackdaw/Skua tactical destroyers, Angel Cartel projectile hulls, etc.) are baked in.
+        const numShots = clipSizeOf(fitItem, slot.ammo, { dfltVol: 0.0125, min: 1 });
         let reloadMs = 0;
         if (factorInReload && numShots > 0) {
           reloadMs = (fitItem.get('reloadTime') ?? 5000);
@@ -1434,7 +1453,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           optimalSigRadius: fitItem.get('optimalSigRadius') ?? 40000,
           spoolMax: fitItem.get('damageMultiplierBonusMax') ?? 0,
           spoolPerCycle: fitItem.get('damageMultiplierBonusPerCycle') ?? 0,
-          numShots: fitItem.get('numShots') ?? 0,
+          numShots: clipSizeOf(fitItem, slot.ammo, { dfltVol: 0.0125, min: 1 }),
           reloadS: (fitItem.get('reloadTime') ?? 0) / 1000,
         });
       }

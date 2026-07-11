@@ -63,19 +63,19 @@ import(/* @vite-ignore */ './data-bundle.js').then(m => {
   slotIcons        = m.slotIcons        ?? {};
   raceIcons        = m.raceIcons        ?? {};
   navIcons         = m.navIcons         ?? {};
-  // Newer hulls present in the type data but missing from the bundle's ship browser list.
-  // Add them under their hull-class so they're selectable (typeIDs verified against the data).
-  const _NEW_SHIPS=[
-    ["Sidewinder",85062,"Covert Ops"],["Cobra",85229,"Force Recon Ship"],
-    ["Bestla",74316,"Heavy Assault Cruiser"],["Python",85236,"Black Ops"],
-    ["Geri",74141,"Assault Frigate"],["Shapash",78414,"Assault Frigate"],
-    ["Cybele",77726,"Heavy Assault Cruiser"],["Anhinga",89807,"Attack Battlecruiser"],
-    ["Skua",89808,"Tactical Destroyer"],["Cenotaph",85086,"Combat Battlecruiser"],
-    ["Tholos",85087,"Destroyer"],
-  ];
-  for(const [name,typeID,cls] of _NEW_SHIPS){
+  // The bundle's ship-browser list predates newer hulls (Lancer Dreadnoughts, etc.), so any ship it
+  // doesn't know about was simply unselectable even though its stats were fully present in ships.json.
+  // Backfill data-driven instead of maintaining a hardcoded list: every fittable hull in ships.json
+  // that the bundle omits gets added under CCP's own group name from the type data (TYPES[].gn).
+  // ships.json's own `hullClass` is NOT used as the class — it's wrong for 64 hulls (it files the Crow
+  // under Tactical Destroyer, the Cenotaph under plain Battlecruiser); TYPES[].gn is authoritative.
+  const _listedTypeIDs=new Set(Object.values(shipsByClass).flat().map(s=>s.typeID));
+  for(const s of Object.values(shipsData)){
+    if(!s?.typeID || !s?.name || _listedTypeIDs.has(s.typeID)) continue;
+    const cls=TYPES[s.typeID]?.gn ?? s.hullClass;   // CCP group name; hullClass only as a last resort
+    if(!cls) continue;
     if(!shipsByClass[cls]) shipsByClass[cls]=[];
-    if(!shipsByClass[cls].some(s=>s.name===name||s.typeID===typeID)) shipsByClass[cls].push({name,typeID});
+    if(!shipsByClass[cls].some(x=>x.name===s.name||x.typeID===s.typeID)) shipsByClass[cls].push({name:s.name,typeID:s.typeID});
   }
   // Traits + descriptions for newer hulls absent from the bundle's shipTraits (parsed from type data).
   const _NEW_TRAITS={"85062":{"skills":[{"header":"Amarr Frigate bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Small Energy Turret optimal range"}]},{"header":"Caldari Frigate bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Light Missile and Rocket flight time"},{"number":"4%","text":"bonus to all shield resistances"}]},{"header":"Covert Ops bonuses (per skill level):","bonuses":[{"number":"15%","text":"bonus to Core and Combat Scanner Probe strength"},{"number":"10%","text":"reduction in Survey Probe flight time"},{"number":"15%","text":"bonus to warp speed and acceleration"}]},{"header":"Gallente Frigate bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Small Hybrid Turret tracking speed"}]},{"header":"Minmatar Frigate bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Small Projectile Turret falloff"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"100%","text":"reduction in Cloaking Devices CPU requirement"},{"text":"10+ bonus to Relic and Data Analyzer virus strength"},{"text":"• Can fit Covert Ops Cloaking Device and Covert Cynosural Field Generator"},{"text":"• No targeting delay after Cloaking Device deactivation"},{"text":"• Cloak reactivation delay reduced to 5 seconds"},{"number":"150%","text":"bonus to Light Combat Drone damage and hitpoints"},{"text":"• Small Hybrid Turret, Small Projectile Turret, Small Energy Turret, Light Missile, and Rocket damage increased by a percentage equal to -7.5x pilot negative security status, with a floor of 0% and ceiling of 75%"},{"number":"60%","text":"bonus to warp speed and warp acceleration"}]},"desc":"Following an announcement that CONCORD itself had donated ships as prizes for the Independent Gaming Commission’s Alliance Tournament XX in YC126, a bid executed through a series of shell corporations saw principal sponsorship for the milestone 20th anniversary event shift to the Guristas. Securing a massive stream of profit and publicity for his organization through New Eden’s foremost capsuleer tournament, Korako ‘The Rabbit' Kosakami added further insult to injury by vandalizing the exterior of CONCORD’s donations and retooling them into extravagant prizes of his own design.\r\n\r\nTo keep his most potent modifications out of lawful hands, the Rabbit enlisted the aid of turncoat Caldari Navy Commander Esri Hakuzosu to crack and reverse the parameters of the Pacifier’s security status function-gating subsystem, mocking CONCORD by turning their own notoriously stringent pilot verification protocols against them. Joined with a host of other preposterously costly upgrades and alterations, the Sidewinder presents a vicious pinnacle of Guristas starship engineering."},"85229":{"skills":[{"header":"Amarr Cruiser bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Medium Energy Turret damage"},{"number":"10%","text":"bonus to Medium Energy Turret optimal range"}]},{"header":"Caldari Cruiser bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Rapid Light Missile, Heavy Missile and Heavy Assault Missile Launcher rate of fire"},{"number":"10%","text":"bonus to Heavy Missile and Heavy Assault Missile flight time"},{"number":"4%","text":"bonus to all shield resistances"}]},{"header":"Gallente Cruiser bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Medium Hybrid Turret damage"},{"number":"7.5%","text":"bonus to Medium Hybrid Turret tracking speed"}]},{"header":"Minmatar Cruiser bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Medium Projectile Turret rate of fire"},{"number":"10%","text":"bonus to Medium Projectile Turret falloff"}]},{"header":"Recon Ships bonuses (per skill level):","bonuses":[{"number":"15%","text":"bonus to warp speed and acceleration"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"100%","text":"reduction in Cloaking Devices CPU requirement"},{"text":"• Can fit Covert Ops Cloaking Device, Cynosural Field Generator, and Covert Cynosural Field Generator modules"},{"text":"• Cloak reactivation delay reduced to 5 seconds"},{"number":"50%","text":"reduction in Cynosural Field Generator and Covert Cynosural Field Generator duration"},{"number":"80%","text":"reduction in Cynosural Field Generator and Covert Cynosural Field Generator liquid ozone consumption"},{"text":"• Can use Medium Micro Jump Drive modules"},{"number":"99%","text":"reduction in powergrid and cpu requirements for Micro Jump Drive modules"},{"number":"150%","text":"bonus to Medium Combat Drone damage and hitpoints"},{"text":"• Stasis Webifier optimal range increased by a percentage equal to -7.5x pilot negative security status, with a floor of 0% and ceiling of 75%"},{"text":"• Warp Scrambler and Warp Disruptor optimal range increased by a percentage equal to -3.75x pilot negative security status, with a floor of 0% and ceiling of 37.5%"}]},"desc":"Following an announcement that CONCORD itself had donated ships as prizes for the Independent Gaming Commission’s Alliance Tournament XX in YC126, a bid executed through a series of shell corporations saw principal sponsorship for the milestone 20th anniversary event shift to the Guristas. Securing a massive stream of profit and publicity for his organization through New Eden’s foremost capsuleer tournament, Korako ‘The Rabbit' Kosakami added further insult to injury by vandalizing the exterior of CONCORD’s donations and retooling them into extravagant prizes of his own design.\r\n\r\nTo keep his most potent modifications out of lawful hands, the Rabbit enlisted the aid of turncoat Caldari Navy Commander Esri Hakuzosu to crack and reverse the parameters of the Enforcer’s security status function-gating subsystem, mocking CONCORD by turning their own notoriously stringent pilot verification protocols against them. Joined with a host of other preposterously costly upgrades and alterations, the Cobra presents a lethal pinnacle of Guristas ship engineering."},"74316":{"skills":[{"header":"Heavy Assault Cruisers bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Heavy Missile and Heavy Assault Missile explosion velocity"},{"number":"10%","text":"bonus to Light Missile, Heavy Missile and Heavy Assault Missile Launcher rate of fire"}]},{"header":"Minmatar Cruiser bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Light Missile, Heavy Missile and Heavy Assault Missile damage"},{"number":"10%","text":"bonus to Shield Booster and Armor Repairer amount"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"500%","text":"bonus to Stasis Webifying Drone Stasis Webifier effectiveness"},{"number":"500%","text":"bonus to Stasis Webifying Drone hitpoints"},{"number":"50%","text":"bonus to Stasis Webifying Drone max velocity"},{"text":"• Can fit Assault Damage Controls"}]},"desc":"The Bestla was originally the product of a development program that involved the eccentric and often clashing talents of Tapio Histvaari, Core Complexion's Chief of Missile Systems Development, and Hildara Rostavik, Core's Lead Designer of Autonomous Weapons. The program was an effort to cram as much missile firepower as possible into the Bestla heavy assault cruiser, and its Geri assault frigate counterpart, while also supporting the sophisticated control routines and bandwidth to operate stasis webification drones with massively uprated systems.\r\n\r\nDespite serious personality clashes between the Caldari missiles expert Histvaari and Minmatar drone designer Rostavik, the Bestla was brilliantly redesigned from its basic Rupture-hull format into an incredibly advanced, and incredibly expensive, heavy assault cruiser. While the performance of the Bestla's missiles and stasis drones was far above anything achieved in combination in such a compact format, the Republic Fleet balked at the prospect of paying for whole squadrons made up of the Bestla and the similarly expensive Geri. \r\n\r\nAlthough a few Bestlas are maintained by elite special tasks units of the Republic, a significant number of the initial production run were donated as prizes to the Independent Gaming Commission's Alliance Tournament XVIII by the Minmatar when the Republic became the principal sponsor of the event in YC124."},"85236":{"skills":[{"header":"Amarr Battleship bonuses (per skill level):","bonuses":[{"number":"15%","text":"bonus to Large Energy Turret damage"},{"number":"10%","text":"bonus to Large Energy Turret optimal range"}]},{"header":"Black Ops bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Warp Scrambler and Warp Disruptor optimal range"},{"number":"20%","text":"bonus to Stasis Webifier optimal range"},{"number":"10%","text":"bonus to warp speed and acceleration"}]},{"header":"Caldari Battleship bonuses (per skill level):","bonuses":[{"number":"12.5%","text":"bonus to Rapid Heavy Missile, Cruise Missile and Torpedo Launcher rate of fire"},{"number":"10%","text":"bonus to Cruise Missile and Torpedo flight time"},{"number":"4%","text":"bonus to all shield resistances"}]},{"header":"Gallente Battleship bonuses (per skill level):","bonuses":[{"number":"15%","text":"bonus to Large Hybrid Turret damage"},{"number":"7.5%","text":"bonus to Large Hybrid Turret tracking speed"}]},{"header":"Minmatar Battleship bonuses (per skill level):","bonuses":[{"number":"12.5%","text":"bonus to Large Projectile Turret rate of fire"},{"number":"10%","text":"bonus to Large Projectile Turret falloff"}]}],"role":{"header":"Role Bonus:","bonuses":[{"text":"• Can fit Cynosural Field Generator, Covert Cynosural Field Generator, and Covert Jump Portal Generator modules"},{"text":"• No targeting delay after Cloaking Device deactivation"},{"text":"• Cloak reactivation delay reduced to 5 seconds"},{"number":"100%","text":"increase to Microwarpdrive and Afterburner duration"},{"text":"• ECM Burst Jammer optimal range, falloff, and strength increased by a percentage equal to -7.5x pilot negative security status, with a floor of 0% and ceiling of 75%"},{"number":"75%","text":"reduction to effective distance traveled for jump fatigue"},{"number":"650%","text":"bonus to ship max velocity when using Cloaking Devices"},{"number":"100%","text":"bonus to Shield Extender hitpoints"},{"number":"50%","text":"bonus to Armor Plate hitpoints"},{"number":"5%","text":"additional bonus to Reinforced Bulkhead hitpoints"},{"number":"50%","text":"reduction in Cynosural Field Generator and Covert Cynosural Field Generator duration"}]},"desc":"Following an announcement that CONCORD itself had donated ships as prizes for the Independent Gaming Commission’s Alliance Tournament XX in YC126, a bid executed through a series of shell corporations saw principal sponsorship for the milestone 20th anniversary event shift to the Guristas. Securing a massive stream of profit and publicity for his organization through New Eden’s foremost capsuleer tournament, Korako ‘The Rabbit' Kosakami added further insult to injury by vandalizing the exterior of CONCORD’s donations and retooling them into extravagant prizes of his own design.\r\n\r\nTo keep his most potent modifications out of lawful hands, the Rabbit enlisted the aid of turncoat Caldari Navy Commander Esri Hakuzosu to crack and reverse the parameters of the Marshal’s security status function-gating subsystem, mocking CONCORD by turning their own notoriously stringent pilot verification protocols against them. Joined with a host of other preposterously costly upgrades and alterations, the Python presents a deadly pinnacle of Guristas starship engineering.\r\n\r\n“Virge Sarpati’s commissions precisely reflect the venom that sustains his organization, but that is all. Korako Kosakami is called “The Rabbit”, but he is the one who knows the serpent best. A snake is more than just its fangs. It is agile yet powerful, constricting or poisoning its prey before devouring them whole. That is why our ships are so perfectly named.”\r\n – Vepas Minimala"},"74141":{"skills":[{"header":"Assault Frigates bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Light Missile and Rocket Launcher rate of fire"},{"number":"7.5%","text":"bonus to Light Missile and Rocket explosion velocity"}]},{"header":"Minmatar Frigate bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Light Missile and Rocket damage"},{"number":"7.5%","text":"bonus to Shield Booster and Armor Repairer amount"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"500%","text":"bonus to Stasis Webifying Drone Stasis Webifier effectiveness"},{"number":"250%","text":"bonus to Stasis Webifying Drone hitpoints"},{"number":"50%","text":"bonus to Stasis Webifying Drone max velocity"},{"number":"50%","text":"reduction in Microwarpdrive signature radius penalty"},{"text":"• Can fit Assault Damage Controls"}]},"desc":"The Geri was originally the product of a development program that involved the eccentric and often clashing talents of Tapio Histvaari, Core Complexion's Chief of Missile Systems Development, and Hildara Rostavik, Core's Lead Designer of Autonomous Weapons. The program was an effort to cram as much missile firepower as possible into the Bestla heavy assault cruiser, and its Geri assault frigate counterpart, while also supporting the sophisticated control routines and bandwidth to operate stasis webification drones with massively uprated systems.\r\n\r\nDespite serious personality clashes between the Caldari missiles expert Histvaari and Minmatar drone designer Rostavik, the Geri was brilliantly redesigned from its basic Rifter-hull format into an incredibly advanced, and incredibly expensive, assault frigate. While the performance of the Geri's missiles and stasis drones was far above anything achieved in combination in such a compact format, the Republic Fleet balked at the prospect of paying for whole squadrons made up of the Geri and the similarly expensive Bestla. \r\n\r\nAlthough a few Geris are maintained by elite special tasks units of the Republic, a significant number of the initial production run were donated as prizes to the Independent Gaming Commission's Alliance Tournament XVIII by the Minmatar when the Republic became the principal sponsor of the event in YC124."},"78414":{"skills":[{"header":"Assault Frigates bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Armor Repairer amount"},{"number":"10%","text":"bonus to Small Hybrid Turret tracking speed and optimal range"}]},{"header":"Gallente Frigate bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Small Hybrid Turret damage"},{"number":"10%","text":"bonus to Warp Scrambler and Warp Disruptor optimal range"},{"number":"10%","text":"bonus to the benefits of overheating Afterburners and Microwarpdrives"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"100%","text":"reduction in Armor Plate mass penalty"},{"number":"50%","text":"reduction in module heat damage amount taken"},{"text":"• Can fit Assault Damage Controls"}]},"desc":"Following reports that the Federation government had commissioned a limited run of a novel assault frigate based on the Utu from Duvolle Labs as prizes for the Independent Gaming Commission's Alliance Tournament XIX in YC125, the CreoDron board leveled a freedom of information claim which quickly returned a surprising volume of documents. While the majority have been fully redacted, what little can be gleaned dates the design of the Shapash to a YC120 contract authorized by the FIO for a series of joint operations with Crux Special Tasks Group and the Ostrakon Agency classified under \"Project Trieste\".\r\n\r\nThe Shapash was developed by a provisional team under Duvolle's Advanced Manifold Theory Unit co-led by Rias Luisauir, prodigious R&D agent and engineer, and Progressive Plasma's Dr. Jinneth Duvolle, original co-founder of Duvolle Labs. Afforded a near-bottomless budget to design a platform suitable for locales where reinforcement would be impossible and return imperative, the two leads took full advantage of this unique opportunity to bring their most revolutionary and cost-prohibitive theories into reality as part of the designs.\r\n\r\nA reverse-ballast function devised by Luisauir, based on the micro jump drive's ultraweak force-compensated mass phase-tuning principle, negates armor plate mass gain by scaling microscale depleted vacuum volumes with the ship's mass in-flight, while a plasma cooling system designed by Dr. Jinneth boosts the operational threshold of hybrid turrets and armor repairers as well as the overload limit of propulsion modules. Combined with a substitution of the Utu's drone capabilities for potent hybrid hardpoints and the incorporation of assault frigate subsystems, the Shapash is a priceless force to be reckoned with."},"77726":{"skills":[{"header":"Gallente Cruiser bonuses (per skill level):","bonuses":[{"number":"20%","text":"bonus to Medium Hybrid Turret damage"},{"number":"10%","text":"bonus to Armor Repairer amount"},{"number":"25%","text":"bonus to Warp Scrambler and Warp Disruptor optimal range"}]},{"header":"Heavy Assault Cruisers bonuses (per skill level):","bonuses":[{"number":"10%","text":"bonus to Medium Hybrid Turret falloff"},{"number":"7.5%","text":"bonus to Medium Hybrid Turret tracking speed"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"30%","text":"bonus to ship max velocity"},{"number":"100%","text":"reduction in Armor Plate mass penalty"},{"text":"• Can fit Assault Damage Controls"}]},"desc":"Following reports that the Federation government had commissioned a limited run of a novel heavy assault cruiser based on the Adrestia from Duvolle Labs as prizes for the Independent Gaming Commission's Alliance Tournament XIX in YC125, the CreoDron board leveled a freedom of information claim which quickly returned a surprising volume of documents. While the majority have been fully redacted, what little can be gleaned dates the design of the Cybele to a YC120 contract authorized by the FIO for a series of joint operations with Crux Special Tasks Group and the Ostrakon Agency classified under \"Project Trieste\".\r\n\r\nThe Cybele was developed by a provisional team under Duvolle's Advanced Manifold Theory Unit co-led by Rias Luisauir, prodigious R&D agent and engineer, and Progressive Plasma's Dr. Jinneth Duvolle, original co-founder of Duvolle Labs. Afforded a near-bottomless budget to design a platform suitable for locales where reinforcement would be impossible and return imperative, the two leads took full advantage of this unique opportunity to bring their most revolutionary and cost-prohibitive theories into reality as part of the designs.\r\n\r\nA reverse-ballast function devised by Luisauir, based on the micro jump drive's ultraweak force-compensated mass phase-tuning principle, negates armor plate mass gain by scaling microscale depleted vacuum volumes with the ship's mass in-flight, while a plasma cooling system designed by Dr. Jinneth boosts the operational threshold of hybrid turrets and armor repairers. Combined with an all-around upgrade to the Adrestia's core capabilities and electronics and the incorporation of heavy assault cruiser subsystems, the Cybele is a priceless force to be reckoned with."},"89807":{"skills":[{"header":"Caldari Battlecruiser bonuses (per skill level):","bonuses":[{"number":"5%","text":"bonus to Cruise Missile and Torpedo explosion velocity"},{"number":"5%","text":"bonus to Cruise Missile and Torpedo explosion radius"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"95%","text":"reduction in Rapid Heavy Missile Launcher, Cruise Missile Launcher and Torpedo Launcher powergrid requirement"},{"number":"50%","text":"reduction in Rapid Heavy Missile Launcher, Cruise Missile Launcher and Torpedo Launcher CPU requirement"},{"text":"• Additional bonuses are available while one of three Tactical Modes are active. Modes may be switched no more than once every 10 seconds."},{"text":"• Primary Mode"},{"number":"250%","text":"bonus to lock range while Primary Mode is enabled"},{"number":"33.3%","text":"decrease in missile velocity while Primary Mode is enabled"},{"number":"1000%","text":"increase in missile flight time while Primary Mode is enabled"},{"number":"25%","text":"bonus to Rapid Heavy Missile Launcher, Cruise Missile Launcher and Torpedo Launcher rate of fire while Primary Mode is enabled"},{"text":"• Secondary Mode"},{"number":"50%","text":"decrease in missile flight time while Secondary Mode is enabled"},{"number":"50%","text":"bonus to Rapid Heavy Missile Launcher, Cruise Missile Launcher and Torpedo Launcher rate of fire while Secondary Mode is enabled"},{"text":"• Tertiary Mode"},{"number":"90%","text":"reduction in Micro Jump Drive reactivation delay while Tertiary Mode is enabled"},{"number":"25%","text":"bonus to ship inertia modifier while Tertiary Mode is enabled"},{"number":"50%","text":"bonus to Heavy Missile, Cruise Missile and Torpedo velocity while Tertiary Mode is enabled"},{"number":"25%","text":"bonus to Rapid Heavy Missile Launcher, Cruise Missile Launcher and Torpedo Launcher rate of fire while Tertiary Mode is enabled"}]},"desc":"The Anhinga is a battlecruiser with unprecedented firepower. Like the legendary ‘snake bird’ it’s named after, the Anhinga allows pilots to strike from the deep, catching their rivals off guard.\r\n\r\nThe Mountain faction made shocking allegations against the Hyasyoda corporation following the unveiling of the design, claiming to have proof linking Anhinga designers to Guristas pirates operating within the Caldari state. \r\n\r\n“This pirate infestation appears to be spread among several corporations, not just Hyasyoda,” claimed an official statement from the Home Guard.\r\n\r\nFollowing a series of high-level meetings behind closed doors, Hyasyoda agreed to withdraw their bid for a Navy contract, although they protested the lack of evidence on behalf of the Mountain faction. To smooth things over, the CEP decided to award a small number of the Anhinga to New Eden’s best pilots as awards for Alliance Tournament XXI."},"89808":{"skills":[{"header":"Caldari Tactical Destroyer bonuses (per skill level):","bonuses":[{"number":"6%","text":"bonus to Light Missile launcher and Rocket launcher rate of fire"},{"number":"15%","text":"reduction in missile launcher reload time"},{"number":"5%","text":"reduction in module heat damage amount taken"}]},{"header":"Command Destroyers bonuses (per skill level):","bonuses":[{"number":"5%","text":"reduction in Micro Jump Field Generator spool up time"},{"number":"2%","text":"bonus to Shield Command and Information Command Burst effect strength and duration"}]},{"header":"Misc bonus:","bonuses":[{"number":"33%","text":"bonus to Light Missile and Rocket damage"},{"number":"95%","text":"reduction in Scan Probe Launcher and Survey Probe Launcher CPU requirements"},{"text":"• Additional bonuses are available while one of three Tactical Destroyer Modes are active. Modes may be switched no more than once every 2 seconds."},{"text":"• Defense Mode"},{"number":"33.3%","text":"bonus to all shield resistances while Defense Mode is enabled"},{"number":"33.3%","text":"reduction in ship signature radius while Defense Mode is enabled"},{"number":"33.3%","text":"reduction in shield recharge time while Defense Mode is enabled"},{"text":"• Propulsion Mode"},{"number":"66.6%","text":"bonus to Afterburner and Microwarpdrive speed boost while Propulsion Mode is enabled"},{"number":"66.6%","text":"bonus to ship inertia modifier while Propulsion Mode is enabled"},{"text":"• Sharpshooter Mode"},{"number":"66.6%","text":"bonus to Light Missile velocity while Sharpshooter Mode is enabled"},{"number":"250%","text":"bonus to Rocket velocity while Sharpshooter Mode is enabled"},{"number":"33.3%","text":"bonus to Light Missile and Rocket damage while Sharpshooter Mode is enabled"},{"number":"100%","text":"bonus to sensor strength and targeting range while Sharpshooter Mode is enabled"},{"number":"66.6%","text":"increased resistances against hostile Sensor Dampeners and Weapon Disruptors while Sharpshooter Mode is enabled"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"95%","text":"reduction in powergrid and CPU requirements for Command Bursts"},{"text":"• Can fit Micro Jump Field Generators"},{"text":"• Can use one Command Burst module"}]},"desc":"Inspired by ancient stories of a 'pirate bird,' the Skua allows pilots to unleash a barrage of long range missiles that mimic that relentlessness of its namesake.\r\n\r\nThe Mountain faction rallied against the Skua in the CEP, causing controversy. In an official statement on behalf of the Home Guard, Tanis Cheung claimed to have proof that Lai Dai had hired “allegedly former” Guristas pirates, and that the Skua was born of that “anti-Caldari” collaboration.\r\n\r\nIn response, the Skua was canceled. However, a handful of prototypes had already been manufactured. The CEP thought their power and nimbleness should be given to the best pilots in New Eden, so they were awarded to the winners of Alliance Tournament XXI."},"85086":{"skills":[{"header":"Caldari Battlecruiser bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Shield Booster amount"}]},{"header":"Minmatar Battlecruiser bonuses (per skill level):","bonuses":[{"number":"5%","text":"bonus to ship Stasis Webifier resistance"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"125%","text":"bonus to Medium Projectile Turret and Heavy Assault Missile damage"},{"text":"• Can use one Command Burst module"},{"number":"50%","text":"bonus to Command Burst area of effect range"},{"number":"25%","text":"bonus to Medium Projectile Turret optimal range and falloff and Missile velocity"},{"text":"• Can fit one Medium Breacher Pod Launcher"},{"text":"• Can fit Covert Ops Cloaking Device"},{"number":"100%","text":"reduction in Cloaking Devices CPU requirement"},{"text":"• Cloak reactivation delay reduced to 15 seconds"},{"text":"• Immune to all Cargo Scanners"}]},"desc":"An amalgamation of Minmatar engineering, Caldari electronics, and cutting edge bioinformatic technology, the Cenotaph is perfectly engineered for surprise strikes, deep behind enemy lines.\r\n\r\nThe Deathless Custodians devised the Cenotaph specifically to house their Breacher Pod weaponry while supporting the Covert Ops technology capabilities required for their clandestine operations."},"85087":{"skills":[{"header":"Caldari Destroyer bonuses (per skill level):","bonuses":[{"number":"7.5%","text":"bonus to Shield Booster amount"}]},{"header":"Minmatar Destroyer bonuses (per skill level):","bonuses":[{"number":"5%","text":"bonus to ship Stasis Webifier resistance"}]}],"role":{"header":"Role Bonus:","bonuses":[{"number":"150%","text":"bonus to Small Projectile Turret and Rocket damage"},{"text":"• Can fit one Small Breacher Pod Launcher"},{"text":"• Can fit Covert Ops Cloaking Device"},{"number":"100%","text":"reduction in Cloaking Devices CPU requirement"},{"text":"• Cloak reactivation delay reduced to 15 seconds"},{"text":"• Immune to all Cargo Scanners"}]},"desc":"Developed by the Deathless Custodians in late YC126, the Tholos is a fusion of Thukker starship engineering, cutting-edge Caldari electronics, and breakthroughs in shipboard bioinformatic technology. This synergy beckoned into reality the perfect machine for the Circle’s preferred hit and run doctrine.\r\n\r\nThe Tholos boasts the capabilities to use both Breacher Pod Launchers and Covert Ops Cloaking Devices."}};
@@ -178,6 +178,23 @@ const eveIcon=(typeID,size=32)=>{
   if(_renderByType[typeID])return _renderByType[typeID]; // ships have no iconID -> use render
   return `https://images.evetech.net/types/${typeID}/icon?size=${size}`;
 };
+// ── Meta group (authoritative) ────────────────────────────────────────────────
+// The precomputed data-bundle's `meta` strings are unreliable (faction/storyline/deadspace/officer
+// modules were all being labelled "T2"). CCP's metaGroupID is the real source of truth, so it ships
+// on every type in dogma-types.json as `mg`. Resolve from that, falling back to the bundle string
+// only when a type has no mg (e.g. abyssal/mutated items).
+// Named/compact/enduring/scoped variants are metaGroup 1 and are shown as plain T1, same as CCP.
+const META_BY_MG={1:"T1",2:"T2",3:"Storyline",4:"Faction",5:"Officer",6:"Deadspace",
+                  14:"T3",15:"Abyssal",17:"Premium",19:"Limited"};
+const metaOf=(typeID,fallback)=>{
+  const t=typeID!=null?TYPES[typeID]:null;
+  if(!t||t.mg==null) return fallback??"T1";
+  return META_BY_MG[Number(t.mg)] ?? (fallback??"T1");
+};
+const META_COLORS={T1:"#94a3b8",T2:"#f5a524",Storyline:"#a3e635",Faction:"#22c55e",
+                   Deadspace:"#3b82f6",Officer:"#a855f7",T3:"#2dd4bf",Abyssal:"#f472b6",
+                   Premium:"#a855f7",Limited:"#f5a524"};
+const META_ORDER={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,T3:6,Abyssal:7,Premium:8,Limited:9};
 const eveRender=(typeID,size=64)=>{
   if(!typeID)return null;
   if(_renderByType[typeID])return _renderByType[typeID];
@@ -939,7 +956,8 @@ function buildModuleBrowser(slotType){
     byMG[m.marketGroupID].push(m);
   }
   for(const k of Object.keys(byMG)){
-    byMG[k].sort((a,b)=>(metaOrder[a.meta]??9)-(metaOrder[b.meta]??9)||a.name.localeCompare(b.name));
+    // sort by the authoritative meta group (bundle's own meta string is unreliable)
+    byMG[k].sort((a,b)=>(META_ORDER[metaOf(a.typeID,a.meta)]??99)-(META_ORDER[metaOf(b.typeID,b.meta)]??99)||a.name.localeCompare(b.name));
   }
   function buildNode(mgId){
     if(MG_HIDDEN.has(mgId))return null;
@@ -1030,7 +1048,7 @@ function getMGPath(mgID){
 }
 function buildDroneBrowser(){
   const metaOrder={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,Abyssal:6};
-  const sortFn=arr=>[...arr].sort((a,b)=>(metaOrder[a.meta]??9)-(metaOrder[b.meta]??9)||a.name.localeCompare(b.name));
+  const sortFn=arr=>[...arr].sort((a,b)=>(META_ORDER[metaOf(a.typeID,a.meta)]??99)-(META_ORDER[metaOf(b.typeID,b.meta)]??99)||a.name.localeCompare(b.name));
   const tree={};
   for(const d of Object.values(dronesData)){
     const path=getMGPath(d.marketGroupID);
@@ -1116,6 +1134,9 @@ function NumpadModal({label,initial,onConfirm,onClose}){
 // ═══ RESOURCE STRIP ══════════════════════════════════════════════
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload}){
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload})??{};
+  // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
+  const[showRemaining,setShowRemaining]=useState(false);
+  const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();
   const resources=[
     {key:"cpu",label:"CPU",   used:cs.cpuUsed??0,  total:cs.cpuTotal??0,  unit:"tf",  warn:95},
     {key:"pg", label:"PG",    used:cs.pgUsed??0,   total:cs.pgTotal??0,   unit:"MW",  warn:95},
@@ -1153,10 +1174,18 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
         const pct=Math.min(rawPct,100);
         const crit=isOver;
         return(
-          <div key={res.key} style={{marginBottom:(resources.length-1>i)?8:0}}>
+          <div key={res.key} onClick={()=>setShowRemaining(v=>!v)} title={showRemaining?"Tap for used / total":"Tap for remaining"}
+               style={{marginBottom:(resources.length-1>i)?8:0,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
               <span style={{fontSize:11,fontWeight:600,color:C.textMid}}>{res.label}</span>
-              <span style={{fontSize:10}}><span style={{fontWeight:700,color:crit?C.danger:C.textMid}}>{res.used.toLocaleString()}</span><span style={{color:C.textMute}}> / {res.total.toLocaleString()} {res.unit}</span>{crit&&<span style={{color:C.danger,marginLeft:4}}>!</span>}</span>
+              {showRemaining
+                ? (()=>{ const rem=(res.total??0)-(res.used??0); const over=rem<0;
+                    return(<span style={{fontSize:10}}>
+                      <span style={{fontWeight:700,color:over?C.danger:C.textMid}}>{fmtRes(Math.abs(rem))}</span>
+                      <span style={{color:over?C.danger:C.textMute}}> {res.unit} {over?"over":"left"}</span>
+                    </span>);
+                  })()
+                : <span style={{fontSize:10}}><span style={{fontWeight:700,color:crit?C.danger:C.textMid}}>{res.used.toLocaleString()}</span><span style={{color:C.textMute}}> / {res.total.toLocaleString()} {res.unit}</span>{crit&&<span style={{color:C.danger,marginLeft:4}}>!</span>}</span>}
             </div>
             <div style={{height:5,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
           </div>
@@ -1238,6 +1267,7 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
   })();
 
   function ModRow({mod}){
+    const rowMeta=metaOf(mod.typeID,mod.meta);
     return(
       <div onClick={()=>{onSelect(mod);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
         <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10}}>
@@ -1247,7 +1277,7 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
             {(mod.cpu>0||mod.pg>0)&&<div style={{fontSize:11,color:C.textMute,marginTop:1}}>{mod.cpu>0?`CPU ${mod.cpu} tf`:""}{mod.cpu>0&&mod.pg>0?" / ":""}{mod.pg>0?`PG ${mod.pg} MW`:""}</div>}
           </div>
         </div>
-        <span style={{fontSize:11,color:metaColor[mod.meta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700,flexShrink:0,marginLeft:10}}>{mod.meta}</span>
+        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700,flexShrink:0,marginLeft:10}}>{rowMeta}</span>
       </div>
     );
   }
@@ -1347,17 +1377,21 @@ function ModuleInfoTab({typeID, mod}) {
 }
 
 function ModuleVariationsTab({typeID, currentName, onSwap}) {
-  const vars = typeID ? ((moduleVariations??{})[String(typeID)] ?? []) : [];
-  const META_COLOR = {T1:C.textMid, T2:C.accent, Deadspace:C.rig, Storyline:C.warning, Faction:C.danger, Officer:'#f0abfc', Named:C.textMid};
+  const raw = typeID ? ((moduleVariations??{})[String(typeID)] ?? []) : [];
+  // Resolve meta from CCP's metaGroupID rather than the bundle's (wrong) label, then re-sort:
+  // the bundle had faction/storyline/deadspace/officer all coming through as "T2".
+  const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}))
+                  .sort((a,b)=>(META_ORDER[a.meta]??99)-(META_ORDER[b.meta]??99)||a.name.localeCompare(b.name));
   if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No variation data available.</div>;
   return (
     <div>
       <div style={{fontSize:10,color:C.textMute,padding:'6px 0 8px'}}>Tap a variation to swap — {vars.length} variants</div>
       {vars.map(v => (
         <div key={v.typeID} onClick={()=>v.name!==currentName&&onSwap(v)}
-          style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:v.name===currentName?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
-          <span style={{fontSize:12,color:v.name===currentName?C.accent:C.text,flex:1}}>{v.name}</span>
-          <span style={{fontSize:10,color:META_COLOR[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',flexShrink:0}}>{v.meta}</span>
+          style={{display:'flex',alignItems:'center',gap:9,padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:v.name===currentName?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
+          {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
+          <span style={{fontSize:12,color:v.name===currentName?C.accent:C.text,flex:1,minWidth:0}}>{v.name}</span>
+          <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
         </div>
       ))}
     </div>
@@ -2222,7 +2256,13 @@ const GRAPH_CONFIG=[
 ];
 
 function generateCurve(catKey,yKey,xKey,params={}){
-  const{targetProfile="ideal",shipVelFrac=1,ship={},cs=null}=params;
+  const{targetProfile="ideal",shipVelFrac=1,ship={},cs=null,xZoom=1}=params;
+  // The X zoom control has to widen/narrow the DATA DOMAIN, not just the axis — otherwise zooming out
+  // leaves the curve stopping dead at the old domain edge (e.g. damage-inflicted flatlining at 120s
+  // while the axis ran to 160s). dom() scales every domain constant below by 1/xZoom; percentage axes
+  // that are physically bounded (shield %, cap %) pass a cap so they never run past 100%.
+  const XS = 1/(xZoom||1);
+  const dom = (base,capMax)=>{ const d=base*XS; return capMax!=null?Math.min(d,capMax):d; };
   // Use real fit DPS from calcFitStats when available
   const realDps   = cs?.totalDps?.total   ?? cs?.weaponDps?.total   ?? 0;
   const realVolley= cs?.totalVolley?.total ?? cs?.weaponVolley?.total ?? 0;
@@ -2255,6 +2295,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // Round up to a clean km value with a little headroom; fall back to 40km if no range info.
     let distMaxKm = rangeMaxM > 0 ? rangeMaxM/1000*1.05 : 40;
     distMaxKm = distMaxKm <= 20 ? Math.ceil(distMaxKm) : distMaxKm <= 60 ? Math.ceil(distMaxKm/5)*5 : Math.ceil(distMaxKm/10)*10;
+    distMaxKm = dom(distMaxKm);
     // Per-weapon applied multiplier at an engagement (tracking/range/application).
     const weaponMult = (w, distM, tgtSig, tgtSpeed) => {
         if (w.kind === "turret") {
@@ -2297,7 +2338,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
       if (yKey === "inflicted") {
         // Stepped cumulative damage: each weapon lands a discrete volley at t=0, then every cycle,
         // pausing for reload after each clip of numShots (so the staircase flattens during reload).
-        const TMAX=120;
+        const TMAX=dom(120);
         const wv = weapons.map(w=>({ vol:(w.volley.em+w.volley.th+w.volley.kin+w.volley.exp)*weaponMult(w,0,profSig,profVel),
                                      cycleS:w.cycleS, numShots:w.numShots||0, reloadS:w.reloadS||0 }))
                           .filter(x=>x.vol>0 && x.cycleS>0);
@@ -2317,14 +2358,15 @@ function generateCurve(catKey,yKey,xKey,params={}){
         xMax=TMAX; yMax=acc*1.05||100;
       } else {
         const eff=applied(0,profSig,profVel);
-        for(let t=0;t<=120;t+=0.25) pts.push([t,eff]);
-        xMax=120; yMax=(wantVolley?baseVolley:baseDps)*1.15;
+        const tEnd=dom(120), tStep=tEnd/480;
+        for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff]);
+        xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
       }
     }
-    else if (xKey === "tgtSpeedMs") { for(let v=0;v<=3000;v+=25) pts.push([v, applied(engDist, profSig, v)]); xMax=3000; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; for(let p=0;p<=100;p++) pts.push([p, applied(engDist, profSig, vmax*p/100)]); xMax=100; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSigM") { for(let sg=0;sg<=1000;sg+=8) pts.push([sg, applied(engDist, sg, profVel)]); xMax=1000; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else { for(let p=0;p<=200;p+=2) pts.push([p, applied(engDist, profSig*p/100, profVel)]); xMax=200; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, applied(engDist, profSig, v)]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, applied(engDist, profSig, vmax*p/100)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, applied(engDist, sg, profVel)]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, applied(engDist, profSig*p/100, profVel)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
   }else if(catKey==="ewar"){
     const P=params.ownProj||{};
     const rf=(o,f,d)=>calcRangeFactor(o,f,d,true);
@@ -2332,6 +2374,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const mods = yKey==="neutsCap"?(P.neuts||[]) : yKey==="webSpeed"?(P.webs||[]) : yKey==="ecmStr"?(P.ecm||[]) : yKey==="tdRange"?(P.trackDisr||[]) : yKey==="gdRange"?(P.guideDisr||[]) : yKey==="tpSig"?(P.painters||[]) : (P.damps||[]);
     let reachM=0; for(const m of mods) reachM=Math.max(reachM,(m.optimal||0)+(m.falloff||0)*2);
     let dmax=reachM>0?reachM/1000*1.05:30; dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;
+    dmax=dom(dmax);
     const valAt=(dM)=>{
       if(yKey==="neutsCap") return (P.neuts||[]).reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff,dM),0);
       if(yKey==="ecmStr")   return (P.ecm||[]).reduce((s,e)=>s+e.strength*rf(e.optimal,e.falloff,dM),0);
@@ -2354,8 +2397,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const reps=P.reps||[];
     let reachM=0; for(const r of reps) reachM=Math.max(reachM,(r.optimal||0)+(r.falloff||0)*2);
     const rateAt=(dM)=>reps.reduce((s,r)=>s+r.rawPS*rf(r.optimal,r.falloff,dM),0);
-    if(xKey==="time"){const rate=rateAt(0);let acc=0;for(let t=0;t<=120;t+=.5){acc+=rate*.5;pts.push([t,yKey==="repTotal"?acc:rate]);}xMax=120;yMax=(yKey==="repTotal"?acc:rate)*1.15||1;}
-    else{let dmax=reachM>0?reachM/1000*1.05:30;dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;const step=dmax/80;for(let km=0;km<=dmax+1e-9;km+=step){const rate=rateAt(km*1000);pts.push([km,yKey==="repTotal"?rate*10:rate]);}xMax=dmax;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):1)*1.2||1;}
+    if(xKey==="time"){const rate=rateAt(0);const tEnd=dom(120),dt=tEnd/240;let acc=0;for(let t=0;t<=tEnd+1e-9;t+=dt){acc+=rate*dt;pts.push([t,yKey==="repTotal"?acc:rate]);}xMax=tEnd;yMax=(yKey==="repTotal"?acc:rate)*1.15||1;}
+    else{let dmax=reachM>0?reachM/1000*1.05:30;dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;dmax=dom(dmax);const step=dmax/80;for(let km=0;km<=dmax+1e-9;km+=step){const rate=rateAt(km*1000);pts.push([km,yKey==="repTotal"?rate*10:rate]);}xMax=dmax;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):1)*1.2||1;}
   }
   else if(catKey==="shieldRegen"){
     const maxHP=cs?.shieldHP??ship.shieldHP??6200, maxEHP=cs?.shieldEHP??maxHP;
@@ -2363,11 +2406,12 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // Passive recharge only (EVE curve, peak at 25%); active boosters are excluded so the line is
     // pure regen. Curve is 0 at both 0% and 100% shield by construction.
     const regenEhp=p=>{const q=Math.max(0,Math.min(1,p));return peakRaw*4*(Math.sqrt(q)-q)*ehpR;};
-    if(xKey==="shieldPct"){for(let p=0;p<=100;p++)pts.push([p,yKey==="shieldRegen"?regenEhp(p/100):maxEHP*p/100]);xMax=100;yMax=yKey==="shieldRegen"?regenEhp(0.25)*1.25:maxEHP*1.05;}
+    if(xKey==="shieldPct"){const pEnd=dom(100,100),pStep=pEnd/100;for(let p=0;p<=pEnd+1e-9;p+=pStep)pts.push([p,yKey==="shieldRegen"?regenEhp(p/100):maxEHP*p/100]);xMax=pEnd;yMax=yKey==="shieldRegen"?regenEhp(0.25)*1.25:maxEHP*1.05;}
     else{
-      const tau=(cs?.shieldRechargeMs??2500000)/1000, dt=Math.max(1,tau/120);
+      const tau=(cs?.shieldRechargeMs??2500000)/1000;
+      const tEnd=dom(Math.max(120,tau*1.5)), dt=Math.max(tEnd/480,tau/1200);
       let frac=0;  // start from an empty shield → Y=0 at t=0
-      for(let t=0;t<=Math.max(120,tau*1.5);t+=dt){
+      for(let t=0;t<=tEnd+1e-9;t+=dt){
         pts.push([t,yKey==="shieldRegen"?regenEhp(frac):maxEHP*frac]);
         const fr=Math.max(frac,1e-3);  // seed past the 0%-rate singularity so it charges from empty
         frac=Math.min(1,frac+(peakRaw*4*(Math.sqrt(fr)-fr)/Math.max(1,maxHP))*dt);
@@ -2379,16 +2423,16 @@ function generateCurve(catKey,yKey,xKey,params={}){
   else if(catKey==="cap"){
     const maxC=cs?.capCapacity??ship.capacitorCapacity??1000, tau=(cs?.capRechargeMs??250000)/1000;
     const cr=c=>(10*maxC/tau)*(Math.sqrt(Math.max(0,c)/maxC)-Math.max(0,c)/maxC);  // gross regen GJ/s
-    if(xKey==="capPct"){for(let p=0;p<=100;p++){const c=maxC*p/100;pts.push([p,yKey==="capAmt"?c:cr(c)]);}xMax=100;yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;}
+    if(xKey==="capPct"){const pEnd=dom(100,100),pStep=pEnd/100;for(let p=0;p<=pEnd+1e-9;p+=pStep){const c=maxC*p/100;pts.push([p,yKey==="capAmt"?c:cr(c)]);}xMax=pEnd;yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;}
     else{
       // Drive the curve from the same discrete event simulation as the cap-stability readout, so the
       // graph agrees with it: modules drain, the booster pulses (clip + reload), and on an unstable
       // fit cap drains down and oscillates instead of pegging high. Window scales to the lifetime.
       const capTime=cs?.capTime; // seconds to cap-out, or null when stable
-      const tMaxSec=capTime?Math.min(Math.max(capTime*2.5,60),600):180;
+      const tMaxSec=dom(capTime?Math.min(Math.max(capTime*2.5,60),600):180);
       const trace=simulateCapTrace(cs?.capModules??[],maxC,(cs?.capRechargeMs??250000),{tMaxSec,sampleDt:0.5});
       if(trace.length){for(const [t,c] of trace)pts.push([t,yKey==="capAmt"?c:cr(c)]);xMax=tMaxSec;}
-      else{pts=[[0,maxC],[180,maxC]];xMax=180;}
+      else{const tE=dom(180);pts=[[0,maxC],[tE,maxC]];xMax=tE;}
       yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;
     }
   }
@@ -2396,20 +2440,22 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const vmax=(cs?.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity?cs.maxVelocityAB:(cs?.maxVelocity??ship.maxVelocity??115));
     const mass=cs?.mass??ship.mass??1e7, ag=cs?.agility??ship.agility??0.5;
     const tau=ag*mass/1e6; let dist=0;
-    for(let t=0;t<=Math.max(30,tau*3);t+=Math.max(.1,tau/100)){const v=vmax*(1-Math.exp(-t/tau));dist+=v*Math.max(.1,tau/100)/1000;pts.push([t,yKey==="speed"?v:yKey==="distance"?dist:vmax*Math.exp(-t/3)]);}
-    xMax=pts.length?pts[pts.length-1][0]:30;yMax=yKey==="speed"?vmax*1.1:yKey==="distance"?dist*1.15:vmax*1.1;
+    const tEnd=dom(Math.max(30,tau*3)), dt=Math.max(.05,tEnd/400);
+    for(let t=0;t<=tEnd+1e-9;t+=dt){const v=vmax*(1-Math.exp(-t/tau));dist+=v*dt/1000;pts.push([t,yKey==="speed"?v:yKey==="distance"?dist:vmax*Math.exp(-t/3)]);}
+    xMax=tEnd;yMax=yKey==="speed"?vmax*1.1:yKey==="distance"?dist*1.15:vmax*1.1;
   }
   else if(catKey==="warp"){
     const AU=1.496e11, ws=cs?.warpSpeed??ship.warpSpeed??3, subwarp=cs?.maxVelocity??ship.maxVelocity??200;
     const warpT=(distM)=>{if(distM<=0)return 0;const kA=ws,kD=Math.min(ws/3,2),dropout=Math.min(subwarp/2,100);let maxMs=ws*AU;const accelD=AU,decelD=maxMs/kD,minD=accelD+decelD;let cruise=0;if(minD>distM)maxMs=distM*kA*kD/(kA+kD);else cruise=(distM-minD)/maxMs;return Math.max(0,cruise+Math.log(maxMs/kA)/kA+Math.log(maxMs/dropout)/kD);};
-    if(xKey==="distAU"){for(let au=0;au<=100;au+=1)pts.push([au,warpT(au*AU)]);xMax=100;}
-    else{for(let km=0;km<=150;km+=2)pts.push([km,warpT(km*1000)]);xMax=150;}
+    if(xKey==="distAU"){const aEnd=dom(100),aStep=aEnd/100;for(let au=0;au<=aEnd+1e-9;au+=aStep)pts.push([au,warpT(au*AU)]);xMax=aEnd;}
+    else{const kEnd=dom(150),kStep=kEnd/75;for(let km=0;km<=kEnd+1e-9;km+=kStep)pts.push([km,warpT(km*1000)]);xMax=kEnd;}
     yMax=(pts.length?Math.max(...pts.map(p=>p[1])):10)*1.1||10;
   }
   else if(catKey==="lock"){
     const sr=cs?.scanRes??ship.scanResolution??200;
-    for(let s=10;s<=1000;s+=5){const t=sr>0?Math.min(40000/sr/Math.pow(Math.asinh(s),2),1800):0;pts.push([s,t]);}
-    xMax=1000;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):10)*1.15||10;
+    const sEnd=dom(1000), sStep=Math.max(1,sEnd/198);
+    for(let s=10;s<=sEnd+1e-9;s+=sStep){const t=sr>0?Math.min(40000/sr/Math.pow(Math.asinh(s),2),1800):0;pts.push([s,t]);}
+    xMax=sEnd;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):10)*1.15||10;
   }
   if(pts.length){const dm=Math.max(...pts.map(p=>p[1]));if(!yMax||dm>yMax)yMax=dm*1.1;}
   return{pts,xMax:xMax??100,yMax:yMax??100};
@@ -2431,11 +2477,17 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
   const handleLeave=()=>{setCursorX(null);onCursorChange&&onCursorChange(null);};
   const cursorYVal=cursorX!=null?interpY(cursorX):null;
   return(<svg width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchMove={handleTouchMove} onTouchEnd={handleLeave}>
-    <defs><linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient></defs>
+    <defs>
+      <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient>
+      {/* Zoomed axes shrink xMax/yMax, so the curve can run past the plot box — clip it to the grid. */}
+      <clipPath id={gId+"clip"}><rect x={PL} y={PT} width={gW} height={gH}/></clipPath>
+    </defs>
     {yT.map((v,i)=><line key={i} x1={PL} y1={toY(v)} x2={W-PR} y2={toY(v)} stroke={C.border} strokeWidth="1"/>)}
     {xT.map((v,i)=><line key={i} x1={toX(v)} y1={PT} x2={toX(v)} y2={PT+gH} stroke={C.border} strokeWidth="1"/>)}
-    <path d={ap} fill={`url(#${gId})`}/><path d={lp} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
-    {cursorX!=null&&cursorYVal!=null&&(<g><line x1={cursorX} y1={PT} x2={cursorX} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorX} cy={toY(Math.max(0,cursorYVal.yVal))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
+    <g clipPath={`url(#${gId}clip)`}>
+      <path d={ap} fill={`url(#${gId})`}/><path d={lp} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
+    </g>
+    {cursorX!=null&&cursorYVal!=null&&(<g><line x1={cursorX} y1={PT} x2={cursorX} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorX} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal.yVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
     {yT.map((v,i)=><text key={i} x={PL-3} y={toY(v)+3} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
     {xT.map((v,i)=><text key={i} x={toX(v)} y={H+4} textAnchor="middle" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
     <text x={PL+gW/2} y={H+16} textAnchor="middle" fill={C.textMute} fontSize="9" fontFamily="sans-serif">{xLabel}</text>
@@ -2544,11 +2596,17 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // Target sig radius (null = ideal/perfect tracking). Set by profile, editable by tapping.
   const[tgtSig,setTgtSig]=useState(null);
   const[cursor,setCursor]=useState(null);
+  // Axis scale (zoom). 1 = auto-fit range from generateCurve; >1 zooms in (smaller max),
+  // <1 zooms out (larger max). Applied to the auto max, so it survives fit/axis changes.
+  const[xZoom,setXZoom]=useState(1),[yZoom,setYZoom]=useState(1);
+  const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
+  const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
+    const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};
   // Real transversal: component of relative velocity perpendicular to the line of sight (m/s).
   // North (up) on the compass = toward/away from the target (radial); E/W = across (transversal).
   const transversalSpeed=Math.abs(selfVel*Math.sin(selfAngle*Math.PI/180)-targetVel*Math.sin(targetAngle*Math.PI/180));
   const cat=GRAPH_CONFIG.find(c=>c.key===catKey);
-  const handleCatChange=key=>{const nc=GRAPH_CONFIG.find(c=>c.key===key);setCatKey(key);setYKey(nc.yAxes[0].key);setXKey(nc.xAxes[0].key);setCursor(null);};
+  const handleCatChange=key=>{const nc=GRAPH_CONFIG.find(c=>c.key===key);setCatKey(key);setYKey(nc.yAxes[0].key);setXKey(nc.xAxes[0].key);setCursor(null);setXZoom(1);setYZoom(1);};
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);
@@ -2558,7 +2616,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     const sn=ship?.name; if(!sn) return null;
     try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters}); }catch{ return null; }
   },[ship,slots,skills,implants,boosters]);
-  const{pts,xMax,yMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVel/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel});
+  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVel/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,xZoom});
+  // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
+  // extends to the new axis edge instead of stopping short). Y just rescales the axis.
+  const yMax=autoYMax/yZoom;
   const baseHeadline=pts.length?pts[Math.floor(pts.length*.05)][1]:null;
   const displayVal=cursor!=null?cursor.yVal:baseHeadline;
   const displayX=cursor!=null?cursor.xVal:null;
@@ -2570,8 +2631,23 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setCursor(null);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursor(null);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setCursor(null);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursor(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      {/* Axis scale (zoom): − widens the visible range, + zooms in. Tap the readout to reset to auto-fit. */}
+      {[{ax:"Y",zoom:yZoom,setZoom:setYZoom,max:yMax},{ax:"X",zoom:xZoom,setZoom:setXZoom,max:xMax}].map(z=>{
+        const atMin=z.zoom<=ZOOM_STEPS[0]+1e-9, atMax=z.zoom>=ZOOM_STEPS[ZOOM_STEPS.length-1]-1e-9;
+        const btn=(dis)=>({flex:"0 0 26px",padding:"4px 0",borderRadius:6,fontSize:13,fontWeight:700,lineHeight:1,
+          cursor:dis?"default":"pointer",background:C.surface,border:`1px solid ${C.border}`,color:dis?C.textMute:C.textMid,opacity:dis?.4:1});
+        return(<div key={z.ax} style={{display:"flex",alignItems:"center",gap:4}}>
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));setCursor(null);}} disabled={atMin} style={btn(atMin)}>−</button>
+          <button onClick={()=>{z.setZoom(1);setCursor(null);}} title="Reset to auto-fit"
+            style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:z.zoom===1?C.surface:`${cat.color}22`,
+              border:`1px solid ${z.zoom===1?C.border:cat.color}`,color:z.zoom===1?C.textMute:cat.color,whiteSpace:"nowrap",overflow:"hidden"}}>
+            {z.ax} {fmt(z.max)}{z.zoom!==1?` · ${z.zoom}×`:""}
+          </button>
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,1));setCursor(null);}} disabled={atMax} style={btn(atMax)}>+</button>
+        </div>);
+      })}
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
       <div><span style={{fontSize:22,fontWeight:800,color:cat.color}}>{fmt(displayVal)}</span><span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span></div>
@@ -3955,18 +4031,10 @@ function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInRel
       <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:16,fontWeight:700,color:C.text}}>Settings</span><button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button></div>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[{key:"skills",label:"Skills"},{key:"display",label:"Display"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"overrides",label:"Overrides"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
+        {[{key:"skills",label:"Skills"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"overrides",label:"Overrides"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
       </div>
       <div style={{flex:1,overflowY:"auto",padding:16}}>
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
-        {section==="display"&&<div>
-          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:6}}>DPS Calculation</div>
-          <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>Match Pyfa's DPS display options.</div>
-          <div style={{padding:"12px 14px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10}}>
-            <div style={{fontSize:13,fontWeight:600,color:C.text}}>Factor in reload time</div>
-            <div style={{fontSize:11,color:C.textMute,marginTop:2}}>This toggle now lives in the <b>Firepower</b> section header on the Stats tab.</div>
-          </div>
-        </div>}
         {section==="esi"&&<div><div style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>EVE ESI Connection</div><div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Connect your EVE account to import skills, implants, and fits. Cloud fit sync coming soon.</div><div style={{marginBottom:10,padding:"8px 12px",background:C.surface,border:`1px dashed ${C.border}`,borderRadius:8,fontSize:11,color:C.textMute,textAlign:"center"}}>Not connected</div><button style={{width:"100%",padding:"10px 0",background:C.accent,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Connect with EVE SSO</button></div></div>}
         {section==="market"&&<div>{[{key:"ceve",label:"ceve-market.org"},{key:"evetycoon",label:"EVE Tycoon"},{key:"fuzzwork",label:"Fuzzwork Market"}].map(m=>(<div key={m.key} onClick={()=>setMarket(m.key)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${market===m.key?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:"pointer"}}><div style={{width:18,height:18,borderRadius:99,border:`2px solid ${market===m.key?C.accent:C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{market===m.key&&<div style={{width:8,height:8,borderRadius:99,background:C.accent}}/>}</div><span style={{fontSize:13,fontWeight:market===m.key?700:500,color:market===m.key?C.text:C.textMid}}>{m.label}</span></div>))}</div>}
         {section==="implants"&&<div>
