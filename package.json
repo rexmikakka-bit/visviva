@@ -3,12 +3,14 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-   "scripts": {
+  "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node src/regression.test.mjs"
+    "test": "node src/regression.test.mjs",
+    "verify": "node scripts/check-code.mjs && node scripts/check-imports.mjs && vite build && node src/regression.test.mjs",
+    "check": "node scripts/check-code.mjs && node scripts/check-imports.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

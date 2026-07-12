@@ -1,7 +1,12 @@
-name: Regression (pyfa baselines)
+name: CI
 
-# Guards the pyfa-validated fit baselines. If this fails, a fit calculation regressed —
-# see CLAUDE.md before touching the expected values.
+# Two gates:
+#   test    — the pyfa-validated fit baselines (see CLAUDE.md before changing any expected value)
+#   static  — the checks that would have caught the bugs shipped during the App.jsx split
+#
+# Deliberately NOT gating on full `eslint src`: the codebase has ~180 pre-existing style findings,
+# and blocking every PR on those just teaches people to bypass CI. check-code.mjs fails only on
+# runtime-fatal rules (no-undef and friends) and reports the rest.
 
 on:
   pull_request:
@@ -9,13 +14,37 @@ on:
     branches: [main]
 
 jobs:
-  regression:
+  test:
+    name: pyfa regression baselines
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      # No install step: the suite uses only Node built-ins and the committed data bundles.
-      - name: Run pyfa regression suite
-        run: node src/regression.test.mjs
+      # No install needed: the suite uses only Node built-ins + the committed data bundles.
+      - run: node src/regression.test.mjs
+
+  static:
+    name: lint / imports / build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # Runtime-fatal lint only. Two live ReferenceErrors (onExportFit, MT_ITEMS) sat in App.jsx
+      # for months because nothing ran this.
+      - name: Lint (runtime-fatal rules)
+        run: node scripts/check-code.mjs
+
+      # Catches broken import paths that `vite build` does NOT: @vite-ignore dynamic imports and
+      # import.meta.glob patterns that silently match nothing. Both shipped as real bugs.
+      - name: Check import paths
+        run: node scripts/check-imports.mjs
+
+      - name: Build
+        run: npm run build

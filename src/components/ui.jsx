@@ -8,7 +8,7 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
-import { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
 
 function BottomSheet({title,onClose,children,height="70vh"}){
   return(

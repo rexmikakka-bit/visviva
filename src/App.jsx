@@ -18,7 +18,7 @@ import { META_BY_MG, metaOf, META_COLORS, META_ORDER } from "./lib/meta.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "./data/static-tables.js";
 import { GraphTab, GRAPH_CONFIG, generateCurve } from "./components/GraphTab.jsx";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
-import { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons } from "./lib/core.js";
+import { CMD_SHIP_FITS, FIGHTER_CATALOG, GLOBAL_CSS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, REAL_DRONE_BROWSER, SAVED_FITS_SEED, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, getCompatibleCharges, haptic, implantData, lookupShip, navIcons, raceIcons, shipTraits, shipsByClass } from "./lib/core.js";
 import { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal } from "./components/ui.jsx";
 import { FitTab, StatsTab } from "./components/tabs.jsx";
 function ActiveFitBar({activeFit,onReturn}){
@@ -1450,7 +1450,7 @@ function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) 
 }
 
 
-function HamburgerMenu({onClose,onOpenSettings,onImportFit}){
+function HamburgerMenu({onClose,onOpenSettings,onImportFit,onExportFit}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
       <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Pyfa Mobile</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
@@ -1690,7 +1690,7 @@ export default function App(){
       </div>
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>setShowExportFit(true)}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onExportFit={()=>setShowExportFit(true)}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload}/>}

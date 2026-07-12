@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
-import { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, computeDisplayRows, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet } from "./ui.jsx";
 
 function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
