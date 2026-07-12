@@ -1,0 +1,21 @@
+name: Regression (pyfa baselines)
+
+# Guards the pyfa-validated fit baselines. If this fails, a fit calculation regressed —
+# see CLAUDE.md before touching the expected values.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # No install step: the suite uses only Node built-ins and the committed data bundles.
+      - name: Run pyfa regression suite
+        run: node src/regression.test.mjs
