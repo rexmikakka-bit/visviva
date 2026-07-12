@@ -21,11 +21,11 @@ That's the whole setup. `npm test` needs no build step and no local data files.
 Everything below is **gitignored on purpose** — it's large, and it's all publicly downloadable, so
 nobody needs to send you files.
 
-**1. Local icons (optional, cosmetic + faster).**
-Without this the app pulls icons from CCP's image server, which works but hits the network. To use
-local icons, download the pyfa **source** as a ZIP from <https://github.com/pyfa-org/Pyfa> (green
-"Code" button → "Download ZIP"), extract it, and rename the folder to `pyfa-master/` in the repo
-root, so the path `pyfa-master/imgs/icons/` exists.
+**1. A pyfa checkout (only needed to REGENERATE the bundled art).**
+Ship/module art lives in `src/assets/` and is committed, so the app works offline out of the box —
+you do not need this to develop. You only need it if CCP adds new art and the assets must be rebuilt:
+download the pyfa **source** ZIP from <https://github.com/pyfa-org/Pyfa>, extract it to `pyfa-master/`
+in the repo root, then run `node scripts/bundle-icons.mjs` (it also needs `eve.db`, below).
 
 **2. `eve.db` (only if you regenerate the dogma bundles).**
 Not needed to run or develop the app. It ships inside pyfa's **Windows release** ZIP (a different
@@ -45,6 +45,16 @@ python scripts/build-bundle.py --dry-run   # report what CCP changed
 python scripts/build-bundle.py             # write the bundles
 npm test                                   # baselines MUST still pass
 ```
+
+### Art is bundled, not fetched
+
+`src/assets/icons/` and `src/assets/renders/` are committed (~6.5 MB) and compiled into the build, so
+the shipped app needs **no network** for images. Do not point the globs in `src/lib/icons.js` at
+anything outside the repo — they used to point at the gitignored `pyfa-master/`, which meant every
+release build silently fell back to CCP's image server.
+
+About 1,000 types have no art in pyfa's set; those still fall back to the image server (fine online,
+hidden offline).
 
 ## Before you open a PR
 
