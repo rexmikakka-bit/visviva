@@ -265,7 +265,35 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. ALL HULLS COMPUTE — every ship must produce stats without throwing.
+// 6. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
+//    ONLY in localStorage. A merge bug silently eats someone's work, so it is guarded here.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nBACKUP / RESTORE (merge must never lose a fit)');
+  const { mergeFitsDB } = await import('./lib/backup-io.js');
+
+  const mine = JSON.stringify({
+    Astarte: [{ id: 1, name: 'Brawler' }, { id: 2, name: 'Kite' }],
+    Rifter:  [{ id: 1, name: 'Solo' }],
+  });
+  const incoming = JSON.stringify({
+    Astarte: [{ id: 1, name: 'Brawler' }, { id: 5, name: 'Blaster Boat' }],  // id AND name collide
+    Bane:    [{ id: 1, name: 'Lance' }],
+  });
+  const m = JSON.parse(mergeFitsDB(mine, incoming));
+
+  check('backup', 'no fit lost on merge', m.Astarte.length + m.Rifter.length + m.Bane.length, 6, 0);
+  check('backup', 'colliding ids reassigned', new Set(m.Astarte.map((f) => f.id)).size, m.Astarte.length, 0);
+  check('backup', 'duplicate name renamed', m.Astarte.filter((f) => f.name.startsWith('Brawler')).length, 2, 0);
+  check('backup', 'existing fit untouched', m.Astarte.find((f) => f.id === 1)?.name === 'Brawler' ? 1 : 0, 1, 0);
+  check('backup', 'new ship added', m.Bane?.[0]?.name === 'Lance' ? 1 : 0, 1, 0);
+  // A corrupt or empty file must never wipe what's already there.
+  check('backup', 'corrupt import keeps fits', JSON.parse(mergeFitsDB(mine, '{{garbage')).Astarte.length, 2, 0);
+  check('backup', 'empty import keeps fits', JSON.parse(mergeFitsDB(mine, '{}')).Rifter.length, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nALL HULLS');
