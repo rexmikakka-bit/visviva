@@ -1,0 +1,29 @@
+{
+  "_README": [
+    "Hand-applied fixes for data CCP does not ship usable. build-bundle.py re-applies these at the",
+    "end of every build, so regenerating the bundles is idempotent and these fixes never get lost.",
+    "",
+    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here — they",
+    "come from eve.db automatically now that the allowlist is gone. This file is for:",
+    "  1. effects whose modifierInfo CCP ships empty (they are applied client-side in EVE), and",
+    "  2. attribute flags eve.db does not carry (notably `stackable`).",
+    "",
+    "Every entry must say WHY it exists and what breaks without it."
+  ],
+
+  "effects": {
+    "12887": [
+      {
+        "_why": "angelCartelProjectileReloadingSpeed. CCP ships this effect with an empty modifier list, so the Angel Cartel -75% projectile reload bonus (attr 6203, on Cynabal/Machariel/Dramiel/Moracha/Chremoas/Mekubal/Khizriel/Azariel/Sarathiel) silently did nothing: reload stayed at 10000ms instead of 2500ms. Targets group 55 (Projectile Weapon, all sizes) -> reloadTime (1795), PostPercent.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 55,
+        "modifiedAttributeID": 1795,
+        "modifyingAttributeID": 6203,
+        "operation": 6
+      }
+    ]
+  },
+
+  "attributes": {}
+}

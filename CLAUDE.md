@@ -120,25 +120,37 @@ Astarte's tank to rise to ~1768.
 
 ## Merge hazards (multi-person repo)
 
-- **Never hand-edit the generated data files.** `dogma-types.json` (2.4 MB), `dogma-effects.json`,
-  `data-bundle.js` (5.8 MB), `modules.json`, `module-variations.json` and `pyfa-types.json` are
-  generated artifacts. A conflict in them is unresolvable by hand and unreviewable in a PR.
+- **Never hand-edit the generated data files.** `dogma-types.json`, `dogma-effects.json`,
+  `dogma-attrs.json`, `data-bundle.js` (5.8 MB), `modules.json`, `module-variations.json` and
+  `pyfa-types.json` are generated artifacts. A conflict in them is unresolvable by hand.
 
-  These files currently contain **hand-applied patches** that fix genuine gaps in CCP's shipped data.
-  Regenerating them without re-applying these will silently break fits — and the regression suite is
-  what will tell you:
+  **Regenerate the dogma bundles instead:**
 
-  | Patch | Why |
-  | --- | --- |
-  | `angelCartelProjectileReloadingSpeed` (attr 6203 = −75) on 9 Angel hulls | Trimmed from the bundle |
-  | Effect **12887** modifier (group 55 → `reloadTime`, op6) | Shipped with an empty modifier list |
-  | Effect **8013** / Nirvana + **6706** / Asklepian | Dispatcher-skipped → custom handlers in the engine |
-  | `doomsdayDamageDuration` / `doomsdayDamageCycleTime` (attrs 2264/2265) on 13 super weapons | Trimmed from the bundle |
-  | `mg` (metaGroupID) on 6,334 types | Needed because `data-bundle.js`'s meta labels are wrong |
+  ```bash
+  python scripts/build-bundle.py --dry-run   # report what would change
+  python scripts/build-bundle.py             # write the bundles
+  npm test                                   # 25 pyfa checks MUST still pass
+  ```
 
-  **The right fix is a build script** that regenerates the bundles from pyfa's `eve.db` and then
-  applies a small, human-readable patch list. That turns a 2.4 MB unmergeable diff into ~20 reviewable
-  lines. This does not exist yet — it is the highest-value piece of infrastructure still missing.
+  It needs pyfa's `eve.db` (auto-detected in `Pyfa-master/`, or pass `--db`). Regeneration is
+  idempotent: hand fixes live in `scripts/data-patches.json` and are re-applied on every build.
+
+  **The old `update-from-evedb.py` was the source of nearly every data bug in this project.** It only
+  refreshed attributes a type *already had* (`for ak in list(ca.keys())`), so a newly-relevant
+  attribute could never appear — and it filtered everything through an `attr_allow.json` allowlist
+  that was never committed. That is why the Angel hulls were missing their −75% projectile reload
+  attribute, why the lance was missing its doomsday tick attributes (~1190 DPS on a Bane), and why
+  carrier hull bonuses, the Capital MJD skill and covert-cloak CPU were all silently inert.
+
+  `build-bundle.py` drops the allowlist and writes **every** attribute CCP defines on a fittable type
+  (+0.6 MB, ~75k attribute slots restored), and covers drones/fighters/structures, which the old
+  category filter excluded — fighter stats had been stale for months.
+
+  **What eve.db cannot give you:** it has no effect `modifierInfo` and no `stackable` flag. Effect
+  modifiers are preserved from the existing bundle; a genuinely new effect is written inert and
+  reported loudly. Supply its modifier from CCP's FSD dump via `data-patches.json`, or write a custom
+  handler in `dogma-engine.js`. Only ONE hand patch remains: **effect 12887**, which CCP ships with an
+  empty modifier list.
 
 - **`App.jsx` is 4,400 lines and everyone touches it.** Two people editing it in parallel is a
   guaranteed conflict. It has obvious seams already (`GraphTab`, `ResourceStrip`, `ModuleBrowser`,
