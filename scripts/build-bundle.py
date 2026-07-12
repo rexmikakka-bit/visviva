@@ -52,6 +52,7 @@ and are re-applied at the end of every build, so regeneration is idempotent.
 
 import argparse, json, os, sqlite3, sys
 from collections import defaultdict
+from datetime import datetime, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, 'src', 'data')
@@ -94,8 +95,23 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='report changes, write nothing')
     args = ap.parse_args()
 
-    db = sqlite3.connect(find_db(args.db))
-    print(f"eve.db: {find_db(args.db)}")
+    db_path = find_db(args.db)
+    db = sqlite3.connect(db_path)
+    print(f"eve.db: {db_path}")
+
+    # eve.db carries a metadata table stamping which EVE client build it was dumped from. Record it
+    # in the bundle so there is never ambiguity about WHICH data the numbers were validated against —
+    # the regression baselines are only meaningful relative to a specific build.
+    meta = {}
+    try:
+        meta = {r[0]: r[1] for r in db.execute("SELECT * FROM metadata")}
+    except sqlite3.Error:
+        pass
+    client_build = str(meta.get('client_build', 'unknown'))
+    dump_time = int(meta.get('dump_time', 0) or 0)
+    dump_iso = (datetime.fromtimestamp(dump_time, tz=timezone.utc).strftime('%Y-%m-%d')
+                if dump_time else 'unknown')
+    print(f"EVE client build: {client_build}   (SDE dumped {dump_iso})")
 
     old_types = json.load(open(os.path.join(DATA, 'dogma-types.json')))
     old_effs  = json.load(open(os.path.join(DATA, 'dogma-effects.json')))
@@ -240,6 +256,20 @@ def main():
     if args.dry_run:
         print("\n--dry-run: nothing written.")
         return
+
+    # Version stamp lives in its OWN file — do not put it inside dogma-types.json, whose values are
+    # iterated as type entries all over the app.
+    version = {
+        'client_build': client_build,
+        'sde_dump_date': dump_iso,
+        'generated': datetime.now(timezone.utc).strftime('%Y-%m-%d'),
+        'types': len(fit_types),
+        '_note': ('The regression baselines in src/regression.test.mjs were validated against pyfa '
+                  'running THIS client build. If you regenerate from a newer eve.db, expect some '
+                  'baselines to move: that is CCP rebalancing, not a code regression. See CLAUDE.md '
+                  '-> "Upgrading eve.db".'),
+    }
+    json.dump(version, open(os.path.join(DATA, 'bundle-version.json'), 'w'), indent=2)
 
     for name, obj in [('dogma-types.json', new_types),
                       ('dogma-effects.json', new_effs),

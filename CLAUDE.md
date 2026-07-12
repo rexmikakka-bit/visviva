@@ -162,6 +162,42 @@ Astarte's tank to rise to ~1768.
 
 ---
 
+## Upgrading eve.db (a new EVE patch)
+
+The regression baselines are only meaningful **relative to a specific EVE build**. The bundle records
+which one it came from in `src/data/bundle-version.json`, and the suite prints it on every run:
+
+```
+data: EVE client build 3383521 (SDE 2026-06-09) — matches validated baselines
+```
+
+We are currently on **pyfa v2.67.0 / client build 3383521**. When you move to a newer `eve.db`, the
+suite detects the mismatch and prints a loud banner.
+
+**A red suite after an eve.db upgrade is a WORKLIST, not a failure.** Some baselines will move because
+CCP rebalanced something — that is correct and expected. The failure mode to avoid is shrugging and
+updating the expected values to whatever the code now prints: that silently converts validated
+baselines into "whatever we currently compute", which is worth nothing.
+
+The process:
+
+1. **Upgrade the pyfa app to the same version as the new `eve.db`.** They must match — pyfa is the
+   reference, and comparing against a different build proves nothing.
+2. `python scripts/build-bundle.py --dry-run` — read what CCP actually changed before you write it.
+3. Regenerate, then `npm test`. Expect some red.
+4. For **each** failure: open that fit in the new pyfa and read the real number.
+   - pyfa's number changed too → CCP rebalanced. Update the baseline, and **say why in the commit
+     message** (e.g. "blaster damage nerfed 2%, Astarte 1200 → 1176 per pyfa 2.68").
+   - pyfa still gives the OLD number → **you found a real bug.** Fix the code, not the test.
+5. Watch for the generator shouting about **new effects with no modifier data**. A new expansion will
+   add some, and they are inert until someone supplies a modifier (`scripts/data-patches.json`) or
+   writes a custom handler. The same goes for new attributes, which default to `stackable=1`.
+6. Bump `VALIDATED_BUILD` in `src/regression.test.mjs` as part of the same commit.
+
+Do the upgrade as its own PR, with nothing else in it. The diff will be large and the whole point is
+that a human can see exactly which numbers moved and why.
+
+
 ## Working style
 
 - **Root-cause fixes, not patches.** If a number is wrong, find out *why* — do not special-case the

@@ -27,6 +27,39 @@ const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
 const EMPTY = { high: [], mid: [], low: [], rigs: [] };
 const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).join('/');
 
+// The EVE client build these baselines were validated against (pyfa v2.67.0 / build 3383521).
+// If the bundle is regenerated from a NEWER eve.db, some baselines will legitimately move — CCP
+// rebalances things. That is a worklist, not a code regression. See CLAUDE.md -> "Upgrading eve.db".
+const VALIDATED_BUILD = '3383521';
+
+let bundleVersion = null;
+try {
+  const { readFileSync } = await import('fs');
+  const { fileURLToPath } = await import('url');
+  const { join, dirname } = await import('path');
+  bundleVersion = JSON.parse(readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), 'data', 'bundle-version.json'), 'utf8'));
+} catch { /* pre-dates version stamping */ }
+
+if (bundleVersion && bundleVersion.client_build !== VALIDATED_BUILD) {
+  console.log('\n' + '!'.repeat(78));
+  console.log(`  DATA VERSION MISMATCH`);
+  console.log(`  bundle built from EVE client build ${bundleVersion.client_build} (SDE ${bundleVersion.sde_dump_date})`);
+  console.log(`  baselines below were validated against build ${VALIDATED_BUILD}`);
+  console.log('');
+  console.log('  Failures below may be CCP REBALANCING, not code regressions. Do NOT simply update');
+  console.log('  the expected values to whatever the code now prints — that turns validated baselines');
+  console.log('  into "whatever we currently compute", which is worthless.');
+  console.log('');
+  console.log('  For each failure: open the fit in a pyfa of the SAME build, read the real number,');
+  console.log('  and update the baseline WITH a justification in the commit message. If pyfa still');
+  console.log('  agrees with the old value, you have found a real bug.');
+  console.log('  Then bump VALIDATED_BUILD in this file.');
+  console.log('!'.repeat(78));
+} else if (bundleVersion) {
+  console.log(`\ndata: EVE client build ${bundleVersion.client_build} (SDE ${bundleVersion.sde_dump_date}) — matches validated baselines`);
+}
+
 let passed = 0;
 const failures = [];
 
