@@ -1,0 +1,44 @@
+# ── Dependencies / build output ──────────────────────────────────────────────
+node_modules
+dist
+dist-ssr
+*.local
+
+# ── Large local-only data (NEVER commit these) ───────────────────────────────
+# GitHub hard-rejects files over 100 MB. sqlite-latest.sqlite is ~553 MB.
+# It's the raw EVE static data dump used by scripts/update-from-evedb.py to
+# regenerate the dogma bundles. Each dev downloads it themselves; it is not
+# a source file.
+sqlite-latest.sqlite
+*.sqlite
+*.db
+
+# The pyfa checkout (icons + eve.db). App.jsx globs icons from here, but
+# eveIcon() falls back to CCP's image server when the glob is empty, so the
+# app works fine without it. Keeping it out of the repo saves a huge checkout.
+Pyfa-master/
+pyfa-master/
+*.zip
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ── Editors / OS ─────────────────────────────────────────────────────────────
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ── Misc ─────────────────────────────────────────────────────────────────────
+node
