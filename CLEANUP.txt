@@ -1,0 +1,32 @@
+DEAD WEIGHT TO DELETE FROM THE REPO
+===================================
+Verified: removing all of these, the full pipeline still passes
+(lint + import check + vite build + all 25 regression tests).
+Saves ~6 MB.
+
+These 10 JSON files are SUPERSEDED — their contents are already baked into
+src/data-bundle.js (which exports moduleVariations, shipTraits, shipsByClass,
+slotIcons, raceIcons, navIcons, implantData). Nothing imports them:
+
+    git rm src/data/module-variations.json     (5.1 MB)
+    git rm src/data/ship-traits.json           (404 KB)
+    git rm src/data/implants.json              (428 KB)
+    git rm src/data/drone-types.json           (264 KB)
+    git rm src/data/implant-processed.json     (112 KB)
+    git rm src/data/pyfa-attr-defaults.json    (80 KB)
+    git rm src/data/groups.json                (80 KB)
+    git rm src/data/ships-by-class.json        (20 KB)
+    git rm src/data/nav-icons.json             (8 KB)
+    git rm src/data/race-icons.json            (8 KB)
+    git rm src/data/slot-icons.json            (4 KB)
+
+Stray / superseded files:
+
+    git rm src/test.mjs      (old Vargur harness, superseded by src/regression.test.mjs)
+    git rm python            (0-byte stray file)
+
+DO NOT DELETE (these look unused but are not):
+    src/data/pyfa-types.json   (4.4 MB) -- imported by src/calc.js
+    src/data-bundle.js         (5.6 MB) -- the lazy-loaded bundle everything above was folded into
+
+Run `npm run verify` afterwards to confirm.
