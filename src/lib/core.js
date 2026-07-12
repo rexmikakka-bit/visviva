@@ -57,7 +57,13 @@ let moduleVariations = {}, shipTraits = {}, implantData = {};
 let shipsByClass = {}, slotIcons = {}, raceIcons = {}, navIcons = {};
 let _bundleReady = false;
 const _bundleListeners = [];
-import(/* @vite-ignore */ '../data-bundle.js').then(m => {
+// NOTE: do NOT add /* @vite-ignore */ here. It used to be there, and it meant Vite left the path
+// untouched in the production build — so the built app tried to fetch `dist/data-bundle.js`, which
+// does not exist. The import failed silently and shipsByClass / moduleVariations / shipTraits /
+// implantData / the icon maps were ALL empty in every production build (dev was fine, which is why
+// nobody noticed). Letting Vite resolve it means the bundle is code-split into dist/assets/ and
+// actually loads — and, as a bonus, its 5.6 MB leaves the main chunk.
+import('../data-bundle.js').then(m => {
   moduleVariations = m.moduleVariations ?? {};
   shipTraits       = m.shipTraits       ?? {};
   implantData      = m.implantData      ?? {};

@@ -13,6 +13,8 @@ export default defineConfig({
   },
   server: {
     host: true,
+    port: 5173,
+    strictPort: true,
     allowedHosts: [
       'ambitious-hermit-lubricate.ngrok-free.app',
       'ambitious-hermit-lubricate.ngrok-free.dev',

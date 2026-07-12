@@ -9,8 +9,9 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node src/regression.test.mjs",
-    "verify": "node scripts/check-code.mjs && node scripts/check-imports.mjs && vite build && node src/regression.test.mjs",
-    "check": "node scripts/check-code.mjs && node scripts/check-imports.mjs"
+    "verify": "node scripts/check-code.mjs && node scripts/check-imports.mjs && vite build && node scripts/check-offline.mjs && node src/regression.test.mjs",
+    "check": "node scripts/check-code.mjs && node scripts/check-imports.mjs",
+    "check-offline": "node scripts/check-offline.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.10.0",

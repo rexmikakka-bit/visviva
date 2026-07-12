@@ -48,3 +48,8 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      # The shipped app runs offline from a webview. Fail if the build picks up a new remote
+      # dependency (CDN font, analytics, image host) that would break with no network.
+      - name: Check for network dependencies
+        run: node scripts/check-offline.mjs
