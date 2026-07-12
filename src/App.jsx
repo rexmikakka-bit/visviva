@@ -1486,7 +1486,10 @@ function AppHeader({onHamburger,activeFit,onShipInfo}){
 // Local pyfa booster-bottle icon (the equippable-booster emblem the EVE image server won't
 // serve — it returns the crafting-material vial for booster typeIDs). new URL(..., import.meta.url)
 // lets Vite fingerprint + bundle the asset for both dev and the built/Capacitor app.
-const BOOSTER_ICON=new URL("../pyfa-master/imgs/icons/3211@2x.png",import.meta.url).href;
+// The pyfa checkout is optional (and gitignored), so resolve this through eveIcon(), which
+// falls back to CCP's image server when the local icon set is absent. Hard-coding the file
+// path meant a fresh clone showed a broken image here.
+const BOOSTER_ICON=eveIcon(3211,32);
 
 function BottomNav({active,onChange}){
   const tabs=[

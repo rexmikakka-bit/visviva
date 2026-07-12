@@ -16,15 +16,29 @@ npm run dev
 
 That's the whole setup. `npm test` needs no build step and no local data files.
 
-### Optional: local ship/module icons
+### Optional extras (the app works fine without these)
 
-The app falls back to CCP's image server for icons, so it works fine without this. For local icons,
-put a pyfa checkout at `pyfa-master/` in the repo root. It's gitignored — never commit it.
+Everything below is **gitignored on purpose** — it's large, and it's all publicly downloadable, so
+nobody needs to send you files.
 
-### Optional: regenerating the dogma bundles
+**1. Local icons (optional, cosmetic + faster).**
+Without this the app pulls icons from CCP's image server, which works but hits the network. To use
+local icons, download the pyfa **source** as a ZIP from <https://github.com/pyfa-org/Pyfa> (green
+"Code" button → "Download ZIP"), extract it, and rename the folder to `pyfa-master/` in the repo
+root, so the path `pyfa-master/imgs/icons/` exists.
 
-Only needed when moving to a new EVE build. Requires pyfa's `eve.db` (gitignored). See
-**CLAUDE.md → "Upgrading eve.db"** before doing this — it is not a routine action.
+**2. `eve.db` (only if you regenerate the dogma bundles).**
+Not needed to run or develop the app. It ships inside pyfa's **Windows release** ZIP (a different
+download from the source above), at `app/eve.db`. Grab **v2.67.0** — the version our regression
+baselines were validated against — from <https://github.com/pyfa-org/Pyfa/releases>, and put
+`eve.db` in the repo root.
+
+You do **not** need `sqlite-latest.sqlite` (the raw CCP dump). Nothing in this project reads it.
+
+### Regenerating the dogma bundles
+
+Only when moving to a new EVE build. Requires `eve.db` above. Read
+**CLAUDE.md → "Upgrading eve.db"** first — it is not a routine action.
 
 ```bash
 python scripts/build-bundle.py --dry-run   # report what CCP changed
