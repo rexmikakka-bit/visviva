@@ -1995,6 +1995,54 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // to droneControlDistance by the engine. Drones deal full DPS within it and none beyond it.
   const droneControlRange = s.get('droneControlDistance') ?? 20000;
 
+  // Per-drone EFFECTIVE stats for the Drones tab. These MUST come from the engine, not from the raw
+  // type data: the UI used to snapshot base values when the drone was added, so skills, implants
+  // (e.g. Overmind 'Goliath' Drone Tuner), boosters and ship bonuses were all ignored — a Federation
+  // Navy Hobgoblin showed 0 range, 2.396 tracking and 3360 m/s instead of 2.69km+2.05km, 3.93 and 3780.
+  const droneInfo = [];
+  for (const { item, qty, raw, active } of droneItems) {
+    if (item) {
+      const layer = (hp, res) => (hp > 0 && res) ? hp / ((res.em + res.th + res.kin + res.exp) / 4) : 0;
+      const rz = (p) => ({
+        em:  item.get(`${p}EmDamageResonance`)        ?? 1,
+        th:  item.get(`${p}ThermalDamageResonance`)   ?? 1,
+        kin: item.get(`${p}KineticDamageResonance`)   ?? 1,
+        exp: item.get(`${p}ExplosiveDamageResonance`) ?? 1,
+      });
+      const hullRz = {
+        em:  item.get('emDamageResonance')        ?? 1,
+        th:  item.get('thermalDamageResonance')   ?? 1,
+        kin: item.get('kineticDamageResonance')   ?? 1,
+        exp: item.get('explosiveDamageResonance') ?? 1,
+      };
+      const ehp = layer(item.get('shieldCapacity') ?? 0, rz('shield'))
+                + layer(item.get('armorHP') ?? 0,        rz('armor'))
+                + layer(item.get('hp') ?? 0,             hullRz);
+      const dm = item.get('damageMultiplier') ?? 1;
+      const cy = (item.get('speed') ?? 0) / 1000;
+      const vol = ((item.get('emDamage') ?? 0) + (item.get('thermalDamage') ?? 0)
+                 + (item.get('kineticDamage') ?? 0) + (item.get('explosiveDamage') ?? 0)) * dm;
+      droneInfo.push({
+        name: raw?.name ?? item.name, qty, active: active !== false,
+        optimal:  item.get('maxRange') ?? 0,
+        falloff:  item.get('falloff') ?? 0,
+        tracking: item.get('trackingSpeed') ?? 0,
+        // pyfa's drone list shows tracking NORMALISED to a 40,000 m reference signature, not the raw
+        // attribute (gui/builtinViewColumns/misc.py: trackingSpeed * 40000 / optimalSigRadius). The
+        // raw attr for a Federation Navy Hobgoblin is 2.46, which is what pyfa's attribute panel
+        // shows — but its drone list shows 3.93k. Both are correct; they are different numbers.
+        trackingNorm: (() => {
+          const t = item.get('trackingSpeed') ?? 0;
+          const sig = item.get('optimalSigRadius') ?? 0;
+          return (t > 0 && sig > 0) ? t * 40000 / sig : 0;
+        })(),
+        velocity: item.get('maxVelocity') ?? 0,
+        ehp,
+        dps: cy > 0 ? (vol / cy) * qty : 0,
+      });
+    }
+  }
+
   for (const { item, qty, raw, active } of droneItems) {
     if (!active) continue; // bay drones (not launched) deal 0 DPS
     if (item) {
@@ -2458,7 +2506,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
     // Weapons
     weaponDps, weaponVolley,
-    droneDps, droneVolley,
+    droneDps, droneVolley, droneInfo,
     fighterDps, fighterVolley, fighterDetails,
     totalDps: {
       em: weaponDps.em + droneDps.em + fighterDps.em, th: weaponDps.th + droneDps.th + fighterDps.th,

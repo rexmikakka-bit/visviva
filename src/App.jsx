@@ -647,7 +647,7 @@ function BoosterSideEffects({booster, onUpdate}) {
   );
 }
 
-function DronesScreen({drones,setDrones,fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
+function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
   const[showDronePicker,setShowDronePicker]=useState(false);
   const[showFighterPicker,setShowFighterPicker]=useState(false);
   const _droneTypeRec=(d)=>{
@@ -740,18 +740,36 @@ function DronesScreen({drones,setDrones,fighters,setFighters,fighterInfo=[],acti
     <div style={{flex:1,overflowY:"auto"}}>
       {!usesFighters&&(<>
       <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"5px 12px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-        {["","Name","Range","Track","DPS","HP"].map((h,i)=><span key={i} style={{fontSize:9,fontWeight:700,color:C.textMute,textAlign:i>1?"center":"left"}}>{h}</span>)}
+        {["","Name","Range","Track","Speed","EHP"].map((h,i)=><span key={i} style={{fontSize:9,fontWeight:700,color:C.textMute,textAlign:i>1?"center":"left"}}>{h}</span>)}
       </div>
       {drones.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No drones - tap + Add</div>}
       <div style={{padding:"8px 10px"}}>
         {drones.map(drone=>(<div key={drone.id} style={{background:C.surface,border:`1px solid ${drone.active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,overflow:"hidden"}}>
           <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"10px 12px",alignItems:"center"}}>
-            <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d))} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:drone.active?C.accent:""}}>{drone.active?"v":""}</button>
+            <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d))} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:drone.active?C.accent:""}}>{drone.active?"\u2713":""}</button>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {drone.typeID&&<img className="eve-icon" src={eveIcon(drone.typeID,32)} width={24} height={24} alt="" onError={e=>{e.target.style.display="none";}}/>}
-              <div><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
+              <div><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
             </div>
-            {[(()=>{const _dta=typeof DRONE_TYPES!=='undefined'&&drone.typeID?DRONE_TYPES?.[String(drone.typeID)]?.a:null;const r=_dta?.maxRange??drone.range??0;const f=_dta?.falloff??drone.falloff??0;return r>0?`${(r/1000).toFixed(1)}${f>0?`+${(f/1000).toFixed(1)}`:''} km`:"-";})(),drone.tracking>0?drone.tracking.toFixed(3):"-",(()=>{const _dta=typeof DRONE_TYPES!=='undefined'&&drone.typeID?DRONE_TYPES?.[String(drone.typeID)]?.a:null;const v=_dta?.maxVelocity??drone.velocity??0;return v>0?`${Math.round(v)} m/s`:"-";})(),drone.hp>0?drone.hp.toLocaleString():"-"].map((v,i)=><span key={i} style={{fontSize:10,color:C.textMid,textAlign:"center"}}>{v}</span>)}
+            {(()=>{
+              // Effective stats from the engine (skills, implants, boosters, ship bonuses all applied).
+              // These used to be read from a snapshot taken when the drone was ADDED, so a Federation
+              // Navy Hobgoblin showed 0 range / base tracking / base speed regardless of the fit.
+              const info=droneInfo.find(x=>x.name===drone.name)??{};
+              const r=info.optimal??0, f=info.falloff??0, trk=info.trackingNorm??0,
+                    v=info.velocity??0, ehp=info.ehp??0;
+              // pyfa's list shows tracking normalised to a 40,000 m reference sig, formatted with a
+              // k suffix (3.93k), NOT the raw attribute (2.46). Match the list, since that's what a
+              // user is comparing against.
+              const kfmt=n=>n>=1000?`${(n/1000).toFixed(2).replace(/0$/,"")}k`:n.toFixed(2);
+              const cells=[
+                r>0?`${(r/1000).toFixed(2)}${f>0?`+${(f/1000).toFixed(2)}`:""} km`:"-",
+                trk>0?kfmt(trk):"-",
+                v>0?`${Math.round(v)} m/s`:"-",
+                ehp>0?Math.round(ehp).toLocaleString():"-",
+              ];
+              return cells.map((val,i)=><span key={i} style={{fontSize:10,color:C.textMid,textAlign:"center"}}>{val}</span>);
+            })()}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px 8px",borderTop:`1px solid ${C.border}`}}>
             <span style={{fontSize:10,color:C.textMute}}>Qty:</span>
@@ -1593,6 +1611,17 @@ export default function App(){
   },[projFits,fitsDB,skills]);
   const projectedReps=projectedEffects.reps;
   // Real active-drone DPS (skills + hull bonuses), so the Drones window matches the Stats window.
+  // Per-drone EFFECTIVE stats (range/tracking/speed/EHP) for the Drones tab. Computed from the fit,
+  // not snapshotted when the drone was added, so skills/implants/boosters/ship bonuses are included.
+  const droneInfo=useMemo(()=>{
+    const shipName=activeFit?.ship;
+    if(!shipName) return [];
+    try{
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects});
+      return cs?.droneInfo ?? [];
+    }catch{ return []; }
+  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+
   const activeDroneDps=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
@@ -1689,7 +1718,7 @@ export default function App(){
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
-        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
+        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants}/>}
         {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits}/>}
       </div>
