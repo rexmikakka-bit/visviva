@@ -395,6 +395,15 @@ export class Fit {
           for (const t of SENSOR_STRENGTH_TARGETS) { const aid = AID[t]; if (aid != null) m.attrs.applyMod(aid, 6, val, true); }
           continue;
         }
+        // Crystals/ammo modify their PARENT MODULE via effects with domain "otherID" (charge -> module).
+        // The engine never iterates charges as effect sources, so those effects are dead — including
+        // Effect804 (capNeedBonus -> capacitorNeed). Conflagration XL costs +25% cap: without this a
+        // Revelation Navy Issue drained 165.9 GJ/s instead of pyfa's 178.
+        if (name === 'capNeedBonus') {
+          const aid = AID['capacitorNeed'];
+          if (aid != null) m.attrs.applyMod(aid, 6, val, true);
+          continue;
+        }
         const mm = name.match(/^(.+Bonus)Bonus$/);
         if (!mm) continue;
         const targetAid = AID[mm[1]];
@@ -560,13 +569,13 @@ export class Fit {
         if (domain === 'shipID') {
           const skill = skillID != null ? (TYPES[skillID]?.n ?? '') : '';
           for (const m of this._modules) {
-            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, direct);
+            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
           }
           // Loaded charges (missile ammo) require missile skills; ship/subsystem damage bonuses
           // (e.g. Legion Offensive → emDamage on Light Missiles) filter on those skills and must
           // reach the charge's damage attributes.
           for (const m of this._modules) {
-            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, direct);
+            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
           }
         }
       } else if (func === 'OwnerRequiredSkillModifier') {
@@ -1013,6 +1022,32 @@ export class Fit {
             const raw = mi.getBase('shieldHpBonus') ?? 0; if (!raw) continue;
             const ex = extraPct(raw); if (!ex) continue;
             ship.attrs.applyMod(AID.shieldCapacity ?? 'shieldCapacity', 6, ex, true);
+          }
+        }
+      }
+    }
+    // ── 5f. Amulet implant set (implantSetAmulet) ────────────────────────────────
+    // Identical shape to Nirvana. Each member carries armorHpBonus (Alpha..Epsilon = 1..5, Omega has
+    // none) which Effect271 applies to armorHP at BASE value. The set multiplier (Effect1579
+    // "setBonusSansha", implantSetAmulet PreMul on armorHpBonus, domain=charID) is dispatcher-skipped,
+    // so without this the whole set bonus was missing: a Revelation Navy Issue came out at 4.49M EHP
+    // instead of pyfa's 5.07M.
+    //
+    // pyfa (eos/effects.py Effect1579) multiplies EVERY Cybernetics implant's armorHpBonus by the set
+    // attribute, so the FULL product including Omega applies (1.1^5 x 1.25 = 2.0131) — same as Nirvana.
+    {
+      const members = imp.filter(i => 'implantSetAmulet' in (i._td?.a ?? {}));
+      if (members.length >= 2) {
+        const setProduct = members.reduce((p, i) => p * (i.getBase('implantSetAmulet') ?? 1), 1);
+        if (setProduct > 1) {
+          const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
+          // Only members that actually CARRY armorHpBonus — testing the value alone is not enough if
+          // the attribute has a non-zero default (the trap that produced a phantom +1% for Nirvana).
+          const hpMembers = members.filter(i => 'armorHpBonus' in (i._td?.a ?? {}) && (i.getBase('armorHpBonus') ?? 0) > 0);
+          for (const mi of hpMembers) {
+            const raw = mi.getBase('armorHpBonus') ?? 0; if (!raw) continue;
+            const ex = extraPct(raw); if (!ex) continue;
+            ship.attrs.applyMod(AID.armorHP ?? 'armorHP', 6, ex, true);
           }
         }
       }

@@ -374,7 +374,47 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
+// 8. REVELATION NAVY ISSUE — caught three bugs: the Amulet implant set was missing entirely,
+//    crystal capNeedBonus (charge -> module, domain "otherID") was never applied, and the
+//    LocationRequiredSkillModifier branch ignored the stacking exemptions (so the Siege Module's
+//    damage bonus penalised the Heat Sink).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nREVELATION NAVY ISSUE (Amulet set, Conflagration crystals, siege)');
+  const fit = {
+    high: [M('Dual Giga Pulse Laser II','active','Conflagration XL'),
+           M('Capital Gremlin Compact Energy Neutralizer','active'),
+           M('Dual Giga Pulse Laser II','active','Conflagration XL'),
+           M('Siege Module II','active'),
+           M('Capital Gremlin Compact Energy Neutralizer','active'),
+           M('Dual Giga Pulse Laser II','active','Conflagration XL')],
+    mid: [M('Capital F-RX Compact Capacitor Booster','active','Navy Cap Booster 3200'),
+          M('Heavy Capacitor Booster II','active','Navy Cap Booster 3200'),
+          M('Tracking Computer II','active','Optimal Range Script'),
+          M('Tracking Computer II','active','Optimal Range Script')],
+    low: [M('25000mm Steel Plates II','online'), M('25000mm Steel Plates II','online'),
+          M('25000mm Rolled Tungsten Compact Plates','online'), M('Dark Blood Heat Sink','online'),
+          M('Corpum B-Type Multispectrum Energized Membrane','online'),
+          M('Corpus X-Type Thermal Armor Hardener','active'),
+          M('Corpus X-Type EM Armor Hardener','active'), M('Damage Control II','active')],
+    rigs: [M('Capital Trimark Armor Pump I','online'), M('Capital Trimark Armor Pump I','online'),
+           M('Capital Trimark Armor Pump I','online')],
+  };
+  const implants = ['Mid-grade Amulet Alpha','Mid-grade Amulet Beta','Mid-grade Amulet Gamma',
+    'Mid-grade Amulet Delta','Mid-grade Amulet Epsilon','Mid-grade Amulet Omega',
+    "Eifyr and Co. 'Gunslinger' Motion Prediction MR-703",
+    "Inherent Implants 'Squire' Capacitor Management EM-803",
+    "Eifyr and Co. 'Gunslinger' Surgical Strike SS-903"].map(name=>({name}));
+  const cs = calcFitStats({ typeID: tid('Revelation Navy Issue'), name: 'Revelation Navy Issue' },
+                          fit, [], null, { implants });
+  check('revnavy', 'total EHP (Amulet set)', cs.totalEHP, 5066076, 0.001);
+  check('revnavy', 'weapon DPS', cs.weaponDps.total, 10960, 0.002);
+  check('revnavy', 'volley', cs.weaponVolley.total, 84280, 0.002);
+  check('revnavy', 'cap drain (crystal capNeed)', cs.capDrainPS, 178, 0.01);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
 //    ONLY in localStorage. A merge bug silently eats someone's work, so it is guarded here.
 // ─────────────────────────────────────────────────────────────────────────────
 {
@@ -402,7 +442,7 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 9. ALL HULLS COMPUTE — every ship must produce stats without throwing.
+// 10. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nALL HULLS');

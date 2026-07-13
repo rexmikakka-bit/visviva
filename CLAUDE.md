@@ -129,6 +129,27 @@ With the phantom types pruned, the full product gives the Astarte a repair amoun
 **The lesson worth keeping:** a rule that only works with a magic exception is usually a symptom.
 Two errors were cancelling, and the "asymmetry" was the shape of the cancellation.
 
+### Implant SETS — three exist, all use the FULL product (incl. Omega)
+
+`Asklepian` (armor rep), `Nirvana` (shield HP) and `Amulet` (armor HP) all follow the same shape: each
+member carries a bonus attr, and a set-multiplier effect (PreMul on that attr, domain=charID) which the
+dispatcher SKIPS. Each needs a custom handler in `dogma-engine.js` applying the FULL set product
+including Omega (1.1^5 x 1.25 = 2.0131).
+
+If a fit's tank/EHP is low by roughly 10-13%, suspect a set with no handler. Amulet was missing
+entirely — a Revelation Navy Issue came out at 4.49M EHP instead of pyfa's 5.07M.
+
+When adding one, filter members on attribute PRESENCE (`'attr' in type.a`), not on a truthy value:
+attributes have defaults, and Omega (which carries no bonus attr) will otherwise read back the default
+and inject a phantom bonus.
+
+### ⚠️ Charges modify their parent MODULE (domain "otherID")
+
+Crystals/ammo carry effects with domain `otherID` — from a charge, "other" is its parent module. The
+engine does NOT iterate charges as effect sources, so those effects are dead. Conflagration XL's
+`capNeedBonus` (+25% cap, Effect804) is handled explicitly in the charge pass; if another
+charge-modifies-module effect turns up, it needs the same treatment.
+
 ### pyfa's source is the reference — read it instead of guessing
 
 pyfa is open source and hand-implements every effect CCP ships with an EMPTY modifier list, keyed by
