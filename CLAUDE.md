@@ -129,6 +129,31 @@ With the phantom types pruned, the full product gives the Astarte a repair amoun
 **The lesson worth keeping:** a rule that only works with a magic exception is usually a symptom.
 Two errors were cancelling, and the "asymmetry" was the shape of the cancellation.
 
+### pyfa's source is the reference — read it instead of guessing
+
+pyfa is open source and hand-implements every effect CCP ships with an EMPTY modifier list, keyed by
+ID (`class Effect12887` in `eos/effects.py`). Those empty effects are silent no-ops in our engine
+until a fit comes out wrong — that is how we lost sessions to the Angel Cartel reload bonus, the
+command-carrier burst bonuses, and the hardpoint-booster missile damage.
+
+```bash
+git clone --depth 1 https://github.com/pyfa-org/Pyfa.git pyfa-master   # source, not the release build
+node scripts/pyfa-effect.mjs 12887     # how pyfa implements one effect
+node scripts/pyfa-effect.mjs --check   # verify our data-patches against pyfa
+node scripts/pyfa-effect.mjs --gaps    # empty effects pyfa implements (a triage list)
+```
+
+**Do not treat `--gaps` as a bug list.** ~120 effects are empty in our bundle and implemented by pyfa,
+but most are activation markers (`useMissiles`, `armorRepair`, `shieldBoosting`, MWD/AB) that we handle
+in `calc.js` by group/attribute rather than by effect ID. Check how we already handle that module class
+before "fixing" anything.
+
+pyfa's source also settles DISPLAY questions, not just mechanics. Its drone list shows tracking
+normalised to a 40,000 m reference signature (`trackingSpeed * 40000 / optimalSigRadius`, in
+`gui/builtinViewColumns/misc.py`) — which is why its attribute panel says 2.46 and its drone list says
+3.93k for the same drone. Both are correct; they are different quantities. We would never have worked
+that out from screenshots.
+
 ### ⚠️ Phantom types — dead entries shadowing live ones
 
 `build-bundle.py` prunes types that no longer exist in eve.db. It used to keep them ("harmless"), but
