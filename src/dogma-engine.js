@@ -77,6 +77,9 @@ function stackingFactor(rank) {
   return Math.exp(-(rank * rank) / 7.1289);
 }
 
+// Mode modules whose bonuses are ROLE bonuses, exempt from the stacking penalty.
+const MODE_MODULE_GROUPS = new Set(['Siege Module', 'Triage Module', 'Bastion Module']);
+
 function applyStacking(base, mods, aid) {
   // mods: array of raw multipliers (already converted to factors, e.g. 1.05 for +5%)
   if (!mods.length) return base;
@@ -176,9 +179,19 @@ class AttrMap {
     if (aid in this._force) return this._force[aid];
     const pre  = aid in this._pre ? this._pre[aid] : null;
     const base = pre ?? ((this._base[aid] ?? attrDefault(aid)) + (this._add[aid] ?? 0));
-    const stacked0 = applyStacking(base,     this._post0[aid] ?? [], aid);  // op=0 PreMul pool
-    const stacked4 = applyStacking(stacked0, this._post4[aid] ?? [], aid);  // op=4 PostMul pool
-    const stacked  = applyStacking(stacked4, this._post[aid]  ?? [], aid);  // op=6 PostPercent pool
+    // Stacking groups. EVE penalises PostMul (op4) and PostPercent (op6) TOGETHER — they compete for
+    // the same slots on an attribute. We used to penalise each pool separately, so each pool's
+    // strongest modifier got factor 1.0 and nothing was ever penalised against a modifier of a
+    // different operation. That understated the penalty: a Salvation with an active Integrated Sensor
+    // Array (op4 x12 on maxTargetRange) plus an Information Command Burst (op6 +42%) gave the burst
+    // full strength -> 6718 km, where pyfa says 6457 km because the burst sits in the SECOND slot
+    // (x0.8691).
+    //
+    // PreMul (op0) keeps its OWN group: folding it in as well regresses the Astarte's armor resists,
+    // the Bane's lance DPS and the Minokawa's EHP, so those modifiers do not compete in this group.
+    const stacked0 = applyStacking(base, this._post0[aid] ?? [], aid);
+    const penalised = [...(this._post4[aid] ?? []), ...(this._post[aid] ?? [])];
+    const stacked = applyStacking(stacked0, penalised, aid);
     return stacked * (this._mul[aid] ?? 1);
   }
 
@@ -472,7 +485,15 @@ export class Fit {
       // stackable=0 source (e.g. armorEmDamageResonance): stacking-penalised → _post0
       // stackable=1 source (e.g. hullEmDamageResonance):  non-penalised    → _base
       // This matches Pyfa: armor/shield resists stack, hull resists don't.
-      const effectiveDirect = (op === 0 && !direct && isStackable(srcAttr)) ? true : direct;
+      let effectiveDirect = (op === 0 && !direct && isStackable(srcAttr)) ? true : direct;
+
+      // Mode modules (Siege / Triage / Bastion) apply ROLE bonuses: EVE does not stacking-penalise them
+      // against ordinary modules. This matters now that op4 and op6 share one stacking group — without
+      // the exemption a Bane's Siege rate-of-fire bonus gets penalised against its Ballistic Control
+      // Systems and DPS drops from 13301 to 12695 (pyfa says 13301).
+      // The Capital Sensor Array is deliberately NOT exempt: its x12 lock-range multiplier IS penalised
+      // (first slot, command burst second) — which is exactly what produces pyfa's 6457 km Salvation.
+      if (!effectiveDirect && MODE_MODULE_GROUPS.has(src.groupName)) effectiveDirect = true;
 
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {

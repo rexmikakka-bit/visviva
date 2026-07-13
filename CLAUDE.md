@@ -90,6 +90,28 @@ were trimmed. They do nothing until someone populates the modifier or writes a c
    came through as "T2". Meta group is derived from CCP's `metaGroupID` (shipped as `mg` on every type
    in `dogma-types.json`); see `metaOf()` in `App.jsx`. Never trust the bundle's `meta` field.
 
+### Stacking groups (this bit is subtle)
+
+Two rules, both established against pyfa and both load-bearing:
+
+1. **PostMul (op4) and PostPercent (op6) share ONE stacking group per attribute.** They compete for
+   the same slots. PreMul (op0) keeps its own group — folding it in as well regresses the Astarte's
+   armor resists, the Bane's DPS and the Minokawa's EHP.
+
+   Evidence: a Salvation with an active Integrated Sensor Array (op4 ×12 on `maxTargetRange`) plus an
+   Information Command Burst (op6 +42%) must give **6457 km**. The multiplier takes slot 1 and the
+   burst slot 2 (×0.8691). Penalising each operation in its own pool gave the burst full strength and
+   produced 6718 km.
+
+2. **Mode modules (Siege / Triage / Bastion) are ROLE bonuses and are NOT stacking-penalised**
+   (`MODE_MODULE_GROUPS` in `dogma-engine.js`). Without this exemption, rule 1 makes a Bane's Siege
+   rate-of-fire bonus compete with its Ballistic Control Systems and DPS falls from 13301 to 12695.
+
+   The Capital Sensor Array is deliberately **not** exempt — its multiplier *is* penalised, which is
+   precisely what produces the 6457 km above.
+
+Both rules are covered by the regression suite. Changing either will break real fits.
+
 ### ⚠️ The implant-set asymmetry — do NOT "fix" this
 
 Asklepian and Nirvana have **byte-for-byte identical dogma structure** (per-member bonus attribute +

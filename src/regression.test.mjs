@@ -305,6 +305,13 @@ function check(group, label, actual, expected, tol = 0.005) {
   const withISA = { ...fit, high: [...fit.high, M('Integrated Sensor Array', 'online')] };
   const isa = calcFitStats({ typeID: tid('Salvation'), name: 'Salvation' }, withISA, [], null, {});
   check('salvation', 'lock range, ISA online', isa.targetRange, 560, 0.005);
+
+  // With the ISA ACTIVE its ×12 multiplier (op4) and the Information Command Burst (op6) land in the
+  // SAME stacking group: the multiplier takes slot 1, the burst slot 2 (×0.8691). Penalising each
+  // operation in its own pool gave the burst full strength and produced 6718 km.
+  const isaOn = { ...fit, high: [...fit.high, M('Integrated Sensor Array', 'active')] };
+  const act = calcFitStats({ typeID: tid('Salvation'), name: 'Salvation' }, isaOn, [], null, {});
+  check('salvation', 'lock range, ISA active', act.targetRange, 6457, 0.005);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
