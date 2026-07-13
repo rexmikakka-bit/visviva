@@ -3,14 +3,13 @@
     "Hand-applied fixes for data CCP does not ship usable. build-bundle.py re-applies these at the",
     "end of every build, so regenerating the bundles is idempotent and these fixes never get lost.",
     "",
-    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here — they",
+    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here \u2014 they",
     "come from eve.db automatically now that the allowlist is gone. This file is for:",
     "  1. effects whose modifierInfo CCP ships empty (they are applied client-side in EVE), and",
     "  2. attribute flags eve.db does not carry (notably `stackable`).",
     "",
     "Every entry must say WHY it exists and what breaks without it."
   ],
-
   "effects": {
     "12887": [
       {
@@ -22,8 +21,185 @@
         "modifyingAttributeID": 6203,
         "operation": 6
       }
+    ],
+    "12879": [
+      {
+        "_why": "skillMultiplierShipBonusCommandCarrier, on the 'Command Carriers' skill (93983). CCP ships it with an empty modifier list. It scales the command-carrier hull bonus attrs (6192-6196) by skill level, exactly as effect 6583 does for the classic carrier bonuses. Without it those bonuses applied at 1x instead of 5x: a Salvation came out at 7.70M EHP vs pyfa's 8.06M, with armor resists ~0.3pp low.",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6192,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      },
+      {
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6193,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      },
+      {
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6194,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      },
+      {
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6195,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      },
+      {
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6196,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      }
+    ],
+    "12876": [
+      {
+        "_why": "shipBonusCommandCarrierArmorCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Armor Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Armored Command skill so it only touches Armor bursts.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2469,
+        "modifyingAttributeID": 6192,
+        "operation": 6,
+        "skillTypeID": 20494
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2471,
+        "modifyingAttributeID": 6192,
+        "operation": 6,
+        "skillTypeID": 20494
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2473,
+        "modifyingAttributeID": 6192,
+        "operation": 6,
+        "skillTypeID": 20494
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2537,
+        "modifyingAttributeID": 6192,
+        "operation": 6,
+        "skillTypeID": 20494
+      }
+    ],
+    "12875": [
+      {
+        "_why": "shipBonusCommandCarrierInformationCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Information Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Information Command skill so it only touches Information bursts.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2469,
+        "modifyingAttributeID": 6193,
+        "operation": 6,
+        "skillTypeID": 20495
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2471,
+        "modifyingAttributeID": 6193,
+        "operation": 6,
+        "skillTypeID": 20495
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2473,
+        "modifyingAttributeID": 6193,
+        "operation": 6,
+        "skillTypeID": 20495
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2537,
+        "modifyingAttributeID": 6193,
+        "operation": 6,
+        "skillTypeID": 20495
+      }
+    ],
+    "12877": [
+      {
+        "_why": "shipBonusCommandCarrierShieldCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Shield Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Shield Command skill so it only touches Shield bursts.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2469,
+        "modifyingAttributeID": 6195,
+        "operation": 6,
+        "skillTypeID": 3350
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2471,
+        "modifyingAttributeID": 6195,
+        "operation": 6,
+        "skillTypeID": 3350
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2473,
+        "modifyingAttributeID": 6195,
+        "operation": 6,
+        "skillTypeID": 3350
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2537,
+        "modifyingAttributeID": 6195,
+        "operation": 6,
+        "skillTypeID": 3350
+      }
+    ],
+    "12878": [
+      {
+        "_why": "shipBonusCommandCarrierSkirmishCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Skirmish Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Skirmish Command skill so it only touches Skirmish bursts.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2469,
+        "modifyingAttributeID": 6194,
+        "operation": 6,
+        "skillTypeID": 3349
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2471,
+        "modifyingAttributeID": 6194,
+        "operation": 6,
+        "skillTypeID": 3349
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2473,
+        "modifyingAttributeID": 6194,
+        "operation": 6,
+        "skillTypeID": 3349
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 2537,
+        "modifyingAttributeID": 6194,
+        "operation": 6,
+        "skillTypeID": 3349
+      }
     ]
   },
-
   "attributes": {}
 }

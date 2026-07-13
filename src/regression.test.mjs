@@ -265,7 +265,50 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 6. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
+// 6. SALVATION — command carrier burst bonuses.
+//    CCP ships FIVE effects empty here: the "Command Carriers" skill multiplier (12879) that scales
+//    the hull bonus attrs by level, and the four per-discipline burst bonuses (12875-12878). Without
+//    them the +5%/level to Armor/Information Command Burst strength applied at 1x instead of 5x —
+//    7.70M EHP instead of pyfa's 8.06M. All five live in scripts/data-patches.json.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSALVATION (command carrier — burst strength bonuses)');
+  const fit = {
+    high: [
+      M('Fighter Support Unit I', 'online'), M('Fighter Support Unit I', 'online'),
+      M('Integrated Sensor Array', 'online'),
+      M('Armor Command Burst II', 'active', 'Armor Energizing Charge'),
+      M('Armor Command Burst II', 'active', 'Armor Reinforcement Charge'),
+      M('Information Command Burst II', 'active', 'Sensor Optimization Charge'),
+    ],
+    mid: [
+      M('Capital Shield Extender II', 'online'), M('Capital Shield Extender II', 'online'),
+      M('Pithum C-Type Multispectrum Shield Hardener', 'active'),
+      M('Pithum C-Type Multispectrum Shield Hardener', 'active'),
+    ],
+    low: [
+      M('25000mm Steel Plates II', 'online'), M('25000mm Steel Plates II', 'online'),
+      M('25000mm Steel Plates II', 'online'), M('25000mm Steel Plates II', 'online'),
+      M('Centii A-Type Multispectrum Coating', 'online'),
+      M('Centii A-Type Multispectrum Coating', 'online'),
+      M('Damage Control II', 'active'), M('Reactive Armor Hardener', 'active'),
+    ],
+    rigs: [M('Capital Trimark Armor Pump II', 'online'), M('Capital Trimark Armor Pump II', 'online')],
+  };
+  const cs = calcFitStats({ typeID: tid('Salvation'), name: 'Salvation' }, fit, [], null, {});
+  check('salvation', 'total EHP', cs.totalEHP, 8057016, 0.001);
+  check('salvation', 'armor resists (RAH)', resistStr(cs.resists.armor), '87.0/86.8/87.4/90.9');
+
+  // Lock range is capped by the ship's maximumRangeCap attribute (750 km by default), NOT by a
+  // hardcoded 300 km. An Integrated Sensor Array raises that cap to 1e9 — which is how a capital
+  // locks past the normal limit. The magic number used to clamp this fit to 300 km.
+  const withISA = { ...fit, high: [...fit.high, M('Integrated Sensor Array', 'online')] };
+  const isa = calcFitStats({ typeID: tid('Salvation'), name: 'Salvation' }, withISA, [], null, {});
+  check('salvation', 'lock range, ISA online', isa.targetRange, 560, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
 //    ONLY in localStorage. A merge bug silently eats someone's work, so it is guarded here.
 // ─────────────────────────────────────────────────────────────────────────────
 {
@@ -293,7 +336,7 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. ALL HULLS COMPUTE — every ship must produce stats without throwing.
+// 8. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nALL HULLS');

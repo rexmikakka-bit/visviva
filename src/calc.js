@@ -2314,7 +2314,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   const scanRes    = s.get('scanResolution');
   // EVE hard-caps targeting range at 300 km regardless of bonuses (e.g. Anhinga Primary mode ×5).
-  const targetRange = Math.min(s.get('maxTargetRange') * (anhMode?.lockRange ?? 1), 300000) / 1000; // km
+  // Targeting range is capped by the ship's OWN maximumRangeCap attribute (attr797) — NOT by a
+  // hardcoded number. This used to be `Math.min(..., 300000)`, which was wrong twice over: the
+  // default cap is 750 km, and modules can raise it. The Integrated Sensor Array carries
+  // maximumRangeCap = 1e9 and its effect applies that to the ship — precisely how CCP lets a
+  // capital lock past the normal limit. The magic 300 km clamped a Salvation with an active
+  // ISA to 300 km instead of 6457 km.
+  const rangeCap = s.get('maximumRangeCap') || 300000;
+  const targetRange = Math.min(s.get('maxTargetRange') * (anhMode?.lockRange ?? 1), rangeCap) / 1000; // km
   // A ship's max locked targets is capped by the pilot's own limit: base 2 + Target Management (V, +5)
   // + Advanced Target Management (V, +5) = 12 with all skills trained. Big hulls (carriers/supers) list
   // a higher ship value (e.g. Revenant 14) but a character can never lock more than their own cap.
