@@ -147,7 +147,19 @@ def main():
                  if t[3] == 1 and groups.get(t[2], (None, 0))[1] in CATS]
 
     # ── rebuild types ───────────────────────────────────────────────────────
-    new_types = dict(old_types)          # keep anything eve.db no longer publishes
+    # Drop types eve.db no longer has AT ALL. Keeping them used to seem harmless, but a dead type can
+    # SHADOW a live one by name: the bundle carried a phantom "Imperial Defense Booster II" (93134,
+    # deleted from the game) alongside the real one (91939), and typeIDByName resolved to the phantom —
+    # which had all four passive resists at -4 instead of the correct explosive -4 / kinetic -2. Fits
+    # using any of 35 shadowed seasonal boosters silently got the wrong item's stats.
+    all_live = {int(r[0]) for r in db.execute('SELECT typeID FROM invtypes')}
+    dead = [k for k in old_types if int(k) not in all_live]
+    new_types = {k: v for k, v in old_types.items() if int(k) in all_live}
+    shadowed = sum(1 for k in dead
+                   if any(v.get('n') == old_types[k].get('n') and int(j) in all_live
+                          for j, v in old_types.items()))
+    if dead:
+        print(f"pruned:  {len(dead)} dead types not present in eve.db ({shadowed} were shadowing a live type by name)")
     added, value_changes, attrs_added, effect_changes = [], [], 0, []
 
     for tid in fit_types:

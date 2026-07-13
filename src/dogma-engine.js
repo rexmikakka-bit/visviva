@@ -313,6 +313,7 @@ export class Fit {
   // ── calculate() ─────────────────────────────────────────────────────────────
   // Reset all items to base, then apply every active modifier.
   calculate() {
+    this._boosterSet = new Set(this._boosters);
     // 1. Reset all attrs to base values
     const reset = (item) => { item.attrs = new AttrMap(item._td.a ?? {}); if (item._mutations) for (const [k, v] of Object.entries(item._mutations)) item.attrs.setBase(k, v); };
     reset(this.ship);
@@ -495,6 +496,13 @@ export class Fit {
       // (first slot, command burst second) — which is exactly what produces pyfa's 6457 km Salvation.
       if (!effectiveDirect && MODE_MODULE_GROUPS.has(src.groupName)) effectiveDirect = true;
 
+      // Booster (drug) bonuses are their OWN stacking group in EVE — they are not penalised against
+      // modules. We already knew this for passive resists; it applies to every booster bonus. It
+      // matters now that op4 and op6 share a pool: a State Hardpoint Booster's -12% rate-of-fire (op6)
+      // was being penalised against the Ballistic Control Systems' speedMultiplier (op4), costing a
+      // Praxis ~5% missile DPS (87.6 vs pyfa's 92.5).
+      if (!effectiveDirect && this._boosterSet && this._boosterSet.has(src)) effectiveDirect = true;
+
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {
         // domain=shipID → target is ship; domain=itemID → target is src itself
@@ -624,11 +632,28 @@ export class Fit {
         ['passiveKineticDamageResistanceBonus',   ['shieldKineticDamageResonance','armorKineticDamageResonance','kineticDamageResonance'], true],
         ['passiveExplosiveDamageResistanceBonus', ['shieldExplosiveDamageResonance','armorExplosiveDamageResonance','explosiveDamageResonance'], true],
       ];
+      // Skip any bonus the booster's OWN effect already applies — otherwise it lands twice. Which
+      // bonuses ship with an empty effect varies per booster (10 of 13 boosters with a passive resist
+      // bonus apply it by effect; 3 don't), so decide per booster from the data rather than keeping a
+      // hardcoded list. The old list was calibrated against PHANTOM booster entries whose effects were
+      // empty; with clean data every non-resist entry double-applied — that is what pushed the
+      // Astarte's scan resolution from 306 to 312.
+      const appliedByOwnEffect = (item, attrName) => {
+        const aid = AID[attrName];
+        if (aid == null) return false;
+        for (const eid of (item._td?.e ?? [])) {
+          for (const m of (EFFECTS[eid]?.m ?? [])) {
+            if (Number(m.modifyingAttributeID) === Number(aid)) return true;
+          }
+        }
+        return false;
+      };
       for (const b of bst) {
         const ba = b._td?.a ?? {};
         for (const [attr, targets, direct] of B_PCT) {
           const v = ba[attr];
           if (!v) continue;
+          if (appliedByOwnEffect(b, attr)) continue;   // the effect pass already handled it
           for (const t of targets) ship.attrs.applyMod(AID[t] ?? t, 6, v, direct);
         }
       }
@@ -949,7 +974,7 @@ export class Fit {
         // NOT amplify the local armor-repair amount in pyfa (verified vs v2.67.0), so it's excluded by
         // filtering on a nonzero armorRepairBonus.
         const repMembers = members.filter(i => (i.getBase('armorRepairBonus') ?? 0) > 0);
-        const setProduct = repMembers.reduce((p, i) => p * (i.getBase('implantSetSerpentis2') ?? 1), 1);
+        const setProduct = members.reduce((p, i) => p * (i.getBase('implantSetSerpentis2') ?? 1), 1);
         if (setProduct > 1) {
           const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
           for (const mi of repMembers) {

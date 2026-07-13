@@ -315,7 +315,66 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 7. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
+// 7. PRAXIS — deliberately awkward stress fit: mutated web, ancillary armor repairer on paste,
+//    mixed projectile turrets + HAMs + smartbomb, 10 implants, 8 boosters.
+//    It caught four real bugs: phantom shadow types, booster bonuses double-applying, an AAR that
+//    REPLACED the other repairers instead of adding to them, and a missing hardpoint-booster missile
+//    damage bonus (effect 12849 ships empty).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPRAXIS (stress fit: mutated web, AAR+paste, mixed weapons, 10 implants, 8 boosters)');
+  const W = (n, s, a, mut) => ({ typeID: tid(n), state: s, ammo: a, ...(mut ? { mutations: mut } : {}) });
+  const fit = {
+    high: [W('650mm Artillery Cannon I','active','Depleted Uranium M'),
+           W('650mm Medium Carbine Howitzer I','active','Carbonized Lead M'),
+           W('650mm Medium Gallium Cannon','active','Republic Fleet Nuclear M'),
+           W('650mm Medium Prototype Siege Cannon','active','Arch Angel Fusion M'),
+           W("Hanaruwa's Modified Heavy Assault Missile Launcher",'active','Scourge Heavy Assault Missile'),
+           W('Khanid Navy Heavy Assault Missile Launcher','active','Inferno Javelin Heavy Assault Missile'),
+           W("'Concussion' Compact Large Graviton Smartbomb",'active')],
+    mid: [W('500MN Quad LiF Restrained Microwarpdrive','active'),
+          W('100MN Monopropellant Enduring Afterburner','online'),
+          W('Tracking Disruptor II','active','Tracking Speed Disruption Script'),
+          W("'Inception' Target Painter",'active'),
+          W('True Sansha Stasis Webifier','active',null,
+            { capacitorNeed:5.0, cpu:25.0, maxRange:18000.0, speedFactor:-55.0 }),
+          W('Dark Blood Heavy Capacitor Booster','active','Navy Cap Booster 3200'),
+          W('Xarasier X-Large Ancillary Shield Booster','active','Navy Cap Booster 400')],
+    low: [W('Damage Control II','online'), W('Xarasier Reactive Armor Hardener','active'),
+          W('Xarasier Large Ancillary Armor Repairer','active','Nanite Repair Paste'),
+          W("Estamel's Modified Co-Processor",'online'),
+          W("C3-X 'Hivaa Saitsuo' Ballistic Control System",'online'),
+          W("C3-A 'Hivaa Saitsuo' Ballistic Control System",'online'),
+          W('Imperial Navy Large Armor Repairer','active')],
+    rigs: [W('Large Auxiliary Nano Pump II','online'), W('Large Auxiliary Thrusters II','online'),
+           W('Large Polycarbon Engine Housing I','online')],
+  };
+  const drones = [{ name:'Acolyte II', typeID: tid('Acolyte II'), qty:5, active:false },
+                  { name:'Federation Navy Hobgoblin', typeID: tid('Federation Navy Hobgoblin'), qty:5, active:true }];
+  const implants = ['Mid-grade Wedge Alpha','Low-grade Virtue Beta','Low-grade Talon Gamma',
+    'Low-grade Hydra Delta','Mid-grade Mimesis Epsilon',
+    "Inherent Implants 'Squire' Capacitor Systems Operation EO-604",
+    "Overmind 'Goliath' Drone Tuner T25-10S", "Inherent Implants 'Noble' Mechanic MC-806",
+    "Zainou 'Gypsy' Electronic Warfare EW-905", "Zainou 'Gnome' Weapon Upgrades WU-1006"].map(name=>({name}));
+  const boosters = ['Nugoehuvi Synth Blue Pill Booster','Strong Drop Booster','Standard Crash Booster',
+    "Agency 'Hardshell' TB9 Dose IV",'Imperial Electronics Booster III','Imperial Defense Booster II',
+    'Imperial Mobility Booster III','State Hardpoint Booster III'].map(name=>({name,active:true}));
+
+  const cs = calcFitStats({ typeID: tid('Praxis'), name: 'Praxis' }, fit, drones, null, { implants, boosters });
+  check('praxis', 'weapon DPS', cs.weaponDps.total, 185, 0.01);
+  check('praxis', 'total DPS', cs.totalDps.total, 354, 0.01);
+  check('praxis', 'volley', cs.totalVolley.total, 1735, 0.01);
+  check('praxis', 'shield resists', resistStr(cs.resists.shield), '36.6/36.6/37.8/39.1');
+  check('praxis', 'armor resists', resistStr(cs.resists.armor), '52.5/52.5/50.1/51.1');
+  check('praxis', 'hull resists', resistStr(cs.resists.hull), '59.8/59.8/60.6/61.4');
+  check('praxis', 'armor rep EHP/s (AAR+repper)', cs.armorRepEhpS, 695.3, 0.005);
+  check('praxis', 'shield rep EHP/s', cs.shieldRepEhpS, 430.8, 0.005);
+  check('praxis', 'cap delta', cs.capDelta, 47.5, 0.02);
+  check('praxis', 'speed (MWD)', cs.maxVelocityAB ?? cs.maxVelocity, 896, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. BACKUP / RESTORE — this code decides what happens to a user's saved fits, and fits exist
 //    ONLY in localStorage. A merge bug silently eats someone's work, so it is guarded here.
 // ─────────────────────────────────────────────────────────────────────────────
 {
@@ -343,7 +402,7 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 8. ALL HULLS COMPUTE — every ship must produce stats without throwing.
+// 9. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nALL HULLS');

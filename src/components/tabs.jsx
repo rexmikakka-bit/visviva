@@ -82,7 +82,24 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
       const sec=[...prev[secKey]],idx=sec.findIndex(m=>m.id===modId);
       if(idx<0)return prev;
       if(grouped&&secKey==="high"&&updated.ammo!==undefined){const origName=sec[idx].name;return{...prev,[secKey]:sec.map(m=>m.name===origName?{...m,...updated,id:m.id}:m)};}
-      sec[idx]={...sec[idx],...updated};return{...prev,[secKey]:sec};
+      sec[idx]={...sec[idx],...updated};
+
+      // EVE only lets ONE propulsion module run at a time: activating an MWD shuts off an
+      // afterburner and vice versa. Enforce it here rather than in the engine, so the fit the user
+      // sees is the fit that gets calculated.
+      if(updated.state==="active"||updated.state==="overheated"){
+        const isProp=m=>{const g=TYPES[m?.typeID]?.gn; return g==="Propulsion Module";};
+        if(isProp(sec[idx])){
+          const out={...prev,[secKey]:sec};
+          for(const k of ["high","mid","low"]){
+            const arr=(k===secKey?sec:out[k])??[];
+            out[k]=arr.map(m=>(m.id!==modId&&isProp(m)&&(m.state==="active"||m.state==="overheated"))
+              ?{...m,state:"online"}:m);
+          }
+          return out;
+        }
+      }
+      return{...prev,[secKey]:sec};
     });if(!keepOpen)setModuleMenu(null);
   };
   const removeMod=(secKey,modId)=>{

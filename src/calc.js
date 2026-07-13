@@ -1567,6 +1567,12 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
             const dmgB = bA?.damageMultiplierBonus;
             const eff = bTid ? (TYPES[bTid]?.effectIDs ?? TYPES[bTid]?.e ?? []) : [];
             if (dmgB && eff.includes(1595)) boosterDmgMult *= 1 + dmgB / 100;
+            // Seasonal "Hardpoint" boosters (State/Imperial/Republic/Federation) use a DIFFERENT attr
+            // and effect: boosterMissileDamageBonusPostPercent (6125) via effect 12849, which CCP ships
+            // with an empty modifier list. Without this a Praxis running a State Hardpoint Booster III
+            // lost its +6% missile damage (87.6 vs pyfa's 92.5 missile DPS).
+            const misB = bA?.boosterMissileDamageBonusPostPercent;
+            if (misB && eff.includes(12849)) boosterDmgMult *= 1 + misB / 100;
           }
         }
         // (f) Engine-resolved charge-damage bonuses (ship/subsystem effects that target the charge
@@ -2179,6 +2185,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   // ── 10. Tank (shield/armor rep rates) ─────────────────────────────────────
   let shieldRepPS = 0, armorRepPS = 0, hullRepPS = 0;
+  let armorRepPS_AAR = 0;   // an AAR's UNBOOSTED rep — subtracted below so it isn't counted twice
   const localRepairers = []; // {tank, repPS, capPS, cn} for sustainable tank calc
   // Remote reps (logistics): rep/s delivered to other ships + cap transmitted.
   let remoteShieldPS = 0, remoteArmorPS = 0, remoteHullPS = 0, remoteCapPS = 0;
@@ -2212,6 +2219,9 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const amount = fitItem.get('armorDamageAmount');
       const ps = amount / (dur / 1000);
       armorRepPS  += ps;
+      // An AAR's real output is its PASTE-boosted figure (from the engine stats below). Track its
+      // unboosted rep here so we can subtract it and avoid counting the module twice.
+      if (gn === 'Ancillary Armor Repairer') armorRepPS_AAR += ps;
       const cn = fitItem.get('capacitorNeed') ?? 0;
       localRepairers.push({ tank:'armor', repPS: ps, capPS: cn / (dur / 1000), cn });
 
@@ -2346,16 +2356,21 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const warpSpeed  = s.get('warpSpeedMultiplier') ?? ship.warpSpeed ?? 3;
   const lockTime   = calcLockTime(scanRes, sigRadius);
 
-  let armorRepEhpS = 0;
+  // An Ancillary Armor Repairer runs on Nanite Repair Paste (x3 rep), so its EHP/s comes from the
+  // engine stats rather than the raw armorDamageAmount. It must be ADDED to the other repairers, not
+  // substituted for them: this used to take the largest AAR and DISCARD every other repairer, so a
+  // Praxis with an AAR plus an Imperial Navy Large Armor Repairer reported 447 EHP/s, not 695.3.
   let armorRepIsAAR = false;
+  let aarEhpS = 0;
   if (slotEngineStats) {
     for (const [, stats] of slotEngineStats) {
-      if (stats.isAAR && (stats.ehpS ?? 0) > armorRepEhpS) { armorRepEhpS = stats.ehpS ?? 0; armorRepIsAAR = true; }
+      if (stats.isAAR) { aarEhpS += stats.ehpS ?? 0; armorRepIsAAR = true; }
     }
   }
+  const nonAarRepPS = Math.max(0, armorRepPS - armorRepPS_AAR);
+  let armorRepEhpS = aarEhpS + (nonAarRepPS > 0 ? layerEHP(nonAarRepPS, effectiveResists.armor) : 0);
   // Regular (non-AAR) repairers report raw armorRepPS; convert to EHP/s with armor resists so the
   // stat is resist-adjusted like the AAR path and like pyfa's "Armor Rep" EHP/s display.
-  if (!armorRepEhpS && armorRepPS > 0) armorRepEhpS = layerEHP(armorRepPS, effectiveResists.armor);
 
   // Sustained armor rep EHP/s — pyfa default (factorReload OFF): NO reload duty-cycle is applied.
   // Sustained = peak rep throttled only by capacitor availability. A cap-stable repairer shows

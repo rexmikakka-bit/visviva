@@ -112,14 +112,42 @@ Two rules, both established against pyfa and both load-bearing:
 
 Both rules are covered by the regression suite. Changing either will break real fits.
 
-### ⚠️ The implant-set asymmetry — do NOT "fix" this
+### Implant sets (RESOLVED — was a data bug, not a mechanic)
 
-Asklepian and Nirvana have **byte-for-byte identical dogma structure** (per-member bonus attribute +
-an `ImplantSet*` multiplier on all six members, applied via a PreMul effect the dispatcher skips), yet
-they empirically require **different set products** to match pyfa:
+Asklepian and Nirvana both use the **FULL set product including Omega** (`1.1^5 × 1.25 = 2.0131`).
+There is no asymmetry. Do not "restore" one.
 
-| Set | Bonus attribute | Set product | Validated against |
-| --- | --- | --- | --- |
+This looked like a genuine mechanical difference for a long time: excluding Omega from Asklepian was
+the only way to match pyfa. It turned out to be compensating for **corrupt data**. The bundle carried
+a phantom `Republic Defense Booster II` (typeID 93055, deleted from the game) shadowing the real one
+(91945), and the phantom had a bogus `armorRepairBonus: 6`. That fake +6% armor rep exactly cancelled
+the missing Omega multiplier on the Astarte, so the wrong rule produced the right number.
+
+With the phantom types pruned, the full product gives the Astarte a repair amount of **1132.35/cycle**
+(pyfa: 1132) and a tank of **1668.3 EHP/s** (pyfa: 1668.3) — exact.
+
+**The lesson worth keeping:** a rule that only works with a magic exception is usually a symptom.
+Two errors were cancelling, and the "asymmetry" was the shape of the cancellation.
+
+### ⚠️ Phantom types — dead entries shadowing live ones
+
+`build-bundle.py` prunes types that no longer exist in eve.db. It used to keep them ("harmless"), but
+**274 dead types** were in the bundle and **35 of them shadowed a live type by name** — all seasonal
+boosters. `typeIDByName` resolved to the dead entry, so fits silently used the wrong item's stats.
+
+Symptoms this caused: the Asklepian rule above, and a Praxis whose shield/armor/hull resists were all
+uniform because a phantom `Imperial Defense Booster II` had all four passive resists at −4 instead of
+the real explosive −4 / kinetic −2.
+
+### ⚠️ Booster bonuses: don't double-apply
+
+The `B_PCT` table in `dogma-engine.js` applies booster bonuses whose dogma effect ships **empty**.
+Whether an effect is empty varies per booster, so the handler now checks each booster's own effects
+and skips anything already applied by the effect pass. The old hardcoded list was calibrated against
+the phantom boosters (whose effects were empty); against clean data every non-resist entry
+double-applied, which is what pushed the Astarte's scan resolution from 306 to 312.
+
+--- | --- | --- | --- |
 | Asklepian | `armorRepairBonus` → `armorDamageAmount` | `1.1^5 = 1.6105` (Alpha–Epsilon only, **excludes Omega**) | Astarte repairer = **1132 HP/cycle** in pyfa (ours 1134.18 @ 9000 ms) |
 | Nirvana | `shieldHpBonus` → `shieldCapacity` | `1.1^5 × 1.25 = 2.0131` (**includes Omega**) | Minokawa = **3.26M EHP** in pyfa (ours 3,256,400) |
 
