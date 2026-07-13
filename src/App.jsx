@@ -18,6 +18,7 @@ import { META_BY_MG, metaOf, META_COLORS, META_ORDER } from "./lib/meta.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "./data/static-tables.js";
 import { GraphTab, GRAPH_CONFIG, generateCurve } from "./components/GraphTab.jsx";
 import { BackupPanel } from "./components/backup.jsx";
+import { SnapshotModal } from "./components/snapshot.jsx";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { CMD_SHIP_FITS, FIGHTER_CATALOG, GLOBAL_CSS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, REAL_DRONE_BROWSER, SAVED_FITS_SEED, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, getCompatibleCharges, haptic, implantData, lookupShip, navIcons, raceIcons, shipTraits, shipsByClass } from "./lib/core.js";
 import { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal } from "./components/ui.jsx";
@@ -1470,11 +1471,11 @@ function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) 
 }
 
 
-function HamburgerMenu({onClose,onOpenSettings,onImportFit,onExportFit}){
+function HamburgerMenu({onClose,onOpenSettings,onImportFit,onExportFit,onSnapshot}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
       <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Pyfa Mobile</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
-      {[{icon:"&#128229;",label:"Import Fit",sub:"EFT from clipboard",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"Copy EFT to clipboard",action:"export"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImportFit();onClose();}else if(item.action==="export"){if(onExportFit)onExportFit();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:"&#128229;",label:"Import Fit",sub:"EFT from clipboard",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"Copy EFT to clipboard",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImportFit();onClose();}else if(item.action==="export"){if(onExportFit)onExportFit();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }
@@ -1613,6 +1614,15 @@ export default function App(){
   // Real active-drone DPS (skills + hull bonuses), so the Drones window matches the Stats window.
   // Per-drone EFFECTIVE stats (range/tracking/speed/EHP) for the Drones tab. Computed from the fit,
   // not snapshotted when the drone was added, so skills/implants/boosters/ship bonuses are included.
+  // Full stats for the shareable snapshot card.
+  const snapshotStats=useMemo(()=>{
+    const shipName=activeFit?.ship;
+    if(!shipName) return null;
+    try{
+      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects});
+    }catch{ return null; }
+  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+
   const droneInfo=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName) return [];
@@ -1644,6 +1654,7 @@ export default function App(){
   const[showShipInfo,setShowShipInfo]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
   const[showExportFit,setShowExportFit]=useState(false);
+  const[showSnapshot,setShowSnapshot]=useState(false);
   const loadFit=(ship,fitName)=>{
     const fit=fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
@@ -1724,9 +1735,10 @@ export default function App(){
       </div>
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onExportFit={()=>setShowExportFit(true)}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onExportFit={()=>setShowExportFit(true)}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.name} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
   </div>);
