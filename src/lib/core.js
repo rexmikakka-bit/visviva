@@ -481,7 +481,7 @@ const CARGO_BROWSER={
 
 // ── Target profile stats for graph ────────────────────────────────
 // Display units for warfare buff types (buffID → unit suffix). Most are percentages.
-const WARFARE_BUFF_UNIT={3:" GJ/s",17:" m/s"};
+const WARFARE_BUFF_UNIT={};
 
 // ═══ SDE DATA BUILDERS ═══════════════════════════════════════════
 function buildMGChildren(){

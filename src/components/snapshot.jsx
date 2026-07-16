@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName } from "../calc.js";
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
+import { getCachedPrices } from "../prices.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
 // Renders a shareable image of the fit. Layout follows the approved fit-card mockup
@@ -331,6 +332,28 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const proj = projected ?? { links: [], incoming: [], remoteReps: {} };
   const showProj = proj.links.length > 0 || proj.incoming.length > 0;
 
+  const priceHub = (() => { try { return localStorage.getItem('visviva_pricehub') ?? 'Jita'; } catch { return 'Jita'; } })();
+  const cachedPrices = getCachedPrices(priceHub);
+  const fmtISKShort = (n) => n >= 1e12 ? `${(n / 1e12).toFixed(2)}T` : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1e3).toFixed(1)}K`;
+  const priceBreakdown = (() => {
+    if (!cachedPrices.size) return null;
+    let fit = 0, character = 0;
+    const addFit = (id) => { if (id > 0) fit += cachedPrices.get(id) ?? 0; };
+    const addChar = (id) => { if (id > 0) character += cachedPrices.get(id) ?? 0; };
+    if (shipTypeID) addFit(shipTypeID);
+    const allSlots = [...(slots?.high ?? []), ...(slots?.mid ?? []), ...(slots?.low ?? []), ...(slots?.rigs ?? []), ...(slots?.subsystems ?? [])];
+    for (const m of allSlots) {
+      if (!isReal(m)) continue;
+      if (m.typeID > 0) addFit(m.typeID);
+      if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id); }
+    }
+    for (const d of (drones ?? [])) { if (d?.typeID > 0) addFit(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) addFit(id); } }
+    for (const i of (implants ?? [])) { if (i?.name && i.name !== '[Empty]') { const id = tidByName(i.name); if (id) addChar(id); } }
+    for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addChar(id); } }
+    const total = fit + character;
+    return total > 0 ? { fit, character, total } : null;
+  })();
+
   // Rep = local rep EHP/s + projected remote-rep EHP/s (folded in). Sustained stays local.
   const projRep = ehpOf(proj.remoteReps?.shield, s.resists?.shield) + ehpOf(proj.remoteReps?.armor, s.resists?.armor) + ehpOf(proj.remoteReps?.hull, s.resists?.hull);
   const rep = (s.armorRepEhpS ?? 0) + (s.shieldRepEhpS ?? 0) + projRep;
@@ -349,11 +372,21 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <div style={{ width: 60, height: 60, flexShrink: 0, borderRadius: 11, background: T.panel, border: `1px solid ${T.line}`, display: "grid", placeItems: "center", overflow: "hidden" }}>
             {shipTypeID ? <img src={eveRender(shipTypeID, 64)} width={60} height={60} alt="" /> : <span style={{ fontSize: 22, color: T.accent }}>◆</span>}
           </div>
-          <div style={{ minWidth: 0, textAlign: "left" }}>
+          <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.accent, fontWeight: 600, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eyebrow}</div>
             <div style={{ fontWeight: 700, fontSize: 27, lineHeight: 1.1, letterSpacing: "-.01em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shipName}</div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fitName || "Untitled Fit"}</div>
           </div>
+          {priceBreakdown != null && (
+            <div style={{ flexShrink: 0, textAlign: "right" }}>
+              <div style={{ fontSize: 10, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }}>Est. Value</div>
+              <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}</div>
+              <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>Fit: {fmtISKShort(priceBreakdown.fit)}</div>
+              {priceBreakdown.character > 0 && (
+                <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Character: {fmtISKShort(priceBreakdown.character)}</div>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 14, fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 14, flexWrap: "wrap" }}>

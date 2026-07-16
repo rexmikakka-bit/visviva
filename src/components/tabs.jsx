@@ -7,6 +7,7 @@ import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { DMG, STATE_COLORS, computeDisplayRows, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet } from "./ui.jsx";
+import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p})??{}:{};
@@ -189,7 +190,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                       <span style={{fontSize:12,fontWeight:600,color:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:2}}>
-                      {row.ammo&&<button title="Click to unload charge" onClick={e=>{e.stopPropagation();setSlots(prev=>{const s=[...prev[sec.key]];const si=s.findIndex(x=>x.id===row.id);if(si>=0)s[si]={...s[si],ammo:null,charges:undefined,maxCharges:undefined};return{...prev,[sec.key]:s};});}} style={{background:'none',border:'none',padding:'1px 3px',cursor:'pointer',borderRadius:3}}><span style={{fontSize:10,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges} ✕</span></button>}
+                      {row.ammo&&<><span style={{fontSize:10,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title="Unload charge" onClick={e=>{e.stopPropagation();setSlots(prev=>{const s=[...prev[sec.key]];const si=s.findIndex(x=>x.id===row.id);if(si>=0)s[si]={...s[si],ammo:null,charges:undefined,maxCharges:undefined};return{...prev,[sec.key]:s};});}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
                       {(()=>{
                         if(!row.typeID)return row.optimal>0||row.falloff>0?<span style={{fontSize:10,color:C.rig}}>{row.optimal}+{row.falloff} km</span>:null;
                         const eStats=engineStatsByTypeID.get(row.typeID);
@@ -308,7 +309,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
 }
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile}){
+function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
   // Per-section collapse state — all open by default.
   const [collapsed,setCollapsed]=useState({});
   const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
@@ -319,6 +320,41 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const [peakMode,setPeakMode]=useState("regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
   const [showProfilePicker,setShowProfilePicker]=useState(false);
+  // Market price state — hub controlled from Settings > Market, prices fetched from Fuzzwork.
+  const [prices,setPrices]=useState(null);
+  const [priceLoading,setPriceLoading]=useState(false);
+  // Collect typeID+qty pairs per display group for pricing.
+  const priceItems=useMemo(()=>{
+    const allSlots=[...(slots.high??[]),...(slots.mid??[]),...(slots.low??[]),...(slots.rigs??[]),...(slots.subsystems??[])];
+    const resolveAmmo=s=>{const nm=(s.ammo||'').replace(/\s*\(\d+\)$/,'');return nm?tidByName(nm):null;};
+    return{
+      ship:ship?.typeID?[{typeID:ship.typeID,qty:1}]:[],
+      modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1})),
+      charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
+      character:[
+        ...(implants??[]).filter(i=>i?.name&&i.name!=='[Empty]').map(i=>({typeID:tidByName(i.name),qty:1})),
+        ...(boosters??[]).map(b=>({typeID:tidByName(b.name),qty:1})),
+      ].filter(s=>s.typeID),
+      drones:(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1})).filter(d=>d.typeID),
+    };
+  },[ship,slots,implants,boosters,drones]);
+  const allPriceIDs=useMemo(()=>{const s=new Set();for(const g of Object.values(priceItems))for(const{typeID}of g)if(typeID)s.add(typeID);return[...s];},[priceItems]);
+  const fitFingerprint=useMemo(()=>allPriceIDs.slice().sort((a,b)=>a-b).join(','),[allPriceIDs]);
+  useEffect(()=>{
+    if(!allPriceIDs.length)return;
+    let cancelled=false;
+    setPriceLoading(true);
+    fetchPrices(allPriceIDs,priceHub)
+      .then(m=>{if(!cancelled){setPrices(m);setPriceLoading(false);}})
+      .catch(()=>{if(!cancelled)setPriceLoading(false);});
+    return()=>{cancelled=true;};
+  },[fitFingerprint,priceHub]);// eslint-disable-line react-hooks/exhaustive-deps
+  const groupTotals=useMemo(()=>{
+    const sum=items=>items.reduce((acc,{typeID,qty})=>acc+(prices?.get(typeID)??0)*qty,0);
+    return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),character:sum(priceItems.character),drones:sum(priceItems.drones)};
+  },[priceItems,prices]);
+  const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
+  const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
@@ -650,6 +686,20 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             </div>);
           })}
         </div>}
+      </div>
+
+      {/* Fit Value */}
+      <div style={card}>
+        <SectionHead id="fitvalue" title="Fit Value" right={
+          <span style={{fontSize:11,fontWeight:700,color:C.rig}}>
+            {priceLoading?'…':fmtISK(totalPrice)}
+          </span>
+        }/>
+        {isOpen("fitvalue")&&<>
+          {[['Ship',groupTotals.ship],['Modules',groupTotals.modules],['Charges',groupTotals.charges],['Character',groupTotals.character],['Drones',groupTotals.drones]].map(([label,val],i,arr)=>(
+            <Row key={label} label={label} value={priceLoading?'…':fmtISK(val)} last={i===arr.length-1}/>
+          ))}
+        </>}
       </div>
     </div>
   );

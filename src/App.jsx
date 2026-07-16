@@ -185,7 +185,7 @@ function ShipInfoSheet({ship, onClose}) {
 }
 
 
-function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile}){
+function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
   const[selectedClass,setSelectedClass]=useState(null);
   const[selectedShip,setSelectedShip]=useState(activeFit?.ship??null);
   const[fitSubTab,setFitSubTab]=useState("Fit");
@@ -364,7 +364,7 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
     </div>
     <div onTouchStart={_onSwipeStart} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
     {fitSubTab==="Fit"   &&<FitTab   ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile}/>}
-    {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile}/>}
+    {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
     {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects}/>}
     </div>
   </div>);
@@ -923,8 +923,7 @@ function ImplantPicker({slot,current,onSelect,onClear,onClose}){
   </BottomSheet>);
 }
 
-function ImplantsScreen({implants,setImplants}){
-  const[loadouts,setLoadouts]=useState([]);
+function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   const[picker,setPicker]=useState(null);
   const[savingName,setSavingName]=useState(false);
   const[newLoadoutName,setNewLoadoutName]=useState("");
@@ -1361,8 +1360,66 @@ function SkillsPanel({skills,setSkills}){
   );
 }
 
-function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInReload}){
-  const[market,setMarket]=useState("evetycoon");
+function ImplantLoadoutsManager({implants,setImplants,loadouts,setLoadouts}){
+  const[savingName,setSavingName]=useState(false);
+  const[newName,setNewName]=useState('');
+  const[editing,setEditing]=useState(null);
+  const[editName,setEditName]=useState('');
+  function save(){
+    if(!newName.trim())return;
+    setLoadouts(prev=>[...prev,{id:Date.now(),name:newName.trim(),implants:implants.map(i=>({...i}))}]);
+    setNewName('');setSavingName(false);
+  }
+  function load(lo){
+    if(!lo.implants?.length){alert(`"${lo.name}" has no implants saved.`);return;}
+    setImplants(lo.implants.map(i=>({...i})));
+  }
+  function rename(id){
+    if(!editName.trim()){setEditing(null);return;}
+    setLoadouts(prev=>prev.map(l=>l.id===id?{...l,name:editName.trim()}:l));
+    setEditing(null);setEditName('');
+  }
+  function del(id){setLoadouts(prev=>prev.filter(l=>l.id!==id));}
+  const inp={padding:'6px 10px',background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:7,color:C.text,fontSize:12,outline:'none'};
+  return(
+    <div>
+      {savingName
+        ?<div style={{display:'flex',gap:6,marginBottom:12}}>
+           <input autoFocus value={newName} onChange={e=>setNewName(e.target.value)}
+             onKeyDown={e=>{if(e.key==='Enter')save();if(e.key==='Escape')setSavingName(false);}}
+             placeholder="Loadout name..." style={{...inp,flex:1}}/>
+           <button onClick={save} style={{padding:'6px 12px',background:C.accent,border:'none',borderRadius:7,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button>
+           <button onClick={()=>setSavingName(false)} style={{padding:'6px 10px',background:'none',border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:12,cursor:'pointer'}}>Cancel</button>
+         </div>
+        :<button onClick={()=>setSavingName(true)} style={{width:'100%',padding:'9px 0',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:'pointer',marginBottom:12}}>
+           + Save Current Implants as Loadout
+         </button>
+      }
+      {loadouts.length===0
+        ?<div style={{padding:'14px',background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.textMute,textAlign:'center'}}>No loadouts saved yet.</div>
+        :loadouts.map(l=>(
+          <div key={l.id} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,marginBottom:6}}>
+            {editing===l.id
+              ?<input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
+                 onKeyDown={e=>{if(e.key==='Enter')rename(l.id);if(e.key==='Escape')setEditing(null);}}
+                 onBlur={()=>rename(l.id)}
+                 style={{...inp,flex:1}}/>
+              :<div style={{flex:1,minWidth:0}}>
+                 <div style={{fontSize:13,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.name}</div>
+                 <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{l.implants?.filter(i=>i.name!=='[Empty]').length??0} implants fitted</div>
+               </div>
+            }
+            <button onClick={()=>load(l)} style={{padding:'5px 11px',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}}>Load</button>
+            <button onClick={()=>{setEditing(l.id);setEditName(l.name);}} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.textMute,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>&#9998;</button>
+            <button onClick={()=>del(l.id)} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.danger,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>&#10005;</button>
+          </div>
+        ))
+      }
+    </div>
+  );
+}
+
+function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInReload,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
   const[section,setSection]=useState("skills");
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
     <div style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -1375,11 +1432,28 @@ function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInRel
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
         {section==="backup"&&<BackupPanel/>}
         {section==="esi"&&<div><div style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>EVE ESI Connection</div><div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Connect your EVE account to import skills, implants, and fits. Cloud fit sync coming soon.</div><div style={{marginBottom:10,padding:"8px 12px",background:C.surface,border:`1px dashed ${C.border}`,borderRadius:8,fontSize:11,color:C.textMute,textAlign:"center"}}>Not connected</div><button style={{width:"100%",padding:"10px 0",background:C.accent,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Connect with EVE SSO</button></div></div>}
-        {section==="market"&&<div>{[{key:"ceve",label:"ceve-market.org"},{key:"evetycoon",label:"EVE Tycoon"},{key:"fuzzwork",label:"Fuzzwork Market"}].map(m=>(<div key={m.key} onClick={()=>setMarket(m.key)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${market===m.key?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:"pointer"}}><div style={{width:18,height:18,borderRadius:99,border:`2px solid ${market===m.key?C.accent:C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center"}}>{market===m.key&&<div style={{width:8,height:8,borderRadius:99,background:C.accent}}/>}</div><span style={{fontSize:13,fontWeight:market===m.key?700:500,color:market===m.key?C.text:C.textMid}}>{m.label}</span></div>))}</div>}
-        {section==="implants"&&<div>
-          <div style={{fontSize:12,color:C.textMid,marginBottom:12}}>Manage your implant loadouts from the <strong>Implants</strong> tab - use the "Save Current" button to save, tap any loadout to load it.</div>
-          <div style={{padding:"12px 14px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,fontSize:11,color:C.textMute}}>Loadouts are saved per-session. Cloud sync via EVE SSO coming in a future update.</div>
+        {section==="market"&&<div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Price Source</div>
+          {[{key:"fuzzwork",label:"Fuzzwork Market",note:null},{key:"evetycoon",label:"EVE Tycoon",note:"coming soon"},{key:"ceve",label:"ceve-market.org",note:"coming soon"}].map(m=>{
+            const active=priceSource===m.key;
+            const disabled=!!m.note;
+            return(<div key={m.key} onClick={disabled?undefined:()=>setPriceSource(m.key)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:disabled?"default":"pointer",opacity:disabled?.45:1}}>
+              <div style={{width:18,height:18,borderRadius:99,border:`2px solid ${active?C.accent:C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {active&&<div style={{width:8,height:8,borderRadius:99,background:C.accent}}/>}
+              </div>
+              <span style={{fontSize:13,fontWeight:active?700:500,color:active?C.text:C.textMid,flex:1}}>{m.label}</span>
+              {m.note&&<span style={{fontSize:10,color:C.textMute,fontStyle:"italic"}}>{m.note}</span>}
+            </div>);
+          })}
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"16px 0 8px"}}>Market Hub</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {["Jita","Amarr","Dodixie","Rens","Hek"].map(h=>(
+              <button key={h} onClick={()=>setPriceHub(h)} style={{padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",background:h===priceHub?C.accentLight:"none",border:`1px solid ${h===priceHub?C.accentBorder:C.border}`,color:h===priceHub?C.accent:C.textMid}}>{h}</button>
+            ))}
+          </div>
+          <div style={{marginTop:12,fontSize:11,color:C.textMute,lineHeight:1.5}}>Prices are sell-order percentile via Fuzzwork's aggregates API, matching pyfa's default. Cached for 1 hour per hub.</div>
         </div>}
+        {section==="implants"&&<ImplantLoadoutsManager implants={implants} setImplants={setImplants} loadouts={loadouts} setLoadouts={setLoadouts}/>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
       <div style={{flexShrink:0,padding:"10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",borderTop:`1px solid ${C.border}`,background:C.surfaceAlt,fontSize:10,lineHeight:1.5,color:C.textMute,textAlign:"center"}}>
@@ -1391,6 +1465,7 @@ function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInRel
 
 // ═══ EXPORT FIT MODAL ═══════════════════════════════════════════════
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
+const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
 function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) {
   const _lsGet=()=>{try{return JSON.parse(localStorage.getItem(EXPORT_PREFS_KEY)||'{}');}catch{return {};}};
   const _p=_lsGet();
@@ -1568,6 +1643,12 @@ export default function App(){
   const[cargoItems,setCargoItems]=useState(initialFit?.cargo??[]);
   const[implants,setImplants]=useState(initialFit?.implants??emptyImplants());
   const[boosters,setBoosters]=useState(initialFit?.boosters??[]);
+  const[implantLoadouts,setImplantLoadouts]=useState(()=>{try{return JSON.parse(localStorage.getItem(IMPLANT_LOADOUTS_KEY)??'[]');}catch{return [];}});
+  useEffect(()=>{try{localStorage.setItem(IMPLANT_LOADOUTS_KEY,JSON.stringify(implantLoadouts));}catch{}},[implantLoadouts]);
+  const[priceHub,setPriceHub]=useState(()=>{try{return localStorage.getItem('visviva_pricehub')??'Jita';}catch{return 'Jita';}});
+  useEffect(()=>{try{localStorage.setItem('visviva_pricehub',priceHub);}catch{}},[priceHub]);
+  const[priceSource,setPriceSource]=useState(()=>{try{return localStorage.getItem('visviva_pricesource')??'fuzzwork';}catch{return 'fuzzwork';}});
+  useEffect(()=>{try{localStorage.setItem('visviva_pricesource',priceSource);}catch{}},[priceSource]);
   // Projected fits (EWAR/remote reps) and command fits (burst projection), lifted to App level so
   // the stats/graph calc can consume them. Each entry references a saved fit + projection options.
   const[projFits,setProjFits]=useState(initialFit?.projFits??[]);
@@ -1733,10 +1814,10 @@ export default function App(){
       <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={()=>setShowShipInfo(true)}/>
       {bottomTab!=="fittings"&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile}/>}
+        {bottomTab==="fittings"&&<FittingsScreen activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
-        {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants}/>}
+        {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
         {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits}/>}
       </div>
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
@@ -1745,7 +1826,7 @@ export default function App(){
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
   </div>);
 }
