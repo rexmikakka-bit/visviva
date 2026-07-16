@@ -34,6 +34,10 @@ const ALLOWED = [
   },
   { host: 'esi.evetech.net', why: 'ESI API. Online-only by nature.' },
   {
+    host: 'market.fuzzwork.co.uk',
+    why: 'Fuzzwork aggregates API for fit pricing. Online-only; prices degrade gracefully to "—" offline.',
+  },
+  {
     host: 'community.eveonline.com',
     why: 'NOT a fetch — appears inside an item DESCRIPTION string in data-bundle.js (a CSM link in '
        + "CCP's flavour text). Never requested. This scan can't distinguish a fetched URL from one "
