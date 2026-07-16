@@ -1383,7 +1383,7 @@ function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInRel
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
       <div style={{flexShrink:0,padding:"10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",borderTop:`1px solid ${C.border}`,background:C.surfaceAlt,fontSize:10,lineHeight:1.5,color:C.textMute,textAlign:"center"}}>
-        Unofficial, fan-made tool — not affiliated with, endorsed by, or sponsored by CCP Games / Fenris Creations. EVE Online and all related materials are used with limited permission; all intellectual property belongs to CCP hf.
+        Unofficial, fan-made tool — not affiliated with, endorsed by, or sponsored by CCP Games / Fenris Creations. EVE Online and all related materials are used with limited permission; all intellectual property belongs to Fenris Creations.
       </div>
     </div>
   </div>);
@@ -1475,7 +1475,7 @@ function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) 
 function HamburgerMenu({onClose,onOpenSettings,onImportFit,onExportFit,onSnapshot}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
-      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Pyfa Mobile</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>VisViva</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       {[{icon:"&#128229;",label:"Import Fit",sub:"EFT from clipboard",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"Copy EFT to clipboard",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImportFit();onClose();}else if(item.action==="export"){if(onExportFit)onExportFit();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
@@ -1483,12 +1483,12 @@ function HamburgerMenu({onClose,onOpenSettings,onImportFit,onExportFit,onSnapsho
 
 function AppHeader({onHamburger,activeFit,onShipInfo}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
-  const shipName=activeFit?.ship??"Pyfa Mobile";
+  const shipName=activeFit?.ship??"VisViva";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
   return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"14px 14px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <div>
-        <div style={{fontSize:10,fontWeight:600,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>Pyfa Mobile</div>
+        <div style={{fontSize:10,fontWeight:600,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>VisViva</div>
         <div style={{fontSize:19,fontWeight:700,color:C.text,lineHeight:1.2}}>{shipName}</div>
         <div style={{fontSize:12,color:C.textMid,marginTop:1}}>{subLabel}</div>
       </div>

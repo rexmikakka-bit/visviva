@@ -349,7 +349,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <div style={{ width: 60, height: 60, flexShrink: 0, borderRadius: 11, background: T.panel, border: `1px solid ${T.line}`, display: "grid", placeItems: "center", overflow: "hidden" }}>
             {shipTypeID ? <img src={eveRender(shipTypeID, 64)} width={60} height={60} alt="" /> : <span style={{ fontSize: 22, color: T.accent }}>◆</span>}
           </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, textAlign: "left" }}>
             <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.accent, fontWeight: 600, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eyebrow}</div>
             <div style={{ fontWeight: 700, fontSize: 27, lineHeight: 1.1, letterSpacing: "-.01em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shipName}</div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fitName || "Untitled Fit"}</div>
@@ -454,8 +454,8 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         )}
 
         <div style={{ marginTop: "auto", paddingTop: 12, borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 11, color: T.dim, fontWeight: 500 }}>All skills V · pyfa-validated · EVE Online is a trademark of CCP hf.</div>
-          <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.muted }}>VIS <b style={{ color: T.accent }}>VIVA</b></div>
+          <div style={{ fontSize: 11, color: T.dim, fontWeight: 500 }}>All skills V · EVE Online is a trademark of Fenris Creations.</div>
+          <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.muted }}>VIS<b style={{ color: T.accent }}>VIVA</b></div>
         </div>
       </div>
     </div>

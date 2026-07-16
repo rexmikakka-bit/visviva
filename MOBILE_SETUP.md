@@ -175,7 +175,7 @@ rebranded to Fenris Creations in 2026, but the license still lives there).
   ask about commercial terms rather than assuming.
 - **The required disclaimer is already in the app** (Settings → footer). Mirror it in your
   store listing: *"Unofficial fan-made tool. Not affiliated with or endorsed by CCP Games /
-  Fenris Creations. EVE Online and all related materials are the property of CCP hf."*
+  Fenris Creations. EVE Online and all related materials are the property of Fenris Creations."*
 - **App name:** once you pick one, avoid implying an official affiliation (a distinct,
   original name is cleanest — and steers clear of leaning on the "Pyfa" project name).
 
