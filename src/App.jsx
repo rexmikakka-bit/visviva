@@ -1623,6 +1623,11 @@ export default function App(){
       return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects});
     }catch{ return null; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+  // Faction + hull class for the snapshot card's ship indicator (e.g. "Minmatar • Command Ship").
+  const shipMeta=useMemo(()=>{
+    const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
+    return {faction:sh?.race??"",cls:sh?.hullClass??sh?.groupName??""};
+  },[activeFit]);
 
   const droneInfo=useMemo(()=>{
     const shipName=activeFit?.ship;
@@ -1739,7 +1744,7 @@ export default function App(){
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onExportFit={()=>setShowExportFit(true)}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
-    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.name} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
   </div>);
