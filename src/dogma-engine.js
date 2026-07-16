@@ -367,6 +367,31 @@ export class Fit {
       }
     }
 
+    // 2c. Pre-module hull location modifiers. Hull effects that target MODULE attributes
+    //     (LocationGroupModifier, LocationModifier, LocationRequiredSkillModifier with domain=shipID)
+    //     must run BEFORE the module pass. A module may read its own hull-modified attr and use that
+    //     value when contributing to a ship attr (e.g. Effect1959 reads massAddition to add ship mass).
+    //     If the hull effect ran after (step 4), the module would have already written the wrong value.
+    //     Example: Cybele effect 11992 reduces armor-plate massAddition by 100% (role bonus: plates are
+    //     effectively massless). Plates then read massAddition in effect 1959 and add it to ship mass.
+    //     Running 11992 after step 3 lets plates add 2.5M kg that should have been zeroed — the ship
+    //     ends up 2.5M kg heavier than pyfa, giving 4305 m/s MWD speed instead of the correct 4689.
+    //
+    //     Safety: hull effects always read HULL attrs (shipBonusXYZ etc.) as their source, which are
+    //     set at base time or skill-scaled in step 2. Modules do not write to hull bonus attrs, so
+    //     pre-applying is always equivalent to applying post-step-3 for these effects.
+    const _preHullLocFuncs = new Set(['LocationModifier','LocationGroupModifier','LocationRequiredSkillModifier']);
+    const _preAppliedHullEIDs = new Set();
+    for (const eid of this.ship.effectIDs) {
+      if (eid === 6614 || eid === 6641) continue;
+      const edata = EFFECTS[eid];
+      if (!edata || !edata.m?.length) continue;
+      if (edata.m.some(mod => _preHullLocFuncs.has(mod.func) && mod.domain === 'shipID')) {
+        this._applyEffect(eid, this.ship, null, true);
+        _preAppliedHullEIDs.add(eid);
+      }
+    }
+
     // 3. Run effects for all non-ship items (modules read skill-modified attrs) (implants, boosters, modules, drones)
     //    The ship runs AFTER skills so skill-scaled ship attrs are ready.
     const nonShipGroups = [
@@ -431,11 +456,12 @@ export class Fit {
       }
     }
 
-    // 4. Ship hull effects (run AFTER skill pass so skill-scaled ship attrs are ready)
-    //    e.g. Effect8106 reads shipBonusMB2 which is scaled by MB skill in step 3.
+    // 4. Ship hull effects — ItemModifier hull effects (domain=shipID/itemID) that write directly to
+    //    ship attrs. Location modifiers were pre-applied in step 2c; skip them here to avoid doubling.
     //    Hull bonuses are NOT stacking-penalized (direct=true).
     for (const eid of this.ship.effectIDs) {
       if (eid === 6614 || eid === 6641) continue; // plate/extender role bonus — applied pre-module above
+      if (_preAppliedHullEIDs.has(eid)) continue;  // location modifiers — applied pre-module in step 2c
       this._applyEffect(eid, this.ship, null, true);
     }
 
@@ -844,15 +870,22 @@ export class Fit {
 
     // ── 5. Charge attribute forwarding ──────────────────────────────────────────
     // Turret ammo charge modifiers apply to the parent turret item.
+    // Operations match the FSD (dogma-effects.json) and are applied direct=true (unpenalized)
+    // because each turret can only hold one ammo type — there is nothing to stack against.
+    //   weaponRangeMultiplier → maxRange  FSD op=0 PreMul  → direct multiplies _base
+    //   fallofMultiplier      → falloff   FSD op=4 PostMul → direct multiplies _mul (post stacking)
+    //   trackingSpeedMultiplier → trackingSpeed FSD op=4 PostMul → same
+    // Using op=4 not-direct was wrong: it put the multiplier into _post4 where it competed in
+    // the stacking pool with TC bonuses, understating both optimal range and falloff.
     for (const m of mods) {
       if (!m._charge) continue;
       const ch = m._charge;
       const rng = ch.getBase('weaponRangeMultiplier');
       const fal = ch.getBase('fallofMultiplier');
       const trk = ch.getBase('trackingSpeedMultiplier');
-      if (rng && rng !== 1) m.attrs.applyMod(AID.maxRange, 4, rng);
-      if (fal && fal !== 1) m.attrs.applyMod(AID.falloff, 4, fal);
-      if (trk && trk !== 1) m.attrs.applyMod(AID.trackingSpeed, 4, trk);
+      if (rng && rng !== 1) m.attrs.applyMod(AID.maxRange,       0, rng, true);
+      if (fal && fal !== 1) m.attrs.applyMod(AID.falloff,        4, fal, true);
+      if (trk && trk !== 1) m.attrs.applyMod(AID.trackingSpeed,  4, trk, true);
     }
     // ── 5a. Cloak velocity Black-Ops ordering correction ────────────────────────
     // The cloak's maxVelocity penalty (Effect607) is applied during the module pass using the
