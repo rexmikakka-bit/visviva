@@ -1679,6 +1679,17 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           if (e3.includes(1764) && a3.speedFactor)        velPool.push(a3.speedFactor);        // Hydraulic Bay Thrusters → velocity
           if (e3.includes(784)  && a3.maxFlightTimeBonus) flightPool.push(a3.maxFlightTimeBonus); // Rocket Fuel Cache → flight
         }
+        // Siege module's siegeTorpedoVelocityBonus (+150%) targets charges requiring Torpedoes.
+        // Pyfa applies it with stackingPenalties=True (filteredChargeBoost on maxVelocity), so it
+        // shares the stacking pool with MGC/rig bonuses. Read from any active module that carries
+        // the attr (Siege Module I/II, Triage variants).
+        if (chRs.includes('Torpedoes')) {
+          for (const { slot: s4, fitItem: fi4 } of modItems) {
+            if (!fi4 || !isActive(s4.state)) continue;
+            const tvb = TYPES[fi4.typeID]?.attrs?.siegeTorpedoVelocityBonus;
+            if (tvb) velPool.push(tvb);
+          }
+        }
         const poolVel    = penalize(velPool);
         const poolFlight = penalize(flightPool);
 
@@ -2437,12 +2448,15 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   let shieldRepEhpS = 0, shieldRepIsASB = false, asbCapCharged = false;
   if (slotEngineStats) {
     for (const [, stats] of slotEngineStats) {
-      if (stats.isASB && (stats.ehpS ?? 0) > shieldRepEhpS) {
-        shieldRepEhpS = stats.ehpS ?? 0; shieldRepIsASB = true; asbCapCharged = !!stats.hasCharges;
+      if (stats.isASB && (stats.ehpS ?? 0) > 0) {
+        // Track ASB presence for sustained calc; peak EHP/s uses total shieldRepPS below so that
+        // a mix of ASB + regular booster (e.g. PNI: CONCORD CSB + Capital ASB) is summed correctly.
+        shieldRepIsASB = true;
+        asbCapCharged = asbCapCharged || !!stats.hasCharges;
       }
     }
   }
-  if (!shieldRepEhpS && shieldRepPS > 0) shieldRepEhpS = layerEHP(shieldRepPS, effectiveResists.shield);
+  if (shieldRepPS > 0) shieldRepEhpS = layerEHP(shieldRepPS, effectiveResists.shield);
 
   let shieldRepSustainedEhpS;
   if (shieldRepIsASB) {
