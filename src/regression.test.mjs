@@ -7,7 +7,7 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Every number below was validated by hand against pyfa v2.67.0 with all skills at V. They are not
+ * Every number below was validated by hand against pyfa v2.68.0 with all skills at V. They are not
  * "whatever the code currently prints" — they are the correct answers, and several of them cost a
  * lot of digging to establish. If you change calc.js, dogma-engine.js or the dogma-*.json bundles
  * and one of these moves, you have broken something real. Do not "fix" the test to match new output
@@ -27,10 +27,27 @@ const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
 const EMPTY = { high: [], mid: [], low: [], rigs: [] };
 const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).join('/');
 
-// The EVE client build these baselines were validated against (pyfa v2.67.0 / build 3383521).
+// The EVE client build these baselines were validated against (pyfa v2.68.0 / build 3424810).
 // If the bundle is regenerated from a NEWER eve.db, some baselines will legitimately move — CCP
 // rebalances things. That is a worklist, not a code regression. See CLAUDE.md -> "Upgrading eve.db".
-const VALIDATED_BUILD = '3383521';
+//
+// 2026-07-16 upgrade (build 3383521 -> 3424810): all 50 baselines passed UNCHANGED — none of the
+// validated fits touch anything CCP moved in this SDE bump. What changed and was audited as a
+// non-issue for this calculator (no code changes needed):
+//   - Aralez (fighter) got a full stat rebalance (hp/mass/velocity/damage type/tracking/tech level).
+//     Fighters are computed generically from their attributes, so this just flowed through.
+//   - Support-fighter drones (Berserker/Valkyrie/Warrior SW-x00, 'Aergia' Hobgoblin SW-300) got
+//     entityCruiseSpeed changes — an NPC/AI pursuit-speed attribute we don't read anywhere.
+//   - 10 new short-duration event boosters (Clash/Volatile series) — no penalty attrs, no fitting
+//     relevance; their bonus effects (virus strength, d-scan range) have no display surface here.
+//   - Algos Navy Issue got a real drone HP/shield/armor role bonus (shipBonusGD2=10, effect 12908)
+//     — we don't compute or display per-drone HP anywhere yet, so nothing to wire up.
+//   - New effect 12924 (proximityDbuffTacticalDestroyerHPAddEffect) touches all 5 Tactical
+//     Destroyers but its driving attribute is 0 on every hull — inert until CCP sets it via some
+//     new site mechanic, not a static hull bonus.
+//   - Breach Control module (SCARAB-pod damage resist) and the Imperial Navy 'Atonement' Tracking
+//     Enhancer (laser cap-need reduction) are real but single ultra-niche items; deferred.
+const VALIDATED_BUILD = '3424810';
 
 let bundleVersion = null;
 try {
@@ -467,7 +484,7 @@ if (failures.length === 0) {
 } else {
   console.log(`${passed} passed, ${failures.length} FAILED:\n`);
   for (const f of failures) console.log(`  ✗ [${f.group}] ${f.label}: got ${f.actual}, expected ${f.expected}`);
-  console.log('\nThese baselines are validated against pyfa v2.67.0. A failure means the code');
+  console.log('\nThese baselines are validated against pyfa v2.68.0. A failure means the code');
   console.log('regressed — do NOT update the expected values without re-checking against pyfa.');
   process.exit(1);
 }

@@ -1,7 +1,7 @@
 # Vis Viva — EVE Online fitting calculator (mobile)
 
 A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It reimplements pyfa's dogma
-engine in JavaScript. **pyfa v2.67.0 with all skills at V is the reference implementation** — when our
+engine in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
 numbers disagree with pyfa, we are wrong until proven otherwise.
 
 ---
@@ -264,10 +264,10 @@ The regression baselines are only meaningful **relative to a specific EVE build*
 which one it came from in `src/data/bundle-version.json`, and the suite prints it on every run:
 
 ```
-data: EVE client build 3383521 (SDE 2026-06-09) — matches validated baselines
+data: EVE client build 3424810 (SDE 2026-07-07) — matches validated baselines
 ```
 
-We are currently on **pyfa v2.67.0 / client build 3383521**. When you move to a newer `eve.db`, the
+We are currently on **pyfa v2.68.0 / client build 3424810**. When you move to a newer `eve.db`, the
 suite detects the mismatch and prints a loud banner.
 
 **A red suite after an eve.db upgrade is a WORKLIST, not a failure.** Some baselines will move because
@@ -293,6 +293,38 @@ The process:
 Do the upgrade as its own PR, with nothing else in it. The diff will be large and the whole point is
 that a human can see exactly which numbers moved and why.
 
+---
+
+## Driving pyfa's `eos` engine directly (the oracle — planned, not yet built)
+
+The long-term goal is an automated oracle: drive pyfa's calculation engine as a Python library and
+diff its numbers against ours, instead of validating one fit at a time by hand in the GUI.
+
+**This is feasible.** `Pyfa-master/eos/` has **zero** wx/GUI imports — the engine is fully decoupled
+from the app. pyfa's own tests (`tests/test_modules/test_eos/`) drive it through fixtures (DB, a
+`RifterFit`, a `KeepstarFit`) and call `calculateModifiedAttributes()` with no GUI. We can do the same.
+
+**Assets located on this machine (as of the 2026-07-16 v2.68 upgrade):**
+
+| What | Path |
+| --- | --- |
+| pyfa v2.68.0 gamedata db (build 3424810) — the **authoritative** one | `C:\Program Files\pyfa\app\eve.db` |
+| Old gamedata db (build 3383521) — repo root, superseded | `eve.db` (repo root) |
+| User's real characters / skills / fits | `C:\Users\owen_\.pyfa\saveddata.db` |
+| pyfa source clone (keep current — a stale clone gives false "not implemented") | `Pyfa-master/` |
+
+- pyfa's gamedata schema is its **own** compact SQLite (tables `dgmattribs`, `dgmtypeattribs`
+  (single `value` column), `invtypes`, `invgroups.name`, …) matching `eos/db/gamedata/*.py` — **not**
+  raw SDE (`sqlite-latest.sqlite`, capitalized tables). `config.py` resolves `gameDB = <pyfaPath>/eve.db`.
+- **Python here is finicky.** `python`/`python3`/`py` hit a Microsoft Store alias stub and fail. The
+  real interpreter is `/c/Python314/python` (3.14.5). It **lacks `sqlalchemy` and `numpy`** —
+  pip-install both first. Watch out: eos pins `sqlalchemy==1.4.50`, which predates Python 3.14 by
+  years; a newer sqlalchemy (plus minor shims) may be needed.
+- Next-session bootstrap: install deps, point eos at `C:\Program Files\pyfa\app\eve.db`, build a Fit
+  (ship + modules + charges + skills-at-V), call `calculateModifiedAttributes()`, and compare against
+  `calcFitStats`.
+
+---
 
 ## Working style
 
