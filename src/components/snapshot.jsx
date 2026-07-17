@@ -82,6 +82,7 @@ function modMeta(m, cs) {
     return { weapon: true, rng, trk: es.tracking };
   }
   if (es.isAAR || es.isASB) return { clip: es.totalEHP };
+  if (es.isRAH && es.rahResistPct) return { rah: es.rahResistPct }; // [em,th,kin,exp] adapted resist %
   if (es.isWDFG && es.warpScrambleRange != null) return { rng: `${Math.round(es.warpScrambleRange / 1000)} km` };
   // Generic ranged module (web, scram, neut, EWAR, remote): show range only — NO tracking.
   if (es.optimal != null && es.optimal > 0) return { rng: es.falloff > 0 ? `${es.optimal} + ${es.falloff} km` : `${es.optimal} km` };
@@ -167,7 +168,7 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
 function ModRow({ m, meta, n }) {
   const st = m.state || "online";
   const bl = st === "active" ? T.good : st === "overheated" ? T.exp : st === "offline" ? T.dim : T.onl;
-  const hasRight = m.ammo || meta.clip != null || meta.rng || meta.trk != null || st === "overheated";
+  const hasRight = m.ammo || meta.clip != null || meta.rng || meta.trk != null || meta.rah || st === "overheated";
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 9, padding: "3px 0 3px 10px",
@@ -182,6 +183,16 @@ function ModRow({ m, meta, n }) {
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
           {m.ammo && <span style={{ fontSize: 12, color: T.accent, fontWeight: 500, whiteSpace: "nowrap" }}>{m.ammo}</span>}
           {meta.clip != null && <span style={{ fontSize: 11.5, color: T.faction, fontWeight: 600, whiteSpace: "nowrap" }}>{fmtK(meta.clip)} clip</span>}
+          {meta.rah && (
+            <span style={{ display: "flex", alignItems: "center", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+              {meta.rah.map((v, i) => (
+                <span key={i}>
+                  {i > 0 && <span style={{ color: T.dim, margin: "0 2px" }}>/</span>}
+                  <span style={{ color: [DMG.em, DMG.th, DMG.kin, DMG.exp][i] }}>{Number(v.toFixed(1))}%</span>
+                </span>
+              ))}
+            </span>
+          )}
           {meta.rng && <span style={{ color: "#8fb0c6", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.rng}</span>}
           {meta.trk != null && <span style={{ color: T.dim, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.trk} rad/s</span>}
           {st === "overheated" && <svg viewBox="0 0 24 24" width={13} height={13} fill={T.exp}><path d={FLAME} /></svg>}
