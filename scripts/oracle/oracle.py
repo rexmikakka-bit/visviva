@@ -331,6 +331,37 @@ FITS = {
             "weaponVolley": 84280,
         },
     },
+
+    # THUNDERCHILD — EDENCOM battleship, Vorton Projector arc weapons (primary-target DPS).
+    "thunderchild": {
+        "ship": "Thunderchild",
+        "high": [
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+            {"name": "Large Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack L"},
+        ],
+        "mid": [], "low": [], "rigs": [],
+        "expect": {"weaponDps": 1387, "weaponVolley": 14046},
+    },
+
+    # STORMBRINGER — EDENCOM cruiser.
+    "stormbringer": {
+        "ship": "Stormbringer",
+        "high": [{"name": "Medium Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack M"} for _ in range(5)],
+        "mid": [], "low": [], "rigs": [],
+        "expect": {"weaponDps": 762.5, "weaponVolley": 6176},
+    },
+
+    # SKYBREAKER — EDENCOM frigate.
+    "skybreaker": {
+        "ship": "Skybreaker",
+        "high": [{"name": "Small Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack S"} for _ in range(4)],
+        "mid": [], "low": [], "rigs": [],
+        "expect": {"weaponDps": 233.7, "weaponVolley": 1262},
+    },
 }
 
 
