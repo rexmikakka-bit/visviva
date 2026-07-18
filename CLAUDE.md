@@ -61,6 +61,20 @@ were trimmed. They do nothing until someone populates the modifier or writes a c
    application to avoid double-counting. The RAH algorithm itself is correct and chaotically sensitive
    to its inputs — if the RAH split is wrong, the *inputs* are wrong, not the algorithm.
 
+   **RAH em/kin ~2pp splits on Triglavian/AT hulls vs the oracle are a float tie-break artifact, NOT a
+   bug — do not chase them.** Ikitursa/Draugur/Nergal carry base armor resonances `0.5/0.25/0.75/0.35`.
+   Under the oracle's forced UNIFORM 25/25/25/25 pattern, the em:exp resonance ratio 0.3375:0.23625 is
+   exactly 10:7, and the RAH settles at a 0.7 multiplier — so at the steady state em and exp take
+   *mathematically equal* damage. That exact tie is then resolved by sub-ULP dust in the ship's computed
+   resonance: our stacking math yields `armorExplosiveDamageResonance = 0.23625000000000002` (dust
+   *above* 0.23625) while eos yields `0.23624999999999996` (dust *below*). Same IEEE-754 double, opposite
+   last bit → the stable sort orders em/exp oppositely → our RAH converges to em/kin `0.745/0.655`, eos
+   to `0.71/0.71`. The RAH loop is byte-identical between our JS and eos's Python (verified standalone);
+   the divergence is purely the resonance input's final ULP, which no two independent engines will match.
+   Neither value is "more correct." Real (non-uniform) damage profiles don't hit the exact tie, so this
+   never surfaces in-app. Confirmed 2026-07-18; the scale convention (we feed pattern fractions `0.25`,
+   eos feeds raw amounts `25`) is irrelevant here — the tie is scale-invariant.
+
 4. **Beam-type super weapons tick.** Lancer lances, titan Reapers and the Bosonic Field Generator deal
    damage every `doomsdayDamageCycleTime` for `doomsdayDamageDuration` — so their em/th/kin/exp attrs
    are damage **per tick**, and DPS = `perTick × ticks / duration`. Volley is **one tick** (that's what
