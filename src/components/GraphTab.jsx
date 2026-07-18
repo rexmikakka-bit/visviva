@@ -384,7 +384,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,pilotSec:slots?.pilotSec})??{};
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;

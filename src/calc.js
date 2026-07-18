@@ -1002,6 +1002,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // Incoming damage profile (from the Resistances tab) drives any Reactive Armor Hardener set
   // to "fit pattern". Proportions [em,th,kin,exp]; engine defaults to uniform if absent.
   if (Array.isArray(opts.damageProfile)) fit._damageProfile = opts.damageProfile;
+  // Pilot security status drives CONCORD/AT-frigate hull bonuses (dogma-engine section 5g).
+  fit._pilotSec = opts.pilotSec ?? 0;
   fit.calculate();
 
   // ── Booster side effects (user-toggled) ───────────────────────────────────
@@ -1548,6 +1550,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
               const tys = spec[1] === 'all' ? ['em','th','kin','exp'] : (Array.isArray(spec[1]) ? spec[1] : [spec[1]]);
               for (const ty of tys) shipMd[ty] *= f;
             }
+          }
+          // Sidewinder & kin (Effect12165, ATFrigDmgBonus): the rocket/light-missile CHARGE-damage
+          // half of the pilot-security bonus. Engine handles the small-turret half; charges are out
+          // of its reach. sec clamped [-10,0]; bonus = ship ATFrigDmgBonus × sec (neg×neg → positive).
+          if (shipEffs.includes(12165) && (chRs.includes('Rockets') || chRs.includes('Light Missiles'))) {
+            const negSec = Math.max(-10, Math.min(0, fit._pilotSec ?? 0));
+            const b = (fit.ship.get('ATFrigDmgBonus') ?? 0) * negSec;
+            if (b) { const f = 1 + b / 100; shipMd.em *= f; shipMd.th *= f; shipMd.kin *= f; shipMd.exp *= f; }
           }
           // T3C offensive subsystems carry a missile charge-damage bonus the engine can't apply
           // (OwnerRequiredSkillModifier → charge). Read the raw per-level bonus off the fitted

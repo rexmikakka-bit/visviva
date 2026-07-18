@@ -10,7 +10,7 @@ import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, Da
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
-  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p})??{}:{};
+  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec})??{}:{};
   const engineStatsByTypeID=new Map();
   if(_cs.slotEngineStats){for(const[slot,stats]of _cs.slotEngineStats){if(slot.typeID)engineStatsByTypeID.set(slot.typeID,stats);}}
   const[grouped,setGrouped]=useState(true);
@@ -77,6 +77,19 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
   const shipModes = MODE_SETS[ship?.name] ?? (isT3D ? ["Defense","Sharpshooter","Propulsion"] : null);
   const tacticalMode = slots.tactical ?? (shipModes ? shipModes[0] : null);
   const setTacticalMode = (mode) => setSlots(prev => ({ ...prev, tactical: mode }));
+
+  // Pilot security-status bonus ships. CONCORD hulls (Marshal/Enforcer/Pacifier, effect 6871) gain
+  // tank from POSITIVE sec (0..5); AT frigates (Sidewinder, effect 12165) gain damage from NEGATIVE
+  // sec (-10..0). The engine/calc apply the bonus from slots.pilotSec (see dogma-engine section 5g).
+  const shipEffs = TYPES[ship?.typeID]?.e ?? [];
+  const isATFrig = shipEffs.includes(12165);
+  const showPilotSec = shipEffs.includes(6871) || isATFrig;
+  const secRange = isATFrig ? [-10, 0] : [0, 5];
+  const pilotSec = slots.pilotSec ?? 0;
+  const setPilotSec = (v) => setSlots(prev => ({ ...prev, pilotSec: v }));
+  const pilotSecHint = isATFrig
+    ? `+${((TYPES[ship?.typeID]?.a?.[5727] ?? -7.5) * Math.max(-10, Math.min(0, pilotSec))).toFixed(1)}% small turret & rocket/light-missile damage`
+    : `+${(Math.max(0, Math.min(5, pilotSec)) * 10).toFixed(0)}% armor rep & shield boost amount`;
 
   const updateMod=(secKey,modId,updated,keepOpen=false)=>{
     setSlots(prev=>{
@@ -146,6 +159,18 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
               <span style={{fontSize:12,fontWeight:700,color:on?C.accent:C.text}}>{mode}</span>
             </button>);
           })}
+        </div>
+      )}
+      {showPilotSec&&(
+        <div style={{padding:"8px 10px 4px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>PILOT SECURITY STATUS</span>
+            <span style={{fontSize:13,fontWeight:700,color:C.accent}}>{pilotSec.toFixed(1)}</span>
+          </div>
+          <input type="range" min={secRange[0]} max={secRange[1]} step={0.1} value={pilotSec}
+            onChange={e=>setPilotSec(parseFloat(e.target.value))}
+            style={{width:"100%",accentColor:C.accent,cursor:"pointer"}}/>
+          <div style={{fontSize:10,color:C.textMute,marginTop:3}}>{pilotSecHint}</div>
         </div>
       )}
       <div style={{display:"flex",justifyContent:"flex-end",padding:"0 10px 4px"}}>
@@ -356,7 +381,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,pilotSec:slots?.pilotSec,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;

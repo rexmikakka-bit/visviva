@@ -347,17 +347,18 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"6px 12px 0",gap:8}}>
-        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>Ship Fits</button>
+        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>fits</button>
 
         <div style={{flex:1,minWidth:0}}>
           {renamingFit
-            ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});setFitsDB(prev=>({...prev,[activeFit.ship]:(prev[activeFit.ship]||[]).map(f=>f.name===activeFit.fitName?{...f,name:newFitName.trim()||activeFit.fitName,modified:now}:f)}));setActiveFit(prev=>({...prev,fitName:newFitName.trim()||prev.fitName}));setRenamingFit(false);}if(e.key==="Escape")setRenamingFit(false);}} onBlur={()=>setRenamingFit(false)} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box"}}/>
-            :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"left",padding:0,display:"flex",alignItems:"center",justifyContent:"flex-start",gap:6,width:"100%"}}>
+            ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});setFitsDB(prev=>({...prev,[activeFit.ship]:(prev[activeFit.ship]||[]).map(f=>f.name===activeFit.fitName?{...f,name:newFitName.trim()||activeFit.fitName,modified:now}:f)}));setActiveFit(prev=>({...prev,fitName:newFitName.trim()||prev.fitName}));setRenamingFit(false);}if(e.key==="Escape")setRenamingFit(false);}} onBlur={()=>setRenamingFit(false)} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
+            :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%"}}>
               <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||"Unnamed Fit"}</span>
               <span style={{fontSize:15,color:"#ffffffff",flexShrink:0}}>&#9998;</span>
             </button>
           }
         </div>
+        <div style={{width:70,flexShrink:0}}/>
       </div>
       <div style={{display:"flex"}}><div style={{width:60}}/>{["Fit","Stats","Graph"].map(t=><button key={t} onClick={()=>setFitSubTab(t)} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
     </div>
@@ -943,7 +944,6 @@ function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     setLoadouts(prev=>prev.map(l=>l.id===id?{...l,name:editLoadoutName.trim()||l.name}:l));
     setEditingLoadout(null);setEditLoadoutName("");
   }
-  function deleteLoadout(id){setLoadouts(prev=>prev.filter(l=>l.id!==id));}
 
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{padding:"10px 12px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
@@ -974,7 +974,7 @@ function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
               </button>
             }
             <button onClick={()=>{setEditingLoadout(l.id);setEditLoadoutName(l.name);}} style={{width:20,height:20,borderRadius:4,background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.textMute,flexShrink:0}}>&#9998;</button>
-            <button onClick={()=>deleteLoadout(l.id)} style={{width:20,height:20,borderRadius:4,background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.danger,flexShrink:0}}>x</button>
+            <button onClick={()=>setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})))} title="Clear implants from current fit" style={{width:20,height:20,borderRadius:4,background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.danger,flexShrink:0}}>x</button>
           </div>
         ))}
       </div>}
@@ -1094,7 +1094,7 @@ function BoosterPickerSheet({onAdd,onClose}){
       {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No boosters found</div>}
       {searchResults.map(n=>(
         <div key={n} onClick={()=>addDrug(n)}
-          style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+          style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left"}}>
           <div style={{fontSize:13,fontWeight:600,color:C.text}}>{n}</div>
         </div>
       ))}
@@ -1103,7 +1103,7 @@ function BoosterPickerSheet({onAdd,onClose}){
     {/* Level 1: Booster slots */}
     {!searchResults&&!slotDrill&&[1,2,3,11,14,15,16,17].map(slot=>(
       <div key={slot} onClick={()=>setSlotDrill(slot)}
-        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`,textAlign:"left"}}>
         <div>
           <div style={{fontSize:14,fontWeight:700,color:C.text}}>Slot {slot}</div>
           <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{Object.keys(BOOSTER_DATA[slot]??{}).join(", ")}</div>
@@ -1115,7 +1115,7 @@ function BoosterPickerSheet({onAdd,onClose}){
     {/* Level 2: Drug categories in slot */}
     {!searchResults&&slotDrill&&!catDrill&&catNames.map(cat=>(
       <div key={cat} onClick={()=>setCatDrill(cat)}
-        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
+        style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`,textAlign:"left"}}>
         <div>
           <div style={{fontSize:14,fontWeight:600,color:C.text}}>{cat}</div>
           <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{(slotData[cat]??[]).length} variant{(slotData[cat]??[]).length!==1?"s":""}</div>
@@ -1128,7 +1128,7 @@ function BoosterPickerSheet({onAdd,onClose}){
     {/* Level 3: Drug variants */}
     {!searchResults&&catDrill&&drugs.map(drugName=>(
       <div key={drugName} onClick={()=>addDrug(drugName)}
-        style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",textAlign:"left"}}>
         <div>
           <div style={{fontSize:13,fontWeight:600,color:C.text}}>{drugName}</div>
           {(()=>{
@@ -1561,7 +1561,7 @@ function AppHeader({onHamburger,activeFit,onShipInfo}){
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
   return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"14px 14px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <div>
+      <div style={{textAlign:"left"}}>
         <div style={{fontSize:10,fontWeight:600,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>VisViva</div>
         <div style={{fontSize:19,fontWeight:700,color:C.text,lineHeight:1.2}}>{shipName}</div>
         <div style={{fontSize:12,color:C.textMid,marginTop:1}}>{subLabel}</div>
@@ -1700,7 +1700,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return null;
     try{
-      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects});
+      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec});
     }catch{ return null; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
   // Faction + hull class for the snapshot card's ship indicator (e.g. "Minmatar • Command Ship").
@@ -1713,7 +1713,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec});
       return cs?.droneInfo ?? [];
     }catch{ return []; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
@@ -1722,7 +1722,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,pilotSec:slots?.pilotSec});
       return cs?.droneDps?.total ?? 0;
     }catch{ return 0; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
@@ -1731,7 +1731,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName||!(fighters?.length)) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
       return cs?.fighterDetails ?? [];
     }catch{ return []; }
   },[activeFit,slots,drones,skills,implants,boosters,fighters,dmgProfile]);

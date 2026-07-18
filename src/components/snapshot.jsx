@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
-import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName } from "../calc.js";
+import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
-import { getCachedPrices } from "../prices.js";
+import { getCachedPrices, fetchPrices } from "../prices.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
 // Renders a shareable image of the fit. Layout follows the approved fit-card mockup
@@ -371,6 +371,18 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const sust = (s.armorRepSustainedEhpS ?? 0) + (s.shieldRepSustainedEhpS ?? 0);
   const eyebrow = [shipFaction, shipClass].filter(Boolean).join(" • ") || shipName;
 
+  // Tactical mode (T3 destroyers + Anhinga). Mirrors the selector in tabs.jsx: the mode lives on
+  // slots.tactical and defaults to the first mode when the user hasn't picked one.
+  const MODE_SETS = { Skua: ["Defense", "Sharpshooter", "Propulsion"], Anhinga: ["Primary", "Secondary", "Tertiary"] };
+  const shipModes = MODE_SETS[shipName] ?? (tidByName(`${shipName} Defense Mode`) ? ["Defense", "Sharpshooter", "Propulsion"] : null);
+  const tacticalMode = shipModes ? (slots?.tactical ?? shipModes[0]) : null;
+
+  // Pilot security-status bonus (CONCORD tank ships / AT damage frigates). Show the configured sec
+  // when the hull carries the relevant effect, so the snapshot reflects the pilot the fit assumes.
+  const secEffs = shipTypeID ? (TYPES[shipTypeID]?.e ?? []) : [];
+  const showPilotSec = secEffs.includes(6871) || secEffs.includes(12165);
+  const pilotSecVal = slots?.pilotSec ?? 0;
+
   return (
     <div ref={cardRef} style={{
       width: CARD_W, minHeight: 720, display: "flex", alignItems: "stretch", overflow: "hidden",
@@ -387,6 +399,12 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.accent, fontWeight: 600, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eyebrow}</div>
             <div style={{ fontWeight: 700, fontSize: 27, lineHeight: 1.1, letterSpacing: "-.01em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shipName}</div>
             <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fitName || "Untitled Fit"}</div>
+            {tacticalMode && (
+              <span style={{ display: "inline-block", marginTop: 5, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>{tacticalMode} Mode</span>
+            )}
+            {showPilotSec && (
+              <span style={{ display: "inline-block", marginTop: 5, marginLeft: tacticalMode ? 6 : 0, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>Sec {pilotSecVal.toFixed(1)}</span>
+            )}
           </div>
           {priceBreakdown != null && (
             <div style={{ flexShrink: 0, textAlign: "right" }}>
@@ -512,6 +530,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
   const [preview, setPreview] = useState(null);
+  const [pricesReady, setPricesReady] = useState(false);
   const projected = useMemo(() => buildProjected(cmdFits, projFits, fitsDB, skills), [cmdFits, projFits, fitsDB, skills]);
 
   const render = async () => {
@@ -519,7 +538,28 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
     return html2canvas(cardRef.current, { backgroundColor: T.outer, scale: 2, logging: false, useCORS: true });
   };
 
-  // Render once on open so the user sees exactly what they'll get.
+  // Warm the price cache so the card's Est. Value block renders even when the Stats tab
+  // (which normally fetches) was never opened. Best-effort: an offline webview just skips it.
+  useEffect(() => {
+    let dead = false;
+    const priceHub = (() => { try { return localStorage.getItem("visviva_pricehub") ?? "Jita"; } catch { return "Jita"; } })();
+    const { shipTypeID, slots, drones, implants, boosters } = cardProps;
+    const ids = [];
+    if (shipTypeID) ids.push(shipTypeID);
+    for (const rack of ["high", "mid", "low", "rigs", "subsystems"]) for (const m of (slots?.[rack] ?? [])) {
+      if (!isReal(m)) continue;
+      if (m.typeID > 0) ids.push(m.typeID);
+      if (m.ammo) { const id = tidByName(m.ammo.replace(/\s*\(\d+\)$/, "")); if (id) ids.push(id); }
+    }
+    for (const d of (drones ?? [])) { if (d?.typeID > 0) ids.push(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) ids.push(id); } }
+    for (const i of (implants ?? [])) { if (i?.name && i.name !== "[Empty]") { const id = tidByName(i.name); if (id) ids.push(id); } }
+    for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) ids.push(id); } }
+    fetchPrices(ids, priceHub).then(() => { if (!dead) setPricesReady(true); }).catch(() => {});
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Render on open, then re-render once prices land so the value block appears.
   useEffect(() => {
     let dead = false;
     (async () => {
@@ -530,7 +570,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
     })();
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [pricesReady]);
 
   const filename = `${(cardProps.fitName || cardProps.shipName || "fit").replace(/[^\w\-]+/g, "_")}.png`;
 

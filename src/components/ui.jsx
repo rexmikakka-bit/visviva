@@ -60,7 +60,7 @@ function NumpadModal({label,initial,onConfirm,onClose}){
 
 // ═══ RESOURCE STRIP ══════════════════════════════════════════════
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload}){
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec})??{};
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
   const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();

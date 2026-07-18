@@ -80,6 +80,16 @@ function stackingFactor(rank) {
 // Mode modules whose bonuses are ROLE bonuses, exempt from the stacking penalty.
 const MODE_MODULE_GROUPS = new Set(['Siege Module', 'Triage Module', 'Bastion Module']);
 
+// Pilot security-status hull bonuses (CONCORD ships + AT frigates). CCP models these with a chain of
+// "intermediary" effects that scale a bonus attr by the pilot's (capped, inverted) sec status, then a
+// final effect that applies it to modules. pyfa (eos/effects.py Effect6871/Effect12165) SKIPS the whole
+// chain and hand-codes it, reading the *base* bonus attr and multiplying by the real pilot sec. We do
+// the same: skip these effects in the generic dispatcher (they'd otherwise apply a bogus static bonus
+// and flip the base attr's sign), then reproduce pyfa's logic in _runCustomHandlers (section 5g).
+//   6869/6870 (Marshal chain), 6871 (concordSecStatusTankBonus applier),
+//   12166/12167/12168 (Sidewinder chain), 12165 (ATFrigDmgBonus applier).
+const PILOT_SEC_EFFECTS = new Set([6869, 6870, 6871, 12165, 12166, 12167, 12168]);
+
 function applyStacking(base, mods, aid) {
   // mods: array of raw multipliers (already converted to factors, e.g. 1.05 for +5%)
   if (!mods.length) return base;
@@ -426,6 +436,7 @@ export class Fit {
     const _preAppliedHullEIDs = new Set();
     for (const eid of this.ship.effectIDs) {
       if (eid === 6614 || eid === 6641) continue;
+      if (PILOT_SEC_EFFECTS.has(eid)) continue;  // hand-coded in _runCustomHandlers (section 5g)
       const edata = EFFECTS[eid];
       if (!edata || !edata.m?.length) continue;
       if (edata.m.some(mod => _preHullLocFuncs.has(mod.func) && mod.domain === 'shipID')) {
@@ -503,6 +514,7 @@ export class Fit {
     //    Hull bonuses are NOT stacking-penalized (direct=true).
     for (const eid of this.ship.effectIDs) {
       if (eid === 6614 || eid === 6641) continue; // plate/extender role bonus — applied pre-module above
+      if (PILOT_SEC_EFFECTS.has(eid)) continue;    // hand-coded in _runCustomHandlers (section 5g)
       if (_preAppliedHullEIDs.has(eid)) continue;  // location modifiers — applied pre-module in step 2c
       this._applyEffect(eid, this.ship, null, true);
     }
@@ -1180,6 +1192,35 @@ export class Fit {
             const ex = extraPct(raw); if (!ex) continue;
             ship.attrs.applyMod(AID.armorHP ?? 'armorHP', 6, ex, true);
           }
+        }
+      }
+    }
+    // ── 5g. Pilot security-status hull bonuses (CONCORD + AT frigates) ──────────
+    // A handful of hulls scale a bonus by the *pilot's* security status. The magnitude is set
+    // externally on the fit as `_pilotSec` (default 0) and wired through by calc.js.
+    //
+    //   Effect6871 (concordSecStatusTankBonus) — Enforcer / Marshal / Pacifier:
+    //     sec clamped to [0,5]; bonus = sec×10 (percent). Boosts local armor-repair amount (Repair
+    //     Systems modules) and shield-booster amount (Shield Operation modules). pyfa Effect6871.
+    //   Effect12165 (ATFrigDmgBonus) — Sidewinder and kin:
+    //     sec clamped to [-10,0]; bonus = ship ATFrigDmgBonus × sec (a negative × negative → positive).
+    //     Boosts small turret damageMultiplier here; the rocket/light-missile CHARGE damage half is
+    //     applied in calc.js (the engine can't reach charges). pyfa Effect12165.
+    {
+      const sec = this._pilotSec ?? 0;
+      if (ship.effectIDs.includes(6871)) {
+        const bonus = Math.max(0, Math.min(5, sec)) * 10;
+        if (bonus) {
+          modPct(m => m.requiresSkill('Repair Systems'), 'armorDamageAmount', bonus);
+          modPct(m => m.requiresSkill('Shield Operation'), 'shieldBonus', bonus);
+        }
+      }
+      if (ship.effectIDs.includes(12165)) {
+        const negSec = Math.max(-10, Math.min(0, sec));
+        const bonus = (ship.get('ATFrigDmgBonus') ?? 0) * negSec;
+        if (bonus) {
+          modPct(m => m.requiresSkill('Small Energy Turret') || m.requiresSkill('Small Hybrid Turret')
+                   || m.requiresSkill('Small Projectile Turret'), 'damageMultiplier', bonus);
         }
       }
     }
