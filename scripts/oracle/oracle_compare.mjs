@@ -48,12 +48,13 @@ for (const line of lines) {
     continue;
   }
 
-  // eos getWeaponDps/Volley report FULL-SPOOL by default; our .total is unspooled and exposes the
-  // max-spool multiplier separately. Fold it in so entropic-disintegrator fits compare like-for-like.
-  const spool = cs.weaponSpoolFactor ?? 1;
+  // The saved-fit oracle records eos at FULL spool. calcFitStats exposes our full-spool numbers as
+  // weapon{Dps,Volley}Max, which ramp ONLY the disintegrator's own contribution (co-fitted
+  // smartbombs/guns don't spool) — so compare against those directly rather than scaling the whole
+  // total by the factor.
   const ours = {
-    weaponDps: (cs.weaponDps?.total ?? 0) * spool,
-    weaponVolley: (cs.weaponVolley?.total ?? 0) * spool,
+    weaponDps: cs.weaponDpsMax ?? cs.weaponDps?.total ?? 0,
+    weaponVolley: cs.weaponVolleyMax ?? cs.weaponVolley?.total ?? 0,
     totalEHP: cs.totalEHP ?? 0,
     armorRepEhpS: cs.armorRepEhpS ?? 0,
     shieldRepEhpS: cs.shieldRepEhpS ?? 0,

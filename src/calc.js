@@ -12,7 +12,7 @@
  * so App.jsx requires no modifications.
  */
 
-import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, DRONE_TYPES } from './dogma-engine-init.js';
+import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES } from './dogma-engine-init.js';
 // Attribute ID → name map (inverse of AID), for abyssal/mutaplasmid attribute resolution.
 export const ATTR_ID_TO_NAME = {};
 for (const [name, id] of Object.entries(AID)) ATTR_ID_TO_NAME[id] = name;
@@ -70,7 +70,7 @@ export const SKILL_DEFAULTS = {
   // Engine-applied missile RoF / support skills (filtered by Missile Launcher Operation)
   rapidLaunch:5, missileProjection:5, missileBombardment:5,
   // Charge damage skills (+5%/lvl to missiles requiring them)
-  lightMissiles:5, rockets:5, heavyMissiles:5, cruiseMissiles:5, torpedoes:5,
+  lightMissiles:5, rockets:5, heavyMissiles:5, cruiseMissiles:5, torpedoes:5, autoTargetingMissiles:5,
   heavyAssaultMissiles:5, xlCruiseMissiles:5,
   heavyMissileSpec:5, heavyAssaultMissileSpec:5, cruiseMissileSpec:5,
   torpedoSpec:5, lightMissileSpec:5, rocketSpec:5,
@@ -157,7 +157,7 @@ const SKILL_CAMEL_TO_PYFA = {
   missileLaunchers:'Missile Launcher Operation', warheadUpgrades:'Warhead Upgrades',
   rapidLaunch:'Rapid Launch', missileProjection:'Missile Projection', missileBombardment:'Missile Bombardment',
   lightMissiles:'Light Missiles', rockets:'Rockets', heavyMissiles:'Heavy Missiles',
-  cruiseMissiles:'Cruise Missiles', torpedoes:'Torpedoes',
+  cruiseMissiles:'Cruise Missiles', torpedoes:'Torpedoes', autoTargetingMissiles:'Auto-Targeting Missiles',
   heavyAssaultMissiles:'Heavy Assault Missiles', xlCruiseMissiles:'XL Cruise Missiles',
   heavyMissileSpec:'Heavy Missile Specialization',
   heavyAssaultMissileSpec:'Heavy Assault Missile Specialization',
@@ -569,7 +569,7 @@ export function calcMissileFactor(atkEr, atkEv, atkDrf, tgtSpeed, tgtSig) {
   return Math.min(...factors);
 }
 
-const TURRET_GROUPS  = new Set(['Projectile Weapon','Hybrid Weapon','Energy Weapon','Precursor Weapon','Mining Laser']);
+const TURRET_GROUPS  = new Set(['Projectile Weapon','Hybrid Weapon','Energy Weapon','Precursor Weapon','Mining Laser','Vorton Projector']);
 
 // Round away float representation error before ceil/floor (mirrors pyfa's floatUnerr). Without this,
 // e.g. 1.8/0.12 = 15.0000000000000018 → ceil → 16 instead of the correct 15.
@@ -685,8 +685,8 @@ const PARENT_TURRET_DMG = {
 // effectID -> [shipBonusAttr, damageType, filterSkillIndex]; fit.ship.get(attr) is already
 // prescaled by the racial/elite class skill, applied as a percent per damage type to charges
 // requiring the filter skill. Generated from Pyfa eos/effects.py.
-const SHIP_MD_SK=['Cruise Missiles','Heavy Assault Missiles','Heavy Missiles','Light Missiles','Missile Launcher Operation','Rockets','Torpedoes','XL Cruise Missiles','XL Torpedoes'];
-const SHIP_MISSILE_DMG={898:['shipBonusCF','kin',4],899:['shipBonusCC','kin',4],1862:['shipBonusCF2','em',4],1863:['shipBonusCF2','th',4],1864:['shipBonusCF2','exp',4],3234:['shipBonusAF','exp',5],3235:['shipBonusAF','kin',5],3236:['shipBonusAF','th',5],3237:['shipBonusAF','em',5],4248:['subsystemBonusCaldariOffensive2',['kin'],[1,2,3]],4393:['eliteBonusCovertOps2','th',6],4394:['eliteBonusCovertOps2','em',6],4395:['eliteBonusCovertOps2','exp',6],4396:['eliteBonusCovertOps2','kin',6],4975:['shipBonusATF2','kin',4],5000:['rookieMissileKinDamageBonus','kin',4],5079:['shipBonusCF2','kin',4],5221:['shipBonusRole7','em',1],5222:['shipBonusRole7','kin',1],5223:['shipBonusRole7','th',1],5224:['shipBonusRole7','exp',1],5225:['shipBonusRole7','em',2],5226:['shipBonusRole7','exp',2],5227:['shipBonusRole7','kin',2],5228:['shipBonusRole7','th',2],5234:['shipBonusCF2',['exp'],[3,5]],5237:['shipBonusCF2',['kin'],[3,5]],5240:['shipBonusCF2',['th'],[3,5]],5243:['shipBonusCF2',['em'],[3,5]],5305:['shipBonusCD1','kin',3],5306:['shipBonusCD1','kin',5],5319:['shipBonusMD1','exp',3],5320:['shipBonusMD1','exp',5],5339:['shipBonusCBC1','kin',1],5340:['shipBonusCBC1','kin',2],5383:['shipBonusCC','em',4],5384:['shipBonusCC','th',4],5385:['shipBonusCC','exp',4],5386:['shipBonusCC2','kin',4],5539:['shipBonusAC','kin',2],5540:['shipBonusAC','em',2],5541:['shipBonusAC','th',2],5542:['shipBonusAC','exp',2],5628:['shipBonusMB','em',0],5629:['shipBonusMB','th',0],5630:['shipBonusMB','kin',0],5631:['shipBonusMB','exp',0],5632:['shipBonusMB','exp',6],5633:['shipBonusMB','em',6],5634:['shipBonusMB','th',6],5635:['shipBonusMB','kin',6],5636:['shipBonusMB','em',2],5637:['shipBonusMB','th',2],5638:['shipBonusMB','kin',2],5639:['shipBonusMB','exp',2],5733:['eliteBonusViolatorsRole1','exp',2],5734:['eliteBonusViolatorsRole1','kin',2],5735:['eliteBonusViolatorsRole1','em',2],5736:['eliteBonusViolatorsRole1','th',2],5811:['shipBonusGB2','kin',4],5812:['shipBonusGB2','th',4],5814:['shipBonusGF','kin',4],5815:['shipBonusGF','th',4],5825:['shipBonusGC2','kin',4],5826:['shipBonusGC2','th',4],5862:['shipBonusCB','em',4],5863:['shipBonusCB','kin',4],5864:['shipBonusCB','th',4],5865:['shipBonusCB','exp',4],6307:['shipBonusMD1','th',4],6308:['shipBonusMD1','em',4],6309:['shipBonusMD1','kin',4],6310:['shipBonusMD1','exp',4],6326:['shipBonusCD1','th',4],6327:['shipBonusCD1','em',4],6328:['shipBonusCD1','kin',4],6329:['shipBonusCD1','exp',4],6350:['shipBonus3CF',['kin'],[3,5]],6351:['shipBonusCC3','kin',4],6360:['shipBonusMF2',['em','kin','th'],5],6361:['shipBonus3MF','exp',5],7031:['shipBonusCBC2','kin',2],7032:['shipBonusCBC2','th',2],7033:['shipBonusCBC2','em',2],7034:['shipBonusCBC2','exp',2],7035:['shipBonusCBC2','exp',1],7036:['shipBonusCBC2','em',1],7037:['shipBonusCBC2','th',1],7038:['shipBonusCBC2','kin',1],8096:['shipBonusCD2','kin',4],11750:['shipBonusGBC1','kin',1],11751:['shipBonusGBC1','th',1],11752:['shipBonusGBC1','kin',2],11753:['shipBonusGBC1','th',2],11942:['shipBonusGD1','kin',4],11943:['shipBonusGD1','th',4],12051:['shipBonusUH2','em',4],12052:['shipBonusUH2','th',4],12053:['shipBonusUH2','exp',4],12054:['shipBonusUH2','kin',4],12058:['shipBonusUFreighter2','em',4],12060:['shipBonusUFreighter2','th',4],12061:['shipBonusUFreighter2','exp',4],12062:['shipBonusUFreighter2','kin',4],12190:['shipBonusRole2','all',5],12191:['shipBonusRole2','all',1],4635:['eliteBonusViolatorsRole1','all',[0,6]],4643:['shipBonusAC','all',1],5514:['eliteBonusCommandShips2','all',1],5521:['eliteBonusCommandShips2','all',2],6083:['shipBonusRole7','all',[3,5]],6088:['shipBonusMC2','all',1],6093:['shipBonusMC2','all',2],6096:['shipBonusMC2','all',3],7055:['shipBonusRole7','all',[0,2,6]],11070:['shipBonusCF','all',4],11411:['shipBonusMC2','all',4],11421:['shipBonusAB','all',6],11422:['shipBonusAB','all',0],11423:['shipBonusAB','all',2],11513:['shipBonusMF2','all',4],12165:['ATFrigDmgBonus','all',[3,5]],12892:['shipBonusMBC2','all',2],12893:['shipBonusMBC2','all',1],12812:['shipBonusCD1',['em','th','exp'],[3,5]],12813:['shipBonusCD2',['kin'],[3,5]],12807:['shipBonusAD1','all',[3,5]]};
+const SHIP_MD_SK=['Cruise Missiles','Heavy Assault Missiles','Heavy Missiles','Light Missiles','Missile Launcher Operation','Rockets','Torpedoes','XL Cruise Missiles','XL Torpedoes','Auto-Targeting Missiles'];
+const SHIP_MISSILE_DMG={898:['shipBonusCF','kin',4],899:['shipBonusCC','kin',4],1862:['shipBonusCF2','em',4],1863:['shipBonusCF2','th',4],1864:['shipBonusCF2','exp',4],3234:['shipBonusAF','exp',5],3235:['shipBonusAF','kin',5],3236:['shipBonusAF','th',5],3237:['shipBonusAF','em',5],4248:['subsystemBonusCaldariOffensive2',['kin'],[1,2,3]],4393:['eliteBonusCovertOps2','th',6],4394:['eliteBonusCovertOps2','em',6],4395:['eliteBonusCovertOps2','exp',6],4396:['eliteBonusCovertOps2','kin',6],4975:['shipBonusATF2','kin',4],5000:['rookieMissileKinDamageBonus','kin',4],5079:['shipBonusCF2','kin',4],5221:['shipBonusRole7','em',1],5222:['shipBonusRole7','kin',1],5223:['shipBonusRole7','th',1],5224:['shipBonusRole7','exp',1],5225:['shipBonusRole7','em',2],5226:['shipBonusRole7','exp',2],5227:['shipBonusRole7','kin',2],5228:['shipBonusRole7','th',2],5234:['shipBonusCF2',['exp'],[3,5]],5237:['shipBonusCF2',['kin'],[3,5]],5240:['shipBonusCF2',['th'],[3,5]],5243:['shipBonusCF2',['em'],[3,5]],5305:['shipBonusCD1','kin',3],5306:['shipBonusCD1','kin',5],5319:['shipBonusMD1','exp',3],5320:['shipBonusMD1','exp',5],5339:['shipBonusCBC1','kin',1],5340:['shipBonusCBC1','kin',2],5383:['shipBonusCC','em',4],5384:['shipBonusCC','th',4],5385:['shipBonusCC','exp',4],5386:['shipBonusCC2','kin',4],5539:['shipBonusAC','kin',2],5540:['shipBonusAC','em',2],5541:['shipBonusAC','th',2],5542:['shipBonusAC','exp',2],5628:['shipBonusMB','em',0],5629:['shipBonusMB','th',0],5630:['shipBonusMB','kin',0],5631:['shipBonusMB','exp',0],5632:['shipBonusMB','exp',6],5633:['shipBonusMB','em',6],5634:['shipBonusMB','th',6],5635:['shipBonusMB','kin',6],5636:['shipBonusMB','em',2],5637:['shipBonusMB','th',2],5638:['shipBonusMB','kin',2],5639:['shipBonusMB','exp',2],5733:['eliteBonusViolatorsRole1','exp',2],5734:['eliteBonusViolatorsRole1','kin',2],5735:['eliteBonusViolatorsRole1','em',2],5736:['eliteBonusViolatorsRole1','th',2],5811:['shipBonusGB2','kin',4],5812:['shipBonusGB2','th',4],5814:['shipBonusGF','kin',4],5815:['shipBonusGF','th',4],5825:['shipBonusGC2','kin',4],5826:['shipBonusGC2','th',4],5862:['shipBonusCB','em',4],5863:['shipBonusCB','kin',4],5864:['shipBonusCB','th',4],5865:['shipBonusCB','exp',4],6307:['shipBonusMD1','th',4],6308:['shipBonusMD1','em',4],6309:['shipBonusMD1','kin',4],6310:['shipBonusMD1','exp',4],6326:['shipBonusCD1','th',4],6327:['shipBonusCD1','em',4],6328:['shipBonusCD1','kin',4],6329:['shipBonusCD1','exp',4],6350:['shipBonus3CF',['kin'],[3,5]],6351:['shipBonusCC3','kin',4],6360:['shipBonusMF2',['em','kin','th'],5],6361:['shipBonus3MF','exp',5],7031:['shipBonusCBC2','kin',2],7032:['shipBonusCBC2','th',2],7033:['shipBonusCBC2','em',2],7034:['shipBonusCBC2','exp',2],7035:['shipBonusCBC2','exp',1],7036:['shipBonusCBC2','em',1],7037:['shipBonusCBC2','th',1],7038:['shipBonusCBC2','kin',1],8096:['shipBonusCD2','kin',4],11750:['shipBonusGBC1','kin',1],11751:['shipBonusGBC1','th',1],11752:['shipBonusGBC1','kin',2],11753:['shipBonusGBC1','th',2],11942:['shipBonusGD1','kin',4],11943:['shipBonusGD1','th',4],12051:['shipBonusUH2','em',4],12052:['shipBonusUH2','th',4],12053:['shipBonusUH2','exp',4],12054:['shipBonusUH2','kin',4],12058:['shipBonusUFreighter2','em',4],12060:['shipBonusUFreighter2','th',4],12061:['shipBonusUFreighter2','exp',4],12062:['shipBonusUFreighter2','kin',4],12069:['shipBonusUFreighter3','all',9],12190:['shipBonusRole2','all',5],12191:['shipBonusRole2','all',1],4635:['eliteBonusViolatorsRole1','all',[0,6]],4643:['shipBonusAC','all',1],5514:['eliteBonusCommandShips2','all',1],5521:['eliteBonusCommandShips2','all',2],6083:['shipBonusRole7','all',[3,5]],6088:['shipBonusMC2','all',1],6093:['shipBonusMC2','all',2],6096:['shipBonusMC2','all',3],7055:['shipBonusRole7','all',[0,2,6]],11070:['shipBonusCF','all',4],11411:['shipBonusMC2','all',4],11421:['shipBonusAB','all',6],11422:['shipBonusAB','all',0],11423:['shipBonusAB','all',2],11513:['shipBonusMF2','all',4],12165:['ATFrigDmgBonus','all',[3,5]],12892:['shipBonusMBC2','all',2],12893:['shipBonusMBC2','all',1],12812:['shipBonusCD1',['em','th','exp'],[3,5]],12813:['shipBonusCD2',['kin'],[3,5]],12807:['shipBonusAD1','all',[3,5]]};
 const SUBSYS_MISSILE_DMG={4248:['subsystemBonusCaldariOffensive2','kin',['Light Missiles','Heavy Missiles','Heavy Assault Missiles']],};
 
 // Ship-hull missile RANGE bonuses (Pyfa filteredChargeBoost on maxVelocity / explosionDelay,
@@ -1193,18 +1193,16 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       // to speedFactor via LocationGroupModifier Effect 1176 (groupID=46).
       const speedFactor_    = fitItem.get('speedFactor') ?? 0;
       const speedBoostFact_ = fitItem.get('speedBoostFactor') ?? 0;
-      const massAdd = fitItem.get('massAddition') ?? 0;
       if (speedFactor_ && speedBoostFact_) {
-        const totalMass = (s.get('mass') ?? mass) + massAdd;
+        // s.get('mass') already includes the prop's massAddition (the engine adds it as a modAdd
+        // BEFORE the hull's mass multipliers, so a Higgs Anchor's +100% correctly applies to it).
+        const totalMass = s.get('mass') ?? mass;
         // Apply Rapid Deployment command burst speedFactor boost (Buff 22, PostPercent)
         const effectiveSpeedFactor = speedFactor_ * (1 + propSpeedFBonus / 100);
         // Pyfa formula: boostItemAttr('maxVelocity', speedFactor * thrust / mass)
         // → maxVelocity *= (1 + speedFactor * thrust / mass / 100)
         abMwdSpeed = maxVelocity * (1 + effectiveSpeedFactor * speedBoostFact_ / totalMass / 100);
       }
-      // sigRadius already includes MWD bloom and rig drawback from engine custom handler
-      // mass addition is NOT handled by the engine (Effect6730 is hardcoded), so add it here:
-      mass += massAdd;
     }
   }
 
@@ -1336,6 +1334,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   let effectiveDmgMultBonus = 0;
   let weaponSpoolFactor = 1;    // max-spool damage multiplier vs unspooled (1 = no spool weapon)
   let weaponSpoolTimeS  = 0;    // seconds to reach full spool (entropic disintegrators)
+  // Only the spooling weapon's OWN damage ramps — smartbombs/other guns on the same hull do not.
+  // Track the spooling contribution separately so weapon*Max spools only this portion, not the total.
+  let spoolBaseVolley   = 0;
+  let spoolBaseDps      = 0;
 
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isActive(slot.state)) continue;
@@ -1429,8 +1431,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         weaponDps.th   += dps('th');   weaponVolley.th   += vol('th');
         weaponDps.kin  += dps('kin');  weaponVolley.kin  += vol('kin');
         weaponDps.exp  += dps('exp');  weaponVolley.exp  += vol('exp');
-        weaponDps.total  += dps('em')+dps('th')+dps('kin')+dps('exp');
-        weaponVolley.total += vol('em')+vol('th')+vol('kin')+vol('exp');
+        const slotDpsTotal = dps('em')+dps('th')+dps('kin')+dps('exp');
+        const slotVolTotal = vol('em')+vol('th')+vol('kin')+vol('exp');
+        weaponDps.total  += slotDpsTotal;
+        weaponVolley.total += slotVolTotal;
+        // Record this weapon's contribution to the spool base only if it actually spools, so the
+        // max-spool display ramps this weapon alone and leaves co-fitted non-spool guns at base.
+        if (spoolMax > 0 && spoolPerCycle > 0) { spoolBaseDps += slotDpsTotal; spoolBaseVolley += slotVolTotal; }
       }
       // Store ammo-adjusted range stats for display
       slotEngineStats.set(slot, {
@@ -1495,17 +1502,22 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const chRs   = chTid ? (TYPES[chTid]?.rs ?? []) : [];
         // (a) Charge damage skills: +5%/lvl per missile-size skill the charge requires
         //     (Light Missiles, Rockets, Heavy Missiles, Cruise Missiles, Torpedoes, HAMs, XL).
-        let chargeSkillBonus = 0;
+        // Each missile-size damage skill is a SEPARATE multiplier in eos (two +25% skills → ×1.5625,
+        // not ×1.5). Matters only when a charge requires two damage skills (Auto-Targeting missiles
+        // require both Heavy Missiles AND Auto-Targeting Missiles); single-skill charges are unchanged.
+        let chargeSkillMult = 1;
         const MISSILE_DMG_SKILLS = {
           'Light Missiles':'lightMissiles', 'Rockets':'rockets', 'Heavy Missiles':'heavyMissiles',
-          'Cruise Missiles':'cruiseMissiles', 'Torpedoes':'torpedoes',
+          'Cruise Missiles':'cruiseMissiles', 'Torpedoes':'torpedoes', 'Auto-Targeting Missiles':'autoTargetingMissiles',
           'Heavy Assault Missiles':'heavyAssaultMissiles', 'XL Cruise Missiles':'xlCruiseMissiles', 'XL Torpedoes':'xlTorpedoes',
         };
         for (const [skillName, camel] of Object.entries(MISSILE_DMG_SKILLS)) {
-          if (chRs.includes(skillName)) chargeSkillBonus += 0.05 * (sk[camel] ?? 0);
+          if (chRs.includes(skillName)) chargeSkillMult *= 1 + 0.05 * (sk[camel] ?? 0);
         }
-        // (b) Warhead Upgrades: +2%/lvl to all missile damage
-        const warheadBonus = 0.02 * (sk.warheadUpgrades ?? 0);
+        // (b) Warhead Upgrades: +2%/lvl to missile damage. eos gates this on the charge requiring
+        //     "Missile Launcher Operation" (effects 1595/1596/1597/1657), so Defender Missiles — which
+        //     require only "Defender Missiles" — get NO warhead bonus.
+        const warheadBonus = chRs.includes('Missile Launcher Operation') ? 0.02 * (sk.warheadUpgrades ?? 0) : 0;
         // (c) BCS (Ballistic Control System): missileDamageMultiplierBonus, stacking-penalized.
         //     Read the module's RESOLVED value (fi2.get) so mutated/abyssal BCS are honored,
         //     falling back to raw type data.
@@ -1590,7 +1602,36 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
             if (engTot > 0) engineChargeMult = engTot / baseTot;
           }
         }
-        const skillDmgMult = (1 + chargeSkillBonus) * (1 + warheadBonus) * bcsMult * boosterDmgMult * engineChargeMult;
+        // (g) Missile-damage hardwiring implants (e.g. Zainou 'Snapshot' HM-705, +5% heavy missile
+        //     damage). Each carries an OwnerRequiredSkillModifier on the charge's em/th/kin/exp damage
+        //     (attrs 114/116/117/118), filtered by a missile-type skill the charge requires — so, like
+        //     the BCS/warhead terms, the engine can't reach the charge and we apply it analytically.
+        //     All four damage-type effects carry the same damageMultiplierBonus, so apply ONCE per
+        //     implant (op6, its own stacking group; at most one such implant fits per missile type).
+        let implantDmgMult = 1;
+        const DMG_ATTRS = new Set([114, 116, 117, 118]);
+        for (const imp of implants) {
+          if (!imp?.name) continue;
+          const iTid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID;
+          const iT = iTid ? TYPES[iTid] : null;
+          if (!iT) continue;
+          const iEffs = iT.e ?? iT.effectIDs ?? [];
+          let impBonus = 0;
+          outer: for (const eid of iEffs) {
+            const mods = EFFECTS_DATA[eid]?.m;
+            if (!mods) continue;
+            for (const m of mods) {
+              if (m.func !== 'OwnerRequiredSkillModifier' || !DMG_ATTRS.has(m.modifiedAttributeID)) continue;
+              const skName = m.skillTypeID != null ? TYPES[m.skillTypeID]?.n : null;
+              if (!skName || !chRs.includes(skName)) continue;
+              const attrName = ATTR_META[m.modifyingAttributeID]?.n;
+              impBonus = attrName ? (iT.attrs?.[attrName] ?? 0) : 0;
+              if (impBonus) break outer;
+            }
+          }
+          if (impBonus) implantDmgMult *= 1 + impBonus / 100;
+        }
+        const skillDmgMult = chargeSkillMult * (1 + warheadBonus) * bcsMult * boosterDmgMult * engineChargeMult * implantDmgMult;
         // T3D Sharpshooter mode charge-damage bonus is now applied by the engine to the loaded
         // charge (captured in engineChargeMult below), so no separate manual factor is needed.
         const modeDmgFactor = 1;
@@ -2476,9 +2517,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   }
 
   // Breacher pod launchers report a resist-ignoring DoT. pyfa folds the flat (absolute) DPS into
-  // Weapon DPS, so do the same; it is not spooled and has no damage-type breakdown.
+  // Weapon DPS, so do the same; it is not spooled and has no damage-type breakdown. Volley is ONE
+  // tick's flat damage (pyfa reports the earliest subcycle's absolute cap), so fold perTickFlat
+  // into weaponVolley.total the same way.
   let breacherDps = 0;
-  for (const st of slotEngineStats.values()) if (st.isBreacher && st.flatDps) breacherDps += st.flatDps;
+  for (const st of slotEngineStats.values()) {
+    if (st.isBreacher && st.flatDps)     breacherDps        += st.flatDps;
+    if (st.isBreacher && st.perTickFlat) weaponVolley.total += st.perTickFlat;
+  }
   weaponDps.total += breacherDps;
 
   // Defensive: never surface NaN/Infinity in headline damage numbers (e.g. from an unusual
@@ -2539,15 +2585,16 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       total: weaponVolley.total + droneVolley.total + fighterVolley.total,
     },
     // Spool-up (entropic disintegrators). weaponSpoolFactor>1 means the weapon ramps damage:
-    // the unspooled totals above are the MIN; the spooled MAX scales the weapon portion by the
-    // factor (drones don't spool). weaponSpoolTimeS is the time to reach full spool.
+    // the unspooled totals above are the MIN. Only the spooling weapon's OWN contribution
+    // (spoolBaseDps/spoolBaseVolley) ramps — co-fitted smartbombs/guns, breacher DoTs and drones
+    // stay at base. So MAX = total + spoolBase × (factor − 1). weaponSpoolTimeS = time to full spool.
     hasSpoolWeapon: weaponSpoolFactor > 1,
     weaponSpoolFactor,
     weaponSpoolTimeS: Math.round(weaponSpoolTimeS * 10) / 10,
-    weaponDpsMax:    (weaponDps.total - breacherDps) * weaponSpoolFactor + breacherDps,
-    weaponVolleyMax: weaponVolley.total * weaponSpoolFactor,
-    totalDpsMax:     (weaponDps.total - breacherDps) * weaponSpoolFactor + breacherDps + droneDps.total + fighterDps.total,
-    totalVolleyMax:  weaponVolley.total * weaponSpoolFactor + droneVolley.total + fighterVolley.total,
+    weaponDpsMax:    weaponDps.total    + spoolBaseDps    * (weaponSpoolFactor - 1),
+    weaponVolleyMax: weaponVolley.total + spoolBaseVolley * (weaponSpoolFactor - 1),
+    totalDpsMax:     weaponDps.total    + spoolBaseDps    * (weaponSpoolFactor - 1) + droneDps.total + fighterDps.total,
+    totalVolleyMax:  weaponVolley.total + spoolBaseVolley * (weaponSpoolFactor - 1) + droneVolley.total + fighterVolley.total,
     // Per-weapon hit-math data + ship geometry for the damage graph
     graphWeapons,
     shipRadius: s.get('radius') ?? 0,

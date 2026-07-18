@@ -115,6 +115,8 @@ class AttrMap {
     this._post0 = {};   // attrID → stacking pool for op=0 PreMul modules (DC II, Bastion resists)
     this._post4 = {};   // attrID → stacking pool for op=4 PostMul modules (Gyrostabs)
     this._post  = {};   // attrID → stacking pool for op=6 PostPercent modules (hardeners, TE/Bastion range/ROF)
+    this._postPerc = {}; // attrID → SECONDARY penalised pool (eos penaltyGroup='postPerc'): mode-module
+                         //   RoF + overload RoF penalise vs each other but NOT vs the main op4/op6 pool.
     this._mul   = {};   // attrID → direct multipliers (skills, hull bonuses, implants)
     this._force = {};   // attrID → forced post-value (PostAssignment)
   }
@@ -131,9 +133,19 @@ class AttrMap {
   // Called by the engine to apply one modifier value
   // direct=true: bypass stacking penalty (skills, hull bonuses, implants, boosters)
   // direct=false: use stacking penalty pool (modules)
-  applyMod(attrID, op, value, direct = false) {
+  applyMod(attrID, op, value, direct = false, penaltyGroup = null) {
     const aid = Number(attrID);
     if (value == null || isNaN(value)) return;
+    // eos penaltyGroup='postPerc': a self-contained penalised group (mode-module RoF + overload RoF).
+    // Its members penalise against EACH OTHER but not against the main op4/op6 pool. Convert the op to
+    // a raw multiplier and stash it; get() stacks this pool separately.
+    if (penaltyGroup === 'postPerc') {
+      let mult = null;
+      if (op === 6) mult = 1 + value / 100;
+      else if (op === 4) mult = value;
+      else if (op === 5 && value !== 0) mult = 1 / value;
+      if (mult != null) { (this._postPerc[aid] ??= []).push(mult); return; }
+    }
     switch (op) {
       case -1: // PreAssignment
         this._pre[aid] = value; break;
@@ -208,7 +220,11 @@ class AttrMap {
     const stacked0 = applyStacking(base, this._post0[aid] ?? [], aid);
     const penalised = [...(this._post4[aid] ?? []), ...(this._post[aid] ?? [])];
     const stacked = applyStacking(stacked0, penalised, aid);
-    return clamp(stacked * (this._mul[aid] ?? 1));
+    // The 'postPerc' pool stacks within itself (base 1) and multiplies in on top — separate from the
+    // main penalised pool, so e.g. a Bastion RoF bonus and an overload RoF bonus penalise each other
+    // (Bastion slot 1 full, overload slot 2 ×0.8691) without touching the Ballistic Control Systems.
+    const postPercMult = applyStacking(1, this._postPerc[aid] ?? [], aid);
+    return clamp(stacked * (this._mul[aid] ?? 1) * postPercMult);
   }
 
   getBase(attrIDorName) {
@@ -270,7 +286,16 @@ function effectActiveForState(effectCat, itemState) {
 export class Fit {
   // Booster side-effect penalty effects — skipped by default (matches Pyfa default behaviour)
   static BOOSTER_PENALTY_EFFECTS = new Set([2735, 2736, 2737, 2739, 2741, 2745, 2746, 2747, 2748, 2749, 2791, 4970]);
-  static CRYSTAL_SET_TIDS = new Set([22107, 22108, 22109, 22110, 22111]); // Crystal Alpha-Epsilon
+  // A Crystal-set shield-boost implant (Alpha–Epsilon of ANY grade: standard/mid/high) carries BOTH
+  // shieldBoostMultiplier (its per-slot bonus) and implantSetGuristas (the set multiplier). Omega has
+  // only implantSetGuristas. We skip Effect1395 for these members because the custom set handler
+  // re-applies the FULL set-boosted value in one step (avoiding a double count). Detect by attribute
+  // presence, NOT hardcoded typeIDs — the old mid-grade-only list (22107–22111) let the high-grade set
+  // (20121/20157–20160) fall through, double-applying its base +1..+5% (Whiptail shield tank +15.9%).
+  static isCrystalSetMember(item) {
+    const a = item._td?.a ?? {};
+    return ('shieldBoostMultiplier' in a) && ('implantSetGuristas' in a);
+  }
 
   constructor(shipTypeID) {
     const tid = Number(shipTypeID);
@@ -457,8 +482,8 @@ export class Fit {
       const direct = !isModule;
       for (const eid of item.effectIDs) {
         if (isBooster && Fit.BOOSTER_PENALTY_EFFECTS.has(eid)) continue;
-        // Skip Effect1395 for Crystal Alpha-Epsilon — custom handler applies full set-boosted value
-        if (eid === 1395 && Fit.CRYSTAL_SET_TIDS.has(item.typeID)) continue;
+        // Skip Effect1395 for Crystal Alpha-Epsilon (any grade) — custom handler applies full set-boosted value
+        if (eid === 1395 && Fit.isCrystalSetMember(item)) continue;
         // Skip Effect2716 (drawback → signatureRadius) — handled post-skill-pass in custom handlers
         // so that Shield Rigging V's drawback reduction (via LocationGroupModifier) is applied first.
         if (eid === 2716) continue;
@@ -564,7 +589,15 @@ export class Fit {
         267, 268, 269, 270, // armor em/explosive/kinetic/thermal DamageResonance
         271, 272, 273, 274, // shield em/explosive/kinetic/thermal DamageResonance
       ]);
-      if (!effectiveDirect && MODE_MODULE_GROUPS.has(src.groupName) && !IC_STACKED_SRC.has(srcAttr)) effectiveDirect = true;
+      // Members of eos's 'postPerc' penalty group route here instead of going fully direct.
+      let postPercGroup = false;
+      if (!effectiveDirect && MODE_MODULE_GROUPS.has(src.groupName) && !IC_STACKED_SRC.has(srcAttr)) {
+        // A mode module's RoF bonus (speed) shares eos's 'postPerc' group with overload RoF — the two
+        // penalise against each other but not against BCS/damage mods. Every OTHER mode-module bonus
+        // (resists, range, tank) is a role bonus applied unpenalised.
+        if (Number(dstAttr) === AID.speed) postPercGroup = true;
+        else effectiveDirect = true;
+      }
 
       // Booster (drug) bonuses are their OWN stacking group in EVE — they are not penalised against
       // modules. We already knew this for passive resists; it applies to every booster bonus. It
@@ -582,13 +615,34 @@ export class Fit {
       // active configuration, so unpenalised (→ _mul) is exact for every real fit.
       if (eid === 854) effectiveDirect = true;
 
+      // Effect 3001 (overloadRofBonus): pyfa hand-codes overheat RoF with its OWN penalty group
+      // ('postPerc'), separate from the 'default' PostMul group that damage-mod modules share on
+      // `speed` (gyrostabs, BCS, Vorton Tuning Systems — filteredItemMultiply, no penaltyGroup). Our
+      // engine otherwise merges op4 and op6 into one penalised pool (stacking rule 1), which would
+      // wrongly penalise a module's overload RoF against its own damage mods. A module carries at most
+      // one overload effect, so its 'postPerc' group always has a single member → full strength.
+      // (Overheated Vorton Stormbringer: eos 259.7 DPS; lumped-in pool under-applied us to 247.3.)
+      //
+      // Effect 3025 (overloadSelfDamageBonus, energy/hybrid/projectile/precursor turrets) is the same
+      // story: pyfa's boostItemAttr('damageMultiplier', overloadDamageModifier) passes NO
+      // stackingPenalties flag → defaults False → un-penalised. Our op6 pool otherwise penalises the
+      // +15% overheat damage against the module's Heat Sinks / Magnetic Field Stabs / Gyrostabs (op4
+      // damageMultiplier), crushing it to ~+5%. A module carries one overload, so full strength is
+      // exact. (Overheated Abaddon w/ Conflagration: eos 1677.7 DPS, penalised pool gave us 1533.3.)
+      if (eid === 3001) postPercGroup = true;         // overload RoF: eos 'postPerc', penalises vs mode-module RoF only
+      else if (eid === 3025) effectiveDirect = true;  // overload self-damage: no stackingPenalties flag → unpenalised
+
+      // eos 'postPerc' members route to the secondary penalised pool (penalise each other, not the
+      // main op4/op6 pool); everything else uses the ordinary direct/penalised routing.
+      const pg = postPercGroup ? 'postPerc' : null;
+
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {
         // domain=shipID → target is ship; domain=itemID → target is src itself
         if (domain === 'shipID') {
-          this.ship.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+          this.ship.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
         } else if (domain === 'itemID') {
-          src.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+          src.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
         } else if (domain === 'charID') {
           // skill → char attr; not used for fitting stats
         } else if (domain === 'otherID') {
@@ -598,15 +652,15 @@ export class Fit {
       } else if (func === 'LocationModifier') {
         // Applies to all modules (+ subsystems/ship-mode, which are location items too)
         if (domain === 'shipID') {
-          for (const m of this._modules) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
-          for (const s of this._subsystems) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
-          if (this._shipMode) this._shipMode.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+          for (const m of this._modules) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+          for (const s of this._subsystems) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+          if (this._shipMode) this._shipMode.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
         }
 
       } else if (func === 'LocationGroupModifier') {
         if (domain === 'shipID') {
           for (const m of this._modules) {
-            if (Number(m.groupID) === Number(groupID)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (Number(m.groupID) === Number(groupID)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
           }
           // Loaded charges are location items too, and some hull bonuses target the CHARGE's group
           // rather than the module's — e.g. the Minokawa's Force Auxiliary C5 bonus (Effect12835)
@@ -615,13 +669,13 @@ export class Fit {
           // the bonus silently no-ops and cap-booster injection is understated.
           for (const m of this._modules) {
             if (m._charge && Number(m._charge.groupID) === Number(groupID)) {
-              m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+              m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
             }
           }
           // Subsystems are group-filtered location items too: a subsystem skill scales the
           // subsystem's own bonus attrs (e.g. Minmatar Offensive Systems → group 956 bonus2).
           for (const s of this._subsystems) {
-            if (Number(s.groupID) === Number(groupID)) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (Number(s.groupID) === Number(groupID)) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
           }
         }
 
@@ -639,13 +693,13 @@ export class Fit {
         if (domain === 'shipID') {
           const skill = skillID != null ? (TYPES[skillID]?.n ?? '') : '';
           for (const m of this._modules) {
-            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
           }
           // Loaded charges (missile ammo) require missile skills; ship/subsystem damage bonuses
           // (e.g. Legion Offensive → emDamage on Light Missiles) filter on those skills and must
           // reach the charge's damage attributes.
           for (const m of this._modules) {
-            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
           }
         }
       } else if (func === 'OwnerRequiredSkillModifier') {
@@ -1142,8 +1196,9 @@ export class Fit {
         const drawback = m.get('drawback');  // fully resolved: includes Shield/relevant Rigging reduction
         if (drawback) this.ship.attrs.applyMod(AID.signatureRadius, 6, drawback, false);
       }
-      // Effect6730: MWD/AB sig bloom (hardcoded, only when active)
-      if ((m.state === 'active' || m.state === 'overheated') && m.groupName === 'Propulsion Module') {
+      // Effect6730: MWD/AB sig bloom + mass addition (hardcoded, only when active). Detect an active
+      // prop by speedBoostFactor presence rather than group name (MWD/AB group names vary).
+      if ((m.state === 'active' || m.state === 'overheated') && ('speedBoostFactor' in (m._td?.a ?? {}))) {
         const AID_SIGBONUS = AID.signatureRadiusBonus ?? 554;
         const hasSig = AID_SIGBONUS in (m._td?.a ?? {}) ||
                        String(AID_SIGBONUS) in (m._td?.a ?? {}) ||
@@ -1152,6 +1207,11 @@ export class Fit {
           const sigBonus = m.get('signatureRadiusBonus');
           if (sigBonus) this.ship.attrs.applyMod(AID.signatureRadius, 6, sigBonus, false);
         }
+        // massAddition as a modAdd (op 2) so hull mass multipliers (Higgs Anchor massBonusPercentage,
+        // a postPercent) apply to the combined base+prop mass — matching eos operator ordering. calc.js
+        // therefore reads the prop-inclusive mass straight from s.get('mass').
+        const massAdd = m.get('massAddition');
+        if (massAdd) this.ship.attrs.applyMod(AID.mass ?? 4, 2, massAdd, false);
       }
     }
 
@@ -1205,5 +1265,6 @@ export class Fit {
 }
 
 // ─── Convenience re-exports for calc.js ───────────────────────────────────────
-export const EFFECTS_DATA = EFFECTS;
-export const ATTR_META    = ATTRS;
+// Export the LIVE `let` bindings (not a snapshot). initEngine() reassigns EFFECTS/ATTRS
+// after module eval, so `export const X = EFFECTS` would freeze the initial empty {}.
+export { EFFECTS as EFFECTS_DATA, ATTRS as ATTR_META };
