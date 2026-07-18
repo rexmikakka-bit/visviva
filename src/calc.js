@@ -1126,6 +1126,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   let maxVelocity = s.get('maxVelocity');
   // Projected stasis webs reduce velocity (caller supplies the combined stacking-penalised multiplier).
   if (opts.projectedWebMult != null && opts.projectedWebMult < 1) maxVelocity *= opts.projectedWebMult;
+  // An active titan doomsday immobilises the ship: its speedFactor of -100 boosts maxVelocity by -100%
+  // (eos superweapon effects 4489-4492 → boostItemAttr('maxVelocity', -100) → ×0).
+  for (const { slot, fitItem } of modItems) {
+    if (!fitItem || !isActive(slot.state)) continue;
+    if (!(fitItem.effectIDs ?? []).some(e => e >= 4489 && e <= 4492)) continue;
+    const sf = fitItem.get('speedFactor') ?? 0;
+    if (sf) maxVelocity *= Math.max(0, 1 + sf / 100);
+  }
   let agility     = s.get('agility');
   if (anhMode?.agility) agility *= anhMode.agility; // Anhinga Tertiary mode agility (PostDiv → mult)
   let mass        = s.get('mass');
@@ -1136,13 +1144,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // MWD/AB: apply manually (not yet in effects.py)
   // Command bursts: apply every active burst's MODULE-targeted buff (rep duration/cap, prop speed,
   // tackle range, weapon disruption) to modules requiring the buff's skill. The prop-speed buff
-  // (Rapid Deployment, Buff 22) is captured separately because the MWD/AB speed calc below reads it.
-  let propSpeedFBonus = 0; // % boost to speedFactor from active Rapid Deployment burst (Buff 22)
+  // (Rapid Deployment, Buff 22) applies to the prop module's speedFactor via the generic skill-target
+  // loop below as a stacking-penalised PostPercent — so an OVERHEATED prop mod's overload speedFactor
+  // bonus (also penalised, eos effect 3181) pushes the burst to the second slot (×0.8691). Reading the
+  // engine-computed speedFactor in the speed calc then gets the penalty for free; applying the burst as
+  // a separate unpenalised multiply overstated speed ~2.2% on every overheated-prop command-burst fit.
   for (const [buffID, eff] of burstByType) {
     const def = WARFARE_BUFFS[buffID];
     if (!def || !eff) continue;
-    // Buff 22 (prop speed) feeds the MWD/AB speed calc below rather than a direct attr mod.
-    if (buffID === 22) { propSpeedFBonus = eff; continue; }
     // Group-targeted buffs (e.g. Electronic Superiority): apply by numeric attr ID to modules of the group.
     if (def.groupMods) {
       for (const { a, g } of def.groupMods) {
@@ -1199,11 +1208,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         // s.get('mass') already includes the prop's massAddition (the engine adds it as a modAdd
         // BEFORE the hull's mass multipliers, so a Higgs Anchor's +100% correctly applies to it).
         const totalMass = s.get('mass') ?? mass;
-        // Apply Rapid Deployment command burst speedFactor boost (Buff 22, PostPercent)
-        const effectiveSpeedFactor = speedFactor_ * (1 + propSpeedFBonus / 100);
+        // speedFactor_ already carries any active Rapid Deployment burst (Buff 22), stacking-penalised
+        // by the engine against an overheated prop mod's overload speedFactor bonus.
         // Pyfa formula: boostItemAttr('maxVelocity', speedFactor * thrust / mass)
         // → maxVelocity *= (1 + speedFactor * thrust / mass / 100)
-        abMwdSpeed = maxVelocity * (1 + effectiveSpeedFactor * speedBoostFact_ / totalMass / 100);
+        abMwdSpeed = maxVelocity * (1 + speedFactor_ * speedBoostFact_ / totalMass / 100);
       }
     }
   }
