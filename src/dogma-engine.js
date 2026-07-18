@@ -172,11 +172,27 @@ class AttrMap {
     }
   }
 
-  get(attrIDorName) {
+  get(attrIDorName, _capping = false) {
+    // A numeric string is an attribute ID, NOT a name. Three garbage attrs (1847/1848 named "902",
+    // 2018 named "2015") carry purely-numeric names that poison the AID name→id map, so an
+    // AID-first lookup of e.g. "2015" resolves to attr 2018 (value 0) instead of attr 2015. Reading
+    // an effect's numeric modifyingAttributeID via get(String(id)) then silently returned 0 — which
+    // dropped the Caldari Tactical Destroyer rate-of-fire bonus (attr 2015) off every Jackdaw fit.
     const aid = typeof attrIDorName === 'number'
       ? attrIDorName
-      : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName));
-    if (aid in this._force) return this._force[aid];
+      : (/^\d+$/.test(attrIDorName) ? Number(attrIDorName)
+         : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName)));
+    // maxAttributeID cap (upper bound), matching pyfa's min(val, cappingValue). The cap is another
+    // attribute's MODIFIED value on this item (its default if unset). This is what floors resists at
+    // 0% for Polarized weapons: their forced resonance (>>1) is clamped to the *MaxDamageResonance
+    // cap of 1.0 instead of running away to -9900%. _capping guards against cap-attr recursion.
+    const capAid = _capping ? 0 : ATTRS[aid]?.x;
+    const clamp = (v) => {
+      if (!capAid) return v;
+      const c = this.get(capAid, true);
+      return (c == null || isNaN(c)) ? v : Math.min(v, c);
+    };
+    if (aid in this._force) return clamp(this._force[aid]);
     const pre  = aid in this._pre ? this._pre[aid] : null;
     const base = pre ?? ((this._base[aid] ?? attrDefault(aid)) + (this._add[aid] ?? 0));
     // Stacking groups. EVE penalises PostMul (op4) and PostPercent (op6) TOGETHER — they compete for
@@ -192,13 +208,14 @@ class AttrMap {
     const stacked0 = applyStacking(base, this._post0[aid] ?? [], aid);
     const penalised = [...(this._post4[aid] ?? []), ...(this._post[aid] ?? [])];
     const stacked = applyStacking(stacked0, penalised, aid);
-    return stacked * (this._mul[aid] ?? 1);
+    return clamp(stacked * (this._mul[aid] ?? 1));
   }
 
   getBase(attrIDorName) {
     const aid = typeof attrIDorName === 'number'
       ? attrIDorName
-      : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName));
+      : (/^\d+$/.test(attrIDorName) ? Number(attrIDorName)
+         : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName)));
     return this._base[aid] ?? attrDefault(aid);
   }
 }
@@ -555,6 +572,15 @@ export class Fit {
       // was being penalised against the Ballistic Control Systems' speedMultiplier (op4), costing a
       // Praxis ~5% missile DPS (87.6 vs pyfa's 92.5).
       if (!effectiveDirect && this._boosterSet && this._boosterSet.has(src)) effectiveDirect = true;
+
+      // Effect 854 (cloakingScanResolutionMultiplier): pyfa hand-codes this with its OWN penalty group
+      // ('cloakingScanResolutionMultiplier'), separate from the default scanResolution PostMul group that
+      // Warp Core Stabilizers / Interdiction Nullifiers (effect 2645) share. With a single cloak fitted its
+      // group has one member, so it applies at FULL strength, unpenalised against the WCS group. (Occator
+      // with 3 WCS + cloak: pyfa scanRes 30.3 = 250 × 0.2021 [WCS penalised] × 0.6 [cloak alone]; lumping
+      // all four multipliers into one pool under-penalised us to 44.8.) Multiple cloaks are not a fittable
+      // active configuration, so unpenalised (→ _mul) is exact for every real fit.
+      if (eid === 854) effectiveDirect = true;
 
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {

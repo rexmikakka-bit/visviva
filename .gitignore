@@ -18,7 +18,16 @@ sqlite-latest.sqlite
 # app works fine without it. Keeping it out of the repo saves a huge checkout.
 Pyfa-master/
 pyfa-master/
+# Version-matched pyfa clone the oracle runs against (PYFA_ROOT); local-only.
+Pyfa-268/
 *.zip
+
+# ── Oracle: personal pyfa fit dumps (OPSEC — NEVER commit) ────────────────────
+# scripts/oracle/*.py and *.mjs are tooling and SHOULD be committed, but the
+# scanned/exported fit dumps contain the user's real fits, some OPSEC-sensitive.
+scripts/oracle/_*.jsonl
+scripts/oracle/*.err
+scripts/oracle/__pycache__/
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs

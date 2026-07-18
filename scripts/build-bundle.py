@@ -201,17 +201,26 @@ def main():
     # ── attributes: eve.db has no `stackable`, so preserve existing flags ────
     new_attrs = dict(old_attrs)
     new_attr_ids = []
-    for aid, an, dv, hg in db.execute(
-            "SELECT attributeID,attributeName,defaultValue,highIsGood FROM dgmattribs"):
+    for aid, an, dv, hg, mx in db.execute(
+            "SELECT attributeID,attributeName,defaultValue,highIsGood,maxAttributeID FROM dgmattribs"):
         s = str(aid)
+        # maxAttributeID: id of another attribute whose value caps this one (upper bound). Used e.g.
+        # to clamp forced damage resonances to 1.0 so Polarized weapons floor resists at 0%, not -9900%.
+        cap = int(mx) if mx else 0
         if s in new_attrs:
             new_attrs[s]['n'] = an or new_attrs[s].get('n', '')
             new_attrs[s]['h'] = 1 if hg else 0
             new_attrs[s]['d'] = num(dv)
+            if cap:
+                new_attrs[s]['x'] = cap
+            else:
+                new_attrs[s].pop('x', None)
         else:
             # stackable is NOT in eve.db. Default to 1 (unpenalised) and report — if a new
             # attribute is actually stacking-penalised, set "s": 0 by hand in data-patches.json.
             new_attrs[s] = {'n': an or '', 's': 1, 'h': 1 if hg else 0, 'd': num(dv)}
+            if cap:
+                new_attrs[s]['x'] = cap
             new_attr_ids.append((aid, an))
 
     # ── effects: modifiers cannot come from eve.db; preserve, and flag new ones ──

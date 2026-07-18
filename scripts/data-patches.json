@@ -11,6 +11,70 @@
     "Every entry must say WHY it exists and what breaks without it."
   ],
   "effects": {
+    "12843": [
+      {
+        "_why": "shipSmallHybridDamageBonusGD2 (Algos Navy Issue, 91849). CCP ships this empty. +damageMultiplier to Small Hybrid Turrets, scaled by shipBonusGD2 (prescaled by Gallente Destroyer). Same shape as base Catalyst 5310 but on damageMultiplier (64) instead of tracking. Without it the Algos Navy's turret DPS is missing its hull damage bonus.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 64,
+        "modifyingAttributeID": 739,
+        "operation": 6,
+        "skillTypeID": 3301
+      }
+    ],
+    "12808": [
+      {
+        "_why": "shipBonusSETDamageAD1 (Dragoon Navy Issue, 91775). CCP ships this empty. +damageMultiplier to Small Energy Turrets, scaled by shipBonusAD1 (prescaled by Amarr Destroyer). Without it the Dragoon Navy's turret DPS is missing its hull damage bonus.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 64,
+        "modifyingAttributeID": 1887,
+        "operation": 6,
+        "skillTypeID": 3303
+      }
+    ],
+    "12816": [
+      {
+        "_why": "skillMultiplierShipBonusMD3 on the Minmatar Destroyer skill (33094). CCP ships this empty. It skill-scales shipBonusMD3 (attr 6089) by level, exactly as 5282/5283 do for MD1/MD2. MD3 is a NEWER bonus attr with its own prescale effect (unlike MD1/MD2 which share 5282/5283). Without it shipBonusMD3 stays at 1x base, so the Talwar Fleet's rate-of-fire bonus (effect 12817, which reads shipBonusMD3) applied at 1/5 strength.",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6089,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      }
+    ],
+    "12814": [
+      {
+        "_why": "skillMultiplierShipBonusCD3 on the Caldari Destroyer skill (33092). CCP ships this empty. It skill-scales shipBonusCD3 (attr 6088) by level, the CD3 analogue of 12816/MD3. Only the Corax Navy Issue reads shipBonusCD3 (effect 12815, missile explosion radius). Added for correctness so CD3 is prescaled; harmless until 12815 is implemented.",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 6088,
+        "modifyingAttributeID": 280,
+        "operation": 0
+      }
+    ],
+    "12817": [
+      {
+        "_why": "shipBonusMissileLauncherRoFMD3 (Talwar Fleet Issue, 91858). CCP ships this empty. Reduces launcher cycle time (speed, attr 51) for Missile Launcher Operation modules, scaled by shipBonusMD3 (prescaled by Minmatar Destroyer effect 12816). Without it the Talwar Fleet's missile DPS is missing its hull rate-of-fire bonus.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 51,
+        "modifyingAttributeID": 6089,
+        "operation": 6,
+        "skillTypeID": 3319
+      }
+    ],
+    "12818": [
+      {
+        "_why": "shipShieldBoostMD2 (Talwar Fleet Issue, 91858). CCP ships this empty. +shieldBonus (attr 68) to Shield Operation modules (shield boosters), scaled by shipBonusMD2 (prescaled by Minmatar Destroyer). Without it the Talwar Fleet's active shield tank is missing its hull boost bonus.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 68,
+        "modifyingAttributeID": 740,
+        "operation": 6,
+        "skillTypeID": 3416
+      }
+    ],
     "12887": [
       {
         "_why": "angelCartelProjectileReloadingSpeed. CCP ships this effect with an empty modifier list, so the Angel Cartel -75% projectile reload bonus (attr 6203, on Cynabal/Machariel/Dramiel/Moracha/Chremoas/Mekubal/Khizriel/Azariel/Sarathiel) silently did nothing: reload stayed at 10000ms instead of 2500ms. Targets group 55 (Projectile Weapon, all sizes) -> reloadTime (1795), PostPercent.",

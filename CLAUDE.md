@@ -150,6 +150,28 @@ engine does NOT iterate charges as effect sources, so those effects are dead. Co
 `capNeedBonus` (+25% cap, Effect804) is handled explicitly in the charge pass; if another
 charge-modifies-module effect turns up, it needs the same treatment.
 
+### Hull damage/RoF/tank bonuses split across TWO code paths
+
+Faction/navy hull bonuses (the 2026-07 navy destroyer batch is the worked example) land in one of two
+places depending on WHICH attribute they modify — never guess, check where `calc.js` reads the number:
+
+1. **Missile CHARGE damage** (`emDamage`/`kinDamage`…) → the `SHIP_MISSILE_DMG` table in `calc.js`.
+   `calc.js` reads charge damage from RAW type data (`chargeProfile` reads `td.attrs`, not the engine),
+   and the engine's `OwnerRequiredSkillModifier` can't reach a charge, so these bonuses must be applied
+   in `calc.js`. Keyed by effect ID → `[bonusAttr, dmgTypes, skillFilterIndices]`.
+2. **MODULE attributes** — turret `damageMultiplier` (64), missile RoF `speed` (51), `shieldBonus`
+   (68) — → the engine via a `LocationRequiredSkillModifier` entry in `scripts/data-patches.json`.
+   `calc.js` reads these engine-computed (`fitItem.get('damageMultiplier')` etc.), so a modifierInfo
+   patch is enough. The `skillTypeID` in the patch is a module **filter**, not a level multiplier.
+
+**Skill-prescaling gotcha (cost a session):** hull bonus attrs (`shipBonusGD2`…) are pre-scaled by the
+racial destroyer skill (an `ItemModifier`, domain shipID, modifyingAttributeID 280=skillLevel, op0) so
+that `fit.ship.get('shipBonusGD2')` already carries the full ×5 (level V) value before a hull effect
+reads it. MD1/MD2 share the prescale effects 5282/5283, **but the newer MD3 (6089) and CD3 (6088) have
+their OWN prescale effects (12816 on the Minmatar Destroyer skill, 12814 on Caldari) which CCP ships
+EMPTY.** Without patching 12816, `shipBonusMD3` stayed ×1 and the Talwar Fleet's RoF bonus applied at
+1/5 strength. If a *newer* hull-bonus attr reads at 1/5, look for a missing prescale effect.
+
 ### pyfa's source is the reference — read it instead of guessing
 
 pyfa is open source and hand-implements every effect CCP ships with an EMPTY modifier list, keyed by
@@ -295,14 +317,39 @@ that a human can see exactly which numbers moved and why.
 
 ---
 
-## Driving pyfa's `eos` engine directly (the oracle — planned, not yet built)
+## Driving pyfa's `eos` engine directly (the oracle — BUILT, 2026-07-17)
 
-The long-term goal is an automated oracle: drive pyfa's calculation engine as a Python library and
-diff its numbers against ours, instead of validating one fit at a time by hand in the GUI.
+An automated oracle now drives pyfa's calculation engine as a Python library and diffs its numbers
+against ours, instead of validating one fit at a time by hand in the GUI. Lives in `scripts/oracle/`.
 
-**This is feasible.** `Pyfa-master/eos/` has **zero** wx/GUI imports — the engine is fully decoupled
-from the app. pyfa's own tests (`tests/test_modules/test_eos/`) drive it through fixtures (DB, a
-`RifterFit`, a `KeepstarFit`) and call `calculateModifiedAttributes()` with no GUI. We can do the same.
+```bash
+/c/Python314/python scripts/oracle/oracle.py --list      # available fit specs
+/c/Python314/python scripts/oracle/oracle.py bane        # eos stats + diff vs our baseline
+```
+
+`eos_bootstrap.py` wires eos headless; `oracle.py` builds a fit from a spec (ship + modules + charges
++ drones + implants + boosters + all-skills-at-V) and prints `getWeaponDps()`, `getWeaponVolley()`,
+`getTotalDps()`, `ehp`, `capDelta`, `maxTargetRange`, `scanResolution`. **Proven:** the Bane spec
+reproduces our baseline exactly — eos weaponDps 13301.28 (ours 13301), volley 180870.16 (ours 180870).
+
+**How the headless bootstrap works (the non-obvious bits):**
+
+- `Pyfa-master/eos/` itself has zero wx imports — BUT `eos/db/migration.py` does `import config`
+  (pyfa's **GUI** app config at `Pyfa-master/config.py`), which pulls in `wx`. That import happens at
+  `eos.db` load time. `migration.update()` is only ever called from GUI-side `service/prefetch.py`, so
+  the bootstrap injects a tiny stub `config` module into `sys.modules` (with `savePath`/`saveDB`) —
+  no wxPython needed.
+- Set `sys._called_from_test = True` **before** importing `eos.config` → saveddata goes in-memory
+  (no writes to the user's real db).
+- Override `eos.config.gamedata_connectionstring` to the authoritative db **before** `import eos.db`
+  (it reads the connection string at import time).
+- All-skills-at-V character is just `Character("name", 5)` (`defaultLevel=5, initSkills=True`).
+- Siege / Triage / Bastion are ordinary `Module`s in eos, not T3-style "modes". Charges: build the
+  Module, set `m.owner = fit`, `m.state`, then `m.charge = <chargeItem>`, then `fit.modules.append`.
+
+**Deps (already installed into `/c/Python314`):** `sqlalchemy==1.4.50` (builds fine on 3.14 despite
+its age), `logbook`, `pyyaml`. `numpy` is NOT imported by eos — don't bother. `python`/`python3`/`py`
+hit a Microsoft Store alias stub; the real interpreter is `/c/Python314/python` (3.14.5).
 
 **Assets located on this machine (as of the 2026-07-16 v2.68 upgrade):**
 
@@ -316,13 +363,34 @@ from the app. pyfa's own tests (`tests/test_modules/test_eos/`) drive it through
 - pyfa's gamedata schema is its **own** compact SQLite (tables `dgmattribs`, `dgmtypeattribs`
   (single `value` column), `invtypes`, `invgroups.name`, …) matching `eos/db/gamedata/*.py` — **not**
   raw SDE (`sqlite-latest.sqlite`, capitalized tables). `config.py` resolves `gameDB = <pyfaPath>/eve.db`.
-- **Python here is finicky.** `python`/`python3`/`py` hit a Microsoft Store alias stub and fail. The
-  real interpreter is `/c/Python314/python` (3.14.5). It **lacks `sqlalchemy` and `numpy`** —
-  pip-install both first. Watch out: eos pins `sqlalchemy==1.4.50`, which predates Python 3.14 by
-  years; a newer sqlalchemy (plus minor shims) may be needed.
-- Next-session bootstrap: install deps, point eos at `C:\Program Files\pyfa\app\eve.db`, build a Fit
-  (ship + modules + charges + skills-at-V), call `calculateModifiedAttributes()`, and compare against
-  `calcFitStats`.
+- **Still to do:** Praxis (needs mutated-module support) is the only regression fit not yet in `FITS`.
+  Bane, Astarte, Minokawa, Salvation and Rev Navy are ported and diff against our baselines.
+
+### ⚠️ The oracle is not infallible — pyfa has its own bugs
+
+pyfa is our reference, but eos hand-codes each effect in `eos/effects.py` (its compact db carries **no**
+`modifierInfo`), so an effect CCP ships with a modifier but which pyfa never wrote a class for is a
+**silent no-op in eos** — and eos will disagree with a correct value of ours. When the oracle flags a
+mismatch, first ask *which side is missing the effect*, not "how are we wrong."
+
+**⚠️ First suspect a VERSION-SKEW artifact, not a real gap.** The eos engine code must match the
+gamedata db version. The default `Pyfa-master` clone is **stale (v2.66.3)** and lacks every v2.68
+effect class, so it will report "gaps" that a version-matched clone does not. `eos_saveddata.py` (the
+saved-fit scanner) honours `PYFA_ROOT`; `eos_bootstrap.py` (the hand-spec `oracle.py`) now does too —
+**always run both with `PYFA_ROOT=$(pwd)/Pyfa-268`**, or the oracle invents gaps.
+
+The classic false alarm: **Astarte weapon DPS (stale eos 800 vs ours 1200).** CCP moved the Astarte's
+Command Ships weapon bonus from rate-of-fire (`Effect5505`) to +10%/lvl **medium-hybrid damage**
+(effect **12897**, `eliteBonusCommandShipMediumHybridDamageCS1`, reads `eliteBonusCommandShips1`=10 →
+×1.5 at all-V). The stale `Pyfa-master` clone has no `Effect12897` class → drops the whole CS weapon
+bonus → 800. **Against `Pyfa-268` eos gives 1199.6 and agrees with us exactly.** Same story for the
+Republic Defense Booster II resist effects (12822/12823): implemented in v2.68, so eos matches our
+shield em 4 / hull em·th 35.7·34.3 / armorRep 1668.3 once the clone is current. These are **not** pyfa
+gaps — the `known_gaps` annotations that used to live in the astarte spec were removed.
+
+**Takeaway:** when the oracle flags a delta, first check the clone version. Only if a version-matched
+clone still disagrees is it worth asking *which side is missing the effect* — run `node
+scripts/pyfa-effect.mjs <id>` and `grep "class Effect<id>" Pyfa-268/eos/effects.py`.
 
 ---
 
