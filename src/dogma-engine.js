@@ -491,7 +491,20 @@ export class Fit {
 
     for (const { item, isModule, isBooster } of nonShipGroups) {
       const direct = !isModule;
-      for (const eid of item.effectIDs) {
+      // Order a module's SELF-modifying effects (all modifiers domain=itemID) before its
+      // PROPAGATING effects (any modifier domain=shipID/etc.). eos resolves an attribute lazily —
+      // all modifiers accumulate before any read — so effect order never matters there. Our engine
+      // is imperative and single-pass, so if a propagating effect reads a module attr BEFORE a
+      // self-effect boosts it, the boost is lost. The worked example: an overheated Sensor Booster
+      // carries Effect2670 (propagates maxTargetRangeBonus → ship maxTargetRange) at effectID index
+      // 2 and the overload Effect5757 (+15% to that same maxTargetRangeBonus) at index 3, so the
+      // ship captured the un-boosted 30 and lock range came out ~5.6% low. Self-first fixes it.
+      const orderedEffectIDs = [...item.effectIDs].sort((a, b) => {
+        const selfA = (EFFECTS[a]?.m ?? []).every(mod => mod.domain === 'itemID' || mod.domain === 'self' || mod.domain == null);
+        const selfB = (EFFECTS[b]?.m ?? []).every(mod => mod.domain === 'itemID' || mod.domain === 'self' || mod.domain == null);
+        return (selfA === selfB) ? 0 : (selfA ? -1 : 1);
+      });
+      for (const eid of orderedEffectIDs) {
         if (isBooster && Fit.BOOSTER_PENALTY_EFFECTS.has(eid)) continue;
         // Skip Effect1395 for Crystal Alpha-Epsilon (any grade) — custom handler applies full set-boosted value
         if (eid === 1395 && Fit.isCrystalSetMember(item)) continue;
