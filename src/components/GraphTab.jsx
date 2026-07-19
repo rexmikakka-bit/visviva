@@ -388,8 +388,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
-    try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters}); }catch{ return null; }
-  },[ship,slots,skills,implants,boosters]);
+    try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters,drones}); }catch{ return null; }
+  },[ship,slots,skills,implants,boosters,drones]);
   const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVel/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,xZoom});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.

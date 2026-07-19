@@ -808,6 +808,17 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   });
   for (const imp of (opts.implants ?? [])) { if (!imp.name || imp.name === '[Empty]') continue; const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID; if (tid && TYPES[tid]) fit.addImplant(tid); }
   for (const bst of (opts.boosters ?? [])) { if (!bst.name || bst.active === false) continue; const tid = bst.typeID ?? typeIDByName(bst.name) ?? tidByName(bst.name); if (tid && TYPES[tid]) fit.addBooster(tid); }
+  // Remote-rep drones (Armor/Shield/Hull Maintenance Bots) projected from the source ship also rep
+  // the target — often a logi frigate's entire rep output is its flight of maintenance bots. Build
+  // them before calculate() so the rep amount is engine-resolved; keep qty parallel. Only launched
+  // (active) drones rep, matching the DPS path.
+  const anyDroneActive = (opts.drones ?? []).some(d => typeof d.active === 'boolean');
+  const droneItems = [];
+  for (const drone of (opts.drones ?? [])) {
+    if (anyDroneActive && drone.active !== true) continue;
+    const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
+    if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
+  }
   fit.calculate();
   const reps = [];
   const webs = [];
@@ -862,6 +873,19 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
         fitItem.get('scanRadarStrengthBonus') ?? 0,
       );
       if (sb > 0) ecm.push({ name: slot.name, strength: sb, optimal, falloff });
+    }
+  }
+  // Logistic-drone reps. All maintenance bots share groupName 'Logistic Drone'; the layer is
+  // whichever rep-amount attribute is populated (armor/shield/structureDamageAmount all default to 0,
+  // so a >0 test cleanly picks it without a presence check). Drones orbit the ship they assist, so
+  // their reps apply at full strength regardless of the projection range (huge optimal, no falloff).
+  for (const { item, qty, name } of droneItems) {
+    if (!item || item.groupName !== 'Logistic Drone') continue;
+    const dur = (item.get('duration') ?? 0) / 1000;
+    if (dur <= 0) continue;
+    const amt = { armor: item.get('armorDamageAmount') ?? 0, shield: item.get('shieldBonus') ?? 0, hull: item.get('structureDamageAmount') ?? 0 };
+    for (const kind of ['armor', 'shield', 'hull']) {
+      if (amt[kind] > 0) reps.push({ kind, name, rawPS: (amt[kind] / dur) * qty, optimal: 1e9, falloff: 0 });
     }
   }
   return { reps, webs, neuts, painters, damps, trackDisr, guideDisr, ecm };
@@ -2414,6 +2438,28 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         optimal: Math.round((fitItem.get('maxRange') ?? 0) / 1000 * 10) / 10,
         falloff: Math.round((fitItem.get('falloffEffectiveness') ?? 0) / 1000 * 10) / 10 });
     }
+  }
+
+  // Logistic-drone remote reps. Maintenance bots (all groupName 'Logistic Drone') add to the fit's
+  // remote-rep output alongside the modules above. The layer is whichever rep-amount attribute is
+  // populated (armor/shield/structureDamageAmount default to 0, so a >0 test picks it cleanly). Only
+  // launched (active) drones rep. Drones orbit the assisted ship → no range falloff.
+  for (const { item, qty, active } of droneItems) {
+    if (!item || active === false || item.groupName !== 'Logistic Drone') continue;
+    const ddur = (item.get('duration') ?? 0) / 1000;
+    if (ddur <= 0) continue;
+    const sAmt = item.get('shieldBonus') ?? 0;
+    const aAmt = item.get('armorDamageAmount') ?? 0;
+    const hAmt = item.get('structureDamageAmount') ?? 0;
+    if (sAmt > 0) { const ps = (sAmt / ddur) * qty; remoteShieldPS += ps;
+      remoteRepModules.push({ name: item.name, typeID: item.typeID, kind: 'shield', repPS: Math.round(ps * 10) / 10,
+        amount: Math.round(sAmt), cycleMs: Math.round(ddur * 1000), qty, isDrone: true, optimal: 0, falloff: 0 }); }
+    if (aAmt > 0) { const ps = (aAmt / ddur) * qty; remoteArmorPS += ps;
+      remoteRepModules.push({ name: item.name, typeID: item.typeID, kind: 'armor', repPS: Math.round(ps * 10) / 10,
+        amount: Math.round(aAmt), cycleMs: Math.round(ddur * 1000), qty, isDrone: true, optimal: 0, falloff: 0 }); }
+    if (hAmt > 0) { const ps = (hAmt / ddur) * qty; remoteHullPS += ps;
+      remoteRepModules.push({ name: item.name, typeID: item.typeID, kind: 'hull', repPS: Math.round(ps * 10) / 10,
+        amount: Math.round(hAmt), cycleMs: Math.round(ddur * 1000), qty, isDrone: true, optimal: 0, falloff: 0 }); }
   }
 
   // ── Sustainable tank (pyfa calculateSustainableTank) ──────────────────────

@@ -347,7 +347,7 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"6px 12px 0",gap:8}}>
-        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>fits</button>
+        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>Fits</button>
 
         <div style={{flex:1,minWidth:0}}>
           {renamingFit
@@ -1202,7 +1202,7 @@ function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits
       {projFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
         const rangeKm=f.rangeKm??30;
-        const eff=srcFit?computeProjectedReps({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,SKILL_DEFAULTS,{implants:srcFit.implants,boosters:srcFit.boosters}):{reps:[],webs:[],neuts:[]};
+        const eff=srcFit?computeProjectedReps({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,SKILL_DEFAULTS,{implants:srcFit.implants,boosters:srcFit.boosters,drones:srcFit.drones}):{reps:[],webs:[],neuts:[]};
         const rf=(o,fo)=>calcRangeFactor(o,fo,rangeKm*1000,true);
         const totals={shield:0,armor:0,hull:0};
         for(const r of eff.reps)totals[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
@@ -1674,7 +1674,7 @@ export default function App(){
     for(const pf of projFits){
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
-      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters});
+      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
       for(const r of eff.reps)reps[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);

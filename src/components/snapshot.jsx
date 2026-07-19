@@ -147,7 +147,7 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
     const fit = fitsDB?.[pf.ship]?.find((f) => f.name === pf.fitName);
     if (!fit) continue;
     let eff;
-    try { eff = computeProjectedReps({ name: pf.ship, typeID: tidByName(pf.ship) }, fit.slots, skills, { implants: fit.implants, boosters: fit.boosters }); } catch { continue; }
+    try { eff = computeProjectedReps({ name: pf.ship, typeID: tidByName(pf.ship) }, fit.slots, skills, { implants: fit.implants, boosters: fit.boosters, drones: fit.drones }); } catch { continue; }
     const rangeM = (pf.rangeKm ?? 30) * 1000;
     const rf = (o, fo) => calcRangeFactor(o, fo, rangeM, true);
     const fx = [];
