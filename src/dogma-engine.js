@@ -597,11 +597,13 @@ export class Fit {
       // The Capital Sensor Array is deliberately NOT exempt: its x12 lock-range multiplier IS penalised
       // (first slot, command burst second) — which is exactly what produces pyfa's 6457 km Salvation.
       //
-      // Exception: Industrial Core / Siege / Triage modules are in the MODE_MODULE_GROUPS but their
-      // LOCAL LOGISTICS AMOUNT bonus (attr 2607 for IC2, attr 2347 for Siege/Triage) competes with
-      // Shield Boost Amplifiers in the stacking group — pyfa applies both with stackingPenalties=True.
+      // Exception: Industrial Core / Siege / Triage / Bastion modules are in the MODE_MODULE_GROUPS but
+      // their LOCAL LOGISTICS AMOUNT bonus (attr 2607 for IC2, 2347 for Siege/Triage, 548/895 for
+      // Bastion's shield/armor boost) competes with Shield/Armor Boost Amplifiers in the stacking group
+      // — pyfa applies both with stackingPenalties=True (eos Effect6658 line 30017/30014, Effect1720).
       // Without this carve-out the bonuses go direct (_mul), bypassing the stacking penalty and
-      // over-stating EHP/s (IC2 Rorqual: 18324 vs pyfa's 17582; Siege PNI: inflated similarly).
+      // over-stating EHP/s (IC2 Rorqual: 18324 vs pyfa's 17582; Bastion Golem: shieldRepEhpS 12572 vs
+      // eos 12077 — the amplifier ends up alone in its pool at full strength, over-repping by ~4.1%).
       //
       // Bastion Module I's armor/shield resonance bonus (attrs 267-274, self-referencing PreMul,
       // same pattern as Damage Control II) is likewise stacking-penalised by pyfa against DC2 — it
@@ -611,6 +613,7 @@ export class Fit {
       // resists in every damage type (pyfa: 82.0/83.2/85.8/88.0 shield, 81.7/65.4/54.3/45.2 armor).
       const IC_STACKED_SRC = new Set([
         2607, 2347, // industrialCoreLocalLogisticsAmountBonus, siegeLocalLogisticsAmountBonus
+        548, 895,   // shieldBoostMultiplier, armorDamageAmountBonus (Bastion's local-rep boost)
         267, 268, 269, 270, // armor em/explosive/kinetic/thermal DamageResonance
         271, 272, 273, 274, // shield em/explosive/kinetic/thermal DamageResonance
       ]);
