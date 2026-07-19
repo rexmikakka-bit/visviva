@@ -25,6 +25,12 @@ jobs:
       # No install needed: the suite uses only Node built-ins + the committed data bundles.
       - run: node src/regression.test.mjs
 
+      # Silent no-op detector: fails if a data regen (new EVE patch) introduces an empty-modifier
+      # effect on a fittable type that isn't in the accepted baseline. See CLAUDE.md -> "Upgrading
+      # eve.db". Self-contained — reads only the committed bundle, no pyfa/eos needed.
+      - name: Effect coverage (no new silent no-ops)
+        run: node scripts/check-effect-coverage.mjs
+
   static:
     name: lint / imports / build
     runs-on: ubuntu-latest

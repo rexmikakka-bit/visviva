@@ -459,6 +459,35 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 9b. STORAGE MIGRATION — the boot-time schema upgrade must be idempotent, must reach the current
+//     version, and (critically) must never throw on bad data. A throw here is the blank-page crash
+//     the whole mechanism exists to prevent.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSTORAGE MIGRATION (schema upgrade must be safe + idempotent)');
+  const { runMigrations, SCHEMA_VERSION, SCHEMA_KEY, MIGRATIONS } = await import('./lib/storage-migrate.js');
+
+  const s1 = runMigrations({ 'pyfa-fitsdb': '{"Astarte":[]}' }, { from: 0 });
+  check('migrate', 'stamps current version', Number(s1[SCHEMA_KEY]), SCHEMA_VERSION, 0);
+  check('migrate', 'preserves existing data', s1['pyfa-fitsdb'], '{"Astarte":[]}', 0);
+
+  // Idempotent: running again from the stamped version changes nothing.
+  const s2 = runMigrations({ ...s1 }, { from: SCHEMA_VERSION });
+  check('migrate', 'idempotent re-run', JSON.stringify(s2), JSON.stringify(s1), 0);
+
+  // Must not throw on garbage values, even mid-chain.
+  let threw = 0;
+  try { runMigrations({ 'pyfa-fitsdb': '{{corrupt', 'pyfa-skills': 'null' }, { from: 0 }); }
+  catch { threw = 1; }
+  check('migrate', 'never throws on corrupt data', threw, 0, 0);
+
+  // Every migration slot up to current must be a function (an undefined hole would silently skip).
+  const holes = Array.from({ length: SCHEMA_VERSION }, (_, i) => i)
+    .filter((i) => typeof MIGRATIONS[i] !== 'function').length;
+  check('migrate', 'no missing migration in chain', holes, 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 10. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {

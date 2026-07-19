@@ -1,0 +1,1460 @@
+{
+  "_comment": "Snapshot of empty-modifier effects present on fittable types. See check-effect-coverage.mjs. The GATE compares only the set of effect IDs; `c`/`n`/`ex` are informational. Regenerate with: node scripts/check-effect-coverage.mjs --update",
+  "clientBuild": "3424810",
+  "generatedAt": "2026-07-19",
+  "count": 171,
+  "effects": {
+    "4": {
+      "c": 1,
+      "n": 94,
+      "ex": [
+        "Small Shield Booster I",
+        "Small Shield Booster II",
+        "CONCORD Capital Shield Booster"
+      ]
+    },
+    "9": {
+      "c": 2,
+      "n": 184,
+      "ex": [
+        "Mjolnir Cruise Missile",
+        "Scourge Cruise Missile",
+        "Inferno Cruise Missile"
+      ]
+    },
+    "10": {
+      "c": 2,
+      "n": 314,
+      "ex": [
+        "Gatling Pulse Laser I",
+        "Dual Light Pulse Laser I",
+        "Dual Light Beam Laser I"
+      ]
+    },
+    "11": {
+      "c": 0,
+      "n": 1033,
+      "ex": [
+        "'Basic' Capacitor Power Relay",
+        "'Basic' Shield Flux Coil",
+        "'Basic' Capacitor Flux Coil"
+      ]
+    },
+    "12": {
+      "c": 0,
+      "n": 1419,
+      "ex": [
+        "'Micro' Remote Shield Booster",
+        "Gatling Pulse Laser I",
+        "Dual Light Pulse Laser I"
+      ]
+    },
+    "13": {
+      "c": 0,
+      "n": 933,
+      "ex": [
+        "Small Shield Extender I",
+        "Small Shield Extender II",
+        "Shield Recharger I"
+      ]
+    },
+    "16": {
+      "c": 1,
+      "n": 3402,
+      "ex": [
+        "Small Shield Extender I",
+        "Small Shield Extender II",
+        "Shield Recharger I"
+      ]
+    },
+    "17": {
+      "c": 2,
+      "n": 16,
+      "ex": [
+        "Civilian Mining Drone",
+        "Harvester Mining Drone",
+        "Mining Drone I"
+      ]
+    },
+    "26": {
+      "c": 1,
+      "n": 25,
+      "ex": [
+        "Small Hull Repairer I",
+        "Small Hull Repairer II",
+        "Medium Hull Repairer I"
+      ]
+    },
+    "27": {
+      "c": 1,
+      "n": 105,
+      "ex": [
+        "Small Armor Repairer I",
+        "Small Armor Repairer II",
+        "Medium Armor Repairer I"
+      ]
+    },
+    "34": {
+      "c": 2,
+      "n": 390,
+      "ex": [
+        "125mm Gatling AutoCannon I",
+        "150mm Light AutoCannon I",
+        "200mm AutoCannon I"
+      ]
+    },
+    "38": {
+      "c": 1,
+      "n": 137,
+      "ex": [
+        "Small Proton Smartbomb I",
+        "Small Proton Smartbomb II",
+        "Small Graviton Smartbomb I"
+      ]
+    },
+    "40": {
+      "c": 0,
+      "n": 147,
+      "ex": [
+        "Light Missile Launcher I",
+        "Heavy Missile Launcher I",
+        "Torpedo Launcher I"
+      ]
+    },
+    "42": {
+      "c": 0,
+      "n": 668,
+      "ex": [
+        "Gatling Pulse Laser I",
+        "Dual Light Pulse Laser I",
+        "Dual Light Beam Laser I"
+      ]
+    },
+    "46": {
+      "c": 2,
+      "n": 3,
+      "ex": [
+        "Ship Scanner I",
+        "Ship Scanner II",
+        "Ta3 Compact Ship Scanner"
+      ]
+    },
+    "47": {
+      "c": 2,
+      "n": 4,
+      "ex": [
+        "Cargo Scanner I",
+        "Cargo Scanner II",
+        "Type-E Enduring Cargo Scanner"
+      ]
+    },
+    "48": {
+      "c": 1,
+      "n": 43,
+      "ex": [
+        "Medium Capacitor Booster I",
+        "Medium Capacitor Booster II",
+        "Small Capacitor Booster I"
+      ]
+    },
+    "54": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Passive Targeter I",
+        "Passive Targeter II",
+        "Indirect Target Acquisition I"
+      ]
+    },
+    "55": {
+      "c": 1,
+      "n": 6,
+      "ex": [
+        "Auto Targeting System I",
+        "Auto Targeting System II",
+        "Hostile Target Acquisition I"
+      ]
+    },
+    "67": {
+      "c": 2,
+      "n": 34,
+      "ex": [
+        "Miner II",
+        "Miner I",
+        "Civilian Miner"
+      ]
+    },
+    "101": {
+      "c": 1,
+      "n": 169,
+      "ex": [
+        "Light Missile Launcher I",
+        "Heavy Missile Launcher I",
+        "Torpedo Launcher I"
+      ]
+    },
+    "103": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Defender Missile I"
+      ]
+    },
+    "104": {
+      "c": 1,
+      "n": 24,
+      "ex": [
+        "Mjolnir Auto-Targeting Light Missile I",
+        "Scourge Auto-Targeting Light Missile I",
+        "Nova Auto-Targeting Light Missile I"
+      ]
+    },
+    "127": {
+      "c": 1,
+      "n": 6,
+      "ex": [
+        "Quest Survey Probe I",
+        "Discovery Survey Probe I",
+        "Gaze Survey Probe I"
+      ]
+    },
+    "263": {
+      "c": 2,
+      "n": 168,
+      "ex": [
+        "125mm Gatling AutoCannon I",
+        "150mm Light AutoCannon I",
+        "200mm AutoCannon I"
+      ]
+    },
+    "649": {
+      "c": 1,
+      "n": 16,
+      "ex": [
+        "Mobile Small Warp Disruptor I",
+        "Mobile Medium Warp Disruptor I",
+        "Mobile Large Warp Disruptor I"
+      ]
+    },
+    "650": {
+      "c": 1,
+      "n": 9,
+      "ex": [
+        "Mobile Small Warp Disruptor I",
+        "Mobile Medium Warp Disruptor I",
+        "Mobile Large Warp Disruptor I"
+      ]
+    },
+    "660": {
+      "c": 0,
+      "n": 7,
+      "ex": [
+        "Rockets",
+        "Light Missiles",
+        "Auto-Targeting Missiles"
+      ]
+    },
+    "661": {
+      "c": 0,
+      "n": 7,
+      "ex": [
+        "Rockets",
+        "Light Missiles",
+        "Auto-Targeting Missiles"
+      ]
+    },
+    "662": {
+      "c": 0,
+      "n": 7,
+      "ex": [
+        "Rockets",
+        "Light Missiles",
+        "Auto-Targeting Missiles"
+      ]
+    },
+    "668": {
+      "c": 0,
+      "n": 7,
+      "ex": [
+        "Rockets",
+        "Light Missiles",
+        "Auto-Targeting Missiles"
+      ]
+    },
+    "848": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Cloaking"
+      ]
+    },
+    "1730": {
+      "c": 0,
+      "n": 9,
+      "ex": [
+        "Heavy Drone Operation",
+        "Amarr Drone Specialization",
+        "Minmatar Drone Specialization"
+      ]
+    },
+    "1738": {
+      "c": 2,
+      "n": 12,
+      "ex": [
+        "Purloined Sansha Data Analyzer",
+        "Data Analyzer I",
+        "Relic Analyzer I"
+      ]
+    },
+    "1851": {
+      "c": 0,
+      "n": 6,
+      "ex": [
+        "Rocket Specialization",
+        "Light Missile Specialization",
+        "Heavy Missile Specialization"
+      ]
+    },
+    "2255": {
+      "c": 2,
+      "n": 11,
+      "ex": [
+        "Small Tractor Beam II",
+        "Capital Tractor Beam II",
+        "Small Tractor Beam I"
+      ]
+    },
+    "2413": {
+      "c": 2,
+      "n": 42,
+      "ex": [
+        "Sodium Firework CXIV",
+        "Barium Firework CXIV",
+        "Copper Firework CXIV"
+      ]
+    },
+    "2663": {
+      "c": 0,
+      "n": 921,
+      "ex": [
+        "Medium Processor Overclocking Unit I",
+        "Large Processor Overclocking Unit I",
+        "Medium Processor Overclocking Unit II"
+      ]
+    },
+    "2726": {
+      "c": 2,
+      "n": 10,
+      "ex": [
+        "Gas Cloud Scoop I",
+        "'Crop' Gas Cloud Scoop",
+        "'Plow' Gas Cloud Scoop"
+      ]
+    },
+    "2757": {
+      "c": 2,
+      "n": 3,
+      "ex": [
+        "Salvager I",
+        "Civilian Salvager",
+        "Salvager II"
+      ]
+    },
+    "2971": {
+      "c": 1,
+      "n": 7,
+      "ex": [
+        "Concussion Bomb",
+        "Scorch Bomb",
+        "Shrapnel Bomb"
+      ]
+    },
+    "3380": {
+      "c": 1,
+      "n": 8,
+      "ex": [
+        "Warp Disruption Field Generator II",
+        "Warp Disruption Field Generator I",
+        "Pitfall Compact Warp Disruption Field Generator"
+      ]
+    },
+    "3772": {
+      "c": 0,
+      "n": 48,
+      "ex": [
+        "Legion Defensive - Covert Reconfiguration",
+        "Legion Defensive - Augmented Plating",
+        "Legion Defensive - Nanobot Injector"
+      ]
+    },
+    "3773": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Legion Offensive - Liquid Crystal Magnifiers",
+        "Legion Offensive - Assault Optimization",
+        "Legion Offensive - Support Processor"
+      ]
+    },
+    "3774": {
+      "c": 0,
+      "n": 48,
+      "ex": [
+        "Legion Defensive - Covert Reconfiguration",
+        "Legion Defensive - Augmented Plating",
+        "Legion Defensive - Nanobot Injector"
+      ]
+    },
+    "3793": {
+      "c": 1,
+      "n": 6,
+      "ex": [
+        "Core Scanner Probe I",
+        "Combat Scanner Probe I",
+        "Sisters Combat Scanner Probe"
+      ]
+    },
+    "4489": {
+      "c": 2,
+      "n": 1,
+      "ex": [
+        "'Judgment' Electromagnetic Doomsday"
+      ]
+    },
+    "4490": {
+      "c": 2,
+      "n": 1,
+      "ex": [
+        "'Oblivion' Kinetic Doomsday"
+      ]
+    },
+    "4491": {
+      "c": 2,
+      "n": 1,
+      "ex": [
+        "'Aurora Ominae' Thermal Doomsday"
+      ]
+    },
+    "4492": {
+      "c": 2,
+      "n": 1,
+      "ex": [
+        "'Gjallarhorn' Explosive Doomsday"
+      ]
+    },
+    "4921": {
+      "c": 1,
+      "n": 6,
+      "ex": [
+        "Large Micro Jump Drive",
+        "Medium Micro Jump Drive",
+        "Capital Micro Jump Drive"
+      ]
+    },
+    "4928": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Reactive Armor Hardener",
+        "Xarasier Reactive Armor Hardener"
+      ]
+    },
+    "4936": {
+      "c": 1,
+      "n": 14,
+      "ex": [
+        "Large Ancillary Shield Booster",
+        "Medium Ancillary Shield Booster",
+        "Small Ancillary Shield Booster"
+      ]
+    },
+    "5163": {
+      "c": 2,
+      "n": 3,
+      "ex": [
+        "Salvage Drone I",
+        "Salvage Drone II",
+        "'Dunk' Salvage Drone"
+      ]
+    },
+    "5275": {
+      "c": 1,
+      "n": 12,
+      "ex": [
+        "Small Ancillary Armor Repairer",
+        "Medium Ancillary Armor Repairer",
+        "Large Ancillary Armor Repairer"
+      ]
+    },
+    "6063": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Entosis Link I",
+        "Entosis Link II",
+        "Noir. Modified Entosis Link"
+      ]
+    },
+    "6184": {
+      "c": 2,
+      "n": 37,
+      "ex": [
+        "Small Remote Capacitor Transmitter I",
+        "Small Remote Capacitor Transmitter II",
+        "CONCORD Capital Remote Capacitor Transmitter"
+      ]
+    },
+    "6185": {
+      "c": 2,
+      "n": 8,
+      "ex": [
+        "Large Remote Hull Repairer II",
+        "Medium Remote Hull Repairer II",
+        "Small Remote Hull Repairer II"
+      ]
+    },
+    "6186": {
+      "c": 2,
+      "n": 44,
+      "ex": [
+        "'Micro' Remote Shield Booster",
+        "CONCORD Capital Remote Shield Booster",
+        "Small Remote Shield Booster I"
+      ]
+    },
+    "6187": {
+      "c": 2,
+      "n": 57,
+      "ex": [
+        "Small Energy Neutralizer I",
+        "Small Infectious Scoped Energy Neutralizer",
+        "Small Gremlin Compact Energy Neutralizer"
+      ]
+    },
+    "6188": {
+      "c": 2,
+      "n": 45,
+      "ex": [
+        "CONCORD Capital Remote Armor Repairer",
+        "Small Remote Armor Repairer I",
+        "Medium Remote Armor Repairer I"
+      ]
+    },
+    "6197": {
+      "c": 2,
+      "n": 58,
+      "ex": [
+        "Small Energy Nosferatu I",
+        "Small Knave Scoped Energy Nosferatu",
+        "Small Ghoul Compact Energy Nosferatu"
+      ]
+    },
+    "6201": {
+      "c": 1,
+      "n": 4,
+      "ex": [
+        "'Divine Harvest' Electromagnetic Reaper",
+        "'Cold Wind' Kinetic Reaper",
+        "'Guillotine' Thermal Reaper"
+      ]
+    },
+    "6208": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Micro Jump Field Generator"
+      ]
+    },
+    "6216": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Standup XL Energy Neutralizer I",
+        "Standup Heavy Energy Neutralizer I",
+        "Dark Blood Standup Heavy Energy Neutralizer"
+      ]
+    },
+    "6306": {
+      "c": 0,
+      "n": 17,
+      "ex": [
+        "Standup Supercapital Shipyard I",
+        "Standup Manufacturing Plant I",
+        "Standup Capital Shipyard I"
+      ]
+    },
+    "6422": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Remote Sensor Dampener I",
+        "Remote Sensor Dampener II",
+        "LFT Enduring Sensor Dampener"
+      ]
+    },
+    "6423": {
+      "c": 2,
+      "n": 7,
+      "ex": [
+        "C-IR Compact Guidance Disruptor",
+        "'Distributor' Guidance Disruptor",
+        "Guidance Disruptor I"
+      ]
+    },
+    "6424": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Tracking Disruptor I",
+        "Tracking Disruptor II",
+        "Baker Nunn Enduring Tracking Disruptor I"
+      ]
+    },
+    "6425": {
+      "c": 2,
+      "n": 9,
+      "ex": [
+        "Target Painter I",
+        "Target Painter II",
+        "Peripheral Compact Target Painter"
+      ]
+    },
+    "6426": {
+      "c": 2,
+      "n": 27,
+      "ex": [
+        "Stasis Webifier I",
+        "Stasis Webifier II",
+        "X5 Enduring Stasis Webifier"
+      ]
+    },
+    "6427": {
+      "c": 2,
+      "n": 8,
+      "ex": [
+        "Remote Sensor Booster I",
+        "Remote Sensor Booster II",
+        "F-23 Compact Remote Sensor Booster"
+      ]
+    },
+    "6428": {
+      "c": 2,
+      "n": 8,
+      "ex": [
+        "Remote Tracking Computer I",
+        "Remote Tracking Computer II",
+        "F-293 Scoped Remote Tracking Computer"
+      ]
+    },
+    "6431": {
+      "c": 2,
+      "n": 56,
+      "ex": [
+        "Templar I",
+        "Dragonfly I",
+        "Firbolg I"
+      ]
+    },
+    "6434": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Cenobite I",
+        "Cenobite II",
+        "Standup Cenobite I"
+      ]
+    },
+    "6435": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Dromi I",
+        "Dromi II",
+        "Standup Dromi I"
+      ]
+    },
+    "6436": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Siren I",
+        "Siren II",
+        "Standup Siren I"
+      ]
+    },
+    "6437": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Scarab I",
+        "Scarab II",
+        "Standup Scarab I"
+      ]
+    },
+    "6439": {
+      "c": 1,
+      "n": 20,
+      "ex": [
+        "Equite I",
+        "Locust I",
+        "Satyr I"
+      ]
+    },
+    "6440": {
+      "c": 1,
+      "n": 7,
+      "ex": [
+        "Shadow",
+        "Siren I",
+        "Siren II"
+      ]
+    },
+    "6441": {
+      "c": 1,
+      "n": 51,
+      "ex": [
+        "Templar I",
+        "Dragonfly I",
+        "Firbolg I"
+      ]
+    },
+    "6442": {
+      "c": 1,
+      "n": 16,
+      "ex": [
+        "Ametat I",
+        "Termite I",
+        "Antaeus I"
+      ]
+    },
+    "6443": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Standup Point Defense Battery I",
+        "Standup Point Defense Battery II"
+      ]
+    },
+    "6447": {
+      "c": 2,
+      "n": 1,
+      "ex": [
+        "Standup Arcing Vorton Projector I"
+      ]
+    },
+    "6464": {
+      "c": 2,
+      "n": 20,
+      "ex": [
+        "Equite I",
+        "Locust I",
+        "Satyr I"
+      ]
+    },
+    "6465": {
+      "c": 2,
+      "n": 54,
+      "ex": [
+        "Shadow",
+        "Templar I",
+        "Dragonfly I"
+      ]
+    },
+    "6470": {
+      "c": 2,
+      "n": 43,
+      "ex": [
+        "Magnetometric ECM I",
+        "Gravimetric ECM I",
+        "Radar ECM I"
+      ]
+    },
+    "6472": {
+      "c": 1,
+      "n": 4,
+      "ex": [
+        "'Holy Destiny' Electromagnetic Lance",
+        "'Iron Pike' Kinetic Lance",
+        "'Phalarica' Thermal Lance"
+      ]
+    },
+    "6473": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Bosonic Field Generator"
+      ]
+    },
+    "6474": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Gravitational Transportation Field Oscillator"
+      ]
+    },
+    "6476": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Stasis Webification Burst Projector",
+        "Standup Stasis Webification Burst Projector"
+      ]
+    },
+    "6477": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Standup Energy Neutralization Burst Projector",
+        "Energy Neutralization Burst Projector"
+      ]
+    },
+    "6478": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Target Illumination Burst Projector",
+        "Standup Target Illumination Burst Projector"
+      ]
+    },
+    "6479": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Weapon Disruption Burst Projector",
+        "Standup Weapon Disruption Burst Projector"
+      ]
+    },
+    "6481": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Sensor Dampening Burst Projector",
+        "Standup Sensor Dampening Burst Projector"
+      ]
+    },
+    "6482": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "Warp Disruption Burst Projector",
+        "Standup Warp Disruption Burst Projector"
+      ]
+    },
+    "6484": {
+      "c": 1,
+      "n": 5,
+      "ex": [
+        "Capital Emergency Hull Energizer I",
+        "Capital Implacable Compact Emergency Hull Energizer",
+        "Capital Indefatigable Enduring Emergency Hull Energizer"
+      ]
+    },
+    "6485": {
+      "c": 1,
+      "n": 16,
+      "ex": [
+        "Ametat I",
+        "Termite I",
+        "Antaeus I"
+      ]
+    },
+    "6513": {
+      "c": 1,
+      "n": 2,
+      "ex": [
+        "ECM Jammer Burst Projector",
+        "Standup ECM Jammer Burst Projector"
+      ]
+    },
+    "6554": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "Shadow",
+        "Standup Shadow"
+      ]
+    },
+    "6651": {
+      "c": 2,
+      "n": 4,
+      "ex": [
+        "Small Ancillary Remote Armor Repairer",
+        "Medium Ancillary Remote Armor Repairer",
+        "Large Ancillary Remote Armor Repairer"
+      ]
+    },
+    "6652": {
+      "c": 2,
+      "n": 4,
+      "ex": [
+        "Small Ancillary Remote Shield Booster",
+        "Medium Ancillary Remote Shield Booster",
+        "Large Ancillary Remote Shield Booster"
+      ]
+    },
+    "6682": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "Standup Stasis Webifier I",
+        "Standup Stasis Webifier II"
+      ]
+    },
+    "6683": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "Standup Target Painter I",
+        "Standup Target Painter II"
+      ]
+    },
+    "6684": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "Standup Remote Sensor Dampener I",
+        "Standup Remote Sensor Dampener II"
+      ]
+    },
+    "6685": {
+      "c": 2,
+      "n": 3,
+      "ex": [
+        "Standup Variable Spectrum ECM I",
+        "Dread Guristas Standup Variable Spectrum ECM",
+        "Standup Variable Spectrum ECM II"
+      ]
+    },
+    "6686": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "Standup Weapon Disruptor I",
+        "Standup Weapon Disruptor II"
+      ]
+    },
+    "6687": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Heavy Armor Maintenance Bot I",
+        "Medium Armor Maintenance Bot I",
+        "Light Armor Maintenance Bot I"
+      ]
+    },
+    "6688": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Heavy Shield Maintenance Bot I",
+        "Medium Shield Maintenance Bot I",
+        "Light Shield Maintenance Bot I"
+      ]
+    },
+    "6689": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Heavy Hull Maintenance Bot I",
+        "Medium Hull Maintenance Bot I",
+        "Light Hull Maintenance Bot I"
+      ]
+    },
+    "6690": {
+      "c": 2,
+      "n": 7,
+      "ex": [
+        "Berserker SW-900",
+        "Valkyrie SW-600",
+        "Warrior SW-300"
+      ]
+    },
+    "6691": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Praetor EV-900",
+        "Acolyte EV-300",
+        "Infiltrator EV-600"
+      ]
+    },
+    "6692": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Berserker TP-900",
+        "Valkyrie TP-600",
+        "Warrior TP-300"
+      ]
+    },
+    "6693": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Ogre SD-900",
+        "Hammerhead SD-600",
+        "Hobgoblin SD-300"
+      ]
+    },
+    "6694": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Praetor TD-900",
+        "Infiltrator TD-600",
+        "Acolyte TD-300"
+      ]
+    },
+    "6695": {
+      "c": 2,
+      "n": 6,
+      "ex": [
+        "Wasp EC-900",
+        "Vespa EC-600",
+        "Hornet EC-300"
+      ]
+    },
+    "6714": {
+      "c": 1,
+      "n": 11,
+      "ex": [
+        "Burst Jammer I",
+        "Burst Jammer II",
+        "Deluge Enduring Burst Jammer"
+      ]
+    },
+    "6719": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Pulse Activated Nexus Invulnerability Core"
+      ]
+    },
+    "6730": {
+      "c": 1,
+      "n": 73,
+      "ex": [
+        "5MN Microwarpdrive I",
+        "5MN Microwarpdrive II",
+        "500MN Cold-Gas Enduring Microwarpdrive"
+      ]
+    },
+    "6731": {
+      "c": 1,
+      "n": 74,
+      "ex": [
+        "1MN Afterburner II",
+        "1MN Afterburner I",
+        "100MN Monopropellant Enduring Afterburner"
+      ]
+    },
+    "6732": {
+      "c": 1,
+      "n": 3,
+      "ex": [
+        "Armor Command Burst I",
+        "Armor Command Burst II",
+        "‘Tyrannos’ Armor Command Burst"
+      ]
+    },
+    "6733": {
+      "c": 1,
+      "n": 3,
+      "ex": [
+        "Shield Command Burst I",
+        "Shield Command Burst II",
+        "‘Vigilant’ Shield Command Burst"
+      ]
+    },
+    "6734": {
+      "c": 1,
+      "n": 3,
+      "ex": [
+        "Skirmish Command Burst I",
+        "Skirmish Command Burst II",
+        "Presidential Skirmish Command Burst"
+      ]
+    },
+    "6735": {
+      "c": 1,
+      "n": 6,
+      "ex": [
+        "Information Command Burst I",
+        "Information Command Burst II",
+        "Expedition Command Burst I"
+      ]
+    },
+    "6736": {
+      "c": 1,
+      "n": 3,
+      "ex": [
+        "Mining Foreman Burst I",
+        "Mining Foreman Burst II",
+        "Presidential Mining Foreman Burst"
+      ]
+    },
+    "6753": {
+      "c": 1,
+      "n": 4,
+      "ex": [
+        "Amarr Phenomena Generator",
+        "Caldari Phenomena Generator",
+        "Gallente Phenomena Generator"
+      ]
+    },
+    "6995": {
+      "c": 2,
+      "n": 20,
+      "ex": [
+        "Light Entropic Disintegrator I",
+        "Heavy Entropic Disintegrator I",
+        "Supratidal Entropic Disintegrator I"
+      ]
+    },
+    "7120": {
+      "c": 4,
+      "n": 1,
+      "ex": [
+        "Standup Cynosural System Jammer I"
+      ]
+    },
+    "7166": {
+      "c": 2,
+      "n": 5,
+      "ex": [
+        "Heavy Mutadaptive Remote Armor Repairer I",
+        "Heavy Mutadaptive Scoped Remote Armor Repairer",
+        "Heavy Mutadaptive Compact Remote Armor Repairer"
+      ]
+    },
+    "8037": {
+      "c": 2,
+      "n": 15,
+      "ex": [
+        "Small Vorton Projector I",
+        "Small Compact Vorton Projector",
+        "Small Scoped Vorton Projector"
+      ]
+    },
+    "8093": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Tactical Capsuleer Recloner"
+      ]
+    },
+    "8328": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Coherence Volatile Booster"
+      ]
+    },
+    "8364": {
+      "c": 1,
+      "n": 12,
+      "ex": [
+        "Medium Asteroid Ore Compressor I",
+        "Medium Gas Compressor I",
+        "Large Asteroid Ore Compressor I"
+      ]
+    },
+    "11691": {
+      "c": 1,
+      "n": 4,
+      "ex": [
+        "'Atgeir' Explosive Disruptive Lance",
+        "'Azmaru' Electromagnetic Disruptive Lance",
+        "'Steel Yari' Kinetic Disruptive Lance"
+      ]
+    },
+    "12126": {
+      "c": 1,
+      "n": 1,
+      "ex": [
+        "Capital Micro Jump Field Generator"
+      ]
+    },
+    "12174": {
+      "c": 2,
+      "n": 2,
+      "ex": [
+        "SCARAB Breacher Pod S",
+        "SCARAB Breacher Pod M"
+      ]
+    },
+    "12807": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Dragoon Navy Issue"
+      ]
+    },
+    "12810": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Algos Navy Issue"
+      ]
+    },
+    "12812": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Corax Navy Issue"
+      ]
+    },
+    "12813": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Corax Navy Issue"
+      ]
+    },
+    "12815": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Corax Navy Issue"
+      ]
+    },
+    "12819": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Talwar Fleet Issue"
+      ]
+    },
+    "12820": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Imperial Electronics Booster I",
+        "State Electronics Booster I",
+        "Federation Electronics Booster I"
+      ]
+    },
+    "12821": {
+      "c": 0,
+      "n": 3,
+      "ex": [
+        "State Electronics Booster I",
+        "State Electronics Booster II",
+        "State Electronics Booster III"
+      ]
+    },
+    "12822": {
+      "c": 0,
+      "n": 3,
+      "ex": [
+        "Republic Defense Booster I",
+        "Republic Defense Booster II",
+        "Republic Defense Booster III"
+      ]
+    },
+    "12823": {
+      "c": 0,
+      "n": 9,
+      "ex": [
+        "State Defense Booster I",
+        "Federation Defense Booster I",
+        "Republic Defense Booster I"
+      ]
+    },
+    "12824": {
+      "c": 0,
+      "n": 9,
+      "ex": [
+        "Imperial Defense Booster I",
+        "State Defense Booster I",
+        "Federation Defense Booster I"
+      ]
+    },
+    "12825": {
+      "c": 0,
+      "n": 3,
+      "ex": [
+        "Imperial Defense Booster I",
+        "Imperial Defense Booster II",
+        "Imperial Defense Booster III"
+      ]
+    },
+    "12826": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Imperial Defense Booster I",
+        "State Defense Booster I",
+        "Federation Defense Booster I"
+      ]
+    },
+    "12827": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Imperial Defense Booster I",
+        "State Defense Booster I",
+        "Federation Defense Booster I"
+      ]
+    },
+    "12828": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Imperial Mobility Booster I",
+        "State Mobility Booster I",
+        "Federation Mobility Booster I"
+      ]
+    },
+    "12829": {
+      "c": 0,
+      "n": 12,
+      "ex": [
+        "Imperial Hardpoint Booster I",
+        "State Hardpoint Booster I",
+        "Federation Hardpoint Booster I"
+      ]
+    },
+    "12849": {
+      "c": 0,
+      "n": 6,
+      "ex": [
+        "State Hardpoint Booster I",
+        "Republic Hardpoint Booster I",
+        "State Hardpoint Booster II"
+      ]
+    },
+    "12872": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Salvation"
+      ]
+    },
+    "12873": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Salvation"
+      ]
+    },
+    "12880": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Simurgh"
+      ]
+    },
+    "12881": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Simurgh"
+      ]
+    },
+    "12882": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Gaia"
+      ]
+    },
+    "12883": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Gaia"
+      ]
+    },
+    "12884": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Ymir"
+      ]
+    },
+    "12885": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Ymir"
+      ]
+    },
+    "12890": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Ymir"
+      ]
+    },
+    "12891": {
+      "c": 0,
+      "n": 4,
+      "ex": [
+        "Salvation",
+        "Simurgh",
+        "Gaia"
+      ]
+    },
+    "12892": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Claymore"
+      ]
+    },
+    "12893": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Claymore"
+      ]
+    },
+    "12894": {
+      "c": 0,
+      "n": 4,
+      "ex": [
+        "Salvation",
+        "Simurgh",
+        "Gaia"
+      ]
+    },
+    "12908": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Algos Navy Issue"
+      ]
+    },
+    "12916": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Breach Control"
+      ]
+    },
+    "12923": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "SITREP Clash Booster"
+      ]
+    },
+    "12924": {
+      "c": 0,
+      "n": 5,
+      "ex": [
+        "Confessor",
+        "Svipul",
+        "Jackdaw"
+      ]
+    },
+    "12940": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Imperial Navy 'Atonement' Tracking Enhancer"
+      ]
+    }
+  }
+}
