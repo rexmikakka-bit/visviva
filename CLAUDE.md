@@ -28,6 +28,8 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 | `src/dogma-engine-init.js` | Loads the dogma bundles and calls `initEngine()`. Works in **both** Vite and Node. |
 | `src/calc.js` | Turns a fit + engine output into displayed stats (DPS, tank, cap, resists, graph data). |
 | `src/App.jsx` | The entire UI. ~4,400 lines — see "merge hazards" below. |
+| `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
+| `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
 | `src/data/dogma-*.json` | The dogma bundle: types, effects, attributes. **Generated + hand-patched.** |
 | `src/data-bundle.js` | Legacy precomputed bundle (5.8 MB). Ship lists, module lists, meta labels. **Partly wrong — see below.** |
 
@@ -43,6 +45,17 @@ Stacking factor is `exp(-(rank²)/7.1289)`, strongest first.
 
 Effects whose `modifierInfo` is empty in the bundle (`{"c":0,"m":[]}`) are CCP-applied effects that
 were trimmed. They do nothing until someone populates the modifier or writes a custom handler.
+
+### Changing the saved-fit shape → add a storage migration
+
+Saved fits and settings live **only** in `pyfa-*` localStorage keys (see `backup-io.js`), with no
+server. The day you change that shape, an old saved fit deserializes into new code and crashes on
+render — which the user reads as "the app ate my fits". `src/lib/storage-migrate.js` prevents this:
+it stamps a `SCHEMA_VERSION` and runs ordered migrations on boot, from `main.jsx`, **before** React
+reads any state. When you change the shape: bump `SCHEMA_VERSION` and **append** (never reorder/renumber)
+a migration that rewrites old fits into the new shape. Keep each migration total and defensive — a throw
+there is the exact blank-page failure it exists to prevent (wrap `JSON.parse` in try/catch). The pure
+core `runMigrations` is DOM-free and covered by the regression suite.
 
 ---
 
@@ -324,6 +337,15 @@ The process:
 5. Watch for the generator shouting about **new effects with no modifier data**. A new expansion will
    add some, and they are inert until someone supplies a modifier (`scripts/data-patches.json`) or
    writes a custom handler. The same goes for new attributes, which default to `stackable=1`.
+
+   This step is now also **enforced in CI** by `scripts/check-effect-coverage.mjs`, which snapshots the
+   set of empty-modifier effects present on fittable types into `scripts/effect-coverage-baseline.json`.
+   A regen that ADDS such an effect fails the gate with a triage list. For each new one: run
+   `node scripts/pyfa-effect.mjs <id>` to see if pyfa implements it; add a handler/data-patch if it
+   matters, or (if it's a benign activation marker we already handle by group/attribute) accept it with
+   `node scripts/check-effect-coverage.mjs --update`. Effects LEAVING the set never fail — they just
+   prompt an update. **Do not `--update` to silence the gate without triaging first** — that is exactly
+   how silent no-ops ship.
 6. Bump `VALIDATED_BUILD` in `src/regression.test.mjs` as part of the same commit.
 
 Do the upgrade as its own PR, with nothing else in it. The diff will be large and the whole point is

@@ -1,7 +1,7 @@
 # Vis Viva
 
 An EVE Online ship-fitting calculator for mobile. React + Vite. It reimplements pyfa's dogma engine
-in JavaScript, and **pyfa v2.67.0 (EVE client build 3383521) is the reference implementation** — when
+in JavaScript, and **pyfa v2.68.0 (EVE client build 3424810) is the reference implementation** — when
 our numbers disagree with pyfa, we are wrong until proven otherwise.
 
 ## Getting started
@@ -10,7 +10,7 @@ our numbers disagree with pyfa, we are wrong until proven otherwise.
 git clone https://github.com/rexmikakka-bit/visviva.git
 cd visviva
 npm install
-npm test        # ALL 25 REGRESSION CHECKS PASSED  <- if this fails, stop and ask
+npm test        # ALL 55 REGRESSION CHECKS PASSED  <- if this fails, stop and ask
 npm run dev
 ```
 
@@ -29,7 +29,7 @@ in the repo root, then run `node scripts/bundle-icons.mjs` (it also needs `eve.d
 
 **2. `eve.db` (only if you regenerate the dogma bundles).**
 Not needed to run or develop the app. It ships inside pyfa's **Windows release** ZIP (a different
-download from the source above), at `app/eve.db`. Grab **v2.67.0** — the version our regression
+download from the source above), at `app/eve.db`. Grab **v2.68.0** — the version our regression
 baselines were validated against — from <https://github.com/pyfa-org/Pyfa/releases>, and put
 `eve.db` in the repo root.
 
@@ -62,15 +62,17 @@ hidden offline).
 npm run verify
 ```
 
-Runs everything CI runs: runtime-fatal lint, import-path resolution, production build, and the 25
-pyfa-validated fit baselines. If it's green locally, CI will be green.
+Runs everything CI runs: runtime-fatal lint, import-path resolution, production build, the
+no-silent-no-op effect gate, and the 55 pyfa-validated fit baselines. If it's green locally, CI will
+be green.
 
 | command | what it does |
 | --- | --- |
 | `npm run dev` | dev server |
-| `npm test` | 25 pyfa-validated fit baselines |
+| `npm test` | 55 pyfa-validated fit baselines |
 | `npm run check` | lint (runtime-fatal rules) + import-path resolution |
 | `npm run build` | production build |
+| `node scripts/check-effect-coverage.mjs` | fails if a data regen adds a new silent no-op effect (see CLAUDE.md → "Upgrading eve.db") |
 | `npm run verify` | all of the above — run this before pushing |
 
 ## Working on this

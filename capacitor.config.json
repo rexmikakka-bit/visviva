@@ -1,0 +1,24 @@
+{
+  "appId": "com.rexmikakka.visviva",
+  "appName": "Vis Viva",
+  "webDir": "dist",
+  "backgroundColor": "#0e0e10",
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#0e0e10",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_CROP",
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0e0e10",
+      "overlaysWebView": false
+    }
+  },
+  "ios": {
+    "contentInset": "always"
+  }
+}

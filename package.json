@@ -9,18 +9,25 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "node src/regression.test.mjs",
-    "verify": "node scripts/check-code.mjs && node scripts/check-imports.mjs && vite build && node scripts/check-offline.mjs && node src/regression.test.mjs",
+    "verify": "node scripts/check-code.mjs && node scripts/check-imports.mjs && vite build && node scripts/check-offline.mjs && node scripts/check-effect-coverage.mjs && node src/regression.test.mjs",
     "check": "node scripts/check-code.mjs && node scripts/check-imports.mjs",
     "check-offline": "node scripts/check-offline.mjs",
-    "pyfa-effect": "node scripts/pyfa-effect.mjs"
+    "pyfa-effect": "node scripts/pyfa-effect.mjs",
+    "cap:sync": "vite build && cap sync"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/ios": "^8.4.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
     "better-sqlite3": "^12.10.0",
     "html2canvas": "^1.4.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.2",
     "@eslint/js": "^10.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
