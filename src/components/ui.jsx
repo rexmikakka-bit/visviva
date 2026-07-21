@@ -9,6 +9,8 @@ import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
 import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { jargonSearch } from "../lib/jargon.js";
+import typeDescriptions from "../data/type-descriptions.json";
 
 function BottomSheet({title,onClose,children,height="70vh"}){
   return(
@@ -162,6 +164,7 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
   const[pasteOpen,setPasteOpen]=useState(false);
   const[pasteText,setPasteText]=useState("");
   const[pasteErr,setPasteErr]=useState(null);
+  const[infoItem,setInfoItem]=useState(null);
   const doPaste=()=>{const parsed=parseAbyssal(pasteText);if(!parsed){setPasteErr("Could not parse. Expected: module name, then mutaplasmid name, then attr value pairs.");return;}onSelect(parsed);onClose();};
   const[navPath,setNavPath]=useState([]);
   const metaColor={T1:C.textMid,T2:C.accent,Storyline:C.warning,Faction:C.danger,Deadspace:"#f0abfc",Officer:"#f0abfc",Abyssal:C.high};
@@ -185,7 +188,7 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
     tree.forEach(collect);
     return out;
   })();
-  const searchResults=search.trim().length>1?allMods.filter(m=>m.name.toLowerCase().includes(search.toLowerCase())).slice(0,60):null;
+  const searchResults=search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null;
 
   const breadcrumb=(()=>{
     let nodes=tree,parts=[];
@@ -196,20 +199,24 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
   function ModRow({mod}){
     const rowMeta=metaOf(mod.typeID,mod.meta);
     return(
-      <div onClick={()=>{onSelect(mod);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
-        <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+        <div onClick={()=>{onSelect(mod);onClose();}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
           {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
           <div style={{minWidth:0}}>
             <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
             {(mod.cpu>0||mod.pg>0)&&<div style={{fontSize:11,color:C.textMute,marginTop:1}}>{mod.cpu>0?`CPU ${mod.cpu} tf`:""}{mod.cpu>0&&mod.pg>0?" / ":""}{mod.pg>0?`PG ${mod.pg} MW`:""}</div>}
           </div>
         </div>
-        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700,flexShrink:0,marginLeft:10}}>{rowMeta}</span>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+          <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
+          {mod.typeID&&<button onClick={e=>{e.stopPropagation();setInfoItem(mod);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,color:C.textMid,fontSize:11,cursor:"pointer",padding:"2px 7px",fontWeight:700,lineHeight:1.2}}>ⓘ</button>}
+        </div>
       </div>
     );
   }
 
   return(
+    <>
     <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot`} onClose={onClose} height="88vh">
       <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
@@ -253,24 +260,69 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
         </div>
       )}
     </BottomSheet>
+    {infoItem&&<ItemInfoSheet typeID={infoItem.typeID} onClose={()=>setInfoItem(null)}/>}
+    </>
   );
 }
 
 // ═══ MODULE MENU SHEET ═══════════════════════════════════════════
 // Attribute formatting for the Info tab
 const ATTR_UNIT = {
-  cpu:' tf', power:' MW', cpuOutput:' tf', powerOutput:' MW',
-  capacitorNeed:' GJ', capacitorBonus:' GJ', capacitorCapacity:' GJ', upgradeCost:' pts',
+  cpu:' tf', power:' MW', cpuOutput:' tf', powerOutput:' MW', upgradeCost:' pts',
+  capacitorNeed:' GJ', capacitorBonus:' GJ', capacitorCapacity:' GJ',
   maxRange:' m', falloff:' m', trackingSpeed:' rad/s', overloadRangeBonus:' %',
-  hp:' HP', armorHP:' HP', shieldCapacity:' HP', shieldBonus:' HP',
-  speed:' ms', duration:' ms', reloadTime:' ms',
-  maxVelocity:' m/s', mass:' kg', volume:' m³',
+  optimalSigRadius:' m', aoeCloudSize:' m', aoeVelocity:' m/s', missileVelocity:' m/s',
+  hp:' HP', armorHP:' HP', shieldCapacity:' HP', shieldBonus:' HP', armorDamageAmount:' HP',
+  speed:' ms', duration:' ms', reloadTime:' ms', explosionDelay:' ms',
+  maxVelocity:' m/s', mass:' kg', massAddition:' kg', volume:' m³',
   droneBandwidthUsed:' Mbit/s', signatureRadius:' m',
   heatDamage:' HP', damageMultiplier:'×',
-  maxTargetRange:' m', scanResolution:' mm',
+  maxTargetRange:' m', scanResolution:' mm', warpScrambleRange:' m', stasisWebifierRange:' m',
+  speedFactor:' %', maxVelocityBonus:' %', signatureRadiusBonus:' %', signatureRadiusBonusPercent:' %',
 };
-const RESIST_ATTRS = new Set(['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance','hullEmDamageResonance','hullThermalDamageResonance','hullKineticDamageResonance','hullExplosiveDamageResonance']);
+// Human-readable overrides for camelCase attr names
+const ATTR_LABEL = {
+  cpu:'CPU', power:'Powergrid', upgradeCost:'Calibration Cost',
+  speed:'Rate of Fire', duration:'Cycle Time', reloadTime:'Reload Time',
+  maxRange:'Optimal Range', optimalSigRadius:'Signature Resolution',
+  damageMultiplier:'Damage Modifier', shieldBonus:'Shield HP Bonus',
+  armorDamageAmount:'Armor Repaired', capacitorNeed:'Activation Cost',
+  speedFactor:'Speed Penalty', maxVelocityBonus:'Max Velocity Bonus',
+  signatureRadiusBonus:'Sig. Radius Bonus', massAddition:'Mass Added',
+  aoeCloudSize:'Explosion Radius', aoeVelocity:'Explosion Velocity',
+  explosionDelay:'Flight Time', missileVelocity:'Missile Velocity',
+  heatDamage:'Heat Damage', trackingSpeed:'Tracking Speed',
+  maxTargetRange:'Target Range', warpScrambleRange:'Warp Disrupt Range',
+  stasisWebifierRange:'Web Range', signatureRadius:'Signature Radius',
+  requiredThermoDynamicsSkill:'Required Thermodynamics Skill',
+};
+const RESIST_ATTRS = new Set(['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance','hullEmDamageResonance','hullThermalDamageResonance','hullKineticDamageResonance','hullExplosiveDamageResonance',
+  'emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']);
 const HIDDEN_ATTRS = new Set(['skillPoints','skillTimeConstant','typeColorScheme','canBeJettisoned']);
+// Attrs hidden in the detailed info panel (shown in dedicated sections or irrelevant for display)
+const INFO_HIDDEN = new Set([...HIDDEN_ATTRS,
+  ...Array.from({length:20},(_,i)=>`canFitShipGroup${String(i+1).padStart(2,'0')}`),
+  ...Array.from({length:12},(_,i)=>`canFitShipType${i+1}`),
+  ...Array.from({length:6},(_,i)=>[`requiredSkill${i+1}`,`requiredSkill${i+1}Level`]).flat(),
+  'radius','techLevel','metaLevel','isCovert',
+  ...Array.from({length:6},(_,i)=>`chargeGroup${i+1}`),
+  ...Array.from({length:6},(_,i)=>`launcherGroup${i+1}`),
+  'triggerGroup','weaponRangeFlag','subSystemSlot',
+]);
+// Attribute grouping for the organized info panel
+const INFO_SECTIONS = [
+  {label:'Fitting',    keys:['cpu','power','upgradeCost']},
+  {label:'Capacitor',  keys:['capacitorNeed','capacitorBonus']},
+  {label:'Cycle',      keys:['speed','duration','reloadTime']},
+  {label:'Damage',     keys:['damageMultiplier','emDamage','thermalDamage','kineticDamage','explosiveDamage']},
+  {label:'Range',      keys:['maxRange','falloff','trackingSpeed','optimalSigRadius','aoeCloudSize','aoeVelocity','explosionDelay','missileVelocity']},
+  {label:'Shield',     keys:['shieldBonus','shieldCapacityBonus','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
+  {label:'Armor',      keys:['armorDamageAmount','armorHpBonus','armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
+  {label:'Hull',       keys:['hullBonus','emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
+  {label:'Propulsion', keys:['speedFactor','maxVelocityBonus','signatureRadiusBonus','signatureRadiusBonusPercent','massAddition']},
+  {label:'Targeting',  keys:['maxTargetRange','scanResolution','maxLockedTargets','warpScrambleRange','stasisWebifierRange','signatureRadius']},
+  {label:'ECM',        keys:['gravimetricStrengthBonus','ladarStrengthBonus','magnetometricStrengthBonus','radarStrengthBonus','scanGravimetricStrengthBonus','scanLadarStrengthBonus','scanMagnetometricStrengthBonus','scanRadarStrengthBonus']},
+];
 
 function fmtAttrVal(name, val) {
   if (RESIST_ATTRS.has(name)) return `${((1-val)*100).toFixed(1)}%`;
@@ -278,29 +330,125 @@ function fmtAttrVal(name, val) {
   const num = typeof val === 'number' ? (Number.isInteger(val) ? val : parseFloat(val.toFixed(4))) : val;
   return `${num}${unit}`;
 }
+// Smart formatter for the item info panel: times→seconds, ranges→km
+function fmtInfoVal(name, val) {
+  if (val == null) return '—';
+  if (RESIST_ATTRS.has(name)) return `${((1-val)*100).toFixed(1)}%`;
+  if (typeof val === 'number') {
+    if (/^(speed|duration|reloadTime|explosionDelay)$/.test(name))
+      return val >= 1000 ? `${(val/1000).toFixed(2)} s` : `${val} ms`;
+    if (/^(maxRange|falloff|maxTargetRange|warpScrambleRange|stasisWebifierRange)$/.test(name))
+      return val >= 1000 ? `${(val/1000).toFixed(1)} km` : `${val} m`;
+    if (/^(missileVelocity|aoeVelocity)$/.test(name)) return `${Math.round(val)} m/s`;
+    if (/^(aoeCloudSize|optimalSigRadius|signatureRadius)$/.test(name)) return `${Math.round(val)} m`;
+  }
+  const unit = ATTR_UNIT[name] ?? '';
+  const num = typeof val === 'number' ? (Number.isInteger(val) ? val : parseFloat(val.toFixed(4))) : val;
+  return `${num}${unit}`;
+}
 function fmtAttrName(name) {
-  // camelCase → Title Case With Spaces
+  if (ATTR_LABEL[name]) return ATTR_LABEL[name];
   return name.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()).trim();
 }
+// Extract required skills (name + level) from a type's attrs
+function getItemSkills(typeID) {
+  const td = TYPES[String(typeID)] ?? TYPES[typeID]; if (!td) return [];
+  const a = td.attrs ?? td.a ?? {};
+  const skills = [];
+  for (let i = 1; i <= 6; i++) {
+    const tid = a[`requiredSkill${i}`]; if (tid == null) break;
+    skills.push({name: TYPES[String(tid)]?.n ?? `Skill ${tid}`, level: a[`requiredSkill${i}Level`] ?? 1});
+  }
+  return skills;
+}
 
-function ModuleInfoTab({typeID, mod}) {
-  if (!typeID) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No module selected</div>;
-  const td = TYPES[typeID] ?? TYPES[String(typeID)];
+// Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab
+function ItemInfoPanel({typeID}) {
+  const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
   const attrs = td.attrs ?? td.a ?? {};
-  const entries = Object.entries(attrs)
-    .filter(([k]) => !HIDDEN_ATTRS.has(k) && typeof attrs[k] === 'number')
-    .sort(([a],[b]) => a.localeCompare(b));
+  const skills = getItemSkills(typeID);
+  const meta = metaOf(typeID, null);
+
+  // Build section rows
+  const shownKeys = new Set();
+  const sections = [];
+  for (const sec of INFO_SECTIONS) {
+    const rows = sec.keys.filter(k => attrs[k] != null && !INFO_HIDDEN.has(k));
+    if (rows.length) { sections.push({label:sec.label, rows}); rows.forEach(k=>shownKeys.add(k)); }
+  }
+  // Remaining attrs not in any section
+  const other = Object.keys(attrs).filter(k => !shownKeys.has(k) && !INFO_HIDDEN.has(k) && typeof attrs[k] === 'number').sort((a,b)=>a.localeCompare(b));
+  if (other.length) sections.push({label:'Other', rows:other});
+
+  const Row = ({k}) => (
+    <div style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid ${C.border}`}}>
+      <span style={{fontSize:12,color:C.textMid,maxWidth:'58%'}}>{fmtAttrName(k)}</span>
+      <span style={{fontSize:12,fontWeight:600,color:C.text}}>{fmtInfoVal(k, attrs[k])}</span>
+    </div>
+  );
+
+  const desc = typeDescriptions[String(typeID)] ?? null;
+
   return (
-    <div style={{padding:'0 2px'}}>
-      {entries.map(([name, val]) => (
-        <div key={name} style={{display:'flex',justifyContent:'space-between',padding:'6px 0',borderBottom:`1px solid ${C.border}`}}>
-          <span style={{fontSize:11,color:C.textMid,maxWidth:'55%'}}>{fmtAttrName(name)}</span>
-          <span style={{fontSize:11,fontWeight:600,color:C.text}}>{fmtAttrVal(name, val)}</span>
+    <div>
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,paddingBottom:12,borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
+        {typeID && <img src={eveIcon(typeID,64)} width={48} height={48} style={{borderRadius:8,background:'#0d0d1a',flexShrink:0}} onError={e=>e.target.style.opacity='0'} alt=""/>}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{td.n}</div>
+          <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{td.gn}</div>
+          {meta && <span style={{fontSize:10,color:META_COLORS[meta]??C.textMute,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,display:'inline-block',marginTop:3}}>{meta}</span>}
+        </div>
+      </div>
+      {/* Description */}
+      {desc && (
+        <div style={{fontSize:12,color:C.textMid,lineHeight:1.55,marginBottom:14,padding:'10px 12px',background:C.surfaceAlt,borderRadius:8,border:`1px solid ${C.border}`}}>
+          {desc}
+        </div>
+      )}
+      {/* Required skills */}
+      {skills.length > 0 && (
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Required Skills</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+            {skills.map((s,i) => (
+              <span key={i} style={{fontSize:11,color:C.text,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:'3px 8px'}}>
+                {s.name} <span style={{color:C.accent,fontWeight:700}}>{'●'.repeat(s.level)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Attribute sections */}
+      {sections.map(sec => (
+        <div key={sec.label} style={{marginBottom:10}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:4,marginTop:4}}>{sec.label}</div>
+          {sec.rows.map(k => <Row key={k} k={k}/>)}
         </div>
       ))}
     </div>
   );
+}
+
+// Standalone bottom sheet for item info (triggered from browser or charge list)
+function ItemInfoSheet({typeID, onClose}) {
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:400,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
+      <div style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',padding:'10px 16px 0'}}>
+          <button onClick={onClose} style={{background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
+          <ItemInfoPanel typeID={typeID}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModuleInfoTab({typeID, mod}) {
+  return <ItemInfoPanel typeID={typeID ?? mod?.typeID}/>;
 }
 
 function ModuleVariationsTab({typeID, currentName, onSwap}) {
@@ -401,6 +549,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
 function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
+  const[chargeInfo,setChargeInfo]=useState(null);
   const[rahQuery,setRahQuery]=useState("");
   const _modTakesCharges=moduleTakesCharges(mod.typeID,mod.name);
   // Reactive Armor Hardener: gets a "Reactive" tab to choose its adaptation pattern.
@@ -416,7 +565,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
   const states=mod.type==="rig"?["online"]:_canActivate?(_canOverheat?MODULE_STATES:["offline","online","active"]):(["offline","online"]);
   const metaColor={T1:C.textMid,T2:C.accent,Deadspace:C.rig,Named:C.rig,Storyline:C.warning,Faction:C.danger,Officer:"#f0abfc"};
   const modData=Object.values(modulesData).find(m=>m.name===mod.name);
-  return(
+  return(<>
     <BottomSheet title={mod.name} onClose={onClose} height="78vh">
       <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
         {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
@@ -438,8 +587,8 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           {getCompatibleCharges(mod).map(a=>{
             const col=DMG_COLOR[a.dmgType]||C.textMid;
             const total=a.em+a.th+a.kin+a.exp;
-            return(<div key={a.typeID??a.name} onClick={()=>{const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];const modCap=modTd?.attrs?.capacity??0;const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:mod.ammo===a.name?C.accentLight:C.surface,border:`1px solid ${mod.ammo===a.name?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,cursor:"pointer"}}>
-              <div>
+            return(<div key={a.typeID??a.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:mod.ammo===a.name?C.accentLight:C.surface,border:`1px solid ${mod.ammo===a.name?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6}}>
+              <div onClick={()=>{const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];const modCap=modTd?.attrs?.capacity??0;const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});}} style={{flex:1,cursor:"pointer"}}>
                 <div style={{fontSize:13,fontWeight:600,color:mod.ammo===a.name?C.accent:C.text}}>{a.name}</div>
                 <div style={{fontSize:10,color:C.textMute,marginTop:2}}>
                   {a.capBonus!=null&&<span style={{color:C.rig,marginRight:8}}>+{a.capBonus} GJ</span>}
@@ -448,7 +597,10 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
                   {a.em==0&&a.th==0&&a.kin==0&&a.exp==0&&a.capBonus==null&&<span style={{color:C.textMute}}>No data</span>}
                 </div>
               </div>
-              {mod.ammo===a.name&&<span style={{color:C.accent}}>v</span>}
+              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+                {mod.ammo===a.name&&<span style={{color:C.accent}}>v</span>}
+                {a.typeID&&<button onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,color:C.textMid,fontSize:11,cursor:"pointer",padding:"2px 7px",fontWeight:700,lineHeight:1.2}}>ⓘ</button>}
+              </div>
             </div>);
           })}
         </div>)}
@@ -503,7 +655,8 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
         })()}
       </div>
     </BottomSheet>
-  );
+    {chargeInfo&&<ItemInfoSheet typeID={chargeInfo} onClose={()=>setChargeInfo(null)}/>}
+  </>);
 }
 
 function ImportFitSheet({onClose,onImport}){
@@ -570,4 +723,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };

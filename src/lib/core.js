@@ -213,15 +213,7 @@ const SHIPS_BY_CLASS={
   "Black Ops":{Caldari:["Widow"],Gallente:["Sin"],Amarr:["Redeemer"],Minmatar:["Panther"]},
   "Marauder":{Caldari:["Golem"],Gallente:["Kronos"],Amarr:["Paladin"],Minmatar:["Vargur"]},
 };
-const SAVED_FITS_SEED={
-  "Hyperion":[{id:1,name:"PvP Blaster Hyperion",modified:"Jan 15, 2026"},{id:2,name:"Mission Runner",modified:"Jan 10, 2026"}],
-  "Megathron":[{id:3,name:"Sniper Mega",modified:"Jan 8, 2026"}],
-  "Drake":[{id:4,name:"PvE Shield Drake",modified:"Dec 22, 2025"}],
-  "Rupture":[{id:5,name:"T1 PvP Rupture",modified:"Dec 15, 2025"}],
-  "Ishtar":[{id:6,name:"Drone Ishtar L4",modified:"Dec 1, 2025"}],
-  "Claymore":[{id:7,name:"Fleet Skirmish Claymore",modified:"Nov 20, 2025"}],
-  "Sleipnir":[{id:8,name:"AC Sleipnir Roam",modified:"Nov 18, 2025"}],
-};
+const SAVED_FITS_SEED={};
 const CMD_SHIP_FITS={
   "Claymore":{bursts:["Interdiction Maneuvers: +12.5% Velocity","Evasive Maneuvers: +12.5% Agility","Rapid Deployment: -12.5% Align Time"]},
   "Sleipnir":{bursts:["Interdiction Maneuvers: +12.5% Velocity","Evasive Maneuvers: +12.5% Agility"]},

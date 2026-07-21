@@ -14,6 +14,7 @@ import { DAMAGE_PROFILES } from "./data/damage-profiles.js";
 // mutaplasmidData[mutaTypeID] = { n:name, a:{attrID:[min,max]}, t:[baseTypeIDs], r:resultingType }
 import { C } from "./theme.js";
 import { eveIcon, eveRender } from "./lib/icons.js";
+import shipSmallIcon from "./assets/ship_small.png";
 import { META_BY_MG, metaOf, META_COLORS, META_ORDER } from "./lib/meta.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "./data/static-tables.js";
 import { GraphTab, GRAPH_CONFIG, generateCurve } from "./components/GraphTab.jsx";
@@ -92,24 +93,42 @@ function ShipInfoSheet({ship, onClose}) {
     </div>
   );
 
+  const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
   const attrs = {
     fitting: [
-      ['CPU Output', `${ship?.cpu ?? '-'} tf`],
-      ['Powergrid Output', `${ship?.pg ?? '-'} MW`],
-      ['High Slots', ship?.highSlots ?? '-'],
-      ['Mid Slots', ship?.midSlots ?? '-'],
+      ['CPU Output', ship?.cpu != null ? `${ship.cpu} tf` : '-'],
+      ['Powergrid Output', ship?.pg != null ? `${ship.pg} MW` : '-'],
+      ['Calibration', ship?.calibration != null ? `${ship.calibration} pts` : '-'],
+      ['High Slots', ship?.hiSlots ?? ship?.highSlots ?? '-'],
+      ['Mid Slots', ship?.medSlots ?? ship?.midSlots ?? '-'],
       ['Low Slots', ship?.lowSlots ?? '-'],
       ['Rig Slots', ship?.rigSlots ?? '-'],
       ['Turret Hardpoints', ship?.turrets ?? '-'],
+      ['Launcher Hardpoints', ship?.launchers ?? '-'],
+    ],
+    capacitor: [
+      ['Capacitor Capacity', ship?.capCapacity ? `${Math.round(ship.capCapacity)} GJ` : '-'],
+      ['Recharge Time', ship?.capRechargeRate ? `${(ship.capRechargeRate/1000).toFixed(1)} s` : '-'],
+    ],
+    targeting: [
+      ['Max Target Range', ship?.targetRange ? _fmtKm(ship.targetRange) : '-'],
+      ['Scan Resolution', ship?.scanRes ? `${ship.scanRes} mm` : '-'],
+      ['Max Locked Targets', ship?.maxTargets ?? '-'],
+      [`${ship?.sensorType||'Sensor'} Strength`, ship?.sensorStrength ? `${ship.sensorStrength} points` : '-'],
+    ],
+    navigation: [
+      ['Max Velocity', ship?.maxVelocity ? `${Math.round(ship.maxVelocity)} m/s` : '-'],
+      ['Agility', ship?.agility != null ? `${ship.agility}` : '-'],
+      ['Warp Speed', ship?.warpSpeed ? `${Number(ship.warpSpeed).toFixed(2)} AU/s` : '-'],
+      ['Signature Radius', ship?.sigRadius ? `${ship.sigRadius} m` : '-'],
+      ['Mass', ship?.mass ? `${(ship.mass/1e6).toFixed(2)}M kg` : '-'],
     ],
     structure: [
-      ['Shield HP', `${ship?.shieldHP ?? '-'} HP`],
-      ['Armor HP', `${ship?.armorHP ?? '-'} HP`],
-      ['Hull HP', `${ship?.hullHP ?? '-'} HP`],
-      ['Mass', ship?.mass ? `${(ship.mass/1e6).toFixed(2)}M kg` : '-'],
-      ['Max Velocity', `${ship?.maxVelocity ?? '-'} m/s`],
-      ['Drone Bay', `${ship?.droneBay ?? '-'} m³`],
-      ['Drone Bandwidth', `${ship?.droneBW ?? '-'} Mbit/s`],
+      ['Shield HP', ship?.shieldHP ? `${Math.round(ship.shieldHP)} HP` : '-'],
+      ['Armor HP', ship?.armorHP ? `${Math.round(ship.armorHP)} HP` : '-'],
+      ['Hull HP', ship?.hullHP ? `${Math.round(ship.hullHP)} HP` : '-'],
+      ['Drone Bay', ship?.droneBay ? `${ship.droneBay} m³` : '-'],
+      ['Drone Bandwidth', (ship?.droneBandwidth??ship?.droneBW) ? `${ship?.droneBandwidth??ship?.droneBW} Mbit/s` : '-'],
     ],
   };
 
@@ -254,6 +273,13 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
     </div>
     <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
       {!search&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit}/>}
+      {!search&&Object.keys(fitsDB).length===0&&(
+        <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
+          <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Vis Viva</div>
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>Select a ship class below, choose a hull, then tap <strong style={{color:C.accent}}>+ New Fit</strong> to get started</div>
+        </div>
+      )}
       {searchResults&&(<>
         <div style={{fontSize:11,color:C.textMute,marginBottom:8}}>{searchResults.length} result{searchResults.length!==1?"s":""} for "{search}"</div>
         {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No ships or fits found</div>}
@@ -268,7 +294,7 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
         return (
           <div key={cls} onClick={()=>{setSelectedClass(cls);setView("class-ships");}}
             style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:selectedClass===cls?C.accentLight:"transparent"}}>
-            <span style={{fontSize:16}}>🚀</span>
+            <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
             <div style={{flex:1}}>
               <div style={{fontSize:13,fontWeight:600,color:selectedClass===cls?C.accent:C.text}}>{cls}</div>
               <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ships.length} ships{fitCount>0?` · ${fitCount} fits`:""}</div>
@@ -286,7 +312,8 @@ function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setF
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>setView("browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>Back</button>
-        <span style={{fontSize:16}}>🚀</span><span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedClass}</span>
+        <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
+        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedClass}</span>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
         {classShips.map(s=>{
@@ -1487,9 +1514,10 @@ function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) 
       }
       if (sec !== 'rigs') lines.push('');
     }
-    if (incImplants && implants?.length) {
+    const filledImplants = (implants ?? []).filter(i => i.name && i.name !== '[Empty]');
+    if (incImplants && filledImplants.length) {
       lines.push('');
-      for (const imp of implants) lines.push(imp.name ?? '');
+      for (const imp of filledImplants) lines.push(imp.name);
     }
     if (incBoosters && boosters?.length) {
       lines.push('');
@@ -1631,7 +1659,7 @@ export default function App(){
   const[showHamburger,setShowHamburger]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
   const[fitsDB,setFitsDB]=useState(()=>{try{const s=localStorage.getItem("pyfa-fitsdb");if(s)return JSON.parse(s);}catch{}return SAVED_FITS_SEED;});
-  const[activeFit,setActiveFit]=useState(()=>{try{const s=localStorage.getItem("pyfa-activefit");if(s)return JSON.parse(s);}catch{}return{ship:"Hyperion",fitName:"PvP Blaster Hyperion"};});
+  const[activeFit,setActiveFit]=useState(()=>{try{const s=localStorage.getItem("pyfa-activefit");if(s)return JSON.parse(s);}catch{}return null;});
   const initialFit=(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af)return db[af.ship]?.find(f=>f.name===af.fitName)||null;}catch{}return null;})();
   const emptyImplants=()=>Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null}));
   const[slots,setSlots]=useState(initialFit?.slots??generateEmptySlots(lookupShip("Hyperion")));
@@ -1736,7 +1764,7 @@ export default function App(){
     }catch{ return []; }
   },[activeFit,slots,drones,skills,implants,boosters,fighters,dmgProfile]);
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
-  const[fittingsView,setFittingsView]=useState("active");
+  const[fittingsView,setFittingsView]=useState(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   const[showShipInfo,setShowShipInfo]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
   const[showExportFit,setShowExportFit]=useState(false);

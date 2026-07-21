@@ -6,6 +6,37 @@ import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { DMG, STATE_COLORS, computeDisplayRows, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
+
+// Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
+const CAN_FIT_GROUP_KEYS = ['canFitShipGroup01','canFitShipGroup02','canFitShipGroup03','canFitShipGroup04','canFitShipGroup05','canFitShipGroup06','canFitShipGroup07','canFitShipGroup08','canFitShipGroup09','canFitShipGroup10','canFitShipGroup11','canFitShipGroup12','canFitShipGroup13','canFitShipGroup14','canFitShipGroup15','canFitShipGroup16','canFitShipGroup17','canFitShipGroup18','canFitShipGroup19','canFitShipGroup20'];
+const CAN_FIT_TYPE_KEYS  = ['canFitShipType1','canFitShipType2','canFitShipType3','canFitShipType4','canFitShipType5','canFitShipType6','canFitShipType7','canFitShipType8','canFitShipType9','canFitShipType10','canFitShipType11','canFitShipType12'];
+// Group names that consume a turret hardpoint
+const TURRET_GROUPS = new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Mining Laser','Frequency Mining Laser','Citizen Mining Laser','Precursor Weapon']);
+const isTurretWeapon    = tid => TURRET_GROUPS.has(TYPES[String(tid)]?.gn ?? '');
+const isMissileLauncher = tid => /^Missile Launcher/i.test(TYPES[String(tid)]?.gn ?? '');
+
+// Returns null if module can fit the ship, or an error string if not.
+function checkFitRestriction(modTypeID, ship) {
+  if (!ship?.typeID || !modTypeID) return null;
+  const attrs = TYPES[String(modTypeID)]?.a ?? {};
+
+  // Rig size check: rig's rigSize must match the ship's rigSize
+  const modRigSize = attrs.rigSize;
+  if (modRigSize != null) {
+    const shipRigSize = TYPES[String(ship.typeID)]?.a?.rigSize ?? null;
+    if (shipRigSize != null && modRigSize !== shipRigSize) {
+      const SIZE_NAME = {1:'Small',2:'Medium',3:'Large',4:'Capital'};
+      return `${SIZE_NAME[modRigSize]??'Wrong-size'} rig cannot be fit to a ${SIZE_NAME[shipRigSize]??'this'} ship`;
+    }
+  }
+
+  const allowedGroups = CAN_FIT_GROUP_KEYS.map(k => attrs[k]).filter(v => v != null);
+  const allowedTypes  = CAN_FIT_TYPE_KEYS.map(k => attrs[k]).filter(v => v != null);
+  if (!allowedGroups.length && !allowedTypes.length) return null;
+  const shipGroupID = TYPES[String(ship.typeID)]?.g ?? null;
+  if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
+  return `Cannot be fit to ${ship.hullClass || ship.name || 'this ship'}`;
+}
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
@@ -20,6 +51,8 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
   const[expanded,setExpanded]=useState(["subsystems","high","mid","low","rigs"]);
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
+  const[fitError,setFitError]=useState(null);
+  const showFitError=msg=>{setFitError(msg);setTimeout(()=>setFitError(null),3000);};
 
   // Drag-and-drop handler: swap two slot positions within a section
   // ── Drag-to-reorder (pointer events: works for both touch and mouse) ──────
@@ -128,6 +161,18 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
     setModuleMenu(null);
   };
   const addMod=(secKey,id,modData)=>{
+    if(ship&&modData.typeID){
+      const fitErr=checkFitRestriction(modData.typeID,ship);
+      if(fitErr){showFitError(fitErr);return;}
+      if(secKey==='high'&&isTurretWeapon(modData.typeID)){
+        const used=(slots.high??[]).filter(s=>s.typeID&&isTurretWeapon(s.typeID)).length;
+        if(used>=(ship.turrets??0)){showFitError('No turret hardpoints available');return;}
+      }
+      if(secKey==='high'&&isMissileLauncher(modData.typeID)){
+        const used=(slots.high??[]).filter(s=>s.typeID&&isMissileLauncher(s.typeID)).length;
+        if(used>=(ship.launchers??0)){showFitError('No launcher hardpoints available');return;}
+      }
+    }
     const modInfo=Object.values(modulesData).find(m=>m.name===modData.name);
     const takesCharges=moduleTakesCharges(modData.typeID,modData.name);
     const hasIntrinsicDmg=!!(modInfo?.emDmg||modInfo?.thDmg||modInfo?.kinDmg||modInfo?.expDmg);
@@ -148,6 +193,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
 
   return(
     <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
+      {fitError&&<div style={{position:'fixed',top:16,left:16,right:16,zIndex:500,background:C.danger,color:'#fff',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,textAlign:'center',boxShadow:'0 4px 16px rgba(0,0,0,.4)',pointerEvents:'none'}}>{fitError}</div>}
       <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>
       {shipModes&&(
         <div style={{display:"flex",gap:6,padding:"8px 10px 4px"}}>
@@ -215,32 +261,32 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                       <span style={{fontSize:12,fontWeight:600,color:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:2}}>
-                      {row.ammo&&<><span style={{fontSize:10,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title="Unload charge" onClick={e=>{e.stopPropagation();setSlots(prev=>{const s=[...prev[sec.key]];const si=s.findIndex(x=>x.id===row.id);if(si>=0)s[si]={...s[si],ammo:null,charges:undefined,maxCharges:undefined};return{...prev,[sec.key]:s};});}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
+                      {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title="Unload charge" onClick={e=>{e.stopPropagation();setSlots(prev=>{const s=[...prev[sec.key]];const si=s.findIndex(x=>x.id===row.id);if(si>=0)s[si]={...s[si],ammo:null,charges:undefined,maxCharges:undefined};return{...prev,[sec.key]:s};});}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
                       {(()=>{
-                        if(!row.typeID)return row.optimal>0||row.falloff>0?<span style={{fontSize:10,color:C.rig}}>{row.optimal}+{row.falloff} km</span>:null;
+                        if(!row.typeID)return row.optimal>0||row.falloff>0?<span style={{fontSize:11,color:C.rig}}>{row.optimal}+{row.falloff} km</span>:null;
                         const eStats=engineStatsByTypeID.get(row.typeID);
                         if(eStats&&(eStats.optimal>0||eStats.falloff>0)){
                           const _fal=eStats.falloff>0?`+${eStats.falloff}`:'';
                           const _isOH=row.state==='overheated';
                           // heatedOptimal comes from calc and includes subsystem overload enhancements
                           // (e.g. Loki Core raises a web's heated range to 45.7km).
-                          const _ohHint=(eStats.heatedOptimal!=null&&!_isOH)?<span style={{fontSize:9,color:C.overheat,marginLeft:3}}>OH:{eStats.heatedOptimal}km</span>:null;
-                          return <span style={{fontSize:10,color:C.rig}}>{eStats.optimal}{_fal} km{_ohHint}</span>;
+                          const _ohHint=(eStats.heatedOptimal!=null&&!_isOH)?<span style={{fontSize:11,color:C.overheat,marginLeft:6}}>OH: {eStats.heatedOptimal} km</span>:null;
+                          return <span style={{fontSize:11,color:C.rig}}>{eStats.optimal}{_fal} km{_ohHint}</span>;
                         }
                         const a=TYPES[row.typeID]?.attrs??{};
                         const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
                         const opt=Math.round((a.maxRange??0)*(ca.weaponRangeMultiplier??1)/1000*10)/10;
                         const fal=Math.round(((a.falloff??a.falloffEffectiveness??0))*(ca.fallofMultiplier??1)/1000*10)/10;
-                        return (opt>0||fal>0)?<span style={{fontSize:10,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km</span>:null;
+                        return (opt>0||fal>0)?<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km</span>:null;
                       })()}
                       {(()=>{
-                        if(!row.typeID)return row.tracking>0?<span style={{fontSize:10,color:C.warning}}>Tr {row.tracking}</span>:null;
+                        if(!row.typeID)return row.tracking>0?<span style={{fontSize:11,color:C.warning}}>Tr {row.tracking}</span>:null;
                         const eSt=engineStatsByTypeID.get(row.typeID);
-                        if(eSt?.tracking>0)return <span style={{fontSize:10,color:C.warning}}>Tr {eSt.tracking}</span>;
+                        if(eSt?.tracking>0)return <span style={{fontSize:11,color:C.warning}}>Tr {eSt.tracking}</span>;
                         const a=TYPES[row.typeID]?.attrs??{};
                         const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
                         const trk=Math.round((a.trackingSpeed??0)*(ca.trackingSpeedMultiplier??1)*1000)/1000;
-                        return trk>0?<span style={{fontSize:10,color:C.warning}}>Tr {trk}</span>:null;
+                        return trk>0?<span style={{fontSize:11,color:C.warning}}>Tr {trk}</span>:null;
                       })()}
                       {(()=>{
                         const eAar=engineStatsByTypeID.get(row.typeID);
@@ -248,10 +294,10 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
                         if(eAar.hasPaste){
                           const dispHP=eAar.totalEHP??eAar.totalHP;
-                          return <span style={{fontSize:10,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)}/{eAar.totalS}s</span>;
+                          return <span style={{fontSize:11,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)}/{eAar.totalS}s</span>;
                         }
                         const ehps=eAar.ehpS??Math.round(eAar.repPerCycle/(eAar.cycleMs/1000));
-                        return <span style={{fontSize:10,color:C.textMute,marginLeft:2}}>{fmt(ehps)} EHP/s</span>;
+                        return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(ehps)} EHP/s</span>;
                       })()}
                       {(()=>{
                         const eAsb=engineStatsByTypeID.get(row.typeID);
@@ -260,9 +306,9 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         if(eAsb.hasCharges){
                           const dispHP=eAsb.totalEHP??eAsb.totalHP;
                           const reloadS=Math.round(eAsb.totalS_withReload-eAsb.totalS);
-                          return <span style={{fontSize:10,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)} / {eAsb.totalS}s (+{reloadS}s)</span>;
+                          return <span style={{fontSize:11,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)} / {eAsb.totalS}s (+{reloadS}s)</span>;
                         }
-                        return <span style={{fontSize:10,color:C.textMute,marginLeft:2}}>{fmt(eAsb.ehpS)} EHP/s</span>;
+                        return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(eAsb.ehpS)} EHP/s</span>;
                       })()}
                       {(()=>{
                         const eRah=engineStatsByTypeID.get(row.typeID);
@@ -270,7 +316,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         // Current adapted resist split as four color-coded figures (EM / Th / Kin / Exp).
                         const pct=eRah.rahResistPct; // [em,th,kin,exp] percent
                         const cols=[DMG.em.color,DMG.th.color,DMG.kin.color,DMG.exp.color];
-                        return(<span style={{display:"inline-flex",alignItems:"center",fontSize:10,fontWeight:700,marginLeft:2}}>
+                        return(<span style={{display:"inline-flex",alignItems:"center",fontSize:11,fontWeight:700,marginLeft:2}}>
                           {pct.map((v,i)=>(<span key={i}>
                             {i>0&&<span style={{color:C.textMute,margin:"0 3px"}}>/</span>}
                             <span style={{color:cols[i]}}>{Number(v.toFixed(1))}%</span>
@@ -281,16 +327,16 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         const eW=engineStatsByTypeID.get(row.typeID);
                         if(!eW?.isWDFG) return null;
                         const km=Math.round((eW.warpScrambleRange??0)/100)/10;
-                        return <span style={{fontSize:10,color:C.rig,marginLeft:2}}>{km} km</span>;
+                        return <span style={{fontSize:11,color:C.rig,marginLeft:2}}>{km} km</span>;
                       })()}
                       {(()=>{
                         const eB=engineStatsByTypeID.get(row.typeID);
                         if(!eB?.isBreacher) return null;
-                        if(eB.noPod) return <span style={{fontSize:10,color:C.textMute,marginLeft:2}}>load a pod</span>;
+                        if(eB.noPod) return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>load a pod</span>;
                         // pyfa format: total absolute / total %-of-HP "over" duration, resist-ignoring.
                         const fmtK=(n)=>n>=1000?(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+"k":Math.round(n).toString();
                         return <span title={`Pure damage inflicted over time, minimum of absolute / relative.\nFull DPS from ${fmtK(eB.fullDpsHP)} target HP`}
-                          style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10,fontWeight:700,marginLeft:2,cursor:"help"}}>
+                          style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,marginLeft:2,cursor:"help"}}>
                           <span style={{color:C.danger}}>{fmtK(eB.totalAbs)}/{Math.round(eB.totalPct)}%</span>
                           <span style={{color:C.textMute,fontWeight:400}}>over {Math.round(eB.durationS)}s</span>
                         </span>;
