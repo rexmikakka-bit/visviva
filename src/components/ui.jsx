@@ -10,7 +10,18 @@ import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
 import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
-import typeDescriptions from "../data/type-descriptions.json";
+let _typeDescsCache = null;
+function useTypeDescriptions() {
+  const [descs, setDescs] = useState(null);
+  useEffect(() => {
+    if (_typeDescsCache) { setDescs(_typeDescsCache); return; }
+    import("../data/type-descriptions.json").then(m => {
+      _typeDescsCache = m.default;
+      setDescs(_typeDescsCache);
+    });
+  }, []);
+  return descs;
+}
 
 function BottomSheet({title,onClose,children,height="70vh"}){
   return(
@@ -364,6 +375,7 @@ function getItemSkills(typeID) {
 
 // Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab
 function ItemInfoPanel({typeID}) {
+  const typeDescriptions = useTypeDescriptions();
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
   const attrs = td.attrs ?? td.a ?? {};

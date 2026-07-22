@@ -159,7 +159,7 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
     for (const t of (eff.trackDisr || [])) { const f = rf(t.optimal, t.falloff); if (t.tracking < 0) add("Tracking Disr", `${(t.tracking * f).toFixed(0)}% track`); }
     for (const g of (eff.guideDisr || [])) { const f = rf(g.optimal, g.falloff); if (g.missileRange < 0) add("Guidance Disr", `${(g.missileRange * f).toFixed(0)}% mis. rng`); }
     for (const r of (eff.reps || [])) { const f = rf(r.optimal, r.falloff); const v = r.rawPS * f; if (v > 0.1) { remoteReps[r.kind] = (remoteReps[r.kind] ?? 0) + v; add(`Remote ${r.kind === "shield" ? "Shield" : r.kind === "armor" ? "Armor" : "Hull"} Rep`, `+${v.toFixed(0)} hp/s`, false); } }
-    if (fx.length) incoming.push({ fitName: pf.fitName || pf.ship, hull: pf.ship, effects: fx });
+    if (fx.length) incoming.push({ fitName: pf.fitName || pf.ship, hull: pf.ship, rangeKm: pf.rangeKm ?? 30, effects: fx });
   }
   return { links, incoming, remoteReps };
 }
@@ -313,7 +313,7 @@ function Projected({ links, incoming }) {
       ))}
       {incoming.map((inc, i) => (
         <div key={`i${i}`} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ptag kind="inc" /><SrcLine fitName={inc.fitName} hull={inc.hull} /></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Ptag kind="inc" /><SrcLine fitName={inc.fitName} hull={inc.hull} tail={`${inc.rangeKm} km`} /></div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {inc.effects.map((x, j) => <Chip key={j} dot={x.hostile ? T.warn : T.good} name={x.name} eff={x.eff} />)}
           </div>

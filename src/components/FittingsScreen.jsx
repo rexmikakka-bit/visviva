@@ -1,0 +1,362 @@
+import { useState, useRef } from "react";
+import { C } from "../theme.js";
+import { eveIcon, eveRender } from "../lib/icons.js";
+import shipSmallIcon from "../assets/ship_small.png";
+import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
+import { FitTab, StatsTab } from "./tabs.jsx";
+import { GraphTab } from "./GraphTab.jsx";
+
+export function ActiveFitBar({activeFit,onReturn}){
+  if(!activeFit)return null;
+  const ship=lookupShip(activeFit.ship);
+  return(<div onClick={onReturn} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 14px",background:C.accentLight,borderBottom:`1px solid ${C.accentBorder}`,cursor:"pointer",flexShrink:0}}>
+    <div style={{display:"flex",alignItems:"center",gap:9}}>
+      {ship.typeID&&<img className="eve-icon" src={eveRender(ship.typeID,32)} width={28} height={28} alt="" style={{borderRadius:4}} onError={e=>{e.target.style.display="none";}}/>}
+      <div><div style={{fontSize:11,fontWeight:700,color:C.accent,lineHeight:1.2}}>{activeFit.ship}</div><div style={{fontSize:10,color:C.textMid,marginTop:1}}>{activeFit.fitName}</div></div>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,fontWeight:600,color:C.accent}}>Return to Fit</span><span style={{fontSize:16,color:C.accent}}>{">"}</span></div>
+  </div>);
+}
+
+export function RecentFitsList({fitsDB, activeFit, loadFit}) {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem('pyfa_recent_open') !== '0'; } catch { return true; }
+  });
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try { localStorage.setItem('pyfa_recent_open', next ? '1' : '0'); } catch {}
+  };
+  const recentFits = Object.entries(fitsDB)
+    .flatMap(([ship, fits]) => fits.map(f => ({ship, fit:f})))
+    .sort((a,b) => (b.fit.modified||0) - (a.fit.modified||0))
+    .slice(0, 8);
+  if (!recentFits.length) return null;
+  return (
+    <div style={{marginBottom:12}}>
+      <div onClick={toggle} style={{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',padding:'4px 0',marginBottom:open?6:0}}>
+        <span style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5}}>Recent Fits</span>
+        <span style={{fontSize:11,color:C.textMute}}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && recentFits.map(({ship, fit}) => (
+        <div key={fit.id} onClick={()=>loadFit(ship, fit.name)}
+          style={{display:'flex',alignItems:'center',gap:10,padding:'9px 12px',borderRadius:8,cursor:'pointer',
+                  background:activeFit?.fitName===fit.name&&activeFit?.ship===ship?C.accentLight:C.surface,
+                  border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===ship?C.accentBorder:C.border}`,marginBottom:4}}>
+          <img src={eveIcon(Object.entries(shipsByClass||{}).flatMap(([,ships])=>ships).find(s=>s.name===ship)?.typeID,32)}
+               style={{width:32,height:32,borderRadius:4,objectFit:'contain',background:C.surfaceAlt,flexShrink:0}}
+               onError={e=>e.target.style.display='none'} alt=""/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{fit.name}</div>
+            <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ship}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function ShipInfoSheet({ship, onClose}) {
+  const [tab, setTab] = useState('traits');
+  const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
+  const tabs = ['traits','description','attributes'];
+
+  const TraitSection = ({header, bonuses}) => (
+    <div style={{marginBottom:14}}>
+      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{header}</div>
+      {(bonuses||[]).map((b,i) => (
+        <div key={i} style={{display:'flex',gap:8,padding:'3px 0'}}>
+          {b.number && <span style={{fontSize:12,fontWeight:700,color:C.accent,minWidth:44,flexShrink:0}}>{b.number}</span>}
+          <span style={{fontSize:12,color:C.textMid}}>{b.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
+  const attrs = {
+    fitting: [
+      ['CPU Output', ship?.cpu != null ? `${ship.cpu} tf` : '-'],
+      ['Powergrid Output', ship?.pg != null ? `${ship.pg} MW` : '-'],
+      ['Calibration', ship?.calibration != null ? `${ship.calibration} pts` : '-'],
+      ['High Slots', ship?.hiSlots ?? ship?.highSlots ?? '-'],
+      ['Mid Slots', ship?.medSlots ?? ship?.midSlots ?? '-'],
+      ['Low Slots', ship?.lowSlots ?? '-'],
+      ['Rig Slots', ship?.rigSlots ?? '-'],
+      ['Turret Hardpoints', ship?.turrets ?? '-'],
+      ['Launcher Hardpoints', ship?.launchers ?? '-'],
+    ],
+    capacitor: [
+      ['Capacitor Capacity', ship?.capCapacity ? `${Math.round(ship.capCapacity)} GJ` : '-'],
+      ['Recharge Time', ship?.capRechargeRate ? `${(ship.capRechargeRate/1000).toFixed(1)} s` : '-'],
+    ],
+    targeting: [
+      ['Max Target Range', ship?.targetRange ? _fmtKm(ship.targetRange) : '-'],
+      ['Scan Resolution', ship?.scanRes ? `${ship.scanRes} mm` : '-'],
+      ['Max Locked Targets', ship?.maxTargets ?? '-'],
+      [`${ship?.sensorType||'Sensor'} Strength`, ship?.sensorStrength ? `${ship.sensorStrength} points` : '-'],
+    ],
+    navigation: [
+      ['Max Velocity', ship?.maxVelocity ? `${Math.round(ship.maxVelocity)} m/s` : '-'],
+      ['Agility', ship?.agility != null ? `${ship.agility}` : '-'],
+      ['Warp Speed', ship?.warpSpeed ? `${Number(ship.warpSpeed).toFixed(2)} AU/s` : '-'],
+      ['Signature Radius', ship?.sigRadius ? `${ship.sigRadius} m` : '-'],
+      ['Mass', ship?.mass ? `${(ship.mass/1e6).toFixed(2)}M kg` : '-'],
+    ],
+    structure: [
+      ['Shield HP', ship?.shieldHP ? `${Math.round(ship.shieldHP)} HP` : '-'],
+      ['Armor HP', ship?.armorHP ? `${Math.round(ship.armorHP)} HP` : '-'],
+      ['Hull HP', ship?.hullHP ? `${Math.round(ship.hullHP)} HP` : '-'],
+      ['Drone Bay', ship?.droneBay ? `${ship.droneBay} m³` : '-'],
+      ['Drone Bandwidth', (ship?.droneBandwidth??ship?.droneBW) ? `${ship?.droneBandwidth??ship?.droneBW} Mbit/s` : '-'],
+    ],
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column'}}
+         onClick={onClose}>
+      <div style={{flex:1,background:'rgba(0,0,0,.5)'}}/>
+      <div style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'85vh',
+                   display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}}
+           onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',gap:12,padding:'16px 16px 12px',borderBottom:`1px solid ${C.border}`}}>
+          <img src={eveIcon(ship?.typeID,64)}
+               style={{width:48,height:48,borderRadius:8,background:'#0d0d1a',flexShrink:0}}
+               onError={e=>e.target.style.opacity='0'} alt=""/>
+          <div>
+            <div style={{fontSize:16,fontWeight:700,color:C.text}}>{ship?.name}</div>
+            <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{ship?.groupName}</div>
+          </div>
+          <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',
+            color:C.textMute,fontSize:20,cursor:'pointer',padding:'0 4px'}}>×</button>
+        </div>
+        <div style={{display:'flex',borderBottom:`1px solid ${C.border}`}}>
+          {tabs.map(t => (
+            <button key={t} onClick={()=>setTab(t)}
+              style={{flex:1,padding:'9px 4px',background:'none',border:'none',cursor:'pointer',
+                      fontSize:12,fontWeight:600,color:tab===t?C.accent:C.textMute,
+                      borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',
+                      textTransform:'capitalize'}}>
+              {t}
+            </button>
+          ))}
+        </div>
+        <div style={{flex:1,overflowY:'auto',padding:'14px 16px'}}>
+          {tab==='traits' && (
+            <div>
+              {traits.skills?.map((s,i) => <TraitSection key={i} header={s.header} bonuses={s.bonuses}/>)}
+              {traits.role && <TraitSection header={traits.role.header||'Role Bonus:'} bonuses={traits.role.bonuses}/>}
+              {traits.misc && <TraitSection header={traits.misc.header||'Misc:'} bonuses={traits.misc.bonuses}/>}
+              {!traits.skills?.length && !traits.role && (
+                <div style={{color:C.textMute,fontSize:13}}>No trait data available.</div>
+              )}
+            </div>
+          )}
+          {tab==='description' && (
+            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>
+              {traits.desc || 'No description available.'}
+            </div>
+          )}
+          {tab==='attributes' && (
+            <div>
+              {Object.entries(attrs).map(([section, rows]) => (
+                <div key={section} style={{marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',
+                    letterSpacing:.5,marginBottom:8}}>{section}</div>
+                  {rows.filter(([,v]) => v !== '-' && v !== 'undefined').map(([label, val]) => (
+                    <div key={label} style={{display:'flex',justifyContent:'space-between',
+                      padding:'5px 0',borderBottom:`1px solid ${C.border}`}}>
+                      <span style={{fontSize:12,color:C.textMid}}>{label}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:C.text}}>{val}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
+  const[selectedClass,setSelectedClass]=useState(null);
+  const[selectedShip,setSelectedShip]=useState(activeFit?.ship??null);
+  const[fitSubTab,setFitSubTab]=useState("Fit");
+  const _SUBTABS=["Fit","Stats","Graph"];
+  const _swipe=useRef({x:0,y:0});
+  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY};};
+  const _onSwipeEnd=e=>{const t=e.changedTouches[0];if(!t)return;const dx=t.clientX-_swipe.current.x,dy=t.clientY-_swipe.current.y;
+    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.6){const i=_SUBTABS.indexOf(fitSubTab);
+      if(dx<0&&i<_SUBTABS.length-1){setFitSubTab(_SUBTABS[i+1]);haptic();}
+      else if(dx>0&&i>0){setFitSubTab(_SUBTABS[i-1]);haptic();}}};
+  const[search,setSearch]=useState("");
+  const[nextId,setNextId]=useState(()=>Object.values(fitsDB).reduce((max,fits)=>fits.reduce((m,f)=>Math.max(m,f.id+1),max),20));
+  const[editingFitId,setEditingFitId]=useState(null);
+  const[editName,setEditName]=useState("");
+  const[renamingFit,setRenamingFit]=useState(false);
+  const[newFitName,setNewFitName]=useState("");
+
+  const activeShip=activeFit?.ship?lookupShip(activeFit.ship):null;
+
+  const saveRename=(ship,fitId)=>{
+    const name=editName.trim()||"Unnamed Fit";
+    const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    setFitsDB(prev=>({...prev,[ship]:prev[ship].map(f=>f.id===fitId?{...f,name,modified:now}:f)}));
+    if(activeFit?.ship===ship&&activeFit?.fitName===fitsDB[ship]?.find(f=>f.id===fitId)?.name)
+      setActiveFit(prev=>({...prev,fitName:name}));
+    setEditingFitId(null);
+  };
+
+  const createNewFit=ship=>{
+    const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    const emptySlots=generateEmptySlots(lookupShip(ship));
+    const nf={id:nextId,name:"New Fit",modified:now,slots:emptySlots};
+    setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),nf]}));
+    setNextId(n=>n+1);
+    setActiveFit({ship,fitName:"New Fit"});
+    setSlots(emptySlots);
+    setDrones([]);setFighters([]);setCargoItems([]);setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})));setBoosters([]);setProjFits([]);setCmdFits([]);
+    setSelectedShip(ship);
+    setView("active");
+  };
+
+  const searchResults=search.trim().length>1?(()=>{
+    const q=search.toLowerCase(),results=[];
+    Object.entries(shipsByClass||{}).forEach(([cls,ships])=>{
+      ships.forEach(s=>{
+        if(s.name.toLowerCase().includes(q))results.push({type:"ship",ship:s.name,hull:cls,race:"",color:C.rig});
+        (fitsDB[s.name]||[]).forEach(fit=>{if(fit.name.toLowerCase().includes(q))results.push({type:"fit",ship:s.name,hull:cls,race:"",fitName:fit.name,modified:fit.modified,color:C.accent});});
+      });
+    });
+    return results;
+  })():null;
+
+  if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
+        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ships or fit names..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
+        {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:16,padding:0}}>x</button>}
+      </div>
+    </div>
+    <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
+      {!search&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit}/>}
+      {!search&&Object.keys(fitsDB).length===0&&(
+        <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
+          <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Vis Viva</div>
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>Select a ship class below, choose a hull, then tap <strong style={{color:C.accent}}>+ New Fit</strong> to get started</div>
+        </div>
+      )}
+      {searchResults&&(<>
+        <div style={{fontSize:11,color:C.textMute,marginBottom:8}}>{searchResults.length} result{searchResults.length!==1?"s":""} for "{search}"</div>
+        {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No ships or fits found</div>}
+        {searchResults.map((rr,i)=>(<div key={i} onClick={()=>{setSelectedShip(rr.ship);setView(rr.type==="fit"?"active":"fits");if(rr.type==="fit")loadFit(rr.ship,rr.fitName);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
+          <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.type==="fit"?rr.fitName:rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.ship} / {rr.hull} / {rr.race}</div></div>
+          <span style={{fontSize:10,color:rr.type==="fit"?C.accent:C.textMute,background:rr.type==="fit"?C.accentLight:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>{rr.type==="fit"?"fit":"ship"}</span>
+        </div>))}
+      </>)}
+      {!searchResults&&Object.entries(shipsByClass||{}).sort(([a],[b])=>a.localeCompare(b)).map(([cls, ships])=>{
+        const fitCount=ships.reduce((s,sh)=>s+(fitsDB[sh.name]||[]).length,0);
+        return (
+          <div key={cls} onClick={()=>{setSelectedClass(cls);setView("class-ships");}}
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:selectedClass===cls?C.accentLight:"transparent"}}>
+            <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:600,color:selectedClass===cls?C.accent:C.text}}>{cls}</div>
+              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ships.length} ships{fitCount>0?` · ${fitCount} fits`:""}</div>
+            </div>
+            <span style={{color:C.textMute,fontSize:16}}>{">"}</span>
+          </div>
+        );
+      })}
+    </div>
+  </div>);
+
+  if(view==="class-ships"){
+    const classShips=(shipsByClass[selectedClass]||[]).sort((a,b)=>a.name.localeCompare(b.name));
+    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <button onClick={()=>setView("browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>Back</button>
+        <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
+        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedClass}</span>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
+        {classShips.map(s=>{
+          const sfits=(fitsDB[s.name]||[]);
+          return(<div key={s.typeID} style={{marginBottom:4}}>
+            <div onClick={()=>{setSelectedShip(s.name);setView('fits');}} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
+              <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:5}}>
+                  {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
+                  <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+                </div>
+                <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
+              </div>
+            </div>
+            {selectedShip===s.name&&sfits.length>0&&<div style={{paddingLeft:16,marginTop:2}}>
+              {sfits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderRadius:6,cursor:"pointer",background:C.surfaceAlt,marginBottom:2,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accentBorder:C.border}`}} onClick={()=>loadFit(s.name,fit.name)}>
+                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accent:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>Modified {fit.modified}</div></div>
+                <span style={{color:C.textMute,fontSize:13}}>{">"}</span>
+              </div>))}
+            </div>}
+          </div>);
+        })}
+      </div>
+    </div>);
+  }
+
+  if(view==="fits"){
+    const fits=fitsDB[selectedShip]||[];
+    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <button onClick={()=>setView(selectedClass?"class-ships":"browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
+        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedShip}</span>
+        <button onClick={()=>createNewFit(selectedShip)} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:12}}>
+        {fits.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>No saved fits - tap + New Fit to start</div>}
+        {fits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",gap:8,padding:"12px 14px",background:C.surface,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===selectedShip?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8}}>
+          <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{if(editingFitId!==fit.id){loadFit(selectedShip,fit.name);setView("active");}}}>
+            {editingFitId===fit.id
+              ?<input autoFocus value={editName} onChange={e=>setEditName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")saveRename(selectedShip,fit.id);if(e.key==="Escape")setEditingFitId(null);}} onBlur={()=>saveRename(selectedShip,fit.id)} onClick={e=>e.stopPropagation()} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"4px 8px",color:C.text,fontSize:13,fontWeight:600,boxSizing:"border-box"}}/>
+              :<div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fit.name}</div>
+            }
+            <div style={{fontSize:11,color:C.textMute,marginTop:2}}>Modified {fit.modified}</div>
+          </div>
+          <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}} style={{width:28,height:28,borderRadius:6,background:editingFitId===fit.id?C.accentLight:C.surfaceAlt,border:`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>&#9998;</button>
+          <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`)){setFitsDB(prev=>{const next={...prev,[selectedShip]:(prev[selectedShip]||[]).filter(f=>f.id!==fit.id)};if(!next[selectedShip].length)delete next[selectedShip];return next;});if(activeFit?.fitName===fit.name&&activeFit?.ship===selectedShip)setActiveFit(null);}}} style={{width:28,height:28,borderRadius:6,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.danger,flexShrink:0,lineHeight:1}} title="Delete fit">&times;</button>
+          <button onClick={()=>{loadFit(selectedShip,fit.name);setView("active");}} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.textMute,flexShrink:0}}>{">"}</button>
+        </div>))}
+      </div>
+    </div>);
+  }
+
+  return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",padding:"6px 12px 0",gap:8}}>
+        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>Fits</button>
+        <div style={{flex:1,minWidth:0}}>
+          {renamingFit
+            ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});setFitsDB(prev=>({...prev,[activeFit.ship]:(prev[activeFit.ship]||[]).map(f=>f.name===activeFit.fitName?{...f,name:newFitName.trim()||activeFit.fitName,modified:now}:f)}));setActiveFit(prev=>({...prev,fitName:newFitName.trim()||prev.fitName}));setRenamingFit(false);}if(e.key==="Escape")setRenamingFit(false);}} onBlur={()=>setRenamingFit(false)} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
+            :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%"}}>
+              <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||"Unnamed Fit"}</span>
+              <span style={{fontSize:15,color:"#ffffffff",flexShrink:0}}>&#9998;</span>
+            </button>
+          }
+        </div>
+        <div style={{width:70,flexShrink:0}}/>
+      </div>
+      <div style={{display:"flex"}}><div style={{width:60}}/>{["Fit","Stats","Graph"].map(t=><button key={t} onClick={()=>setFitSubTab(t)} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
+    </div>
+    <div onTouchStart={_onSwipeStart} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
+      {fitSubTab==="Fit"   &&<FitTab   ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile}/>}
+      {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects}/>}
+    </div>
+  </div>);
+}

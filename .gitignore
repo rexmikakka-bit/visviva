@@ -4,6 +4,10 @@ dist
 dist-ssr
 *.local
 
+# Native build artifacts (Capacitor/Android). APKs are generated, never source.
+*.apk
+*.aab
+
 # ── Large local-only data (NEVER commit these) ───────────────────────────────
 # GitHub hard-rejects files over 100 MB. sqlite-latest.sqlite is ~553 MB.
 # It's the raw EVE static data dump used by scripts/update-from-evedb.py to

@@ -238,11 +238,17 @@ const MODULE_USAGE={
 // ── Generate empty slots from ship data ────────────────────────────
 // Pure display-row computation (shared by render and drag-reorder so they can't diverge).
 // Only the high-slot section groups identical modules (same name + same ammo).
+const _TURRET_GROUPS=new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Mining Laser','Frequency Mining Laser','Citizen Mining Laser','Precursor Weapon']);
+function _isGroupable(m){
+  if(m.type==="empty"||!m.typeID)return false;
+  const gn=TYPES[String(m.typeID)]?.gn??'';
+  return _TURRET_GROUPS.has(gn)||/^Missile Launcher/i.test(gn);
+}
 function computeDisplayRows(mods,secKey,grouped){
   if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id]}));
   const seen=new Map();
   mods.forEach(m=>{
-    if(m.type==="empty"){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
+    if(!_isGroupable(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
     const key=m.mutaplasmid?`__abyssal_${m.id}`:(m.ammo?`${m.name}||${m.ammo}`:m.name);
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
     else seen.set(key,{...m,count:1,groupIds:[m.id]});
