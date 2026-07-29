@@ -630,6 +630,43 @@ const REAL_CHARGE_BROWSER=buildChargeBrowser();
 const REAL_DRONE_BROWSER=buildDroneBrowser();
 const REAL_MODULE_BROWSER={high:buildModuleBrowser("high"),mid:buildModuleBrowser("mid"),low:buildModuleBrowser("low"),rigs:buildModuleBrowser("rigs")};
 
+// ═══ PRICE-EQUIVALENT MODULE SWAPS (Optimize Fit Price) ════════════════════════════
+// Byte-identical dogma stats check — a pure cosmetic/faction reskin (e.g. Caldari Navy Warp
+// Disruptor and Dread Guristas Warp Disruptor share literally every attribute, effect and skill
+// requirement) vs. a real variant (e.g. Federation Navy Warp Disruptor, which trades CPU for
+// range — same meta level, genuinely different stats). Meta level/group membership alone is NOT
+// a safe signal for "identical" — verified against the live bundle that same-meta-tier faction
+// modules frequently differ in real attributes. Only exact attribute+effect+skill equality qualifies.
+function _sameModuleStats(tidA, tidB) {
+  if (tidA === tidB) return false;
+  const a = TYPES[tidA], b = TYPES[tidB];
+  if (!a || !b || a.g !== b.g) return false;
+  const aa = a.attrs ?? a.a ?? {}, ba = b.attrs ?? b.a ?? {};
+  const keys = new Set([...Object.keys(aa), ...Object.keys(ba)]);
+  for (const k of keys) {
+    const av = Number(aa[k] ?? 0), bv = Number(ba[k] ?? 0);
+    if (Math.abs(av - bv) > Math.max(1e-6, Math.abs(bv) * 1e-6)) return false;
+  }
+  if ((a.e ?? []).join(',') !== (b.e ?? []).join(',')) return false;
+  const ar = (a.rs ?? []).slice().sort().join(','), br = (b.rs ?? []).slice().sort().join(',');
+  return ar === br;
+}
+// Cheapest stat-identical variant of `typeID` that's actually cheaper than it, given a
+// Map<typeID, iskPrice> (from prices.js's fetchPrices — which already drops zero/missing-price
+// entries, so anything absent from the map is treated as unavailable and never recommended).
+function cheaperEquivalent(typeID, priceMap) {
+  if (!typeID || !priceMap) return null;
+  const family = moduleVariations?.[String(typeID)] ?? moduleVariations?.[typeID] ?? [];
+  const curPrice = priceMap.get(typeID);
+  let best = null, bestPrice = curPrice ?? Infinity;
+  for (const v of family) {
+    if (!v?.typeID || !_sameModuleStats(typeID, v.typeID)) continue;
+    const p = priceMap.get(v.typeID);
+    if (p != null && p > 0 && p < bestPrice) { best = v; bestPrice = p; }
+  }
+  return best; // {typeID, name, meta} or null
+}
+
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

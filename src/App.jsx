@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip } from "./lib/core.js";
+import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
+import { fetchPrices } from "./prices.js";
 import { C } from "./theme.js";
 import { ImportFitSheet } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
@@ -12,6 +13,7 @@ import { ImplantsScreen } from "./components/implants.jsx";
 import { EffectsScreen, buildBoosterFromName } from "./components/effects.jsx";
 import { SettingsOverlay } from "./components/settings.jsx";
 import { ExportFitModal, HamburgerMenu, AppHeader, BottomNav } from "./components/layout.jsx";
+import { FeedbackModal } from "./components/feedback.jsx";
 
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
 
@@ -132,6 +134,37 @@ export default function App(){
   const[showImportFit,setShowImportFit]=useState(false);
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
+  const[showFeedback,setShowFeedback]=useState(false);
+  const[priceBanner,setPriceBanner]=useState(null);
+  const optimizeFitPrice=async()=>{
+    if(!activeFit?.ship){setPriceBanner({kind:"none",msg:"Open a fit first"});setTimeout(()=>setPriceBanner(null),3000);return;}
+    const sections=["high","mid","low","rigs","subsystems"];
+    const fitted=sections.flatMap(sec=>slots[sec]??[]).filter(s=>s?.typeID);
+    if(!fitted.length){setPriceBanner({kind:"none",msg:"No modules to optimize"});setTimeout(()=>setPriceBanner(null),3000);return;}
+    setPriceBanner({kind:"loading",msg:"Checking market prices…"});
+    const idsToPrice=new Set();
+    for(const s of fitted){
+      idsToPrice.add(s.typeID);
+      for(const v of (moduleVariations?.[String(s.typeID)]??[]))if(v?.typeID)idsToPrice.add(v.typeID);
+    }
+    let priceMap;
+    try{priceMap=await fetchPrices([...idsToPrice],priceHub);}
+    catch{setPriceBanner({kind:"none",msg:"Couldn't fetch market prices — try again"});setTimeout(()=>setPriceBanner(null),3500);return;}
+    let swapped=0;
+    const patchSection=sec=>(slots[sec]??[]).map(s=>{
+      if(!s?.typeID)return s;
+      const better=cheaperEquivalent(s.typeID,priceMap);
+      if(!better)return s;
+      swapped++;
+      return{...s,typeID:better.typeID,name:better.name};
+    });
+    const patched={...slots};
+    for(const sec of sections)patched[sec]=patchSection(sec);
+    if(!swapped){setPriceBanner({kind:"none",msg:"No cheaper equivalents found"});setTimeout(()=>setPriceBanner(null),3000);return;}
+    setSlots(patched);
+    setPriceBanner({kind:"success",msg:`Fit price optimized — ${swapped} module${swapped>1?"s":""} swapped`});
+    setTimeout(()=>setPriceBanner(null),3500);
+  };
   const loadFit=(ship,fitName)=>{
     const fit=fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
@@ -211,11 +244,13 @@ export default function App(){
       </div>
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}}/>}
+    {priceBanner&&<div style={{position:"fixed",top:12,left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
+    {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
   </div>);
 }
