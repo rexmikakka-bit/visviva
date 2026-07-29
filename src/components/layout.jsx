@@ -107,7 +107,10 @@ export function AppHeader({onHamburger,activeFit,onShipInfo}){
         <button onClick={onShipInfo} style={{width:52,height:52,borderRadius:11,background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
             ?<img src={eveRender(ship.typeID,64)} width={52} height={52} alt="" style={{borderRadius:11}} onError={e=>{e.target.style.display="none";}}/>
-            :<span style={{fontSize:26}}>&#128640;</span>
+            :<svg width={24} height={24} viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="13" cy="13" rx="10" ry="5.5" stroke={C.accent} strokeWidth="1.4" opacity="0.55" transform="rotate(-20 13 13)"/>
+                <circle cx="13" cy="13" r="2.6" fill={C.accent}/>
+              </svg>
           }
         </button>
         <button onClick={onHamburger} style={{width:40,height:40,borderRadius:9,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
