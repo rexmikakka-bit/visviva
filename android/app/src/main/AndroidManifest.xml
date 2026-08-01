@@ -22,6 +22,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- ESI SSO callback (see src/esi-config.js's ESI_NATIVE_CALLBACK_URL and CLAUDE.md's
+                 ESI connectivity section). launchMode="singleTask" above matters here: it's what
+                 makes Android hand this back to the already-running app as an appUrlOpen event
+                 (via @capacitor/app) instead of spawning a second Activity instance. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="visviva" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider

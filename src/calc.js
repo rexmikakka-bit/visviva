@@ -108,7 +108,7 @@ export const SKILL_DEFAULTS = {
 
 // Skill name normalisation (App.jsx uses camelCase, Pyfa uses "Proper Name")
 // The engine stores skills by their EVE display name. These two maps translate.
-const SKILL_CAMEL_TO_PYFA = {
+export const SKILL_CAMEL_TO_PYFA = {
   cpuManagement:'CPU Management', powerGridManagement:'Power Grid Management',
   energyGridUpgrades:'Energy Grid Upgrades',
   weaponUpgrades:'Weapon Upgrades', advWeaponUpgrades:'Advanced Weapon Upgrades',

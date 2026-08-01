@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
 import { SKILL_DEFAULTS } from "../calc.js";
 import { ImplantLoadoutsManager } from "./implants.jsx";
+import { EsiSettingsPanel } from "./esi-ui.jsx";
 
 const SKILL_GROUPS=[
   {label:"Engineering & Fitting",color:C.warning,skills:[
@@ -104,7 +105,7 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
       <div style={{flex:1,overflowY:"auto",padding:16}}>
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
         {section==="backup"&&<BackupPanel/>}
-        {section==="esi"&&<div><div style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:14}}><div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:4}}>EVE ESI Connection</div><div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Connect your EVE account to import skills, implants, and fits. Cloud fit sync coming soon.</div><div style={{marginBottom:10,padding:"8px 12px",background:C.surface,border:`1px dashed ${C.border}`,borderRadius:8,fontSize:11,color:C.textMute,textAlign:"center"}}>Not connected</div><button style={{width:"100%",padding:"10px 0",background:C.accent,border:"none",borderRadius:8,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>Connect with EVE SSO</button></div></div>}
+        {section==="esi"&&<EsiSettingsPanel setSkills={setSkills}/>}
         {section==="market"&&<div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Price Source</div>
           {[{key:"fuzzwork",label:"Fuzzwork Market",note:null},{key:"evetycoon",label:"EVE Tycoon",note:"coming soon"},{key:"ceve",label:"ceve-market.org",note:"coming soon"}].map(m=>{

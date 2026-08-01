@@ -14,6 +14,8 @@ import { EffectsScreen, buildBoosterFromName } from "./components/effects.jsx";
 import { SettingsOverlay } from "./components/settings.jsx";
 import { ExportFitModal, HamburgerMenu, AppHeader, BottomNav } from "./components/layout.jsx";
 import { FeedbackModal } from "./components/feedback.jsx";
+import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
+import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
 
@@ -34,6 +36,26 @@ export default function App(){
       if(SB){SB.setStyle?.({style:"DARK"});SB.setOverlaysWebView?.({overlay:false});SB.setBackgroundColor?.({color:"#0e0e10"});}
       Cap.Plugins?.SplashScreen?.hide?.();
     }catch(e){}
+  },[]);
+  // ESI login callback (native only — the web build's redirect-based login is completed inline by
+  // EsiSettingsPanel via esi.handleWebRedirectOnLoad() on mount instead). SSO opens the system
+  // browser via @capacitor/browser; CCP redirects to our visviva://auth-callback custom scheme,
+  // which Android/iOS hand back to the app as an appUrlOpen event rather than a page navigation.
+  useEffect(()=>{
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    if(!Cap?.isNativePlatform?.())return;
+    let sub;
+    (async()=>{
+      try{
+        const [{App:CapApp},{Browser}]=await Promise.all([import('@capacitor/app'),import('@capacitor/browser')]);
+        sub=await CapApp.addListener('appUrlOpen',async({url})=>{
+          if(!url?.startsWith('visviva://auth-callback'))return;
+          try{await Browser.close();}catch(e){}
+          try{await esi.completeLoginFromCallback(url);}catch(e){console.error('ESI login failed:',e);}
+        });
+      }catch(e){}
+    })();
+    return()=>{try{sub?.remove?.();}catch(e){}};
   },[]);
   const[bottomTab,setBottomTab]=useState("fittings");
   const[showHamburger,setShowHamburger]=useState(false);
@@ -135,6 +157,8 @@ export default function App(){
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
   const[showFeedback,setShowFeedback]=useState(false);
+  const[showEsiImport,setShowEsiImport]=useState(false);
+  const[showEsiExport,setShowEsiExport]=useState(false);
   const[priceBanner,setPriceBanner]=useState(null);
   const optimizeFitPrice=async()=>{
     if(!activeFit?.ship){setPriceBanner({kind:"none",msg:"Open a fit first"});setTimeout(()=>setPriceBanner(null),3000);return;}
@@ -245,12 +269,14 @@ export default function App(){
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>
     {priceBanner&&<div style={{position:"fixed",top:12,left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onEsiImport={()=>setShowEsiImport(true)} onEsiExport={()=>{setShowEsiExport(true);setShowHamburger(false);}}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
+    {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}
+    {showEsiExport&&<EsiExportModal activeFit={activeFit} slots={slots} drones={drones} cargoItems={cargoItems} fighters={fighters} implants={implants} boosters={boosters} onClose={()=>setShowEsiExport(false)}/>}
   </div>);
 }

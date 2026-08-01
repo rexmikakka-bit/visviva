@@ -4,6 +4,9 @@
   "webDir": "dist",
   "backgroundColor": "#0e0e10",
   "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    },
     "SplashScreen": {
       "launchShowDuration": 600,
       "backgroundColor": "#0e0e10",

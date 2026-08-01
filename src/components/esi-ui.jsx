@@ -1,0 +1,243 @@
+import { useState, useEffect, useCallback } from "react";
+import { C } from "../theme.js";
+import * as esi from "../lib/esi.js";
+import { esiFittingToImportShape, slotsToEsiFitting } from "../lib/esi-fits.js";
+import { ESI_CLIENT_ID } from "../esi-config.js";
+import { tidByName } from "../calc.js";
+
+// Friendlier text for the handful of failure modes the rest of this file needs to show inline.
+function friendlyError(e) {
+  if (!ESI_CLIENT_ID) return "ESI isn't configured yet — an application needs to be registered at developers.eveonline.com first (see src/esi-config.js).";
+  if (e?.code === "ESI_REAUTH_REQUIRED") return "Your EVE session expired — log in again.";
+  if (e?.code === "ESI_NOT_LINKED") return "That character isn't linked anymore.";
+  return e?.message || String(e);
+}
+
+// Shared row-list character switcher. Renders nothing if zero or one character is linked (nothing
+// to switch between) — callers should still show their own "not connected" state in that case.
+function CharacterPicker({ characters, activeId, onSwitch }) {
+  if (characters.length < 2) return null;
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+      {characters.map(c => (
+        <button key={c.characterId} onClick={() => onSwitch(c.characterId)}
+          style={{ padding: "6px 12px", borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: "pointer",
+            background: c.characterId === activeId ? C.accentLight : "transparent",
+            border: `1px solid ${c.characterId === activeId ? C.accentBorder : C.border}`,
+            color: c.characterId === activeId ? C.accent : C.textMid }}>
+          {c.characterName}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Reusable hook: tracks linked characters + active character, re-reading from esi.js's storage
+// whenever a login/logout happens in this component tree.
+function useEsiCharacters() {
+  const [characters, setCharacters] = useState(() => esi.listCharacters());
+  const [activeId, setActiveId] = useState(() => esi.getActiveCharacterId());
+  const refresh = useCallback(() => {
+    setCharacters(esi.listCharacters());
+    setActiveId(esi.getActiveCharacterId());
+  }, []);
+  // Native login completes via an appUrlOpen deep link (App.jsx), not a page load, so this
+  // component won't otherwise learn about it if it was already mounted when that happened.
+  useEffect(() => esi.onCharactersChanged(refresh), [refresh]);
+  const switchActive = useCallback((id) => { esi.setActiveCharacterId(id); refresh(); }, [refresh]);
+  const remove = useCallback((id) => { esi.removeCharacter(id); refresh(); }, [refresh]);
+  return { characters, activeId, refresh, switchActive, remove };
+}
+
+// ─── Settings > ESI panel: connect/manage characters, sync skills ─────────────────────────────
+export function EsiSettingsPanel({ setSkills }) {
+  const { characters, activeId, refresh, switchActive, remove } = useEsiCharacters();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [syncedMsg, setSyncedMsg] = useState(null);
+
+  // Web build: if this load is the SSO redirect landing back with ?code=&state=, complete it.
+  useEffect(() => {
+    esi.handleWebRedirectOnLoad()
+      .then(result => { if (result) refresh(); })
+      .catch(e => setError(friendlyError(e)));
+  }, [refresh]);
+
+  const connect = async () => {
+    setError(null);
+    try { await esi.beginLogin(); }
+    catch (e) { setError(friendlyError(e)); }
+  };
+
+  const syncSkills = async () => {
+    if (!activeId) return;
+    setBusy(true); setError(null); setSyncedMsg(null);
+    try {
+      const resp = await esi.getCharacterSkills(activeId);
+      const mapped = esi.esiSkillsToAppSkills(resp);
+      setSkills(s => ({ ...s, ...mapped }));
+      setSyncedMsg(`Synced ${Object.keys(mapped).length} skills.`);
+    } catch (e) { setError(friendlyError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const activeChar = characters.find(c => c.characterId === activeId);
+
+  return (
+    <div>
+      <div style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>EVE ESI Connection</div>
+        <div style={{ fontSize: 11, color: C.textMute, marginBottom: 10 }}>
+          Connect an EVE character to sync skills and import/export saved fits directly from the game.
+        </div>
+
+        {characters.length === 0 ? (
+          <>
+            <div style={{ marginBottom: 10, padding: "8px 12px", background: C.surface, border: `1px dashed ${C.border}`, borderRadius: 8, fontSize: 11, color: C.textMute, textAlign: "center" }}>
+              Not connected
+            </div>
+            <button onClick={connect} style={{ width: "100%", padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+              Connect with EVE SSO
+            </button>
+          </>
+        ) : (
+          <>
+            <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
+            {activeChar && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{activeChar.characterName}</div>
+                  <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{activeChar.scopes?.length ?? 0} scopes granted</div>
+                </div>
+                <button onClick={() => remove(activeChar.characterId)} style={{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  Unlink
+                </button>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
+              <button onClick={syncSkills} disabled={busy || !activeId} style={{ flex: 1, padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+                {busy ? "Syncing…" : `Sync Skills from ${activeChar?.characterName ?? "character"}`}
+              </button>
+              <button onClick={connect} style={{ padding: "10px 14px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                + Add
+              </button>
+            </div>
+            {syncedMsg && <div style={{ fontSize: 11, color: C.success, marginTop: 6 }}>✓ {syncedMsg}</div>}
+          </>
+        )}
+        {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 8, lineHeight: 1.5 }}>{error}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── Hamburger menu > Import from ESI ──────────────────────────────────────────────────────────
+export function EsiImportModal({ onClose, onImport }) {
+  const { characters, activeId, switchActive } = useEsiCharacters();
+  const [fittings, setFittings] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const load = useCallback((characterId) => {
+    if (!characterId) return;
+    setLoading(true); setError(null); setFittings(null);
+    esi.getCharacterFittings(characterId)
+      .then(setFittings)
+      .catch(e => setError(friendlyError(e)))
+      .finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(activeId); }, [activeId, load]);
+
+  const importOne = (fitting) => {
+    try {
+      const parsed = esiFittingToImportShape(fitting);
+      onImport(parsed);
+      onClose();
+    } catch (e) { setError(friendlyError(e)); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ width: "100%", maxHeight: "88vh", overflowY: "auto", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 32px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Import from EVE</div>
+        {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>Connect a character in Settings → ESI first.</div>}
+        <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
+        {loading && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Loading saved fittings…</div>}
+        {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
+        {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No saved fittings on this character.</div>}
+        {fittings?.map(f => (
+          <div key={f.fitting_id} onClick={() => importOne(f)} style={{ padding: "10px 12px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 6, cursor: "pointer" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{f.name}</div>
+            <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{f.items?.length ?? 0} items</div>
+          </div>
+        ))}
+        <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Hamburger menu > Export to EVE ────────────────────────────────────────────────────────────
+export function EsiExportModal({ activeFit, slots, drones, cargoItems, fighters, implants, boosters, onClose }) {
+  const { characters, activeId, switchActive } = useEsiCharacters();
+  const [incCharges, setIncCharges] = useState(true);
+  const [incImplants, setIncImplants] = useState(false);
+  const [incBoosters, setIncBoosters] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(false);
+
+  const CheckRow = ({ label, val, setVal }) => (
+    <div onClick={() => setVal(v => !v)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", cursor: "pointer" }}>
+      <div style={{ width: 20, height: 20, borderRadius: 4, border: `2px solid ${val ? C.accent : C.border}`, background: val ? C.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "#fff", fontSize: 12, fontWeight: 700 }}>
+        {val ? "✓" : ""}
+      </div>
+      <span style={{ fontSize: 13, color: C.text }}>{label}</span>
+    </div>
+  );
+
+  const doExport = async () => {
+    if (!activeId || !activeFit?.ship) return;
+    setBusy(true); setError(null); setDone(false);
+    try {
+      const shipTid = tidByName(activeFit.ship);
+      const fitting = slotsToEsiFitting(
+        shipTid, activeFit.fitName, slots, drones, cargoItems, fighters,
+        { includeCharges: incCharges, includeImplants: incImplants, includeBoosters: incBoosters, implants, boosters }
+      );
+      await esi.createCharacterFitting(activeId, fitting);
+      setDone(true);
+    } catch (e) { setError(friendlyError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
+      <div style={{ width: "100%", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 32px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>Export to EVE</div>
+        <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12 }}>Saves this fit into the selected character's in-game Fittings.</div>
+        {!activeFit?.ship ? (
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Open a fit first.</div>
+        ) : characters.length === 0 ? (
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Connect a character in Settings → ESI first.</div>
+        ) : (
+          <>
+            <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
+            <CheckRow label="Loaded charges (goes to cargo hold — EVE doesn't save per-module ammo)" val={incCharges} setVal={setIncCharges} />
+            <CheckRow label="Implants (as a cargo-hold shopping list)" val={incImplants} setVal={setIncImplants} />
+            <CheckRow label="Boosters (as a cargo-hold shopping list)" val={incBoosters} setVal={setIncBoosters} />
+            <button onClick={doExport} disabled={busy} style={{ width: "100%", marginTop: 14, padding: 14, borderRadius: 10, border: "none", background: done ? C.success : C.accent, color: done ? "#0e0e10" : "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+              {done ? "✓ Saved to EVE" : busy ? "Saving…" : "Save to In-Game Fittings"}
+            </button>
+          </>
+        )}
+        {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 10 }}>{error}</div>}
+        <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}

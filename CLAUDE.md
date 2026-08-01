@@ -430,6 +430,94 @@ scripts/pyfa-effect.mjs <id>` and `grep "class Effect<id>" Pyfa-268/eos/effects.
 
 ---
 
+## ESI connectivity (skills sync, in-game fit import/export — BUILT, 2026-07-31)
+
+Character login (EVE SSO + PKCE), skill sync, and importing/exporting fits directly against a
+character's in-game saved fittings. Fully implemented and unit-verified against fixture data; the
+one thing that cannot be tested yet is a live login, because no ESI application is registered.
+**One remaining step before this is live** — see "To go live" below.
+
+### Files
+
+| File | Role |
+| --- | --- |
+| `src/esi-config.js` | The only file that needs real values. `ESI_CLIENT_ID` is empty until an app is registered. |
+| `src/lib/esi.js` | OAuth2+PKCE login, token storage/refresh, authenticated ESI GET/POST, skill-id → app-skill mapping. |
+| `src/lib/esi-fits.js` | ESI saved-fitting JSON ⇄ this app's slot model, both directions. |
+| `src/components/esi-ui.jsx` | Character login/switcher (Settings → ESI), Import-from-EVE and Export-to-EVE modals (hamburger menu). |
+
+### Why this needed no backend
+
+PKCE exists specifically so a public client with no client secret (this app, always) can do OAuth
+without a server. The remaining question was whether `login.eveonline.com`'s token endpoint
+answers a browser's `fetch()` at all (CORS) — docs don't say either way, and a related SSO endpoint
+is known to fail CORS preflight (github.com/esi/esi-issues#197). This only matters for the **web**
+build; the **native** build sidesteps it entirely: `capacitor.config.json` now sets
+`CapacitorHttp.enabled: true`, which makes Capacitor route `fetch()`/`XHR` through native
+networking instead of the WebView — not subject to browser CORS at all, since CORS is a browser
+concept. Every ESI/SSO call in `esi.js` is a plain `fetch()`; it does not know or care which
+transport actually serves it. **This one config line is why the whole feature could be built
+backend-less.** If the web build ever turns out to need a proxy for the token exchange specifically
+(nothing else), that's a small addition scoped to one function (`tokenRequest` in `esi.js`) — it
+does not touch this file's architecture.
+
+### The ESI fittings flag scheme (the part most likely to be re-guessed wrong)
+
+`/characters/{id}/fittings/` items use the **classic numeric "inventory flag" scheme** (LoSlot0=11,
+MedSlot0=19, HiSlot0=27, RigSlot0=92, DroneBay=87, Cargo=5, Fighter=158, Subsystem=125-128) — the
+same numbering the old XML API and the SDE's `invFlags` table used. This is **not** the newer
+string-named flag enum (`"HiSlot0"`, `"MedSlot0"`, ...) that `/characters/{id}/assets/` uses — a
+different, unrelated endpoint. A first search-engine pass on this confidently produced the *wrong*
+(string) scheme, apparently conflating the two endpoints. Ground truth came from reading
+`Pyfa-268/service/port/esi.py` (`exportESI`/`importESI`) — the actual code pyfa runs against live
+ESI — not from docs summaries. Verified against this app's own bundle too: Tengu Defensive
+subsystems carry `subSystemSlot` (attr 1366) = 126, matching pyfa's subsystem-flag base of 125.
+**Read pyfa's source before trusting a web summary of an ESI schema — same lesson as the dogma
+effects, just for a different corner of the API.**
+
+Also confirmed there (and it matches a well-known in-game limitation): a saved fitting does **not**
+record which module a charge was loaded into. pyfa's own export aggregates all loaded charges,
+fit-wide, into a flat cargo-hold quantity (flag=Cargo) rather than per-module, and its import just
+dumps everything with flag=Cargo into the cargo hold — no attempt to guess which module a charge
+belongs to. `esi-fits.js` does the same on both sides, deliberately, rather than inventing a
+round-trip precision ESI itself doesn't support.
+
+### What's verified (no live ESI calls needed for any of this)
+
+- PKCE `code_verifier`/`code_challenge` generation against the **RFC 7636 canonical test vector** —
+  byte-exact match.
+- JWT payload decode, including non-ASCII character names (UTF-8 through the base64url path).
+- `esiFittingToImportShape()` → `buildSlotsFromEFT()` → `slotsToEsiFitting()` round-trip, including
+  the T3-cruiser subsystem case (flags 125/126/127/128 preserved exactly).
+- Unknown/unpublished `type_id`s in an ESI fitting are skipped, not mis-placed or crash-inducing.
+- Skill-id → app-skill mapping reuses `calc.js`'s existing `SKILL_CAMEL_TO_PYFA` (now exported) —
+  159/163 skill keys resolve to a real ESI skill_id; the 4 that don't are a pre-existing gap in that
+  map (unrelated skill-name typos), not something ESI sync introduced. They just don't sync; nothing
+  breaks.
+- Every UI state (not connected, connected/one character, connected/multiple characters, no active
+  fit, "ESI isn't configured yet") renders correctly with a fake character record injected directly
+  into `localStorage` (same technique as the Optimize Fit Price verification below) — confirmed live
+  in the dev server, no crashes, no console errors.
+- The Android manifest's deep-link intent-filter (`visviva://auth-callback`) and the `CapacitorHttp`
+  config both compile in and show up correctly in a built debug APK (checked with `aapt2 dump
+  xmltree` and by reading the synced `android/app/src/main/assets/capacitor.config.json`).
+
+### To go live
+
+1. Register an application at developers.eveonline.com — Application Type "Authentication & API
+   Access", connection type public/PKCE. Register **both** callback URLs (the web origin and
+   `visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
+2. Paste the resulting Client ID into `ESI_CLIENT_ID` in `src/esi-config.js`. That's the only
+   required edit — everything else reads from that file.
+3. Live-test the actual login button once, on a debug build (emulator or device — `npm run
+   android:build`), which is what exercises the one thing that couldn't be verified offline: whether
+   `login.eveonline.com`'s token endpoint behaves the way `esi.js` assumes over native networking.
+   If it doesn't, the fix is scoped to `tokenRequest()` in `esi.js` only.
+4. Everything downstream of a successful login (skill sync, import, export) is already
+   fixture-verified and should work unchanged.
+
+---
+
 ## Working style
 
 - **Root-cause fixes, not patches.** If a number is wrong, find out *why* — do not special-case the
