@@ -34,6 +34,11 @@ def get_eos():
         if not os.path.isfile(p):
             raise SystemExit(f"db not found: {p}")
 
+    # Same stale-clone guard the hand-spec oracle uses — eos no-ops effects it has no class for,
+    # so a mismatched clone yields confidently wrong numbers rather than an error.
+    from eos_bootstrap import _assert_clone_matches_db
+    _assert_clone_matches_db()
+
     # Copy the user's saveddata so migrations/writes hit the copy, never the real db.
     fd, _tmp_saveddata = tempfile.mkstemp(prefix="oracle_saveddata_", suffix=".db")
     os.close(fd)

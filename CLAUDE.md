@@ -506,7 +506,7 @@ hit a Microsoft Store alias stub; the real interpreter is `/c/Python314/python` 
 | pyfa v2.68.0 gamedata db (build 3424810) — the **authoritative** one | `C:\Program Files\pyfa\app\eve.db` |
 | Old gamedata db (build 3383521) — repo root, superseded | `eve.db` (repo root) |
 | User's real characters / skills / fits | `C:\Users\owen_\.pyfa\saveddata.db` |
-| pyfa source clone (keep current — a stale clone gives false "not implemented") | `Pyfa-master/` |
+| pyfa source clone — the ONE clone; must match eve.db's version (enforced at startup) | `Pyfa-master/` |
 
 - pyfa's gamedata schema is its **own** compact SQLite (tables `dgmattribs`, `dgmtypeattribs`
   (single `value` column), `invtypes`, `invgroups.name`, …) matching `eos/db/gamedata/*.py` — **not**
@@ -521,24 +521,34 @@ pyfa is our reference, but eos hand-codes each effect in `eos/effects.py` (its c
 **silent no-op in eos** — and eos will disagree with a correct value of ours. When the oracle flags a
 mismatch, first ask *which side is missing the effect*, not "how are we wrong."
 
-**⚠️ First suspect a VERSION-SKEW artifact, not a real gap.** The eos engine code must match the
-gamedata db version. The default `Pyfa-master` clone is **stale (v2.66.3)** and lacks every v2.68
-effect class, so it will report "gaps" that a version-matched clone does not. `eos_saveddata.py` (the
-saved-fit scanner) honours `PYFA_ROOT`; `eos_bootstrap.py` (the hand-spec `oracle.py`) now does too —
-**always run both with `PYFA_ROOT=$(pwd)/Pyfa-268`**, or the oracle invents gaps.
+**⚠️ VERSION SKEW used to be the #1 source of false "pyfa gaps" — it is now enforced, not
+remembered.** The eos engine code must match the gamedata db version, because eos silently no-ops
+any effect it has no class for. There is deliberately **ONE** clone, `Pyfa-master/`, and it must be
+the version matching `eve.db`. `eos_bootstrap._assert_clone_matches_db()` checks a sentinel effect
+class at startup and **refuses to run** against a stale clone; both `oracle.py` and
+`eos_saveddata.py` go through it. `PYFA_ROOT` still overrides the path if you need a second clone
+temporarily.
 
-The classic false alarm: **Astarte weapon DPS (stale eos 800 vs ours 1200).** CCP moved the Astarte's
-Command Ships weapon bonus from rate-of-fire (`Effect5505`) to +10%/lvl **medium-hybrid damage**
-(effect **12897**, `eliteBonusCommandShipMediumHybridDamageCS1`, reads `eliteBonusCommandShips1`=10 →
-×1.5 at all-V). The stale `Pyfa-master` clone has no `Effect12897` class → drops the whole CS weapon
-bonus → 800. **Against `Pyfa-268` eos gives 1199.6 and agrees with us exactly.** Same story for the
-Republic Defense Booster II resist effects (12822/12823): implemented in v2.68, so eos matches our
-shield em 4 / hull em·th 35.7·34.3 / armorRep 1668.3 once the clone is current. These are **not** pyfa
+This replaced a two-clone setup (a stale `Pyfa-master` alongside a correct `Pyfa-268`) where the
+*default* was the wrong one and correctness depended on remembering an env var. Consolidated
+2026-08-01; the two effect classes the old clone had and the new one doesn't (`Effect5505`,
+`Effect8366`) are ones CCP retired — **zero** live types carry either.
+
+The classic false alarm this caused: **Astarte weapon DPS (stale eos 800 vs ours 1200).** CCP moved
+the Astarte's Command Ships weapon bonus from rate-of-fire (`Effect5505`) to +10%/lvl **medium-hybrid
+damage** (effect **12897**, `eliteBonusCommandShipMediumHybridDamageCS1`, reads
+`eliteBonusCommandShips1`=10 → ×1.5 at all-V). A v2.66.3 clone has no `Effect12897` class → drops the
+whole CS weapon bonus → 800. Against a matched clone eos gives 1199.6 and agrees with us exactly.
+Same story for the Republic Defense Booster II resist effects (12822/12823). These are **not** pyfa
 gaps — the `known_gaps` annotations that used to live in the astarte spec were removed.
 
-**Takeaway:** when the oracle flags a delta, first check the clone version. Only if a version-matched
-clone still disagrees is it worth asking *which side is missing the effect* — run `node
-scripts/pyfa-effect.mjs <id>` and `grep "class Effect<id>" Pyfa-268/eos/effects.py`.
+**When you upgrade eve.db, upgrade the clone in the same commit** and point
+`_VERSION_SENTINELS` in `eos_bootstrap.py` at an effect class new in that version — otherwise the
+guard silently stops guarding.
+
+**Takeaway:** a version-matched clone is now guaranteed, so if the oracle flags a delta it is worth
+asking *which side is missing the effect* — run `node scripts/pyfa-effect.mjs <id>` and
+`grep "class Effect<id>" Pyfa-master/eos/effects.py`.
 
 ---
 
@@ -581,7 +591,7 @@ same numbering the old XML API and the SDE's `invFlags` table used. This is **no
 string-named flag enum (`"HiSlot0"`, `"MedSlot0"`, ...) that `/characters/{id}/assets/` uses — a
 different, unrelated endpoint. A first search-engine pass on this confidently produced the *wrong*
 (string) scheme, apparently conflating the two endpoints. Ground truth came from reading
-`Pyfa-268/service/port/esi.py` (`exportESI`/`importESI`) — the actual code pyfa runs against live
+`Pyfa-master/service/port/esi.py` (`exportESI`/`importESI`) — the actual code pyfa runs against live
 ESI — not from docs summaries. Verified against this app's own bundle too: Tengu Defensive
 subsystems carry `subSystemSlot` (attr 1366) = 126, matching pyfa's subsystem-flag base of 125.
 **Read pyfa's source before trusting a web summary of an ESI schema — same lesson as the dogma

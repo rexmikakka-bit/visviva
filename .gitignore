@@ -20,10 +20,12 @@ sqlite-latest.sqlite
 # The pyfa checkout (icons + eve.db). App.jsx globs icons from here, but
 # eveIcon() falls back to CCP's image server when the glob is empty, so the
 # app works fine without it. Keeping it out of the repo saves a huge checkout.
+# It is ALSO what the oracle runs eos from, so it must match eve.db's version —
+# eos_bootstrap refuses to run otherwise. There is deliberately only ONE clone:
+# a second, older one was the single biggest source of false "pyfa doesn't
+# implement this" conclusions.
 Pyfa-master/
 pyfa-master/
-# Version-matched pyfa clone the oracle runs against (PYFA_ROOT); local-only.
-Pyfa-268/
 *.zip
 
 # ── Oracle: personal pyfa fit dumps (OPSEC — NEVER commit) ────────────────────
