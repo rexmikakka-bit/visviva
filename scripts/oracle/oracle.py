@@ -17,10 +17,12 @@ _STATE = {"offline": -1, "online": 0, "active": 1, "overheated": 2}
 
 
 def build_fit(spec):
-    """spec = {ship, high[], mid[], low[], rigs[], drones[], implants[], boosters[]}.
+    """spec = {ship, high[], mid[], low[], rigs[], services[], drones[], implants[], boosters[]}.
 
     Each module entry: {name, state, ammo?}. Drone: {name, qty, active}.
-    Implant/booster: {name, active?}.
+    Implant/booster: {name, active?}. `services` is structure-only (Astrahus, Raitaru, ...) —
+    eos's Citadel class is a thin Ship subclass (only overrides category validation), so Service
+    Slot modules just go through the same Module/fit.modules.append() path as any other rack.
     """
     e = get_eos()
     db = e["db"]
@@ -33,7 +35,7 @@ def build_fit(spec):
     fit = e["Fit"](ship, spec.get("name", spec["ship"]))
     fit.character = e["Character"]("__oracle_allV", 5)
 
-    for rack in ("high", "mid", "low", "rigs"):
+    for rack in ("high", "mid", "low", "rigs", "services"):
         for entry in spec.get(rack, []):
             if entry is None or entry.get("empty"):
                 continue
@@ -361,6 +363,39 @@ FITS = {
         "high": [{"name": "Small Vorton Projector II", "state": "active", "ammo": "GalvaSurge Condenser Pack S"} for _ in range(4)],
         "mid": [], "low": [], "rigs": [],
         "expect": {"weaponDps": 233.7, "weaponVolley": 1262},
+    },
+
+    # ASTRAHUS — first structure fits (Citadel via build_fit's Ship->Citadel fallback). These two
+    # caught real engine bugs when structure support was added (see src/regression.test.mjs's
+    # "10. ASTRAHUS" section for the full writeup) and are now real validated baselines, mirrored
+    # into that file the same way every ship baseline above is.
+    "astrahus_empty": {
+        "ship": "Astrahus",
+        "high": [], "mid": [], "low": [], "rigs": [],
+        "expect": {"totalEHP": 9000000, "shieldHP": 3600000, "armorHP": 1800000},
+    },
+    "astrahus_service_only": {
+        "ship": "Astrahus",
+        "high": [], "mid": [], "low": [], "rigs": [],
+        # Cloning Center, not Market Hub: a Market Hub does not legally fit an Astrahus (its
+        # canFitShipType list omits the smallest hull of each line). Same x4 multiplier either way.
+        "services": [{"name": "Standup Cloning Center I", "state": "online"}],
+        "expect": {"totalEHP": 29250000, "shieldHP": 14400000, "armorHP": 7200000},
+    },
+    # AZBEL — real user fit (Engineering Complex). Caught a third structure engine bug: structure-
+    # only "operation" skills (Structure Missile/Electronic/Engineering Systems — the structure
+    # equivalent of Warhead Upgrades and cap-cost-reduction skills) were never in our "all-5
+    # reference character" at all, so their LocationGroupModifier bonuses to fitted missile
+    # launchers/EWAR/energy-neutralizer charges silently never applied. This is why the earlier
+    # "skip the whole skill pass for structures" fix (see gotcha #10) was too broad — it fixed the
+    # hull-HP-inflation bug but ALSO would have blocked these legitimate module/charge-targeting
+    # skill bonuses; the fix was narrowed to only block ItemModifier+domain=shipID+skill-sourced
+    # (the hull-stat case), not LocationGroupModifier (the module/charge case).
+    "azbel_missile_test": {
+        "ship": "Azbel",
+        "high": [{"name": "Standup Multirole Missile Launcher I", "state": "active", "ammo": "Standup Light Missile"}],
+        "mid": [], "low": [], "rigs": [],
+        "expect": {"weaponDps": 146.7, "weaponVolley": 440.0},
     },
 }
 

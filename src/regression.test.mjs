@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats } from './calc.js';
+import { calcFitStats, checkFitSkills, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 
@@ -488,7 +488,112 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. ALL HULLS COMPUTE — every ship must produce stats without throwing.
+// 10. ASTRAHUS (structure) — caught two real engine bugs when structure support was added:
+//    (a) character skills (Hull Upgrades/Shield Management/Mechanics, always trained to V in our
+//        "all-5 reference character") were inflating a structure's shieldCapacity/armorHP/hp by
+//        25% each — structures are corp assets, not personally piloted, and no character skill
+//        should touch their stats at all. (b) domain='structureID' (the Structure-category
+//        equivalent of domain='shipID') was being treated as a "projected onto an external
+//        target" domain and silently ignored, which meant the Full/Low Power State HP multiplier
+//        (Effect7008/7009 — a service module fitted forces a 4x HP multiplier onto the structure)
+//        never applied. Both confirmed against pyfa's eos directly (scripts/oracle/oracle.py
+//        astrahus_empty / astrahus_service_only) — this is not hand-derived, it's the same
+//        oracle-cross-check method every other baseline here uses.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nASTRAHUS (structure — Full/Low Power State, no skill bonuses apply)');
+  const ship = { typeID: tid('Astrahus'), name: 'Astrahus' };
+  const csLowPower = calcFitStats(ship, EMPTY, [], null, {});
+  check('astrahus', 'low power EHP (no service fitted)', csLowPower.totalEHP, 9000000, 0.001);
+  check('astrahus', 'low power shield HP', csLowPower.shieldHP, 3600000, 0.001);
+  check('astrahus', 'low power armor HP', csLowPower.armorHP, 1800000, 0.001);
+  check('astrahus', 'low power hull HP', csLowPower.hullHP, 1800000, 0.001);
+
+  // Standup Cloning Center I, not Market Hub: a Market Hub's canFitShipType list omits Astrahus
+  // (a market genuinely requires a medium-or-larger structure), so that pairing was an illegal
+  // fit even though it computed the right number. Every service module carries the same
+  // serviceModuleFullPowerStateHitpointMultiplier of 4, so the baseline is unchanged.
+  const fitFullPower = { high: [], mid: [], low: [], rigs: [], services: [M('Standup Cloning Center I', 'online')] };
+  const csFullPower = calcFitStats(ship, fitFullPower, [], null, {});
+  check('astrahus', 'full power EHP (service fitted)', csFullPower.totalEHP, 29250000, 0.001);
+  check('astrahus', 'full power shield HP (x4)', csFullPower.shieldHP, 14400000, 0.001);
+  check('astrahus', 'full power armor HP (x4)', csFullPower.armorHP, 7200000, 0.001);
+  check('astrahus', 'hull HP unaffected by power state', csFullPower.hullHP, 1800000, 0.001);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11. AZBEL (structure — real user fit) — caught a third structure bug: structure-only "operation"
+//    skills (Structure Missile/Electronic/Engineering Systems, the structure equivalent of Warhead
+//    Upgrades / cap-cost-reduction skills) were never in our "all-5 reference character", so their
+//    LocationGroupModifier bonuses to fitted missile launchers never applied (weaponDps came out
+//    133.33 instead of pyfa's 146.7 — see CLAUDE.md gotcha #10 for the full writeup, including why
+//    the earlier "skip ALL skill effects for structures" fix had to be narrowed).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nAZBEL (structure — Structure Missile Systems skill must boost fitted launchers)');
+  const ship = { typeID: tid('Azbel'), name: 'Azbel' };
+  const fit = { high: [M('Standup Multirole Missile Launcher I', 'active', 'Standup Light Missile')], mid: [], low: [], rigs: [] };
+  const cs = calcFitStats(ship, fit, [], null, {});
+  check('azbel', 'weapon DPS (Structure Missile Systems applied)', cs.weaponDps.total, 146.7, 0.002);
+  check('azbel', 'volley', cs.weaponVolley.total, 440.0, 0.001);
+
+  // Missile RANGE is the mirror image of the DPS bug above: the personal missile skills must NOT
+  // apply here. Missile Projection / Missile Bombardment (and MGCs, missile rigs, Zainou implants,
+  // the Hydra set) are all gated in eos on the CHARGE requiring "Missile Launcher Operation";
+  // Standup missiles require no skills at all, so the charge flies its base 95 s at its base
+  // 15 km/s. Applying both skills anyway multiplied velocity AND flight time by 1.5 and gave
+  // 3195 km. eos: missileMaxRangeData -> maxRange 1417.5005 km.
+  const missile = [...cs.slotEngineStats.values()].find(s => s.isMissile);
+  check('azbel', 'missile range km (no personal missile skills)', missile?.optimal, 1417.5, 0.001);
+  check('azbel', 'charge velocity unmodified', missile?.velocity, 15000, 0.001);
+  check('azbel', 'charge flight time unmodified (ms)', missile?.flightTime, 95000, 0.001);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
+//     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
+//     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial
+//     hull skills, because no dogma effect reads them.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSKILL REQUIREMENTS');
+  // Every requiredSkillN reference on a fittable type must resolve to a catalog entry.
+  let refs = 0, unresolved = 0;
+  for (const t of Object.values(TYPES)) {
+    if (![6, 7, 8, 18, 32, 65, 66, 87].includes(t.c ?? t.category)) continue;
+    const a = t.a ?? t.attrs ?? {};
+    for (let i = 1; i <= 6; i++) {
+      const s = a['requiredSkill' + i];
+      if (!s) continue;
+      refs++;
+      if (!SKILL_BY_TYPEID.has(Number(s))) unresolved++;
+    }
+  }
+  check('skills', 'catalog covers every requirement ref', unresolved, 0, 0);
+  check('skills', 'catalog is non-trivial', SKILL_CATALOG.length > 300 ? 1 : 0, 1, 0);
+  // Unique keys — a collision would make two skills share one level.
+  check('skills', 'catalog keys unique', new Set(SKILL_CATALOG.map(e => e.key)).size, SKILL_CATALOG.length, 0);
+
+  const caracal = { typeID: tid('Caracal'), name: 'Caracal' };
+  const fit = { high: [M('Heavy Missile Launcher II', 'active', 'Scourge Fury Heavy Missile')], mid: [], low: [], rigs: [] };
+  // Unset skills count as V, matching calcFitStats — a fresh install must not flag every fit.
+  check('skills', 'all-V character can fly the fit', checkFitSkills(caracal, fit, [], [], {}).ok ? 1 : 0, 1, 0);
+
+  // Heavy Missile Launcher II needs Missile Launcher Operation IV, but the loaded Scourge Fury
+  // Heavy Missile needs it at V — so the requirement for the fit is V. The CHARGE's requirements
+  // count too, and the strictest wins; checking the module alone would understate this by a level.
+  const low = checkFitSkills(caracal, fit, [], [], { missileLaunchers: 3 });
+  const mlo = low.missing.find(m => m.name === 'Missile Launcher Operation');
+  check('skills', 'under-trained skill is reported', low.ok ? 1 : 0, 0, 0);
+  check('skills', 'charge requirement wins (ammo needs V)', mlo?.required, 5, 0);
+  check('skills', 'reports the level held', mlo?.have, 3, 0);
+  // The ship itself contributes requirements too (Caldari Cruiser I for a Caracal).
+  const noHull = checkFitSkills(caracal, { high: [], mid: [], low: [], rigs: [] }, [], [], { caldariCruiser: 0 });
+  check('skills', 'hull requirement counted', noHull.missing.some(m => m.name === 'Caldari Cruiser') ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nALL HULLS');

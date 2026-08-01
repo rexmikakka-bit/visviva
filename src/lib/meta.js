@@ -6,8 +6,16 @@ import { TYPES } from "../calc.js";
 // on every type in dogma-types.json as `mg`. Resolve from that, falling back to the bundle string
 // only when a type has no mg (e.g. abyssal/mutated items).
 // Named/compact/enduring/scoped variants are metaGroup 1 and are shown as plain T1, same as CCP.
+//
+// 52/53/54 are CCP's SEPARATE structure-module tiers ("Structure Faction", "Structure Tech II",
+// "Structure Tech I" in invmetagroups) — a Standup M-Set rig carries 53/54, never 1/2. They were
+// missing here, so every structure T2 rig fell through the `??` and was badged T1 (413 types
+// across the three groups). They map onto the same display tiers as their ship equivalents rather
+// than getting their own labels, because META_COLORS/META_ORDER are keyed by these strings and a
+// Standup ... II genuinely IS the Tech II tier.
 const META_BY_MG={1:"T1",2:"T2",3:"Storyline",4:"Faction",5:"Officer",6:"Deadspace",
-                  14:"T3",15:"Abyssal",17:"Premium",19:"Limited"};
+                  14:"T3",15:"Abyssal",17:"Premium",19:"Limited",
+                  52:"Faction",53:"T2",54:"T1"};
 const metaOf=(typeID,fallback)=>{
   const t=typeID!=null?TYPES[typeID]:null;
   if(!t||t.mg==null) return fallback??"T1";

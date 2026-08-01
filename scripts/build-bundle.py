@@ -50,7 +50,7 @@ Hand-applied fixes for effects CCP ships empty live in scripts/data-patches.json
 and are re-applied at the end of every build, so regeneration is idempotent.
 """
 
-import argparse, json, os, sqlite3, sys
+import argparse, json, os, re, sqlite3, sys
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -87,6 +87,77 @@ def num(v):
         return 0
     f = float(v)
     return int(f) if f.is_integer() else f
+
+
+# Hull categories that get a traits/description entry: 6 Ship, 65 Structure.
+HULL_CATS = {6, 65}
+# Categories whose flavour text the item info panel can show. Hulls are deliberately absent — their
+# description ships inside ship-traits.json alongside their trait bonuses, so the panel reads one
+# file per kind of thing rather than both. The pre-existing hand-built type-descriptions.json only
+# ever covered 7/8/20, which is why every structure module, drone, fighter, subsystem and deployable
+# had a blank Description.
+#  7 Module  8 Charge  18 Drone  20 Implant  22 Deployable  32 Subsystem  66 Structure Module  87 Fighter
+DESC_CATS = {7, 8, 18, 20, 22, 32, 66, 87}
+_TAG_RE = re.compile(r'<[^>]+>')
+# A bonus line usually opens with its magnitude, in one of three forms CCP uses: a percentage
+# ("10%", "7.5%"), a flat bonus ("5+ bonus to Relic and Data Analyzer virus strength"), or a
+# multiplier ("5x penalty to Entosis Link duration"). All three get split out so the UI can colour
+# the number separately; anything else (a "•"-bulleted note) stays one string.
+_LEADING_PCT_RE = re.compile(r'^(\d+(?:\.\d+)?[%+x])\s+(.*)$', re.S)
+
+
+def strip_html(s):
+    """CCP descriptions carry <br>, <a href=...> and friends. Flatten to plain text."""
+    if not s:
+        return ''
+    s = re.sub(r'<br\s*/?>', '\n', s, flags=re.I)
+    s = _TAG_RE.sub('', s)
+    return re.sub(r'\n{3,}', '\n\n', s.replace('\r\n', '\n').replace('\r', '\n')).strip()
+
+
+def parse_trait_text(html):
+    """invtraits.traitText → the {skills:[], role:{}, misc:{}} shape the app's ShipInfoSheet renders.
+
+    The source is a fixed little HTML dialect: `<b>Header</b><br />` followed by one bonus per
+    `<br />`, with a blank line (`<br /><br />`) between sections. A leading percentage is split
+    into its own `number` field so the UI can colour it; anything else (a bare `10+ bonus to ...`,
+    or a `•`-bulleted note) stays whole, which is exactly how the pre-existing hand-entered
+    trait data was shaped.
+    """
+    if not html:
+        return None
+    sections, cur = [], None
+    for raw in re.split(r'<br\s*/?>', html):
+        line = raw.strip()
+        if not line:
+            continue
+        m = re.match(r'^<b>(.*?)</b>$', line, re.S | re.I)
+        if m:
+            cur = {'header': _TAG_RE.sub('', m.group(1)).strip(), 'bonuses': []}
+            sections.append(cur)
+            continue
+        if cur is None:                      # bonus line before any header — synthesise one
+            cur = {'header': '', 'bonuses': []}
+            sections.append(cur)
+        text = _TAG_RE.sub('', line).strip()
+        if not text:
+            continue
+        pm = _LEADING_PCT_RE.match(text)
+        cur['bonuses'].append({'number': pm.group(1), 'text': pm.group(2).strip()} if pm
+                              else {'text': text})
+
+    out = {'skills': []}
+    for sec in sections:
+        if not sec['bonuses']:
+            continue
+        h = sec['header']
+        if re.search(r'per skill level', h, re.I):
+            out['skills'].append(sec)
+        elif re.match(r'\s*role bonus', h, re.I):
+            out['role'] = sec
+        else:
+            out['misc'] = sec
+    return out if (out['skills'] or 'role' in out or 'misc' in out) else None
 
 
 def main():
@@ -248,8 +319,46 @@ def main():
                 new_attrs[aid].update(flags)
                 patched.append(f"attr {aid}")
 
+    # ── ship/structure traits + descriptions ────────────────────────────────
+    # Previously these lived ONLY in data-bundle.js's precomputed `shipTraits`, which predates
+    # whole hull lines — structures had no entry at all, so the Traits and Description tabs came
+    # up blank for every Citadel/Engineering Complex/Refinery. eve.db carries both fields for
+    # every hull (invtraits.traitText, invtypes.typeDescription), so generate them here instead of
+    # hand-maintaining another literal.
+    trait_html = {r[0]: r[1] for r in db.execute("SELECT typeID,traitText FROM invtraits")}
+    desc_text  = {r[0]: r[1] for r in db.execute("SELECT typeID,typeDescription FROM invtypes")}
+    ship_traits, trait_hulls = {}, 0
+    for tid in fit_types:
+        if groups.get(types[tid][2], ('', 0))[1] not in HULL_CATS:
+            continue
+        entry = parse_trait_text(trait_html.get(tid)) or {}
+        desc = strip_html(desc_text.get(tid))
+        if desc:
+            entry['desc'] = desc
+        if entry:
+            ship_traits[str(tid)] = entry
+            trait_hulls += 1
+
+    # ── item flavour text (modules/charges/implants/drones/fighters/…) ──────
+    # Iterate the TYPES we actually emit, not `fit_types`: `fit_types` requires published=1, and the
+    # T3 destroyer tactical modes (Confessor/Svipul/Jackdaw/Hecate/Bomber "... Mode", 89 of them) are
+    # UNPUBLISHED yet fully live in the app — calc.js resolves them by typeID. Keying off fit_types
+    # silently dropped every one of their descriptions.
+    type_descs = {}
+    for sid in new_types:
+        tid = int(sid)
+        row = types.get(tid)
+        if row is None or groups.get(row[2], ('', 0))[1] not in DESC_CATS:
+            continue
+        desc = strip_html(desc_text.get(tid))
+        if desc:
+            type_descs[sid] = desc
+
     # ── report ──────────────────────────────────────────────────────────────
     print(f"\ntypes:   {len(fit_types):,} fittable   (+{len(added)} new)")
+    print(f"traits:  {trait_hulls:,} hulls with traits/description "
+          f"({sum(1 for t in ship_traits.values() if t.get('skills') or t.get('role')):,} carry trait bonuses)")
+    print(f"descs:   {len(type_descs):,} item descriptions")
     print(f"attrs:   +{attrs_added:,} attribute slots added to existing types")
     print(f"         {len(value_changes):,} value changes   |   +{len(new_attr_ids)} new attribute definitions")
     print(f"effects: {len(effect_changes):,} type effect-list changes   |   +{len(new_effect_ids)} new effects")
@@ -294,7 +403,9 @@ def main():
 
     for name, obj in [('dogma-types.json', new_types),
                       ('dogma-effects.json', new_effs),
-                      ('dogma-attrs.json', new_attrs)]:
+                      ('dogma-attrs.json', new_attrs),
+                      ('ship-traits.json', ship_traits),
+                      ('type-descriptions.json', type_descs)]:
         p = os.path.join(DATA, name)
         json.dump(obj, open(p, 'w'), separators=(',', ':'))
         print(f"wrote {p}  ({os.path.getsize(p)/1048576:.2f} MB)")
