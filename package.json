@@ -13,7 +13,9 @@
     "check": "node scripts/check-code.mjs && node scripts/check-imports.mjs",
     "check-offline": "node scripts/check-offline.mjs",
     "pyfa-effect": "node scripts/pyfa-effect.mjs",
-    "cap:sync": "vite build && cap sync"
+    "cap:sync": "vite build && cap sync",
+    "android:bump": "node scripts/bump-android-version.mjs",
+    "android:build": "npm run cap:sync && npm run android:bump && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.2",

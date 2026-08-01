@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// versionCode/versionName live in version.properties (tracked in git) instead of here, so
+// `node scripts/bump-android-version.mjs` can bump them for a new test build without touching
+// this file. versionCode must strictly increase or Android refuses to install over a previous copy.
+def versionProps = new Properties()
+def versionPropsFile = file('../version.properties')
+if (versionPropsFile.exists()) {
+    versionPropsFile.withInputStream { versionProps.load(it) }
+}
+def appVersionCode = (versionProps['versionCode'] ?: '1').toInteger()
+def appVersionName = versionProps['versionName'] ?: '1.0'
+
 android {
     namespace = "com.rexmikakka.visviva"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +18,8 @@ android {
         applicationId "com.rexmikakka.visviva"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
