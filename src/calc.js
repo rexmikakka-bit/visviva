@@ -104,6 +104,14 @@ export const SKILL_DEFAULTS = {
   amarrDefensiveSystems:5, caldariDefensiveSystems:5, gallenteDefensiveSystems:5, minmatarDefensiveSystems:5,
   amarrOffensiveSystems:5, caldariOffensiveSystems:5, gallenteOffensiveSystems:5, minmatarOffensiveSystems:5,
   amarrPropulsionSystems:5, caldariPropulsionSystems:5, gallentePropulsionSystems:5, minmatarPropulsionSystems:5,
+  // Structure-only skills (corp/structure "operation" skills, not personal ship-piloting skills —
+  // these boost FITTED structure modules/charges, unlike Hull Upgrades/Shield Management/Mechanics
+  // which must NOT apply to a structure's own hull stats; see dogma-engine.js's _isStructureFit
+  // guard). Structure Missile Systems: +2%/lvl structure missile/guided-bomb charge damage (same
+  // shape as Warhead Upgrades for ships). Structure Electronic/Engineering Systems: cap-cost
+  // reduction for structure EWAR/energy-neutralizer modules. Structure Doomsday Operation:
+  // doomsday weapon cycle-time reduction.
+  structureMissileSystems:5, structureElectronicSystems:5, structureEngineeringSystems:5, structureDoomsdayOperation:5,
 };
 
 // Skill name normalisation (App.jsx uses camelCase, Pyfa uses "Proper Name")
@@ -203,6 +211,13 @@ export const SKILL_CAMEL_TO_PYFA = {
   amarrDefensiveSystems:'Amarr Defensive Systems', caldariDefensiveSystems:'Caldari Defensive Systems', gallenteDefensiveSystems:'Gallente Defensive Systems', minmatarDefensiveSystems:'Minmatar Defensive Systems',
   amarrOffensiveSystems:'Amarr Offensive Systems', caldariOffensiveSystems:'Caldari Offensive Systems', gallenteOffensiveSystems:'Gallente Offensive Systems', minmatarOffensiveSystems:'Minmatar Offensive Systems',
   amarrPropulsionSystems:'Amarr Propulsion Systems', caldariPropulsionSystems:'Caldari Propulsion Systems', gallentePropulsionSystems:'Gallente Propulsion Systems', minmatarPropulsionSystems:'Minmatar Propulsion Systems',
+  structureMissileSystems:'Structure Missile Systems', structureElectronicSystems:'Structure Electronic Systems', structureEngineeringSystems:'Structure Engineering Systems', structureDoomsdayOperation:'Structure Doomsday Operation',
+  // These four had no entry, so `SKILL_CAMEL_TO_PYFA[k] ?? k` fell through to the camelCase key,
+  // which matches no real type — the skill silently did nothing when set to anything below V (the
+  // all-V fallback in calcFitStats masked it at max skills, which is why it never showed up in the
+  // regression suite). Note CCP's group name is "DroneS Rigging", plural.
+  droneRigging:'Drones Rigging', xlTorpedoes:'XL Torpedoes',
+  xlCruiseMissileSpec:'XL Cruise Missile Specialization', xlTorpedoSpec:'XL Torpedo Specialization',
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -361,6 +376,100 @@ function getNameIdx() {
   return _nameIdx;
 }
 export function tidByName(name) { return getNameIdx()[name] ?? null; }
+
+// ── Skill catalog + fit skill requirements ──────────────────────────────────
+// Two DIFFERENT sets of skills matter, and conflating them is the trap here:
+//   • the ones the dogma engine reads (SKILL_DEFAULTS, ~167) — these change your numbers;
+//   • the ones fittable items name as REQUIREMENTS (~316 more) — these decide whether you can
+//     fly the fit at all. A rig requires Jury Rigging, which no engine effect reads; a Caracal
+//     requires Caldari Cruiser. Neither was in SKILL_DEFAULTS, so a requirement check built only
+//     from that set would call almost every fit flyable.
+// The catalog is the union, keyed by the existing camelCase key where one exists and by a
+// camelised type name otherwise (verified collision-free across all 357).
+const REQ_SKILL_SLOTS = [1, 2, 3, 4, 5, 6];
+const _camelSkillKey = s => String(s).replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean)
+  .map((w, i) => i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
+// Categories that can appear on a fit and therefore contribute skill requirements.
+const FITTABLE_CATS = new Set([6, 7, 8, 18, 32, 65, 66, 87]);
+
+export const SKILL_CATALOG = (() => {
+  const keyByTid = new Map();
+  for (const k of Object.keys(SKILL_DEFAULTS)) {
+    const tid = tidByName(SKILL_CAMEL_TO_PYFA[k] ?? k);
+    if (tid) keyByTid.set(Number(tid), k);
+  }
+  const tids = new Set(keyByTid.keys());
+  for (const t of Object.values(TYPES)) {
+    if (!FITTABLE_CATS.has(t.c ?? t.category)) continue;
+    const a = t.a ?? t.attrs ?? {};
+    for (const i of REQ_SKILL_SLOTS) { const s = a['requiredSkill' + i]; if (s) tids.add(Number(s)); }
+  }
+  const out = [];
+  for (const tid of tids) {
+    const t = TYPES[String(tid)];
+    if (!t?.n) continue;
+    out.push({ key: keyByTid.get(tid) ?? _camelSkillKey(t.n), typeID: tid, name: t.n, group: t.gn ?? 'Other' });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+})();
+export const SKILL_BY_TYPEID = new Map(SKILL_CATALOG.map(e => [e.typeID, e]));
+// Register the derived keys so a level set on a requirement-only skill actually reaches the engine
+// (`fit.setSkill(SKILL_CAMEL_TO_PYFA[k] ?? k, lvl)` would otherwise pass the camel key, which
+// matches no real skill name, and the all-V fallback would silently put it back to 5).
+for (const e of SKILL_CATALOG) if (!SKILL_CAMEL_TO_PYFA[e.key]) SKILL_CAMEL_TO_PYFA[e.key] = e.name;
+
+/** Direct skill requirements of one type, as [{typeID, level}]. */
+export function requiredSkillsFor(typeID) {
+  const a = TYPES[String(typeID)]?.a ?? TYPES[String(typeID)]?.attrs ?? {};
+  const out = [];
+  for (const i of REQ_SKILL_SLOTS) {
+    const s = a['requiredSkill' + i];
+    if (s) out.push({ typeID: Number(s), level: a['requiredSkill' + i + 'Level'] ?? 1 });
+  }
+  return out;
+}
+
+/**
+ * Which skills a fit needs but the character lacks.
+ * Unset skills count as level V — the same convention calcFitStats uses, so a fresh install with
+ * no skills configured reads as flyable rather than showing every fit as broken.
+ * Returns { ok, missing: [{ key, name, group, required, have, items:[names] }] } sorted by name.
+ */
+export function checkFitSkills(ship, slots, drones = [], fighters = [], skills = null) {
+  const need = new Map();  // skill typeID -> { required, items:Set }
+  const add = (typeID, itemName) => {
+    if (!typeID) return;
+    for (const { typeID: sk, level } of requiredSkillsFor(typeID)) {
+      const e = need.get(sk) ?? { required: 0, items: new Set() };
+      e.required = Math.max(e.required, level);
+      if (itemName) e.items.add(itemName);
+      need.set(sk, e);
+    }
+  };
+  if (ship?.typeID) add(ship.typeID, ship.name);
+  const sections = ['high', 'mid', 'low', 'rigs', 'subsystems', 'services'];
+  for (const sec of sections) {
+    for (const s of (slots?.[sec] ?? [])) {
+      if (!s?.typeID || s.type === 'empty') continue;
+      add(s.typeID, s.name);
+      const ammo = (s.ammo || '').replace(/\s*\(\d+\)$/, '');
+      if (ammo) add(tidByName(ammo), ammo);
+    }
+  }
+  for (const d of (drones ?? [])) add(d.typeID ?? tidByName(d.name), d.name);
+  for (const f of (fighters ?? [])) add(f.typeID ?? tidByName(f.name), f.name);
+
+  const missing = [];
+  for (const [skTid, { required, items }] of need) {
+    const entry = SKILL_BY_TYPEID.get(skTid);
+    if (!entry) continue;                       // unknown skill type — cannot judge, so don't claim a failure
+    const have = skills?.[entry.key] ?? 5;
+    if (have >= required) continue;
+    missing.push({ key: entry.key, name: entry.name, group: entry.group, required, have, items: [...items] });
+  }
+  missing.sort((a, b) => a.name.localeCompare(b.name));
+  return { ok: missing.length === 0, missing };
+}
 
 // ── T3 Cruiser subsystem helpers ────────────────────────────────────────────
 // T3 cruisers (Strategic Cruisers) get ALL their slots from 4 subsystems
@@ -598,15 +707,22 @@ const MUTADAPTIVE_SPOOL = {
   49773: { max: 1.5, perCycle: 0.1  }, // Heavy Mutadaptive Remote Armor Repairer II
   49774: { max: 1.8, perCycle: 0.12 }, // Perun Heavy Mutadaptive Remote Armor Repairer
 };
-// Missile launchers are identified by group-name prefix rather than a hardcoded list, so every
-// variant is covered automatically: Light, Heavy, Heavy Assault, Rocket, Cruise, Torpedo,
-// Rapid Light/Heavy/Torpedo, XL Cruise/Torpedo, Citadel, Defender, Bomb, and any future group.
-function isMissileLauncherGroup(g) {
+// Missile launchers are identified primarily by effect 101 (useMissiles — CCP's own activation
+// marker for "this fires missiles", present on every launcher, ship or structure) rather than a
+// hardcoded list. The group-name prefix check is a defensive fallback for when effect data isn't
+// available (e.g. group-name-only lookups) — it does NOT cover structures: ship groups read
+// "Missile Launcher <Kind>" (Light, Heavy, Heavy Assault, Rocket, Cruise, Torpedo, Rapid
+// Light/Heavy/Torpedo, XL Cruise/Torpedo, Citadel, Defender, Bomb) but structure groups read
+// "Structure <Kind> Missile Launcher" — CCP put the category name first instead of "Missile
+// Launcher", so the prefix never matches. A structure launcher's weaponDps silently came out 0
+// until this was found (2026-08-01) — see CLAUDE.md's structure fitting section.
+function isMissileLauncherGroup(g, effectIDs) {
+  if (effectIDs && effectIDs.includes(101)) return true;
   return typeof g === 'string' && g.startsWith('Missile Launcher');
 }
 
 function isTurret(groupName)   { return TURRET_GROUPS.has(groupName); }
-function isLauncher(groupName) { return isMissileLauncherGroup(groupName); }
+function isLauncher(groupName, effectIDs) { return isMissileLauncherGroup(groupName, effectIDs); }
 function isShieldBooster(g)    { return g === 'Shield Booster' || g === 'Capital Shield Booster' || g === 'Ancillary Shield Booster'; }
 function isArmorRepairer(g)    { return g === 'Armor Repair Unit' || g === 'Capital Armor Repair Unit' || g === 'Ancillary Armor Repairer'; }
 
@@ -763,7 +879,7 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
   const fit = new Fit(shipTypeID);
   for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
   for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
-  const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? [])];
+  const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? []), ...(slots.services ?? [])];
   const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty').map(slot => {
     const m = fit.addModule(slot.typeID, slot.state ?? 'active', slot.mutations);
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
@@ -800,7 +916,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   const fit = new Fit(shipTypeID);
   for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
   for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
-  const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? [])];
+  const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? []), ...(slots.services ?? [])];
   const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty').map(slot => {
     const m = fit.addModule(slot.typeID, slot.state ?? 'active', slot.mutations);
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
@@ -931,6 +1047,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const allSlots = [
     ...(slots.high ?? []), ...(slots.mid  ?? []),
     ...(slots.low  ?? []), ...(slots.rigs ?? []),
+    ...(slots.services ?? []),
   ];
   const activeSlots = allSlots.filter(s => s.typeID && s.type !== 'empty');
 
@@ -1500,7 +1617,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         });
       }
 
-    } else if (isLauncher(gn)) {
+    } else if (isLauncher(gn, fitItem.effectIDs)) {
       // Engine applied: MLO skill ROF, ship hull bonuses, Bastion ROF.
       // IMPORTANT: missiles scale charge damage by missileDamageMultiplier (attr 212) —
       // this is the attr that BCS (Effect763), missile damage skills, and ship damage
@@ -1848,8 +1965,24 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           }
         }
 
-        const velMult    = skillVel    * poolVel    * modeVel * implVel * subsysVel * shipVel * (anhMode?.missileVel ?? 1);
-        const flightMult = skillFlight * poolFlight * implFlight * subsysFlight * shipFlight * (anhMode?.missileFlight ?? 1);
+        // ── The charge-skill gate ────────────────────────────────────────────────────
+        // EVERY personal missile range bonus — the Missile Projection / Missile Bombardment
+        // skills, Missile Guidance Computers/Enhancers, Hydraulic Bay Thruster and Rocket Fuel
+        // Cache rigs, Zainou 'Deadeye' implants, the Antipharmakon Toxot booster, and the Hydra
+        // implant set — is gated in eos on the CHARGE requiring "Missile Launcher Operation"
+        // (`filteredChargeBoost(lambda mod: mod.charge.requiresSkill('Missile Launcher Operation'),
+        // ...)`). Every single one of those handlers uses that identical predicate.
+        //
+        // STRUCTURE missiles (Standup Light/Heavy/Cruise Missile, Standup XL Cruise, Standup
+        // Super-heavy Torpedo) declare NO required skills at all — `rs` is empty — so none of
+        // these reach them: an Azbel's Standup Light Missile flies its base 95 s at its base
+        // 15 km/s. We applied them unconditionally, which multiplied both velocity and flight
+        // time by 1.5 and put the Azbel at 3195 km against pyfa's 1417.5 km.
+        //
+        // modeVel / subsysVel / shipVel are already skill-filtered at their own sites.
+        const gate = v => (reqMLO ? v : 1);
+        const velMult    = gate(skillVel)    * gate(poolVel)    * modeVel * gate(implVel)    * subsysVel * shipVel * (anhMode?.missileVel ?? 1);
+        const flightMult = gate(skillFlight) * gate(poolFlight) * gate(implFlight) * subsysFlight * shipFlight * (anhMode?.missileFlight ?? 1);
         let finalVel    = baseVel * velMult;
         let finalFlight = baseFlight * flightMult; // ms
         let aoeVel = baseAoeVel, aoeRad = baseAoeRad;

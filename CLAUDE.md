@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL 25 REGRESSION CHECKS PASSED"
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 76)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -31,6 +31,8 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 | `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
 | `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
 | `src/data/dogma-*.json` | The dogma bundle: types, effects, attributes. **Generated + hand-patched.** |
+| `src/data/ship-traits.json` | Per-hull trait bonuses + flavour description (Ship + Structure). **Generated** by `build-bundle.py` from eve.db's `invtraits`/`invtypes`; overrides `data-bundle.js`'s stale `shipTraits`. |
+| `src/data/type-descriptions.json` | Item flavour text for the info panel (modules, charges, implants, drones, fighters, subsystems, deployables, **structure modules**). **Generated** by `build-bundle.py`. Lazy-imported — see the null-guard note below. |
 | `src/data-bundle.js` | Legacy precomputed bundle (5.8 MB). Ship lists, module lists, meta labels. **Partly wrong — see below.** |
 
 ### How the engine works, briefly
@@ -116,6 +118,107 @@ core `runMigrations` is DOM-free and covered by the regression suite.
 9. **`data-bundle.js`'s `meta` strings are wrong** — faction/storyline/deadspace/officer modules all
    came through as "T2". Meta group is derived from CCP's `metaGroupID` (shipped as `mg` on every type
    in `dogma-types.json`); see `metaOf()` in `App.jsx`. Never trust the bundle's `meta` field.
+
+10. **Structures need character skills applied to their FITTED MODULES but never to their own hull
+    stats, and `domain='structureID'` is NOT a projected/ignorable domain** — three real engine bugs
+    caught when structure support was added (2026-08-01), all confirmed against eos directly
+    (`scripts/oracle/oracle.py astrahus_empty` / `astrahus_service_only` / `azbel_missile_test`):
+    - Our "all-5 reference character" was applying Hull Upgrades/Shield Management/Mechanics' +25%
+      ship-hull bonus to a structure's armorHP/shieldCapacity/hp. Structures are corp-owned assets,
+      not personally piloted — no skill should touch the structure's OWN hull attributes. **First
+      fix attempt (wrong): skip the entire skill pass for structures.** That over-corrected — see
+      next point — and was replaced with a precise guard in `_applyEffect`'s `ItemModifier` branch:
+      skip only when `domain==='shipID'` AND the source is a skill (`skillLevel != null`) AND the
+      fit's ship is a structure. `LocationModifier`/`LocationGroupModifier`/`LocationRequiredSkillModifier`
+      skill effects (which target FITTED MODULES/CHARGES, not the hull) are untouched by this guard.
+    - The reason the broad "skip everything" fix was wrong: **skills DO enhance modules/charges
+      fitted to a structure** — e.g. "Structure Missile Systems" boosts a structure missile
+      launcher's charge damage exactly like Warhead Upgrades does for a ship (Effect6396,
+      `LocationGroupModifier`, filtered by the CHARGE's group name). Skipping the whole pass made
+      every structure-fitted weapon read 0 DPS or understated DPS. Caught on a real user fit (an
+      Azbel with Standup Multirole Missile Launchers): weaponDps came out 133.33 instead of pyfa's
+      146.7. The structure-only "operation" skills (**Structure Missile Systems**, **Structure
+      Electronic Systems**, **Structure Engineering Systems**, **Structure Doomsday Operation** —
+      the structure equivalents of Warhead Upgrades and the cap-cost-reduction skills, boosting
+      missile/EWAR/energy-neutralizer/doomsday modules respectively) weren't in `SKILL_DEFAULTS` at
+      all — this app was ship-only until structures were added, so nobody had added them. Also
+      explained a "slight cap delta discrepancy" the user reported on the same fit — Structure
+      Electronic/Engineering Systems reduce `capacitorNeed` on the fitted ECM/energy-neutralizer
+      modules, which our cap-delta calc had never seen.
+    - `domain='structureID'` was lumped in with `targetID`/`target` ("projected onto an external
+      target — ignore") because no structure effect had ever been exercised before. It's actually
+      the Structure-category equivalent of `domain='shipID'` — self-reference, not a remote target.
+      This silently dropped Effect7008/7009, the pair that implements structures' **Full/Low Power
+      State**: a structure's base hull attributes are its *Low Power* stats, and having any Service
+      Slot module fitted (`online`, doesn't need to be "active") force-multiplies shieldCapacity
+      and armorHP by that specific service module's own `serviceModuleFullPowerStateHitpointMultiplier`
+      (4x for every service module — hull HP is unaffected either way). It's ALSO
+      what Effect6396 (Structure Missile Systems, above) and its Electronic/Engineering/Doomsday
+      siblings use to reach fitted modules/charges — same remap, same reason. Fixed by remapping
+      `structureID`→`shipID` in `_applyEffect`, but only when the fit's own ship is itself a
+      structure (a ship fit could theoretically carry a genuine remote `structureID` reference,
+      which must stay ignored).
+    - **Diagnostic technique worth keeping**: when a discrepancy is skill-shaped (present at "all
+      skills V", absent at "no skills") but no specific skill you'd guess changes it, don't guess
+      further — enumerate every skill on a level-5 `Character` and re-test with each individually
+      zeroed (`scripts/oracle/` — build a level-5 `Fit`, then `Skill(character, item, level=0)` +
+      `character.addSkill(...)` per candidate, diff the result) until the one that moves the number
+      turns up. That's how "Structure Missile Systems" — not on anyone's list of suspects — was
+      found in minutes instead of guessed at for an hour. (Note: overriding an ALREADY-level-5
+      default skill down to a LOWER level via `addSkill` doesn't reliably re-trigger recalculation
+      the same way a whole fresh `Character(name, level)` does — trust the "vary the whole
+      character's level" result over a single skill's override result if they ever disagree.)
+    - **`canFitShipType`/`canFitShipGroup` applies to structures exactly as it does to ships** —
+      eos runs the same `Fit.canFit` for both. A short/"incomplete-looking" whitelist is real game
+      data, not corrupt data: Standup Market Hub I omits Astrahus/Raitaru/Athanor because a market
+      genuinely requires a medium-or-larger structure, and Standup Metenox Moon Drill lists exactly
+      one legal hull. Reading that as "this data isn't shaped for structures" and skipping the check
+      (which is what `checkFitRestriction` did at first) makes every structure module fit every
+      structure. It also silently produced an **illegal regression fixture** — the Astrahus
+      full-power baseline was a Market Hub on an Astrahus, which computed the right number for the
+      wrong fit (every service module carries the same 4x multiplier, so the error was invisible);
+      it now uses Standup Cloning Center I. eos enforces a second, separate rule alongside it:
+      structure modules (category 66) only on structures, ship modules (category 7) only on ships.
+    - **Structure charges require NO skills, and that is load-bearing for missile RANGE.** This is
+      the exact mirror image of the DPS bug above, and the two pull in opposite directions — do not
+      "unify" them. Every personal missile range bonus in eos (the **Missile Projection** and
+      **Missile Bombardment** skills, Missile Guidance Computers/Enhancers, Hydraulic Bay Thruster
+      and Rocket Fuel Cache rigs, Zainou 'Deadeye' implants, the Antipharmakon Toxot booster, the
+      Hydra implant set) is gated on `mod.charge.requiresSkill('Missile Launcher Operation')` —
+      every one of those handlers uses that identical predicate. Standup missiles have an **empty
+      `rs`**, so none of them apply: an Azbel's Standup Light Missile flies its base 95 s at its
+      base 15 km/s. `calc.js` applied the two skills unconditionally, multiplying velocity *and*
+      flight time by 1.5 → 3195 km against pyfa's 1417.5 km. Fixed with the `gate()` helper at the
+      `velMult`/`flightMult` combination in `calc.js`, keyed on the pre-existing `reqMLO`. Bombs,
+      Defender Missiles and probes also lack the requirement and are correctly excluded too.
+    - See `src/regression.test.mjs`'s "10. ASTRAHUS" and "11. AZBEL" sections for the validated
+      baselines (9.0M EHP low-power / 29.25M EHP full-power; 146.7 weaponDps / 440 volley;
+      1417.5 km missile range).
+
+### Two different sets of skills — don't conflate them
+
+`SKILL_DEFAULTS` (~167) is the set the **dogma engine reads**: train these and your numbers change.
+It is NOT the set of skills a fit **requires**. ~316 more skills appear only as `requiredSkillN` on
+fittable types — Jury Rigging (on 279 rigs), the racial frigate/cruiser skills, Tactical Shield
+Manipulation — and no dogma effect reads any of them, which is exactly why they were never in
+`SKILL_DEFAULTS`.
+
+`SKILL_CATALOG` in `calc.js` is the union (357, collision-free keys), built at module load from
+`SKILL_DEFAULTS` ∪ every `requiredSkillN` reference. It drives both the Settings → Skills panel and
+`checkFitSkills()` (the green/red book in the fit header). A requirement check built from
+`SKILL_DEFAULTS` alone would call almost every fit flyable, so the regression suite asserts that
+**every** requirement reference resolves to a catalog entry.
+
+Two things that are easy to get wrong here:
+
+- **Charges carry requirements too, and the strictest wins.** A Heavy Missile Launcher II needs
+  Missile Launcher Operation IV, but Scourge Fury Heavy Missile needs it at V — so the fit needs V.
+  Checking modules without their loaded ammo understates the requirement by a level.
+- **Unset skills count as V**, matching `calcFitStats`. A fresh install has no skills configured; if
+  absent meant 0, every fit would show red on first launch.
+
+`SKILL_CATALOG` also back-fills `SKILL_CAMEL_TO_PYFA` for its derived keys, so a level set on a
+requirement-only skill actually reaches the engine instead of falling through to the all-V default.
 
 ### Stacking groups (this bit is subtle)
 
@@ -266,8 +369,17 @@ Astarte's tank to rise to ~1768.
 ## Merge hazards (multi-person repo)
 
 - **Never hand-edit the generated data files.** `dogma-types.json`, `dogma-effects.json`,
-  `dogma-attrs.json`, `data-bundle.js` (5.8 MB), `modules.json`, `module-variations.json` and
-  `pyfa-types.json` are generated artifacts. A conflict in them is unresolvable by hand.
+  `dogma-attrs.json`, `ship-traits.json`, `type-descriptions.json`, `data-bundle.js` (5.8 MB),
+  `modules.json`, `module-variations.json` and `pyfa-types.json` are generated artifacts. A conflict
+  in them is unresolvable by hand.
+
+  **Two traps when regenerating `type-descriptions.json`.** It is keyed off the emitted TYPES, *not*
+  `fit_types`: `fit_types` requires `published=1`, and the 89 T3-destroyer tactical modes
+  (Confessor/Svipul/Jackdaw/Hecate "… Mode") are unpublished yet fully live — `calc.js` resolves them
+  by typeID — so keying off `fit_types` silently drops their descriptions. And hulls are deliberately
+  excluded (`DESC_CATS` has no 6/65): a hull's description ships inside `ship-traits.json` next to its
+  trait bonuses. When you regenerate, diff against the previous file and expect **zero** text changes
+  beyond `\r\n` → `\n`; anything else means the extraction changed, not the data.
 
   **Regenerate the dogma bundles instead:**
 

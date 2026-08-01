@@ -1,7 +1,7 @@
 {
   "client_build": "3424810",
   "sde_dump_date": "2026-07-07",
-  "generated": "2026-07-17",
+  "generated": "2026-08-01",
   "types": 7706,
   "_note": "The regression baselines in src/regression.test.mjs were validated against pyfa running THIS client build. If you regenerate from a newer eve.db, expect some baselines to move: that is CCP rebalancing, not a code regression. See CLAUDE.md -> \"Upgrading eve.db\"."
 }

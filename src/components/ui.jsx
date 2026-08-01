@@ -8,7 +8,7 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
-import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
@@ -21,6 +21,22 @@ function useTypeDescriptions() {
     });
   }, []);
   return descs;
+}
+
+// iOS-style info button: a true circle with a plain "i", in the accent blue so it reads as
+// tappable. The old version set `padding:"2px 7px"` on the ⓘ glyph, which stretched the box into a
+// pill AND left the glyph's own ring inside it — a small circle floating in a wide oval. Fixed
+// width/height + borderRadius 50% + a bare "i" is what actually makes it round.
+// Shared by the module browser, the ammo picker and the ship browser so they can't drift apart.
+function InfoButton({onClick,title="Item info"}){
+  return(
+    <button onClick={onClick} title={title} aria-label={title}
+      style={{width:19,height:19,flexShrink:0,padding:0,borderRadius:"50%",
+              border:`1.5px solid ${C.accent}`,background:C.accentLight,color:C.accent,
+              display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
+              fontFamily:"Arial, Helvetica, sans-serif",
+              fontSize:12,fontWeight:700,lineHeight:1}}>i</button>
+  );
 }
 
 function BottomSheet({title,onClose,children,height="70vh"}){
@@ -170,7 +186,7 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
-function ModuleBrowserSheet({slotType,onSelect,onClose}){
+function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose}){
   const[search,setSearch]=useState("");
   const[pasteOpen,setPasteOpen]=useState(false);
   const[pasteText,setPasteText]=useState("");
@@ -179,7 +195,19 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
   const doPaste=()=>{const parsed=parseAbyssal(pasteText);if(!parsed){setPasteErr("Could not parse. Expected: module name, then mutaplasmid name, then attr value pairs.");return;}onSelect(parsed);onClose();};
   const[navPath,setNavPath]=useState([]);
   const metaColor={T1:C.textMid,T2:C.accent,Storyline:C.warning,Faction:C.danger,Deadspace:"#f0abfc",Officer:"#f0abfc",Abyssal:C.high};
-  const tree=REAL_MODULE_BROWSER[slotType]??[];
+  const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
+  // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
+  // enforces it), so the other sizes are dead weight to scroll past. Prune them here rather than
+  // greying them out, and drop any category left empty. Rigs with no rigSize at all are kept:
+  // absence means "unrestricted", not "size 0". Structure rigs use the same attribute (2/3/4 for
+  // M/L/XL hulls), so this needs no structure-specific branch.
+  const tree=useMemo(()=>{
+    if(slotType!=="rigs"||hullRigSize==null)return baseTree;
+    const keep=m=>{const rs=TYPES[String(m.typeID)]?.a?.rigSize;return rs==null||rs===hullRigSize;};
+    const prune=ns=>ns.map(n=>({...n,mods:(n.mods??[]).filter(keep),children:prune(n.children??[])}))
+                      .filter(n=>n.mods.length||n.children.length);
+    return prune(baseTree);
+  },[baseTree,slotType,hullRigSize]);
 
   const currentLevel=(()=>{
     let nodes=tree,currentNode=null;
@@ -220,7 +248,7 @@ function ModuleBrowserSheet({slotType,onSelect,onClose}){
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
           <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
-          {mod.typeID&&<button onClick={e=>{e.stopPropagation();setInfoItem(mod);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,color:C.textMid,fontSize:11,cursor:"pointer",padding:"2px 7px",fontWeight:700,lineHeight:1.2}}>ⓘ</button>}
+          {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setInfoItem(mod);}}/>}
         </div>
       </div>
     );
@@ -400,7 +428,10 @@ function ItemInfoPanel({typeID}) {
     </div>
   );
 
-  const desc = typeDescriptions[String(typeID)] ?? null;
+  // useTypeDescriptions() returns null until the lazy import resolves — and since the effect that
+  // loads it runs AFTER the first render, that null is guaranteed on every first paint, cache or
+  // no cache. Indexing it directly threw on every single open of this panel.
+  const desc = typeDescriptions?.[String(typeID)] ?? null;
 
   return (
     <div>
@@ -611,7 +642,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
                 {mod.ammo===a.name&&<span style={{color:C.accent}}>v</span>}
-                {a.typeID&&<button onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:99,color:C.textMid,fontSize:11,cursor:"pointer",padding:"2px 7px",fontWeight:700,lineHeight:1.2}}>ⓘ</button>}
+                {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
               </div>
             </div>);
           })}
@@ -735,4 +766,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };

@@ -36,7 +36,10 @@
  *   itemID   – target is the source item itself (self-buff)
  *   charID   – target is the character (skills → ship attrs via OwnerReqSkill)
  *   otherID  – launcher ↔ charge cross-link
- *   structureID / targetID / target – projected / ignored
+ *   targetID / target – projected onto an external target; ignored for our own fit's stats
+ *   structureID – the Structure-category equivalent of shipID (target is the structure), NOT a
+ *                 projected domain — only looks that way if you've never fitted a structure.
+ *                 Remapped to shipID in _applyEffect when the fit's own ship is a structure.
  */
 
 // ─── Data is injected by initEngine() — works in both Vite and Node.js ───────────
@@ -381,6 +384,13 @@ export class Fit {
     // 2. Skill pass (runs FIRST — skills modify module attrs before modules read them) (runs once, after item effects but BEFORE ship hull effects)
     //    Skills scale ship bonus attributes (e.g. Effect605: skillLevel→shipBonusMB2)
     //    which must be ready before ship hull effects read them (Effect8106 reads shipBonusMB2).
+    // NOTE: structures still run the skill pass (unlike an earlier version of this fix) — a
+    // character's skills DO enhance modules/charges fitted to a structure (e.g. "Structure Missile
+    // Systems" boosts structure missile charge damage exactly like Warhead Upgrades does for a
+    // ship). What must NOT happen is a skill writing directly to the STRUCTURE's own hull
+    // attributes (shieldCapacity/armorHP/hp) the way Hull Upgrades/Shield Management/Mechanics do
+    // for a ship — a structure isn't personally piloted, so that specific case (ItemModifier,
+    // domain=shipID, source=a skill) is blocked in _applyEffect below, not here.
     for (const [skillName, level] of Object.entries(this._skills)) {
       if (level <= 0) continue;
       let skillItem = this._skillItems[skillName];
@@ -545,12 +555,27 @@ export class Fit {
     if (!effectActiveForState(edata.c, src.state)) return;
 
     const level = skillLevel ?? src.level ?? 0;
+    // domain='structureID' is the Structure-category equivalent of domain='shipID' — CCP's dogma
+    // locations are category-typed, so a structure's own hull effects (and structure-module
+    // effects that target the structure they're fitted to, e.g. Effect7009's full-power-state
+    // assignment) use 'structureID' where the ship equivalent would use 'shipID'. It is NOT a
+    // "projected onto an external target" domain the way targetID/target are — that was an
+    // incorrect assumption from before this app fit structures at all (no structure effect had
+    // ever been exercised to notice). Confirmed against eos: Effect7008/7009 (both domain=
+    // structureID) are what apply the Full/Low Power State HP multiplier, and skipping them here
+    // silently left every structure permanently in "low power" (25% low on shield/armor/hull HP
+    // relative to eos even for a bare hull — Astrahus 11.25M EHP vs eos's 9.0M). Only remap when
+    // OUR fit's ship is itself a structure; a ship fit could theoretically carry a genuine
+    // remote/projected structureID reference (targeting an allied structure), which must stay
+    // ignored exactly like targetID/target.
+    const _isStructureFit = (this.ship._td.c ?? this.ship._td.category) === 65;
 
     for (const mod of (edata.m ?? [])) {
-      const { func, domain, operation: op,
+      const { func, domain: _rawDomain, operation: op,
               modifiedAttributeID: dstAttr,
               modifyingAttributeID: srcAttr,
               groupID, skillID: _skillID, skillTypeID, typeID: filterTypeID } = mod;
+      const domain = (_rawDomain === 'structureID' && _isStructureFit) ? 'shipID' : _rawDomain;
       // CCP uses 'skillTypeID' for the required skill filter (not 'skillID')
       const skillID = skillTypeID ?? _skillID;
 
@@ -667,7 +692,17 @@ export class Fit {
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {
         // domain=shipID → target is ship; domain=itemID → target is src itself
-        if (domain === 'shipID') {
+        // A SKILL (skillLevel != null) writing directly to the SHIP's own attributes via
+        // ItemModifier is exactly the "Hull Upgrades/Shield Management/Mechanics give +25% hull
+        // HP" pattern — correct for a ship (the trained character is flying it), wrong for a
+        // structure (corp asset, nobody's personal skills touch its own hull stats). This does
+        // NOT affect LocationModifier/LocationGroupModifier/LocationRequiredSkillModifier skill
+        // effects (a few lines down) — those target FITTED MODULES/CHARGES, not the hull itself,
+        // and DO apply to structures (e.g. "Structure Missile Systems" boosting a structure
+        // missile launcher's charge damage, same mechanism as Warhead Upgrades for a ship).
+        if (domain === 'shipID' && skillLevel != null && _isStructureFit) {
+          // skip: skill → structure's own hull attribute
+        } else if (domain === 'shipID') {
           this.ship.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
         } else if (domain === 'itemID') {
           src.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);

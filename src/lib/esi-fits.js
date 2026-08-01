@@ -8,6 +8,9 @@
 // the two schemes. Ranges confirmed against this app's own dogma bundle (subSystemSlot attribute
 // values land in the 125-128 range pyfa expects, e.g. Tengu Defensive subsystems = 126).
 //
+// Service Slots (structures only, flag base 164) use the exact same numeric scheme, also verified
+// against pyfa's esi.py (FittingSlot.SERVICE).
+//
 // Also confirmed there (and matches the well-known in-game limitation): a saved fitting does NOT
 // record which module a charge was loaded into. pyfa's own export aggregates ALL loaded charges
 // fleet-fit-wide into a flat cargo-hold quantity (flag=CARGO) rather than per-module, and its
@@ -26,12 +29,17 @@ const FLAG_LOW = 11, FLAG_LOW_END = 18;
 const FLAG_MED = 19, FLAG_MED_END = 26;
 const FLAG_HIGH = 27, FLAG_HIGH_END = 34;
 const FLAG_RIG = 92, FLAG_RIG_END = 94;
+// Service Slots (structures only). Base 164 matches pyfa's FittingSlot.SERVICE (service/port/esi.py).
+// End bound covers the largest real service-slot count in the bundle (Palatine Keepstar/Moreau &
+// Marginis Fortizar = 8).
+const FLAG_SERVICE = 164, FLAG_SERVICE_END = 171;
 
 function slotForFlag(flag) {
   if (flag >= FLAG_LOW && flag <= FLAG_LOW_END) return 'low';
   if (flag >= FLAG_MED && flag <= FLAG_MED_END) return 'mid';
   if (flag >= FLAG_HIGH && flag <= FLAG_HIGH_END) return 'high';
   if (flag >= FLAG_RIG && flag <= FLAG_RIG_END) return 'rig';
+  if (flag >= FLAG_SERVICE && flag <= FLAG_SERVICE_END) return 'service';
   return null;
 }
 
@@ -73,7 +81,7 @@ export function esiFittingToImportShape(esiFitting) {
       continue;
     }
     const slot = slotForFlag(it.flag);
-    if (!slot) continue; // unrecognized flag (e.g. a structure service slot) — skip, don't corrupt-place
+    if (!slot) continue; // unrecognized flag (e.g. a structure Service Management/upgrade slot) — skip, don't corrupt-place
     mods.push({ name, typeID: it.type_id, slot, charge: undefined, state: undefined });
   }
 
@@ -90,10 +98,10 @@ export function esiFittingToImportShape(esiFitting) {
 export function slotsToEsiFitting(shipTypeID, fitName, slots, drones, cargoItems, fighters, opts = {}) {
   const { description = '', includeCharges = true, includeImplants = false, includeBoosters = false, implants = [], boosters = [] } = opts;
   const items = [];
-  const flagCursor = { high: FLAG_HIGH, mid: FLAG_MED, low: FLAG_LOW, rigs: FLAG_RIG };
+  const flagCursor = { high: FLAG_HIGH, mid: FLAG_MED, low: FLAG_LOW, rigs: FLAG_RIG, services: FLAG_SERVICE };
   const chargeTotals = new Map(); // typeID -> total quantity across the whole fit
 
-  for (const section of ['high', 'mid', 'low', 'rigs']) {
+  for (const section of ['high', 'mid', 'low', 'rigs', 'services']) {
     for (const slot of (slots?.[section] ?? [])) {
       if (!slot?.typeID) continue;
       items.push({ flag: flagCursor[section]++, quantity: 1, type_id: slot.typeID });

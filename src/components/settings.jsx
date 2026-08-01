@@ -1,93 +1,101 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
-import { SKILL_DEFAULTS } from "../calc.js";
+import { SKILL_CATALOG } from "../calc.js";
 import { ImplantLoadoutsManager } from "./implants.jsx";
 import { EsiSettingsPanel } from "./esi-ui.jsx";
 
-const SKILL_GROUPS=[
-  {label:"Engineering & Fitting",color:C.warning,skills:[
-    {key:"cpuManagement",       label:"CPU Management",           desc:"+5% CPU output/lv"},
-    {key:"powerGridManagement", label:"Power Grid Management",    desc:"+5% PG output/lv"},
-    {key:"weaponUpgrades",      label:"Weapon Upgrades",          desc:"-5% turret/launcher CPU/lv"},
-    {key:"advWeaponUpgrades",   label:"Adv. Weapon Upgrades",     desc:"-2% turret/launcher PG/lv"},
-    {key:"energyManagement",    label:"Energy Management",        desc:"+5% cap capacity/lv"},
-    {key:"energySystemsOp",     label:"Energy Systems Operation", desc:"-5% cap recharge time/lv"},
-  ]},
-  {label:"Shield",color:C.mid,skills:[
-    {key:"shieldManagement", label:"Shield Management", desc:"+5% shield HP/lv"},
-    {key:"shieldOperation",  label:"Shield Operation",  desc:"-5% shield recharge time/lv"},
-  ]},
-  {label:"Armor & Hull",color:C.warning,skills:[
-    {key:"hullUpgrades", label:"Hull Upgrades", desc:"+5% armor HP/lv"},
-    {key:"mechanic",     label:"Mechanic",       desc:"+5% hull HP/lv"},
-  ]},
-  {label:"Navigation",color:C.rig,skills:[
-    {key:"navigation",         label:"Navigation",          desc:"+5% max velocity/lv"},
-    {key:"evasiveManeuvering", label:"Evasive Maneuvering", desc:"+5% agility reduction/lv"},
-  ]},
-  {label:"Gunnery",color:C.danger,skills:[
-    {key:"gunnery",            label:"Gunnery",             desc:"+2% turret ROF/lv"},
-    {key:"rapidFiring",        label:"Rapid Firing",        desc:"+4% turret ROF/lv"},
-    {key:"surgicalStrike",     label:"Surgical Strike",     desc:"+3% turret damage/lv"},
-    {key:"sharpshooter",       label:"Sharpshooter",        desc:"+5% optimal range/lv"},
-    {key:"trajectoryAnalysis", label:"Trajectory Analysis", desc:"+4% falloff range/lv"},
-    {key:"motionPrediction",   label:"Motion Prediction",   desc:"+5% tracking speed/lv"},
-  ]},
-  {label:"Missiles",color:C.high,skills:[
-    {key:"missileLaunchers", label:"Missile Launcher Operation", desc:"-2% launcher ROF/lv"},
-    {key:"warheadUpgrades",  label:"Warhead Upgrades",           desc:"+2% missile damage/lv"},
-  ]},
-  {label:"Drones",color:C.rig,skills:[
-    {key:"droneInterfacing", label:"Drone Interfacing", desc:"+20% drone damage/lv"},
-  ]},
-  {label:"Ship Command",color:C.high,skills:[
-    {key:"minmatarBattleship",   label:"Minmatar Battleship",    desc:"+per-level ship bonus"},
-    {key:"amarrBattleship",      label:"Amarr Battleship",        desc:"+per-level ship bonus"},
-    {key:"gallenteBattleship",   label:"Gallente Battleship",     desc:"+per-level ship bonus"},
-    {key:"caldariBattleship",    label:"Caldari Battleship",      desc:"+per-level ship bonus"},
-    {key:"marauders",            label:"Marauders",               desc:"+per-level tracking/repair"},
-    {key:"heavyAssaultCruisers", label:"Heavy Assault Cruisers",  desc:"+per-level bonus"},
-  ]},
-];
+// Skill groups are DERIVED from SKILL_CATALOG rather than hand-listed. The old hardcoded table
+// covered 28 skills; the catalog has 357 — every skill the engine reads PLUS every skill any
+// fittable item requires. Most were unreachable from the UI before, so you could not lower a
+// missile specialization below V, and nothing could tell you a rig needed Jury Rigging.
+// Deriving it means the list can never drift from the engine again.
+// Grouping uses CCP's own skill group (`TYPES[tid].gn` for category 16), so the sections match the
+// in-game character sheet instead of an invented taxonomy.
+const GROUP_COLORS={
+  Gunnery:C.danger, Missiles:C.high, Drones:C.rig, Shields:C.mid, Armor:C.warning,
+  Engineering:C.warning, Navigation:C.rig, Targeting:C.accent, "Spaceship Command":C.high,
+  Subsystems:C.low, Rigging:C.rig, "Fleet Support":C.accent, "Electronic Systems":C.accent,
+  "Neural Enhancement":C.success, "Structure Management":C.low,
+};
+const SKILL_GROUPS=(()=>{
+  const byGroup=new Map();
+  for(const e of SKILL_CATALOG){
+    if(!byGroup.has(e.group))byGroup.set(e.group,[]);
+    byGroup.get(e.group).push({key:e.key,label:e.name});
+  }
+  return[...byGroup.entries()]
+    .map(([label,skills])=>({label,color:GROUP_COLORS[label]??C.textMid,
+                             skills:skills.sort((a,b)=>a.label.localeCompare(b.label))}))
+    .sort((a,b)=>a.label.localeCompare(b.label));
+})();
 
 function SkillsPanel({skills,setSkills}){
-  const setAll=lv=>setSkills(Object.fromEntries(Object.keys(SKILL_DEFAULTS).map(k=>[k,lv])));
+  const setAll=lv=>setSkills(Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,lv])));
+  // Closed by default — 357 skills across 18 groups is far too much to scroll past otherwise.
+  const[open,setOpen]=useState({});
+  const toggle=g=>setOpen(o=>({...o,[g]:!o[g]}));
+  const setGroup=(grp,lv)=>setSkills(prev=>({...prev,...Object.fromEntries(grp.skills.map(s=>[s.key,lv]))}));
+  const lvlOf=k=>skills?.[k]??0;
+  const allAt=lv=>SKILL_CATALOG.every(e=>lvlOf(e.key)===lv);
   return(
     <div>
       <div style={{display:"flex",gap:8,marginBottom:14}}>
-        <button onClick={()=>setAll(5)} style={{flex:1,padding:"8px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>All V (Max)</button>
-        <button onClick={()=>setAll(4)} style={{flex:1,padding:"8px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:700,cursor:"pointer"}}>All IV</button>
-        <button onClick={()=>setAll(0)} style={{flex:1,padding:"8px 0",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Clear All</button>
+        {/* Highlight reflects the ACTUAL state, not the last click: a preset is lit only while every
+            skill still sits at that level, so it goes dark again the moment you adjust one. "All V"
+            used to be styled lit unconditionally, which made the other two look inert by comparison. */}
+        {[[5,"All V (Max)",C.accent],[4,"All IV",C.accent],[0,"Clear All",C.danger]].map(([lv,label,col])=>{
+          const active=allAt(lv);
+          return(<button key={lv} onClick={()=>setAll(lv)} aria-pressed={active}
+            style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
+                    background:active?`${col}22`:C.surfaceAlt,
+                    border:`1px solid ${active?col:C.border}`,
+                    color:active?col:C.textMid,
+                    boxShadow:active?`inset 0 0 0 1px ${col}55`:"none"}}>{label}</button>);
+        })}
       </div>
-      {SKILL_GROUPS.map(grp=>(
-        <div key={grp.label} style={{marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,paddingBottom:4,borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:8,height:8,borderRadius:99,background:grp.color}}/>
-            <span style={{fontSize:11,fontWeight:700,color:C.text,textTransform:"uppercase",letterSpacing:.5}}>{grp.label}</span>
+      {SKILL_GROUPS.map(grp=>{
+        const isOpen=!!open[grp.label];
+        const trained=grp.skills.filter(s=>lvlOf(s.key)>0).length;
+        const atMax=grp.skills.every(s=>lvlOf(s.key)>=5);
+        return(
+        <div key={grp.label} style={{marginBottom:8,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
+          <div onClick={()=>toggle(grp.label)}
+            style={{display:"flex",alignItems:"center",gap:6,padding:"9px 10px",background:C.surfaceAlt,cursor:"pointer"}}>
+            <span style={{fontSize:9,color:C.textMute,width:9,display:"inline-block",
+                          transform:isOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▶</span>
+            <div style={{width:8,height:8,borderRadius:99,background:grp.color,flexShrink:0}}/>
+            <span style={{fontSize:11,fontWeight:700,color:C.text,textTransform:"uppercase",letterSpacing:.5,flex:1}}>{grp.label}</span>
+            <span style={{fontSize:10,color:atMax?C.success:C.textMute,fontWeight:600}}>{trained}/{grp.skills.length}</span>
           </div>
-          {grp.skills.map(sk=>(
-            <div key={sk.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`}}>
-              <div style={{flex:1,minWidth:0,marginRight:8}}>
-                <div style={{fontSize:12,fontWeight:600,color:C.text}}>{sk.label}</div>
-                <div style={{fontSize:10,color:C.textMute}}>{sk.desc}</div>
-              </div>
-              <div style={{display:"flex",gap:3,flexShrink:0}}>
-                {[1,2,3,4,5].map(lv=>(
-                  <button key={lv} onClick={()=>setSkills(prev=>({...prev,[sk.key]:lv}))}
-                    style={{width:24,height:24,borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:11,
-                      background:skills[sk.key]>=lv?grp.color:C.surfaceAlt,
-                      color:skills[sk.key]>=lv?"#fff":C.textMute}}>
-                    {lv}
-                  </button>
-                ))}
-              </div>
+          {isOpen&&<div style={{padding:"2px 10px 8px"}}>
+            <div style={{display:"flex",gap:6,padding:"6px 0 8px"}}>
+              <button onClick={()=>setGroup(grp,5)} style={{flex:1,padding:"4px 0",background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,fontSize:10,fontWeight:700,cursor:"pointer"}}>All V</button>
+              <button onClick={()=>setGroup(grp,0)} style={{flex:1,padding:"4px 0",background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,fontSize:10,fontWeight:700,cursor:"pointer"}}>None</button>
             </div>
-          ))}
-        </div>
-      ))}
+            {grp.skills.map(sk=>(
+              <div key={sk.key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 0",borderBottom:`1px solid ${C.border}44`}}>
+                <div style={{flex:1,minWidth:0,marginRight:8,fontSize:12,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sk.label}</div>
+                <div style={{display:"flex",gap:3,flexShrink:0,alignItems:"center"}}>
+                  {/* Clicking the level you're already at clears the skill — otherwise there is no
+                      way back down to 0 once a level is set. */}
+                  {[1,2,3,4,5].map(lv=>(
+                    <button key={lv} onClick={()=>setSkills(prev=>({...prev,[sk.key]:lvlOf(sk.key)===lv?0:lv}))}
+                      title={lvlOf(sk.key)===lv?"Click again to untrain":`Set to level ${lv}`}
+                      style={{width:24,height:24,borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:11,
+                        background:lvlOf(sk.key)>=lv?grp.color:C.surfaceAlt,
+                        color:lvlOf(sk.key)>=lv?"#fff":C.textMute}}>
+                      {lv}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>}
+        </div>);
+      })}
       <div style={{marginTop:10,padding:"10px 12px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,fontSize:10,color:C.textMute}}>
-        Ship hull bonuses (e.g. Raven missile damage, Drake resists) are not yet included — they require per-ship bonus data.
+        {SKILL_GROUPS.reduce((n,g)=>n+g.skills.length,0)} skills across {SKILL_GROUPS.length} groups — every skill the engine reads plus every skill a fittable item requires. Unset skills count as level V.
       </div>
     </div>
   );

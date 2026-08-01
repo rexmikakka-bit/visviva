@@ -6,6 +6,7 @@ import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { DMG, STATE_COLORS, computeDisplayRows, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
 const CAN_FIT_GROUP_KEYS = ['canFitShipGroup01','canFitShipGroup02','canFitShipGroup03','canFitShipGroup04','canFitShipGroup05','canFitShipGroup06','canFitShipGroup07','canFitShipGroup08','canFitShipGroup09','canFitShipGroup10','canFitShipGroup11','canFitShipGroup12','canFitShipGroup13','canFitShipGroup14','canFitShipGroup15','canFitShipGroup16','canFitShipGroup17','canFitShipGroup18','canFitShipGroup19','canFitShipGroup20'];
@@ -30,8 +31,27 @@ function checkFitRestriction(modTypeID, ship) {
     }
   }
 
+  // Structure modules must go on structures and ship modules on ships. eos enforces this as a
+  // separate rule from canFitShipType (Fit.canFit: `isinstance(self.ship, Citadel) is not
+  // item.isStandup`), because the two catch different mistakes — this one catches a whole wrong
+  // class of module, which an EFT/ESI import can introduce even though the module browser can't.
+  const shipIsStructure = (TYPES[String(ship.typeID)]?.c ?? TYPES[String(ship.typeID)]?.category) === 65;
+  const modIsStandup    = (TYPES[String(modTypeID)]?.c ?? TYPES[String(modTypeID)]?.category) === 66;
+  if (shipIsStructure !== modIsStandup) {
+    return shipIsStructure
+      ? 'Only Standup (structure) modules can be fit to a structure'
+      : 'Standup (structure) modules cannot be fit to a ship';
+  }
+
+  // canFitShipGroupN / canFitShipTypeN / fitsToShipType — an explicit CCP whitelist of hulls.
+  // This applies to structures exactly as it does to ships (eos runs the same check for both).
+  // Do NOT be tempted to skip it for structures because a list "looks incomplete": Standup Market
+  // Hub I legitimately omits Astrahus/Raitaru/Athanor because a market genuinely requires a
+  // medium-or-larger structure, and Standup Metenox Moon Drill lists exactly one hull (81826, the
+  // Metenox itself). Skipping the check let both fit anywhere.
   const allowedGroups = CAN_FIT_GROUP_KEYS.map(k => attrs[k]).filter(v => v != null);
   const allowedTypes  = CAN_FIT_TYPE_KEYS.map(k => attrs[k]).filter(v => v != null);
+  if (attrs.fitsToShipType != null) allowedTypes.push(attrs.fitsToShipType); // T3 subsystems
   if (!allowedGroups.length && !allowedTypes.length) return null;
   const shipGroupID = TYPES[String(ship.typeID)]?.g ?? null;
   if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
@@ -40,15 +60,19 @@ function checkFitRestriction(modTypeID, ship) {
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
-function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
+function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec})??{}:{};
-  const engineStatsByTypeID=new Map();
-  if(_cs.slotEngineStats){for(const[slot,stats]of _cs.slotEngineStats){if(slot.typeID)engineStatsByTypeID.set(slot.typeID,stats);}}
+  // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
+  // stats. A missile launcher's range comes entirely from its charge (velocity x flight time), so an
+  // unloaded launcher has no range at all — keying by typeID let a loaded launcher's range bleed onto
+  // an identical unloaded one. Same for any two launchers carrying different ammo.
+  const engineStatsBySlotID=new Map();
+  if(_cs.slotEngineStats){for(const[slot,stats]of _cs.slotEngineStats){if(slot.id!=null)engineStatsBySlotID.set(slot.id,stats);}}
   const[grouped,setGrouped]=useState(true);
   const[dragUI,setDragUI]=useState(null); // {secKey,fromIdx,overIdx} — visual state during pointer drag
   const dragInfo=useRef(null);             // live drag data (avoids re-render churn during move)
   const rowRefs=useRef({});                // `${secKey}:${rowIdx}` → row element (for hit-testing)
-  const[expanded,setExpanded]=useState(["subsystems","high","mid","low","rigs"]);
+  const[expanded,setExpanded]=useState(["subsystems","high","mid","low","rigs","services"]);
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
   const[fitError,setFitError]=useState(null);
@@ -97,9 +121,12 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
   };
 
   const _isT3C = isT3Cruiser(ship?.name);
+  const _isStructure = (TYPES[ship?.typeID]?.c ?? TYPES[ship?.typeID]?.category) === 65;
   const SECS=[
     ...(_isT3C?[{key:"subsystems",label:"Subsystems",color:C.accent}]:[]),
-    {key:"high",label:"High Slots",color:C.high},{key:"mid",label:"Mid Slots",color:C.mid},{key:"low",label:"Low Slots",color:C.low},{key:"rigs",label:"Rigs",color:C.rig}];
+    {key:"high",label:"High Slots",color:C.high},{key:"mid",label:"Mid Slots",color:C.mid},{key:"low",label:"Low Slots",color:C.low},{key:"rigs",label:"Rigs",color:C.rig},
+    ...(_isStructure?[{key:"services",label:"Service Slots",color:C.accent}]:[]),
+  ];
   // T3 Destroyer tactical modes (Defense/Propulsion/Sharpshooter). Detect by hull class and
   // by the existence of "<Ship> <Mode> Mode" types. Default to Defense if none chosen yet.
   // Tactical modes. Standard T3Ds expose "<Ship> <Mode> Mode" types; the Skua reuses the Caldari
@@ -219,7 +246,18 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
           <div style={{fontSize:10,color:C.textMute,marginTop:3}}>{pilotSecHint}</div>
         </div>
       )}
-      <div style={{display:"flex",justifyContent:"flex-end",padding:"0 10px 4px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 10px 4px"}}>
+        {/* Undo covers every edit to the fit (modules, charges, drones, cargo, implants, boosters,
+            projected/command fits) because the history snapshots the same state App.jsx persists.
+            Disabled rather than hidden so the control doesn't shift position as you edit. */}
+        <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
+          title={undoDepth?`Undo last change (${undoDepth})`:"Nothing to undo"}
+          style={{display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
+                  background:"none",border:`1px solid ${undoDepth?C.border:"transparent"}`,
+                  color:undoDepth?C.textMid:C.textMute,opacity:undoDepth?1:0.4,
+                  cursor:undoDepth?"pointer":"default"}}>
+          <span style={{fontSize:12,lineHeight:1}}>↶</span>Undo
+        </button>
         <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?"Grouped":"Ungrouped"}</button>
       </div>
       <div style={{flex:1,padding:"0 10px 12px"}}>
@@ -261,10 +299,16 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                       <span style={{fontSize:12,fontWeight:600,color:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:2}}>
-                      {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title="Unload charge" onClick={e=>{e.stopPropagation();setSlots(prev=>{const s=[...prev[sec.key]];const si=s.findIndex(x=>x.id===row.id);if(si>=0)s[si]={...s[si],ammo:null,charges:undefined,maxCharges:undefined};return{...prev,[sec.key]:s};});}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
+                      {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
+                        // A grouped row stands for every slot in row.groupIds (identical module +
+                        // identical ammo), so unloading has to clear all of them — clearing only the
+                        // representative left the rest loaded while the row rendered as unloaded.
+                        const ids=new Set(row.groupIds??[row.id]);
+                        return{...prev,[sec.key]:prev[sec.key].map(m=>ids.has(m.id)?{...m,ammo:null,charges:undefined,maxCharges:undefined}:m)};
+                      });}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
                       {(()=>{
                         if(!row.typeID)return row.optimal>0||row.falloff>0?<span style={{fontSize:11,color:C.rig}}>{row.optimal}+{row.falloff} km</span>:null;
-                        const eStats=engineStatsByTypeID.get(row.typeID);
+                        const eStats=engineStatsBySlotID.get(row.id);
                         if(eStats&&(eStats.optimal>0||eStats.falloff>0)){
                           const _fal=eStats.falloff>0?`+${eStats.falloff}`:'';
                           const _isOH=row.state==='overheated';
@@ -281,7 +325,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                       })()}
                       {(()=>{
                         if(!row.typeID)return row.tracking>0?<span style={{fontSize:11,color:C.warning}}>Tr {row.tracking}</span>:null;
-                        const eSt=engineStatsByTypeID.get(row.typeID);
+                        const eSt=engineStatsBySlotID.get(row.id);
                         if(eSt?.tracking>0)return <span style={{fontSize:11,color:C.warning}}>Tr {eSt.tracking}</span>;
                         const a=TYPES[row.typeID]?.attrs??{};
                         const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
@@ -289,7 +333,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         return trk>0?<span style={{fontSize:11,color:C.warning}}>Tr {trk}</span>:null;
                       })()}
                       {(()=>{
-                        const eAar=engineStatsByTypeID.get(row.typeID);
+                        const eAar=engineStatsBySlotID.get(row.id);
                         if(!eAar?.isAAR) return null;
                         const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
                         if(eAar.hasPaste){
@@ -300,7 +344,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(ehps)} EHP/s</span>;
                       })()}
                       {(()=>{
-                        const eAsb=engineStatsByTypeID.get(row.typeID);
+                        const eAsb=engineStatsBySlotID.get(row.id);
                         if(!eAsb?.isASB) return null;
                         const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
                         if(eAsb.hasCharges){
@@ -311,7 +355,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(eAsb.ehpS)} EHP/s</span>;
                       })()}
                       {(()=>{
-                        const eRah=engineStatsByTypeID.get(row.typeID);
+                        const eRah=engineStatsBySlotID.get(row.id);
                         if(!eRah?.isRAH||!eRah.rahResistPct) return null;
                         // Current adapted resist split as four color-coded figures (EM / Th / Kin / Exp).
                         const pct=eRah.rahResistPct; // [em,th,kin,exp] percent
@@ -324,13 +368,13 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
                         </span>);
                       })()}
                       {(()=>{
-                        const eW=engineStatsByTypeID.get(row.typeID);
+                        const eW=engineStatsBySlotID.get(row.id);
                         if(!eW?.isWDFG) return null;
                         const km=Math.round((eW.warpScrambleRange??0)/100)/10;
                         return <span style={{fontSize:11,color:C.rig,marginLeft:2}}>{km} km</span>;
                       })()}
                       {(()=>{
-                        const eB=engineStatsByTypeID.get(row.typeID);
+                        const eB=engineStatsBySlotID.get(row.id);
                         if(!eB?.isBreacher) return null;
                         if(eB.noPod) return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>load a pod</span>;
                         // pyfa format: total absolute / total %-of-HP "over" duration, resist-ignoring.
@@ -374,7 +418,7 @@ function FitTab({ship,slots,setSlots,skills,implants,boosters,drones,factorInRel
           });setEmptySlot(null);}}
           onClose={()=>setEmptySlot(null)}/>
       )}
-      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)}/>}
+      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)}/>}
     </div>
   );
 }
@@ -400,7 +444,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
     const resolveAmmo=s=>{const nm=(s.ammo||'').replace(/\s*\(\d+\)$/,'');return nm?tidByName(nm):null;};
     return{
       ship:ship?.typeID?[{typeID:ship.typeID,qty:1}]:[],
-      modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1})),
+      // `abyssal` modules keep their BASE typeID and carry the roll in `mutaplasmid`/`mutations`,
+      // so a market lookup would price them as the unmutated module — which is meaningless: a
+      // rolled module's value depends entirely on the roll and ranges over orders of magnitude.
+      // They're listed but never priced, and are left out of the totals.
+      modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,
+        abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
       charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
       character:[
         ...(implants??[]).filter(i=>i?.name&&i.name!=='[Empty]').map(i=>({typeID:tidByName(i.name),qty:1})),
@@ -421,10 +470,37 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
     return()=>{cancelled=true;};
   },[fitFingerprint,priceHub]);// eslint-disable-line react-hooks/exhaustive-deps
   const groupTotals=useMemo(()=>{
-    const sum=items=>items.reduce((acc,{typeID,qty})=>acc+(prices?.get(typeID)??0)*qty,0);
+    const sum=items=>items.reduce((acc,{typeID,qty,abyssal})=>acc+(abyssal?0:(prices?.get(typeID)??0)*qty),0);
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),character:sum(priceItems.character),drones:sum(priceItems.drones)};
   },[priceItems,prices]);
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
+  // Per-item breakdown behind each Fit Value row. Identical typeIDs are merged (a fit with 6 of the
+  // same launcher reads "6x …" on one line rather than six lines), then sorted by TOTAL value
+  // descending so the expensive things are what you see first.
+  const priceBreakdown=useMemo(()=>{
+    const out={};
+    for(const[group,items]of Object.entries(priceItems)){
+      const merged=new Map();
+      for(const{typeID,qty,abyssal}of items){
+        if(!typeID)continue;
+        // Keyed by typeID AND the abyssal flag, so a rolled module never merges with an unrolled
+        // one of the same base type — they'd share a row but not a price.
+        const key=abyssal?`${typeID}*`:String(typeID);
+        const e=merged.get(key)??{typeID,abyssal:!!abyssal,qty:0,unit:abyssal?null:(prices?.get(typeID)??0)};
+        e.qty+=qty??1;
+        merged.set(key,e);
+      }
+      out[group]=[...merged.values()]
+        .map(e=>({...e,name:TYPES[String(e.typeID)]?.n??`#${e.typeID}`,total:e.abyssal?null:e.unit*e.qty}))
+        // Unpriced (abyssal) rows sort last; the rest by value descending.
+        .sort((a,b)=>(a.total==null)-(b.total==null)||(b.total??0)-(a.total??0));
+    }
+    return out;
+  },[priceItems,prices]);
+  // Separate from `collapsed` (which is open-by-default): these nested rows default to CLOSED,
+  // so absence from the set means closed.
+  const[openPriceGroups,setOpenPriceGroups]=useState({});
+  const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,pilotSec:slots?.pilotSec,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
@@ -749,6 +825,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             ["Warp",      `${fmtF(cs.warpSpeed??3)} AU/s`],
             ...(cs.droneBay>0?[["Drone range",`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`]]:[]),
             ["Cargo",     `${fmtN(cs.cargoCapacity??0)} m³`],
+            // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
+            // multiplier — the same value feeding the align-time cell above it.
+            ["Mass",      `${fmtN(cs.mass??0)} kg`],
           ].map(([label,val],i,arr)=>{
             const bb=arr.length>(i+2)?`1px solid ${C.border}`:"none";
             const br=(i%2===0)?`1px solid ${C.border}`:"none";
@@ -767,9 +846,35 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           </span>
         }/>
         {isOpen("fitvalue")&&<>
-          {[['Ship',groupTotals.ship],['Modules',groupTotals.modules],['Charges',groupTotals.charges],['Character',groupTotals.character],['Drones',groupTotals.drones]].map(([label,val],i,arr)=>(
-            <Row key={label} label={label} value={priceLoading?'…':fmtISK(val)} last={i===arr.length-1}/>
-          ))}
+          {[['Ship','ship'],['Modules','modules'],['Charges','charges'],['Character','character'],['Drones','drones']].map(([label,key],i,arr)=>{
+            const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
+            const expandable=items.length>0&&!priceLoading;
+            const open=expandable&&openPriceGroups[key];
+            return(<div key={label}>
+              <div onClick={expandable?()=>togglePriceGroup(key):undefined}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",
+                        borderBottom:(last&&!open)?"none":`1px solid ${C.border}`,cursor:expandable?"pointer":"default"}}>
+                <span style={{fontSize:11,color:C.textMid,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:8,color:C.textMute,width:8,display:"inline-block",
+                                transform:open?"rotate(90deg)":"none",transition:"transform 0.15s",
+                                opacity:expandable?1:0}}>▶</span>
+                  {label}
+                </span>
+                <span style={{fontSize:11,fontWeight:600,color:C.text}}>{priceLoading?'…':fmtISK(val)}</span>
+              </div>
+              {open&&items.map((it,j)=>(
+                <div key={it.typeID} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,
+                     padding:"4px 12px 4px 26px",background:`${C.surfaceAlt}88`,
+                     borderBottom:(last&&j===items.length-1)?"none":`1px solid ${C.border}`}}>
+                  <span style={{fontSize:11,color:C.textMid,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {it.qty>1&&<span style={{color:C.textMute,fontWeight:700}}>{it.qty}x </span>}{it.name}
+                  </span>
+                  <span title={it.abyssal?"Abyssal module — value depends on the roll, not the base type":undefined}
+                        style={{fontSize:11,fontWeight:600,color:it.abyssal?C.textMute:C.text,flexShrink:0}}>{it.abyssal?'—':fmtISK(it.total)}</span>
+                </div>
+              ))}
+            </div>);
+          })}
         </>}
       </div>
     </div>

@@ -4,6 +4,7 @@ import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
+import { InfoButton } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 
 export function ActiveFitBar({activeFit,onReturn}){
@@ -152,8 +153,10 @@ export function ShipInfoSheet({ship, onClose}) {
               )}
             </div>
           )}
+          {/* pre-wrap: CCP's descriptions are multi-paragraph, separated by blank lines; without
+              it they collapse into one undifferentiated wall of text. */}
           {tab==='description' && (
-            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>
+            <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,whiteSpace:'pre-wrap'}}>
               {traits.desc || 'No description available.'}
             </div>
           )}
@@ -180,9 +183,13 @@ export function ShipInfoSheet({ship, onClose}) {
   );
 }
 
-export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
+export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
   const[selectedClass,setSelectedClass]=useState(null);
   const[selectedShip,setSelectedShip]=useState(activeFit?.ship??null);
+  // Ship name whose info sheet is open (browser rows), or null. Resolved through lookupShip at
+  // render time because shipsByClass rows are only {name,typeID} — ShipInfoSheet's Attributes tab
+  // needs the full record (cpu/pg/slots/hardpoints).
+  const[infoShip,setInfoShip]=useState(null);
   const[fitSubTab,setFitSubTab]=useState("Fit");
   const _SUBTABS=["Fit","Stats","Graph"];
   const _swipe=useRef({x:0,y:0});
@@ -233,6 +240,13 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
     return results;
   })():null;
 
+  // Same sheet the ship image in the fit header opens. Shared by the browse and class-ships views,
+  // which are separate `return`s — hence one element reused rather than two copies. lookupShip
+  // resolves the full record (cpu/pg/slots) that the Attributes tab needs.
+  const shipInfoSheet=infoShip
+    ? <ShipInfoSheet ship={lookupShip(infoShip)??{name:infoShip}} onClose={()=>setInfoShip(null)}/>
+    : null;
+
   if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
@@ -257,6 +271,7 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
           <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.type==="fit"?rr.fitName:rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.ship} / {rr.hull} / {rr.race}</div></div>
           <span style={{fontSize:10,color:rr.type==="fit"?C.accent:C.textMute,background:rr.type==="fit"?C.accentLight:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>{rr.type==="fit"?"fit":"ship"}</span>
+          {rr.type!=="fit"&&<InfoButton title={`${rr.ship} info`} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>}
         </div>))}
       </>)}
       {!searchResults&&Object.entries(shipsByClass||{}).sort(([a],[b])=>a.localeCompare(b)).map(([cls, ships])=>{
@@ -274,6 +289,7 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
         );
       })}
     </div>
+    {shipInfoSheet}
   </div>);
 
   if(view==="class-ships"){
@@ -297,6 +313,7 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
                 </div>
                 <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
               </div>
+              <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
             </div>
             {selectedShip===s.name&&sfits.length>0&&<div style={{paddingLeft:16,marginTop:2}}>
               {sfits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderRadius:6,cursor:"pointer",background:C.surfaceAlt,marginBottom:2,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accentBorder:C.border}`}} onClick={()=>loadFit(s.name,fit.name)}>
@@ -307,6 +324,7 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
           </div>);
         })}
       </div>
+      {shipInfoSheet}
     </div>);
   }
 
@@ -354,7 +372,7 @@ export function FittingsScreen({activeFit,setActiveFit,loadFit,view,setView,fits
       <div style={{display:"flex"}}><div style={{width:60}}/>{["Fit","Stats","Graph"].map(t=><button key={t} onClick={()=>setFitSubTab(t)} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
     </div>
     <div onTouchStart={_onSwipeStart} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
-      {fitSubTab==="Fit"   &&<FitTab   ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile}/>}
+      {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
       {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects}/>}
     </div>

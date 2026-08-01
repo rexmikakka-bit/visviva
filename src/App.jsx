@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from "react";
-import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations } from "./lib/core.js";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
+import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations, haptic } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
 import { C } from "./theme.js";
@@ -12,7 +12,7 @@ import { DronesScreen } from "./components/drones.jsx";
 import { ImplantsScreen } from "./components/implants.jsx";
 import { EffectsScreen, buildBoosterFromName } from "./components/effects.jsx";
 import { SettingsOverlay } from "./components/settings.jsx";
-import { ExportFitModal, HamburgerMenu, AppHeader, BottomNav } from "./components/layout.jsx";
+import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, SkillGapSheet } from "./components/layout.jsx";
 import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import * as esi from "./lib/esi.js";
@@ -80,6 +80,12 @@ export default function App(){
   const[projFits,setProjFits]=useState(initialFit?.projFits??[]);
   const[cmdFits,setCmdFits]=useState(initialFit?.cmdFits??[]);
   const[skills,setSkills]=useState(()=>{try{const s=localStorage.getItem("pyfa-skills");if(s)return{...SKILL_DEFAULTS,...JSON.parse(s)};}catch{}return SKILL_DEFAULTS;});
+  // Can this character actually fly the fit? Checked against every fitted item's own
+  // requiredSkillN/requiredSkillNLevel, not just the skills the dogma engine reads.
+  const skillCheck=useMemo(()=>activeFit?.ship
+    ? checkFitSkills(lookupShip(activeFit.ship)??{name:activeFit.ship,typeID:tidByName(activeFit.ship)},slots,drones,fighters,skills)
+    : {ok:true,missing:[]},
+  [activeFit,slots,drones,fighters,skills]);
   const externalBursts=useMemo(()=>{
     const out=[];
     for(const cf of cmdFits){
@@ -153,12 +159,15 @@ export default function App(){
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
   const[fittingsView,setFittingsView]=useState(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   const[showShipInfo,setShowShipInfo]=useState(false);
+  const[showSkillGaps,setShowSkillGaps]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
   const[showFeedback,setShowFeedback]=useState(false);
   const[showEsiImport,setShowEsiImport]=useState(false);
   const[showEsiExport,setShowEsiExport]=useState(false);
+  const[showImportChooser,setShowImportChooser]=useState(false);
+  const[showExportChooser,setShowExportChooser]=useState(false);
   const[priceBanner,setPriceBanner]=useState(null);
   const optimizeFitPrice=async()=>{
     if(!activeFit?.ship){setPriceBanner({kind:"none",msg:"Open a fit first"});setTimeout(()=>setPriceBanner(null),3000);return;}
@@ -253,14 +262,72 @@ export default function App(){
   useEffect(()=>{try{localStorage.setItem("pyfa-activefit",JSON.stringify(activeFit));}catch{}},[activeFit]);
   useEffect(()=>{try{localStorage.setItem("pyfa-skills",JSON.stringify(skills));}catch{}},[skills]);
   useEffect(()=>{try{localStorage.setItem("pyfa-factor-reload",factorInReload?"1":"0");}catch{}},[factorInReload]);
+  // ── Undo ────────────────────────────────────────────────────────────────────────────────────
+  // History of the fit's editable state — the SAME eight values the persistence effect above writes
+  // back to fitsDB, so "one undo step" and "one saved change" mean the same thing by construction.
+  // Snapshots are cheap: every mutation path already replaces these arrays immutably, so a snapshot
+  // is eight references, not a deep clone.
+  const UNDO_LIMIT=50;
+  const _undoStack=useRef([]);
+  const _undoPrev=useRef(null);       // last committed snapshot
+  const _undoApplying=useRef(false);  // true while an undo is being applied, so it isn't re-recorded
+  const _undoFitKey=useRef(undefined);// which fit the stack belongs to
+  const[undoDepth,setUndoDepth]=useState(0);
+  const _fitSnapshot=useMemo(()=>({slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits}),
+    [slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits]);
+  useEffect(()=>{
+    const key=activeFit?`${activeFit.ship} ${activeFit.fitName}`:null;
+    const prev=_undoPrev.current;
+    _undoPrev.current=_fitSnapshot;
+    // Switching fits (or the first load) replaces all eight values at once. That is not an edit —
+    // recording it would let Undo paste the previous fit's modules into this one.
+    if(_undoFitKey.current!==key){
+      _undoFitKey.current=key;
+      _undoStack.current=[];
+      _undoApplying.current=false;
+      setUndoDepth(0);
+      return;
+    }
+    if(_undoApplying.current){_undoApplying.current=false;return;}
+    // `prev === _fitSnapshot` means the effect re-ran without the fit actually changing — which
+    // StrictMode's deliberate double-invoke does on every mount. Recording that would seed the
+    // stack with a no-op entry, so the first Undo press would appear to do nothing.
+    if(prev===null||prev===_fitSnapshot)return;
+    _undoStack.current.push(prev);
+    if(_undoStack.current.length>UNDO_LIMIT)_undoStack.current.shift();
+    setUndoDepth(_undoStack.current.length);
+  },[_fitSnapshot,activeFit]);
+  const undo=()=>{
+    const snap=_undoStack.current.pop();
+    if(!snap)return;
+    _undoApplying.current=true;  // cleared by the effect this batch triggers
+    setSlots(snap.slots);setDrones(snap.drones);setFighters(snap.fighters);
+    setCargoItems(snap.cargoItems);setImplants(snap.implants);setBoosters(snap.boosters);
+    setProjFits(snap.projFits);setCmdFits(snap.cmdFits);
+    setUndoDepth(_undoStack.current.length);
+    haptic();
+  };
+  // Ctrl/Cmd+Z for the desktop and web builds; the button covers touch.
+  useEffect(()=>{
+    const onKey=e=>{
+      if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){
+        const t=e.target;
+        if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return; // let the field undo its own text
+        e.preventDefault();undo();
+      }
+    };
+    window.addEventListener('keydown',onKey);
+    return()=>window.removeEventListener('keydown',onKey);
+  });// no dep array: `undo` closes over the current stack each render
+
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
   return(<div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
     <div style={{width:"100%",maxWidth:430,minHeight:"100vh",display:"flex",flexDirection:"column",background:C.bg}}>
-      <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={()=>setShowShipInfo(true)}/>
+      <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={()=>setShowShipInfo(true)} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
+        {bottomTab==="fittings"&&<FittingsScreen undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
@@ -269,8 +336,17 @@ export default function App(){
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>
     {priceBanner&&<div style={{position:"fixed",top:12,left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImportFit={()=>setShowImportFit(true)} onExportFit={()=>{setShowExportFit(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onEsiImport={()=>setShowEsiImport(true)} onEsiExport={()=>{setShowEsiExport(true);setShowHamburger(false);}}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}}/>}
+    {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
+      {icon:"&#128229;",label:"From EFT",sub:"Paste from clipboard",onSelect:()=>{setShowImportChooser(false);setShowImportFit(true);}},
+      {icon:"&#128640;",label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
+    ]}/>}
+    {showExportChooser&&<ChooserSheet title="Export Fit" onClose={()=>setShowExportChooser(false)} options={[
+      {icon:"&#128228;",label:"To EFT",sub:"Copy to clipboard",onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
+      {icon:"&#128225;",label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
+    ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
+    {showSkillGaps&&<SkillGapSheet missing={skillCheck.missing} onClose={()=>setShowSkillGaps(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
