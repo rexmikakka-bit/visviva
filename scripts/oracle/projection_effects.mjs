@@ -8,7 +8,7 @@
  *
  * Shared by oracle_compare.mjs and any ad-hoc analysis so there is exactly one copy.
  */
-import { computeProjectedReps, calcRangeFactor, stackingPenalty } from '../../src/calc.js';
+import { computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty } from '../../src/calc.js';
 
 // A NULL projection range means "no attenuation", not "30 km". eos is explicit about this —
 // calculateRangeFactor() opens with `if distance is None: return 1` — and most saved links have no
@@ -29,8 +29,18 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
   for (const pf of (projectedFits ?? [])) {
     let eff;
     try {
+      // The SOURCE's own command boosts change what it projects — a Shield Command Burst cuts a
+      // remote shield booster's cycle time, so a boosted logi reps ~20% harder.
+      const srcBursts = [];
+      for (const b of (pf.commandFits ?? [])) {
+        try {
+          for (const x of computeCommandBursts(b.ship, b.slots, skills,
+                { implants: b.implants, boosters: b.boosters })) srcBursts.push(x);
+        } catch { /* a booster fit we cannot build just contributes nothing */ }
+      }
       eff = computeProjectedReps(pf.ship, pf.slots, skills,
-        { implants: pf.implants, boosters: pf.boosters, drones: pf.drones });
+        { implants: pf.implants, boosters: pf.boosters, drones: pf.drones,
+          externalBursts: srcBursts });
     } catch { continue; }
     const rangeKm = pf.projectionRangeKm ?? NO_ATTENUATION;
     const rf = rangeKm == null
