@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 132)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 135)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin

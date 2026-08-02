@@ -680,7 +680,32 @@ function check(group, label, actual, expected, tol = 0.005) {
                      mid: [], low: [], rigs: [] };
   const ar = computeProjectedReps(gua, armorFit, null, {});
   check('ancrep', 'ancillary remote ARMOR repairer is counted', ar.reps.length, 1, 0);
-  check('ancrep', 'ancillary remote armor HP/s', ar.reps[0]?.rawPS, 12.333, 0.002);
+  // BASELINE CORRECTED 2026-08-02, and it was wrong the interesting way: this fixture loads Nanite
+  // Repair Paste, and an Ancillary Remote Armor Repairer with a charge reps x3
+  // (chargedArmorDamageMultiplier — eos saveddata/module.py). The projected path never applied it,
+  // so the old 12.333 was simply what we happened to compute, recorded against a fixture whose
+  // charge it ignored. eos for this exact fixture: amount 37.0, mult 3.0, duration 3000 -> 37.0 HP/s
+  // with paste, 12.3333 without. Both branches are pinned now so the multiplier cannot go missing
+  // again and cannot start applying to an unloaded module.
+  check('ancrep', 'ancillary remote armor HP/s (paste x3)', ar.reps[0]?.rawPS, 37.0, 0.002);
+  const arDry = computeProjectedReps(gua,
+    { high: [M('Small Ancillary Remote Armor Repairer', 'active')], mid: [], low: [], rigs: [] }, null, {});
+  check('ancrep', 'ancillary remote armor HP/s (no paste)', arDry.reps[0]?.rawPS, 12.3333, 0.002);
+
+  // The projection SOURCE's tactical mode changes what it projects. calcFitStats and
+  // projectionResistances applied it; computeProjectedReps did not, so a T3D projecting remote reps
+  // repped as if it had no mode. eos: a Confessor's Defense Mode multiplies armorDamageAmount by
+  // 4/3, so a Small Remote Armor Repairer II reads 85.3333 rather than its base 64 (over a 3000 ms
+  // cycle -> 28.4444 HP/s vs 21.3333). eos defaults a modeless T3D to its first mode, as we do.
+  const conf = { typeID: tid('Confessor'), name: 'Confessor' };
+  const rrFit = (tactical) => ({ high: [M('Small Remote Armor Repairer II', 'active')],
+                                 mid: [], low: [], rigs: [], tactical });
+  check('ancrep', 'T3D source mode boosts projected reps',
+        computeProjectedReps(conf, rrFit('Defense'), null, {}).reps[0]?.rawPS, 28.4444, 0.002);
+  // A hull with no tactical mode is unaffected — guards against applying a mode to everything.
+  check('ancrep', 'non-T3D source unchanged',
+        computeProjectedReps(gua, { high: [M('Small Remote Armor Repairer II', 'active')],
+                                    mid: [], low: [], rigs: [] }, null, {}).reps[0]?.rawPS, 21.3333, 0.002);
 }
 
 // -----------------------------------------------------------------------------
