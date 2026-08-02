@@ -1325,6 +1325,48 @@ export class Fit {
         }
       }
     }
+    // ── 5f2. Mimesis implant set (setBonusMimesis) — the FOURTH set ──────────────
+    // Same shape as Asklepian/Nirvana/Amulet, but it boosts a WEAPON attribute rather than a ship
+    // one: each member carries damageMultiplierBonusMaxModifier (Mid-grade Alpha..Epsilon =
+    // 1.25/1.75/2.25/2.75/3.25) and damageMultiplierBonusPerCycleModifier (-0.33 on every member),
+    // which effects 7232/7233 apply to Precursor Weapons (group 1986) — i.e. entropic
+    // disintegrators' SPOOL: how far it ramps, and how fast.
+    //
+    // Those two effects DO carry modifiers, so the un-amplified bonus was already applying. What was
+    // missing is the set multiplier, Effect7234 (domain=charID) — dispatcher-skipped like the other
+    // three sets. Without it a Draugur's full-spool DPS came out 388.8 against eos's 490.6: the
+    // spool max read 2.125 x 1.53 short, because each member's modifier was applied at 1x instead of
+    // x(1.2^5 x 1.6) = x3.981312.
+    //
+    // FULL product including Omega, matching pyfa (Effect7234 multiplies every Cyberimplant's two
+    // modifier attrs by setBonusMimesis) and the convention of the other three sets. Unpenalised —
+    // eos records these with penaltyGroup None.
+    {
+      const members = imp.filter(i => 'setBonusMimesis' in (i._td?.a ?? {}));
+      if (members.length >= 2) {
+        const setProduct = members.reduce((p, i) => p * (i.getBase('setBonusMimesis') ?? 1), 1);
+        if (setProduct > 1) {
+          // The dispatcher already applied (1 + raw/100); top it up to (1 + raw*setProduct/100).
+          const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
+          const PRECURSOR_WEAPON_GROUP = 1986;
+          const targets = mods.filter(m => Number(m.groupID) === PRECURSOR_WEAPON_GROUP);
+          if (targets.length) {
+            for (const [modAttr, dstAttr] of [
+              ['damageMultiplierBonusMaxModifier', 'damageMultiplierBonusMax'],
+              ['damageMultiplierBonusPerCycleModifier', 'damageMultiplierBonusPerCycle'],
+            ]) {
+              // Attribute PRESENCE, not truthiness — Omega carries neither modifier, and these have
+              // defaults that would otherwise inject a phantom bonus (the Nirvana trap).
+              for (const mi of members.filter(i => modAttr in (i._td?.a ?? {}))) {
+                const raw = mi.getBase(modAttr) ?? 0; if (!raw) continue;
+                const ex = extraPct(raw); if (!ex) continue;
+                for (const m of targets) m.attrs.applyMod(AID[dstAttr] ?? dstAttr, 6, ex, true);
+              }
+            }
+          }
+        }
+      }
+    }
     // ── 5g. Pilot security-status hull bonuses (CONCORD + AT frigates) ──────────
     // A handful of hulls scale a bonus by the *pilot's* security status. The magnitude is set
     // externally on the fit as `_pilotSec` (default 0) and wired through by calc.js.

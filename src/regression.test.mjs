@@ -892,6 +892,55 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12e. MIMESIS implant set, and the Sidewinder's pilot-security bonus.
+//
+// MIMESIS is the FOURTH implant set (after Asklepian, Nirvana, Amulet) and had no handler. Unlike
+// the others it boosts a WEAPON attribute: each member carries damageMultiplierBonusMaxModifier and
+// damageMultiplierBonusPerCycleModifier, which effects 7232/7233 apply to Precursor Weapons — an
+// entropic disintegrator's SPOOL (how far it ramps, how fast). Those two effects DO carry modifiers,
+// so the un-amplified bonus was already applying; what was missing is the set multiplier, Effect7234
+// (domain=charID), dispatcher-skipped exactly like the other three sets. FULL product including
+// Omega: Mid-grade = 1.2^5 x 1.6 = 3.981312.
+//
+// THE SIDEWINDER's damage bonus scales with the pilot's (negative) security status. Effect 12165 was
+// listed in SHIP_MISSILE_DMG *as well as* in the dedicated pilot-sec code, so the RAW attribute
+// (-7.5%) was applied on top of the sec-scaled bonus (+75% at -10.0): 1.75 x 0.925 = 1.61875.
+//
+// All numbers from eos.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMIMESIS SET + PILOT-SEC DAMAGE');
+  const draugur = { typeID: tid('Draugur'), name: 'Draugur' };
+  const dSlots = { high: [M('Veles Light Entropic Disintegrator', 'active', 'Meson Exotic Plasma S')],
+                   mid: [], low: [], rigs: [] };
+  const mimesis = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Omega']
+    .map((x) => ({ name: `Mid-grade Mimesis ${x}` }));
+  const bare = calcFitStats(draugur, dSlots, [], null, {});
+  const withSet = calcFitStats(draugur, dSlots, [], null, { implants: mimesis });
+  // Unspooled DPS must NOT move — Mimesis only touches the spool, not base damage.
+  check('mimesis', 'unspooled DPS unchanged by set', withSet.weaponDps.total, bare.weaponDps.total, 0.0001);
+  check('mimesis', 'unspooled DPS', bare.weaponDps.total, 92.5476, 0.005);
+  // spoolFactor is 1 + damageMultiplierBonusMax; eos: 2.125 bare, 3.2578295827 with the set.
+  check('mimesis', 'spool factor, no implants', bare.weaponSpoolFactor, 3.125, 0.0005);
+  check('mimesis', 'spool factor, full Mid-grade set', withSet.weaponSpoolFactor, 4.2578295827, 0.0005);
+  check('mimesis', 'full-spool DPS, no implants', bare.weaponDpsMax, 289.2113, 0.005);
+  check('mimesis', 'full-spool DPS, full set', withSet.weaponDpsMax, 394.0520, 0.005);
+
+  const sidewinder = { typeID: tid('Sidewinder'), name: 'Sidewinder' };
+  const sSlots = {
+    high: Array.from({ length: 4 }, () => M('True Sansha Light Missile Launcher', 'active',
+                                            'Dread Guristas Scourge Light Missile')),
+    mid: [],
+    low: Array.from({ length: 3 }, () => M("Tobias' Modified Ballistic Control System", 'online')),
+    rigs: [],
+  };
+  const swDps = (pilotSec) => calcFitStats(sidewinder, sSlots, [], null, { pilotSec }).weaponDps.total;
+  check('pilotsec', 'Sidewinder DPS at 0.0 sec', swDps(0), 117.5967, 0.005);
+  check('pilotsec', 'Sidewinder DPS at -5.0 sec', swDps(-5), 161.6954, 0.005);
+  check('pilotsec', 'Sidewinder DPS at -10.0 sec', swDps(-10), 205.7942, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
