@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 76)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 86)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -168,6 +168,14 @@ core `runMigrations` is DOM-free and covered by the regression suite.
       default skill down to a LOWER level via `addSkill` doesn't reliably re-trigger recalculation
       the same way a whole fresh `Character(name, level)` does — trust the "vary the whole
       character's level" result over a single skill's override result if they ever disagree.)
+    - **System security scales structure RIG bonuses and is a FIT PARAMETER.** Structure rigs carry
+      `hiSecModifier`/`lowSecModifier`/`nullSecModifier`; CCP has the client write the applicable one
+      into `securityModifier`, which effect 6672 then PostMuls into every rig bonus attribute. Our
+      bundle ships `securityModifier` frozen at its hisec value of 1, so `Fit.calculate()` sets it
+      from `Fit.systemSecurity` (defaulting to **nullsec**, matching eos's `Fit.getSystemSecurity`).
+      Surfaced in the UI as a Hi/Low/Null/W-C selector on structure fits only, stored as
+      `slots.systemSecurity` (so it persists and is covered by undo for free). The same rig is 20%
+      weaker in hisec — an Astrahus sensor rig gives scanRes 115 there vs 130 elsewhere.
     - **`canFitShipType`/`canFitShipGroup` applies to structures exactly as it does to ships** —
       eos runs the same `Fit.canFit` for both. A short/"incomplete-looking" whitelist is real game
       data, not corrupt data: Standup Market Hub I omits Astrahus/Raitaru/Athanor because a market
@@ -474,6 +482,35 @@ against ours, instead of validating one fit at a time by hand in the GUI. Lives 
 /c/Python314/python scripts/oracle/oracle.py --list      # available fit specs
 /c/Python314/python scripts/oracle/oracle.py bane        # eos stats + diff vs our baseline
 ```
+
+### Sweeps: diffing HUNDREDS of fits at once
+
+Three fit SOURCES, one comparison harness. All emit the same JSONL record (`{id, name, ship, eos,
+spec, flags}`), so `oracle_compare.mjs` runs `calcFitStats` on each spec and reports divergence per
+stat, worst-first, clustered by ship — which is what turns 110 failures into "one effect is wrong".
+
+```bash
+# GENERATED structure fits (one module per fit; --charges also enumerates every valid charge)
+node scripts/oracle/gen_structure_fits.mjs [--charges] > scripts/oracle/_structfits.jsonl
+/c/Python314/python scripts/oracle/oracle_batch.py scripts/oracle/_structfits.jsonl > scripts/oracle/_struct.jsonl
+node scripts/oracle/oracle_compare.mjs scripts/oracle/_struct.jsonl
+
+# YOUR REAL saved pyfa fits (OPSEC: _*.jsonl is gitignored — never commit it)
+/c/Python314/python scripts/oracle/oracle_saved.py > scripts/oracle/_saved.jsonl
+node scripts/oracle/oracle_compare.mjs scripts/oracle/_saved.jsonl
+```
+
+**Generate fits in Node, not Python.** Legality (canFitShipType/Group, rigSize, the structure-module
+category rule) already exists on the JS side; a second Python copy would be a second thing to keep
+right, and a generator bug masquerades as an engine bug — the worst failure mode for an oracle.
+
+**One module per fit is the highest-signal sweep**: a mismatch names its own culprit, no bisection.
+But it is blind by construction to *module-boosts-module* bugs — a BCS alone has no weapon to boost.
+That class needs multi-module fits (real saved fits found the Standup BCS double-count). Both matter.
+
+The 2026-08-01 sweep (343 single-module + 361 with charges) found four real bugs: duplicate modifier
+entries in effect 7098, the missing system-security modifier, two unmodelled structure weapon groups,
+and the Standup BCS double-count. All four are pinned in `regression.test.mjs` section 11b.
 
 `eos_bootstrap.py` wires eos headless; `oracle.py` builds a fit from a spec (ship + modules + charges
 + drones + implants + boosters + all-skills-at-V) and prints `getWeaponDps()`, `getWeaponVolley()`,

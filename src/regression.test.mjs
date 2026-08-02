@@ -550,6 +550,69 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 11b. STRUCTURE ORACLE SWEEP FINDINGS — four bugs the generated structure sweep caught
+//      (scripts/oracle/gen_structure_fits.mjs -> oracle_batch.py -> oracle_compare.mjs). Every
+//      expected value here is eos's, read straight off the sweep output.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSTRUCTURE SWEEP (oracle-found)');
+
+  // (1) Duplicate modifier entries. Effect 7098 (all 104 Outpost Conversion Rigs) carries three
+  //     modifiers TWICE in CCP's data; the second landed in the same stacking pool at the penalised
+  //     rank. initEngine now drops byte-identical duplicates. eos: scanResolution 130.
+  //     (Fortizar base 40 x 3.25, where 3.25 = rig's 180% x the hull's 25% combat-rig role bonus.)
+  {
+    const ship = { typeID: tid('Fortizar'), name: 'Fortizar' };
+    const fit = { high: [], mid: [], low: [], rigs: [M('Upwell A1F Outpost Rig', 'online')], services: [] };
+    const cs = calcFitStats(ship, fit, [], null, {});
+    check('struct', 'outpost rig scanRes (no double-apply)', cs.scanRes, 130, 0.001);
+  }
+
+  // (2) System security. Structure rig bonuses scale by hiSec/lowSec/nullSecModifier, which CCP
+  //     models via `securityModifier`; our bundle froze it at the hisec value of 1. eos defaults to
+  //     NULLSEC (x1.2), so Fit.systemSecurity does too.
+  {
+    const ship = { typeID: tid('Astrahus'), name: 'Astrahus' };
+    const fit = { high: [], mid: [], low: [], rigs: [M('Standup M-Set Enhanced Targeting System II', 'online')], services: [] };
+    const nul = calcFitStats(ship, fit, [], null, {});
+    check('struct', 'sensor rig scanRes (nullsec)', nul.scanRes, 130, 0.001);
+    check('struct', 'sensor rig lock range (nullsec)', nul.targetRange, 413, 0.001);
+    // Hisec is the x1.0 case: the same rig is 20% weaker.
+    const hi = calcFitStats(ship, fit, [], null, { systemSecurity: 'hisec' });
+    check('struct', 'sensor rig scanRes (hisec, no x1.2)', hi.scanRes, 115, 0.001);
+  }
+
+  // (3) Structure weapon groups. 'Structure Doomsday Weapon' and 'Structure Area Denial Module' are
+  //     the structure names for the intrinsic-damage branch that only knew 'Smart Bomb'/'Super
+  //     Weapon', so both read 0 DPS. The PDB also carries no damage of its own — it comes from the
+  //     charge, scaled by damageMultiplier.
+  {
+    const kee = { typeID: tid('Keepstar'), name: 'Keepstar' };
+    const v = calcFitStats(kee, { high: [M('Standup Arcing Vorton Projector I', 'active')], mid: [], low: [], rigs: [], services: [] }, [], null, {});
+    check('struct', 'Vorton Projector DPS', v.weaponDps.total, 7407.41, 0.001);
+    check('struct', 'Vorton Projector volley (1 hit)', v.weaponVolley.total, 4000000, 0.001);
+
+    const fort = { typeID: tid('Fortizar'), name: 'Fortizar' };
+    const p = calcFitStats(fort, { high: [M('Standup Point Defense Battery I', 'active', 'Standup Flak Round I')], mid: [], low: [], rigs: [], services: [] }, [], null, {});
+    check('struct', 'Point Defense Battery DPS (charge damage)', p.weaponDps.total, 83.33, 0.002);
+    check('struct', 'Point Defense Battery volley', p.weaponVolley.total, 1000, 0.001);
+  }
+
+  // (4) Standup BCS double-count. The structure BCS's bonus is applied by the ENGINE (effect 6449 is
+  //     real dogma), unlike the ship BCS which calc.js applies analytically — so counting it both
+  //     ways squared it. Two BCS: 1.1956, not 1.1956². Only a MULTI-module fit shows this, which is
+  //     why the one-module-per-fit sweep missed it and a real saved fit caught it.
+  {
+    const ship = { typeID: tid('Fortizar'), name: 'Fortizar' };
+    const L = () => M('Standup Multirole Missile Launcher II', 'active', 'Standup Heavy Missile');
+    const B = () => M('Standup Ballistic Control System II', 'online');
+    const cs = calcFitStats(ship, { high: [L(), L()], mid: [], low: [B(), B()], rigs: [], services: [] }, [], null, {});
+    check('struct', '2 launchers + 2 Standup BCS DPS', cs.weaponDps.total, 1617.02, 0.001);
+    check('struct', '2 launchers + 2 Standup BCS volley', cs.weaponVolley.total, 3156.36, 0.001);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
 //     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
 //     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial
