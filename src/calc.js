@@ -925,6 +925,59 @@ function applyTacticalMode(fit, ship, slots) {
   return tid ?? null;
 }
 
+// ── Command (warfare) bursts — shared by calcFitStats and computeProjectedReps ───────────────
+// EVE does NOT stack same-type warfare buffs from different sources: only the strongest of each
+// type applies, which is why these are collected into a buffID -> strongest map first.
+function collectBursts(modItems, externalBursts) {
+  const burstByType = new Map();  // buffID -> strongest value
+  const addBurst = (buffID, value) => {
+    if (!buffID || !value) return;
+    const cur = burstByType.get(buffID);
+    if (cur == null || Math.abs(value) > Math.abs(cur)) burstByType.set(buffID, value);
+  };
+  for (const { slot, fitItem } of modItems) {
+    if (!fitItem || !isActive(slot.state)) continue;
+    if (fitItem.groupName !== 'Command Burst') continue;
+    const chargeName = (slot.ammo || '').replace(/\s*\(\d+\)$/, '');
+    const chargeTid = chargeName ? (typeIDByName(chargeName) ?? tidByName(chargeName)) : null;
+    const cAttrs = chargeTid ? (TYPES[chargeTid]?.attrs || {}) : {};
+    for (const eb of extractChargeBursts(fitItem, cAttrs)) addBurst(eb.buffID, eb.value);
+  }
+  for (const eb of (externalBursts ?? [])) addBurst(eb.buffID, eb.value);
+  return burstByType;
+}
+
+// Module-targeted warfare buffs, by group or by required skill. Ship-attribute buffs are applied
+// separately in calcFitStats (they must land before the HP/resist snapshot); a projection SOURCE
+// only needs its MODULES boosted, since all we read off it is rep amounts and cycle times.
+function applyModuleBursts(burstByType, modItems) {
+  for (const [buffID, eff] of burstByType) {
+    const def = WARFARE_BUFFS[buffID];
+    if (!def || !eff) continue;
+    // Group-targeted buffs (e.g. Electronic Superiority): apply by numeric attr ID to modules of the group.
+    if (def.groupMods) {
+      for (const { a, g } of def.groupMods) {
+        for (const { slot: s2, fitItem: m } of modItems) {
+          if (!m || !isActive(s2.state)) continue;
+          if (TYPES[m.typeID]?.g === g) m.attrs.applyMod(a, 6, eff, false);
+        }
+      }
+      continue;
+    }
+    if (!def.skill) continue;
+    // Apply each (attr, skill) target to modules requiring that skill (stacking-penalised PostPercent).
+    for (const { attr, skill } of def.skill) {
+      const aid = AID[attr];
+      if (aid == null) continue;
+      for (const { slot: s2, fitItem: m } of modItems) {
+        if (!m || !isActive(s2.state)) continue;
+        const rsArr = TYPES[m.typeID]?.rs ?? [];
+        if (rsArr.includes(skill)) m.attrs.applyMod(aid, 6, eff, false);
+      }
+    }
+  }
+}
+
 // ── EWAR resistance of the TARGET of a projection ───────────────────────────
 // Incoming projected effects are scaled by a resistance attribute on the ship being hit — eos does
 // this in ModifiedAttributeDict.getResistance(), which looks up the effect's resistanceID and reads
@@ -997,6 +1050,13 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
   }
   fit.calculate();
+  // Command bursts on the SOURCE of a projection. A logi under a Shield Command Burst reps harder,
+  // and the buff lands on cycle TIME rather than amount: a Basilisk's Large Remote Shield Booster
+  // keeps its 680 HP but its duration drops 8000 ms -> 6680 ms, i.e. +19.8% HP/s. Reading the
+  // source's modules without its own bursts understated every boosted logi by exactly that.
+  // Own Command Burst modules are picked up from modItems; opts.externalBursts carries links from
+  // other fits. Only MODULE buffs matter here — nothing reads the source ship's own HP or resists.
+  applyModuleBursts(collectBursts(modItems, opts.externalBursts), modItems);
   const reps = [];
   const webs = [];
   const neuts = [];
@@ -1237,23 +1297,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // ── 4. Read ship attributes ───────────────────────────────────────────────
   const s = fit.ship;
 
-  // Collect all active command bursts (own fit + projected) keyed by buff type. EVE does NOT stack
-  // same-type warfare buffs from different sources — only the strongest of each type applies.
-  const burstByType = new Map();  // buffID → strongest value
-  const addBurst = (buffID, value) => {
-    if (!buffID || !value) return;
-    const cur = burstByType.get(buffID);
-    if (cur == null || Math.abs(value) > Math.abs(cur)) burstByType.set(buffID, value);
-  };
-  for (const { slot, fitItem } of modItems) {
-    if (!fitItem || !isActive(slot.state)) continue;
-    if (fitItem.groupName !== 'Command Burst') continue;
-    const chargeName = (slot.ammo || '').replace(/\s*\(\d+\)$/, '');
-    const chargeTid = chargeName ? (typeIDByName(chargeName) ?? tidByName(chargeName)) : null;
-    const cAttrs = chargeTid ? (TYPES[chargeTid]?.attrs || {}) : {};
-    for (const eb of extractChargeBursts(fitItem, cAttrs)) addBurst(eb.buffID, eb.value);
-  }
-  for (const eb of (opts.externalBursts ?? [])) addBurst(eb.buffID, eb.value);
+  const burstByType = collectBursts(modItems, opts.externalBursts);
 
   // RAH burst-ordering: an active RAH must adapt to POST-command-burst armor resonances (matches pyfa).
   // The engine runs the RAH inside calculate(), before these bursts are applied — so when an armor
@@ -1342,31 +1386,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // bonus (also penalised, eos effect 3181) pushes the burst to the second slot (×0.8691). Reading the
   // engine-computed speedFactor in the speed calc then gets the penalty for free; applying the burst as
   // a separate unpenalised multiply overstated speed ~2.2% on every overheated-prop command-burst fit.
-  for (const [buffID, eff] of burstByType) {
-    const def = WARFARE_BUFFS[buffID];
-    if (!def || !eff) continue;
-    // Group-targeted buffs (e.g. Electronic Superiority): apply by numeric attr ID to modules of the group.
-    if (def.groupMods) {
-      for (const { a, g } of def.groupMods) {
-        for (const { slot: s2, fitItem: m } of modItems) {
-          if (!m || !isActive(s2.state)) continue;
-          if (TYPES[m.typeID]?.g === g) m.attrs.applyMod(a, 6, eff, false);
-        }
-      }
-      continue;
-    }
-    if (!def.skill) continue;
-    // Apply each (attr, skill) target to modules requiring that skill (stacking-penalised PostPercent).
-    for (const { attr, skill } of def.skill) {
-      const aid = AID[attr];
-      if (aid == null) continue;
-      for (const { slot: s2, fitItem: m } of modItems) {
-        if (!m || !isActive(s2.state)) continue;
-        const rsArr = TYPES[m.typeID]?.rs ?? [];
-        if (rsArr.includes(skill)) m.attrs.applyMod(aid, 6, eff, false);
-      }
-    }
-  }
+  applyModuleBursts(burstByType, modItems);
 
   // Projected EWAR debuffs (target painter, sensor dampener, weapon disruptors). Caller pre-stacks
   // each effect, so apply as direct PostPercent mods. Ship attrs hit the hull; weapon attrs hit modules.

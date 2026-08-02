@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, checkFitSkills, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { calcFitStats, checkFitSkills, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 
@@ -638,6 +638,28 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 11d. COMMAND BURSTS ON A PROJECTION SOURCE — a boosted logi reps harder, and the buff lands on
+//      CYCLE TIME, not amount: a Large Remote Shield Booster II keeps its 680 HP while its duration
+//      drops 8000 ms -> 6680 ms under an Active Shielding burst. computeProjectedReps took no
+//      externalBursts, so every boosted logi was understated by exactly that ratio.
+//      Verified against eos on saved fit #1288 (a Basilisk self-projected with amount=2), whose
+//      per-module rep rate is 101.80 HP/s boosted and 85.00 unboosted.
+// -----------------------------------------------------------------------------
+{
+  console.log('\nCOMMAND BURSTS ON PROJECTION SOURCE');
+  const basi = { typeID: tid('Basilisk'), name: 'Basilisk' };
+  const slots = { high: [M('Large Remote Shield Booster II', 'active')], mid: [], low: [], rigs: [] };
+  const plain = computeProjectedReps(basi, slots, null, {});
+  check('projburst', 'unboosted remote shield rep HP/s', plain.reps[0]?.rawPS, 85.0, 0.002);
+  // buff 11 = Active Shielding Charge; -16.5% duration is a Command Burst II at all-V.
+  const boosted = computeProjectedReps(basi, slots, null,
+    { externalBursts: [{ buffID: 11, value: -16.5 }] });
+  check('projburst', 'boosted remote shield rep HP/s', boosted.reps[0]?.rawPS, 101.80, 0.002);
+  check('projburst', 'ratio is the cycle-time ratio 8000/6680',
+        boosted.reps[0].rawPS / plain.reps[0].rawPS, 8000 / 6680, 0.002);
+}
+
+// -----------------------------------------------------------------------------
 // 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
 //     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
 //     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial

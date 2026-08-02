@@ -185,7 +185,9 @@ def extract_spec(fit, depth=0):
 
     command_fits = []
     unhandled_active = False
-    if depth == 0:
+    # depth<=1: a PROJECTION SOURCE needs its own command links too — a boosted logi reps harder,
+    # and computeProjectedReps now applies module bursts. Stops at depth 2 so links cannot cascade.
+    if depth <= 1:
         for cf in (getattr(fit, "commandFits", None) or []):
             try:
                 info = cf.getCommandInfo(fit.ID)
