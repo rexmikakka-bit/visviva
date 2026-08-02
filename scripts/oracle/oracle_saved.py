@@ -167,7 +167,14 @@ def extract_spec(fit, depth=0):
         for pf in (getattr(fit, "projectedFits", []) or []):
             try:
                 info = pf.getProjectionInfo(fit.ID)
-                if not info or not info.active or pf is fit:
+                # NOTE: a fit projecting onto ITSELF is legitimate and common — it is how pyfa
+                # models "N of these logi are repping me", together with ProjectionInfo.amount.
+                # eos applies it (a Basilisk self-projected with amount=2 produces 8 _shieldRr
+                # entries, 4 boosters x 2). An earlier `pf is fit` guard here — added out of
+                # recursion paranoia — silently dropped exactly those fits, which is why one
+                # Basilisk read 0 shield rep against eos's 4136. Recursion is already prevented by
+                # the depth parameter: extract_spec(depth=1) does not descend into projections.
+                if not info or not info.active:
                     continue
                 pspec, _ = extract_spec(pf, depth + 1)
                 pspec["projectionRangeKm"] = (info.projectionRange or 0) / 1000.0                     if info.projectionRange else None
