@@ -108,13 +108,16 @@ export default function App(){
     const tShip=activeFit?.ship;
     const R=(projFits.length&&tShip)?projectionResistances({name:tShip,typeID:tidByName(tShip)},slots,skills,{externalBursts}):null;
     const rz=k=>(R&&Number.isFinite(R[k])?R[k]:1);
+    // disallowAssistance (in practice: an ACTIVE HIC bubble) refuses ALL incoming remote
+    // assistance - reps and remote sensor boosters - while still taking EWAR normally.
+    const noAssist=!!R?.disallowAssistance;
     for(const pf of projFits){
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
       const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
-      for(const r of eff.reps)reps[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
+      if(!noAssist)for(const r of eff.reps)reps[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
       for(const w of eff.webs)webMults.push(1+(w.speedFactor*rz('web')*rf(w.optimal,w.falloff))/100);
       for(const n of eff.neuts)neutGJs+=n.gjPerSec*rz('neut')*rf(n.optimal,n.falloff);
       for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rz('painter')*rf(p.optimal,p.falloff));
@@ -122,7 +125,7 @@ export default function App(){
       // Remote Sensor Booster: ASSISTANCE (not resisted), and a BONUS — so it must compete with the
       // ship's own signal amps/Sensor Optimization burst in one penalized group. Only the attribute
       // pool can do that, so these are handed to calcFitStats rather than stacked here.
-      for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
+      if(!noAssist)for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
       for(const t of (eff.trackDisr||[])){const f=rz('disrupt')*rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
       for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
     }

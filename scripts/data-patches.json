@@ -360,6 +360,17 @@
         "groupID": 508,
         "skillTypeID": null
       }
+    ],
+    "3380": [
+      {
+        "_why": "warpDisruptFieldGenerator (Warp Disrupt Field Generator, all 8). CCP ships this empty. Its NON-projected branch sets the bubbling ship's disallowAssistance, which blocks every incoming remote rep / remote sensor booster / remote tracking computer (eos gates each of those on fit.ship.getModifiedItemAttr(\"disallowAssistance\")). pyfa Effect3380 hardcodes 1; the module carries disallowAssistance=1 itself, so PostAssignment (op 7) from its own attribute is equivalent and stays data-driven. effectCategory 1 already limits this to an ACTIVE bubble. NOTE: Siege/Bastion/Triage modules all carry disallowAssistance=0 in the current game - they do NOT block remote assistance, so do not add them here.",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 854,
+        "modifyingAttributeID": 854,
+        "operation": 7,
+        "skillTypeID": null
+      }
     ]
   },
   "attributes": {}

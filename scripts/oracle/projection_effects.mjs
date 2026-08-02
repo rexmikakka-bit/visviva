@@ -21,6 +21,9 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
   // Target EWAR resistances (see projectionResistances in calc.js). Applied PER SOURCE MODULE,
   // before stacking — stack(b*r) != stack(b)*r, and eos does the former.
   const R = { damp: 1, web: 1, neut: 1, painter: 1, disrupt: 1, ...(resist ?? {}) };
+  // A ship with disallowAssistance set (in practice: an ACTIVE HIC bubble) refuses ALL incoming
+  // remote assistance — reps and remote sensor boosters — while still taking EWAR normally.
+  const noAssist = !!R.disallowAssistance;
   const reps = { shield: 0, armor: 0, hull: 0 };
   const webMults = [];
   let neutGJs = 0;
@@ -50,7 +53,7 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
     // `amount` is how many copies of that source are projecting (eos ProjectionInfo.amount).
     const n = Math.max(1, pf.amount ?? 1);
     for (let i = 0; i < n; i++) {
-      for (const r of eff.reps)  reps[r.kind] += r.rawPS * rf(r.optimal, r.falloff);
+      if (!noAssist) for (const r of eff.reps) reps[r.kind] += r.rawPS * rf(r.optimal, r.falloff);
       for (const w of eff.webs)  webMults.push(1 + (w.speedFactor * R.web * rf(w.optimal, w.falloff)) / 100);
       for (const q of eff.neuts) neutGJs += q.gjPerSec * R.neut * rf(q.optimal, q.falloff);
       for (const p of (eff.painters ?? [])) col.sig.push(p.sigBonus * R.painter * rf(p.optimal, p.falloff));
@@ -61,7 +64,7 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
       // Remote Sensor Boosters are ASSISTANCE — no EWAR resistance. They are NOT folded into the
       // debuff stack: being bonuses, they have to compete with the target's own signal amps and
       // Sensor Optimization burst inside one penalized group, which only the attribute pool can do.
-      for (const b of (eff.sensorBoosts ?? [])) {
+      if (!noAssist) for (const b of (eff.sensorBoosts ?? [])) {
         if (b.lockBonus) boosts.lock.push(b.lockBonus * rf(b.optimal, b.falloff));
         if (b.scanResBonus) boosts.scan.push(b.scanResBonus * rf(b.optimal, b.falloff));
       }

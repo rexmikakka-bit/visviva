@@ -827,6 +827,24 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('projsensor', 'no burst -> no EWAR resistance', noBurst.damp, 1, 0);
   check('projsensor', 'Electronic Hardening damp resist', withBurst.damp, 0.814375, 0.0005);
   check('projsensor', 'Electronic Hardening disrupt resist', withBurst.disrupt, 0.814375, 0.0005);
+
+  // disallowAssistance: the ship refuses ALL incoming remote ASSISTANCE (reps, remote sensor
+  // boosters) while still taking EWAR normally. eos gates each assistance effect on this attribute.
+  // Effect 3380 (Warp Disrupt Field Generator) ships EMPTY, so nothing set it and a bubbling HIC
+  // happily accepted remote reps. Confirmed against eos: an ACTIVE Warp Disruption Field Generator
+  // II on a Devoter gives ship.disallowAssistance = 1; merely ONLINE gives 0.
+  //
+  // Siege/Bastion/Triage all carry disallowAssistance = 0 in the current game and do NOT block
+  // assistance — checked in eos directly. Do not add them.
+  const devoter = { typeID: tid('Devoter'), name: 'Devoter' };
+  const bubbled = (state) => ({ high: [M('Warp Disruption Field Generator II', state)], mid: [], low: [], rigs: [] });
+  check('projsensor', 'active HIC bubble sets disallowAssistance',
+        projectionResistances(devoter, bubbled('active'), null, {}).disallowAssistance ? 1 : 0, 1, 0);
+  check('projsensor', 'online HIC bubble does not',
+        projectionResistances(devoter, bubbled('online'), null, {}).disallowAssistance ? 1 : 0, 0, 0);
+  check('projsensor', 'sieged dread still takes assistance',
+        projectionResistances({ typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' },
+          { high: [M('Siege Module II', 'active')], mid: [], low: [], rigs: [] }, null, {}).disallowAssistance ? 1 : 0, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
