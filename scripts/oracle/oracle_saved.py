@@ -65,9 +65,13 @@ def eos_stats(fit):
     }
 
 
-def extract_spec(fit):
+def extract_spec(fit, depth=0):
     """Translate an eos Fit into the {ship, slots, drones, implants, boosters} shape
-    calc.js consumes. Returns (spec, flags)."""
+    calc.js consumes. Returns (spec, flags).
+
+    depth>0 means this fit is being emitted as somebody else's COMMAND BOOSTER, in which case we
+    only need enough to recompute its bursts and must not recurse into its own links.
+    """
     slots = {"high": [], "mid": [], "low": [], "rigs": [], "subsystems": []}
     mutated = False
     for m in fit.modules:
@@ -138,11 +142,31 @@ def extract_spec(fit):
                           getattr(fit, "projectedDrones", []) or
                           getattr(fit, "projectedFighters", []) or
                           getattr(fit, "projectedFitDict", {})),
-        # Gang/command boosts come from a LINKED command fit (fit.commandFits), not the fit's own
-        # modules. eos folds those buffs into ship attrs (scan res, resists, speed...) but our spec
-        # only carries the fit's own modules, so bucket these like projected fits.
-        "commandBoosted": bool(getattr(fit, "commandFits", None)),
+        # Set below, once we know whether any ACTIVE link exists that we failed to emit.
+        "commandBoosted": False,
     }
+
+    # ── Command (gang) boosts ────────────────────────────────────────────────────────────────
+    # Gang boosts come from a LINKED command fit, not this fit's own modules. Two things matter:
+    #  1. eos SKIPS links whose `active` flag is false (Fit.calculateModifiedAttributes), and 121 of
+    #     the 335 linked fits here are inactive-only. Flagging those was pure false positive — eos
+    #     applies nothing, our spec applies nothing, and they were being excluded for no reason.
+    #  2. For ACTIVE links we emit the BOOSTER fit's own spec rather than eos's resulting buff
+    #     values, so the comparison also exercises our computeCommandBursts() instead of trusting it.
+    # Not recursed: a booster fit's own links don't propagate, matching App.jsx.
+    command_fits = []
+    unhandled_active = False
+    if depth == 0:
+        for cf in (getattr(fit, "commandFits", None) or []):
+            try:
+                info = cf.getCommandInfo(fit.ID)
+                if not info.active or info.booster_fit is fit:
+                    continue
+                bspec, _ = extract_spec(cf, depth + 1)
+                command_fits.append(bspec)
+            except Exception:  # noqa: BLE001 -- one bad link must not lose the whole fit
+                unhandled_active = True
+    flags["commandBoosted"] = unhandled_active
     # System security (structure fits only): scales structure RIG bonuses by hiSec/lowSec/nullSec
     # modifier. eos defaults to NULLSEC when unset, so a fit explicitly set to hisec computes 20%
     # weaker rig bonuses. Without emitting this, calc.js used its own default and a real hisec
@@ -153,6 +177,7 @@ def extract_spec(fit):
         "slots": slots, "drones": drones,
         "implants": implants, "boosters": boosters,
         "systemSecurity": _SEC_STR.get(int(fit.getSystemSecurity()), "nullsec"),
+        "commandFits": command_fits,
     }
     return spec, flags
 
