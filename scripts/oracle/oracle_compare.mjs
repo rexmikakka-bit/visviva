@@ -9,7 +9,7 @@
 // (same ship/module across many fits) -- those are the real engine bugs.
 
 import { readFileSync } from 'fs';
-import { calcFitStats } from '../../src/calc.js';
+import { calcFitStats, computeCommandBursts } from '../../src/calc.js';
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith('--'));
@@ -39,9 +39,19 @@ for (const line of lines) {
 
   let cs;
   try {
+    // Command (gang) boosts: the harness emits each ACTIVE booster fit's own spec, so we recompute
+    // its bursts with OUR code rather than importing eos's answer — that keeps computeCommandBursts
+    // under test instead of assuming it. Inactive links are not emitted (eos skips them too).
+    const externalBursts = [];
+    for (const b of (r.spec.commandFits ?? [])) {
+      try {
+        for (const burst of computeCommandBursts(b.ship, b.slots, null,
+              { implants: b.implants, boosters: b.boosters })) externalBursts.push(burst);
+      } catch { /* a booster fit we cannot build shows up as a divergence, not a crash */ }
+    }
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
                       { implants: r.spec.implants, boosters: r.spec.boosters,
-                        systemSecurity: r.spec.systemSecurity });
+                        systemSecurity: r.spec.systemSecurity, externalBursts });
   } catch (ex) {
     errored++;
     const key = String(ex.message).slice(0, 60);
