@@ -17,6 +17,8 @@ import json
 import os
 import sys
 
+_SEC_ENUM = {}
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from eos_bootstrap import get_eos          # noqa: E402
@@ -43,6 +45,10 @@ def main():
     limit = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 
     e = get_eos()
+    from eos.const import FitSystemSecurity
+    global _SEC_ENUM
+    _SEC_ENUM = {"hisec": FitSystemSecurity.HISEC, "lowsec": FitSystemSecurity.LOWSEC,
+                 "nullsec": FitSystemSecurity.NULLSEC, "wspace": FitSystemSecurity.WSPACE}
     # Uniform damage pattern: calc.js defaults to 25/25/25/25, and EHP is profile-weighted. Without
     # forcing it here, every EHP "mismatch" would just be the two sides using different profiles.
     from eos.saveddata.damagePattern import DamagePattern
@@ -58,6 +64,12 @@ def main():
             try:
                 fit = build_fit(_to_build_spec(rec))
                 fit.damagePattern = uniform
+                # System security scales structure RIG bonuses (x1.0 hisec vs x1.2 elsewhere). If the
+                # spec names one, eos MUST be told — otherwise it silently uses its nullsec default
+                # and every hisec fit reads as a 20% "divergence" that is really a harness mismatch.
+                sec = rec["spec"].get("systemSecurity")
+                if sec:
+                    fit.systemSecurity = _SEC_ENUM[sec]
                 fit.calculateModifiedAttributes()
                 out = {
                     "id": rec.get("id"),

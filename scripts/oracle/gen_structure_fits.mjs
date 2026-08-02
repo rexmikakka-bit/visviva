@@ -28,6 +28,22 @@ import { TYPES, tidByName } from '../../src/calc.js';
 const args = process.argv.slice(2);
 const withCharges = args.includes('--charges');
 const limit = Number((args.find(a => a.startsWith('--limit=')) || '=0').split('=')[1]);
+// PHASE 3: --random=N builds N multi-module fits instead. This is the ONLY automated way at the
+// interaction bugs one-module-per-fit is blind to — a Ballistic Control System alone has no weapon
+// to boost, which is exactly how the Standup BCS double-count survived the single-module sweep and
+// had to be found in a real saved fit. Seeded so any failure is reproducible from its id alone.
+const randomN = Number((args.find(a => a.startsWith('--random=')) || '=0').split('=')[1]);
+const seed = Number((args.find(a => a.startsWith('--seed=')) || '=12345').split('=')[1]);
+
+// mulberry32 — small, fast, and deterministic across machines (Math.random is not seedable).
+function rng(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 
 // ── the hulls ────────────────────────────────────────────────────────────────
 const STRUCTURE_CAT = 65, STRUCTURE_MOD_CAT = 66;
@@ -100,6 +116,77 @@ for (const [tid, t] of Object.entries(TYPES)) {
   mods.push({ typeID: Number(tid), name: t.n, rack, type: t });
 }
 mods.sort((a, b) => a.name.localeCompare(b.name));
+
+// ── PHASE 3: random multi-module fits ────────────────────────────────────────
+if (randomN > 0) {
+  const rand = rng(seed);
+  const pick = arr => arr[Math.floor(rand() * arr.length)];
+  const SECS = ['hisec', 'lowsec', 'nullsec', 'wspace'];
+  const RACK_SLOT_ATTR = { high: 'hiSlots', mid: 'medSlots', low: 'lowSlots',
+                           rigs: 'rigSlots', services: 'serviceSlots' };
+  // Pre-bucket legal modules per hull per rack so the inner loop is cheap.
+  const byHull = new Map();
+  for (const h of hulls) {
+    const buckets = { high: [], mid: [], low: [], rigs: [], services: [] };
+    for (const m of mods) if (canFit(m.type, h)) buckets[m.rack].push(m);
+    byHull.set(h.typeID, buckets);
+  }
+
+  let made = 0;
+  for (let i = 0; made < randomN && i < randomN * 20; i++) {
+    const hull = pick(hulls);
+    const buckets = byHull.get(hull.typeID);
+    const ha = hull.typeID != null ? (TYPES[String(hull.typeID)]?.a ?? {}) : {};
+    const slots = { high: [], mid: [], low: [], rigs: [], services: [] };
+    // Resource budgets. Exceeding them wouldn't change eos's arithmetic, but an over-CPU fit is not
+    // a fit anyone would build, and keeping them legal means a failure is worth chasing.
+    let cpuLeft = ha.cpuOutput ?? Infinity;
+    let pgLeft  = ha.powerOutput ?? Infinity;
+    let calLeft = ha.upgradeCapacity ?? Infinity;
+    const groupCount = new Map();   // groupID -> fitted count, for maxGroupFitted
+
+    for (const rack of ['high', 'mid', 'low', 'rigs', 'services']) {
+      const capacity = ha[RACK_SLOT_ATTR[rack]] ?? 0;
+      const pool = buckets[rack];
+      if (!capacity || !pool.length) continue;
+      // Leave some slots empty at random — real fits aren't always full, and empty racks exercise
+      // different code paths (e.g. no service module = Low Power State).
+      const want = Math.floor(rand() * (capacity + 1));
+      for (let s = 0; s < want; s++) {
+        const m = pick(pool);
+        const a = m.type.a ?? {};
+        const gid = m.type.g;
+        // maxGroupFitted is honoured where CCP encodes it (structure combat rigs mostly). It is
+        // ABSENT on service modules, so a generated fit can carry two Cloning Centers — unrealistic,
+        // but eos applies the same rule (none), so both engines agree and it costs the sweep nothing.
+        const maxGrp = a.maxGroupFitted;
+        if (maxGrp != null && (groupCount.get(gid) ?? 0) >= maxGrp) continue;
+        const cpu = a.cpu ?? 0, pg = a.power ?? 0, cal = a.upgradeCost ?? 0;
+        if (cpu > cpuLeft || pg > pgLeft || cal > calLeft) continue;
+        cpuLeft -= cpu; pgLeft -= pg; calLeft -= cal;
+        groupCount.set(gid, (groupCount.get(gid) ?? 0) + 1);
+        const entry = { typeID: m.typeID, name: m.name, state: 'active' };
+        const ch = chargesFor(m.type);
+        if (ch.length) entry.ammo = pick(ch).name;
+        slots[rack].push(entry);
+      }
+    }
+    const total = Object.values(slots).reduce((n, r) => n + r.length, 0);
+    if (total < 2) continue;    // the whole point is INTERACTION; a 0- or 1-module fit adds nothing
+    const sec = pick(SECS);
+    process.stdout.write(JSON.stringify({
+      id: `rnd${seed}_${made}`,
+      name: `random ${hull.name} (${total} mods, ${sec})`,
+      ship: hull.name,
+      spec: { ship: { typeID: hull.typeID, name: hull.name },
+              slots, drones: [], implants: [], boosters: [], systemSecurity: sec },
+      meta: { hull: hull.name, hullGroup: hull.group, modules: total, systemSecurity: sec, seed },
+    }) + '\n');
+    made++;
+  }
+  process.stderr.write(`generated ${made} random multi-module structure fits (seed ${seed})\n`);
+  process.exit(0);
+}
 
 // ── emit ─────────────────────────────────────────────────────────────────────
 // One record per (module, hull) — plus one per charge when --charges is on. `active` state so

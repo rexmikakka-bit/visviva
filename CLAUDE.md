@@ -492,6 +492,8 @@ stat, worst-first, clustered by ship — which is what turns 110 failures into "
 ```bash
 # GENERATED structure fits (one module per fit; --charges also enumerates every valid charge)
 node scripts/oracle/gen_structure_fits.mjs [--charges] > scripts/oracle/_structfits.jsonl
+# ...or RANDOM multi-module fits, seeded so a failure is reproducible from its id
+node scripts/oracle/gen_structure_fits.mjs --random=500 --seed=1 > scripts/oracle/_rnd.jsonl
 /c/Python314/python scripts/oracle/oracle_batch.py scripts/oracle/_structfits.jsonl > scripts/oracle/_struct.jsonl
 node scripts/oracle/oracle_compare.mjs scripts/oracle/_struct.jsonl
 
@@ -511,6 +513,18 @@ That class needs multi-module fits (real saved fits found the Standup BCS double
 The 2026-08-01 sweep (343 single-module + 361 with charges) found four real bugs: duplicate modifier
 entries in effect 7098, the missing system-security modifier, two unmodelled structure weapon groups,
 and the Standup BCS double-count. All four are pinned in `regression.test.mjs` section 11b.
+`--random` then ran 2,100 multi-module fits across 5 seeds with zero divergences.
+
+**A sweep that cannot fail is worthless — prove it has teeth.** Before trusting a clean run, revert
+a known fix and confirm the sweep catches it. Reverting the Standup BCS fix turns the random sweep
+from 500/500 clean into 86 divergences; putting it back returns it to 500/500. Without that check,
+"500 clean" might only mean the generator never produced an interesting fit. (It does: of 500 random
+fits, 93 combine a weapon with a damage-upgrade module, 376 carry rigs, and system security is spread
+evenly across all four values.)
+
+**Tell eos the system security.** `oracle_batch.py` sets `fit.systemSecurity` from the spec. Skip it
+and eos silently uses its nullsec default, so every hisec fit reads as a 20% rig-bonus "divergence"
+that is really a harness mismatch.
 
 `eos_bootstrap.py` wires eos headless; `oracle.py` builds a fit from a spec (ship + modules + charges
 + drones + implants + boosters + all-skills-at-V) and prints `getWeaponDps()`, `getWeaponVolley()`,
