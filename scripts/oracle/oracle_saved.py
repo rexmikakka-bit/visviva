@@ -86,6 +86,19 @@ def extract_spec(fit):
             "name": m.item.typeName,
             "state": _STATE_STR.get(int(m.state), "online"),
         }
+        # MUTATED modules. eos models these as a distinct abyssal type (m.item, e.g. "Abyssal
+        # Magnetic Field Stabilizer") plus a baseItem and a set of rolled attribute overrides. Our
+        # engine models the same thing as the BASE typeID plus {attrName: value}, so emit the base
+        # type — emitting m.item.ID would hand calc.js an abyssal typeID whose attributes are the
+        # un-rolled template, which is why these fits diverged so hard (weaponDps, maxSpeed, EHP).
+        # mutators is keyed by attribute ID; our engine's setBase() wants attribute NAMES.
+        if m.mutaplasmid is not None and m.baseItem is not None:
+            entry["typeID"] = m.baseItem.ID
+            entry["name"] = m.baseItem.typeName
+            entry["mutaplasmid"] = m.mutaplasmid.ID
+            entry["mutations"] = {mut.attribute.name: mut.value
+                                  for mut in m.mutators.values()
+                                  if getattr(mut, "attribute", None) is not None}
         if m.charge is not None:
             entry["ammo"] = m.charge.typeName
         slots[key].append(entry)
