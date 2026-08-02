@@ -1071,10 +1071,16 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     const optimal = fitItem.get('maxRange') ?? 0;
     const falloff = fitItem.get('falloffEffectiveness') ?? 0;
     const dur = (fitItem.get('duration') ?? 1) / 1000;
-    if (gn === 'Remote Shield Booster') {
+    // ANCILLARY remote reps sit in their OWN groups ('Ancillary Remote Shield Booster' /
+    // 'Ancillary Remote Armor Repairer'), not the plain ones — so matching only the plain group name
+    // dropped them silently. A projected Osprey's Medium Ancillary Remote Shield Booster contributed
+    // 0 instead of 124.86 HP/s, and every logi carrying one under-repped by a third. The amount is
+    // engine-computed, so the charge bonus (cap booster / nanite paste) is already baked in.
+    if (gn === 'Remote Shield Booster' || gn === 'Ancillary Remote Shield Booster') {
       const amt = fitItem.get('shieldBonus') ?? 0;
       if (amt > 0) reps.push({ kind: 'shield', name: slot.name, rawPS: amt / dur, optimal, falloff });
-    } else if (gn === 'Remote Armor Repairer' || gn === 'Mutadaptive Remote Armor Repairer') {
+    } else if (gn === 'Remote Armor Repairer' || gn === 'Mutadaptive Remote Armor Repairer'
+               || gn === 'Ancillary Remote Armor Repairer') {
       const amt = fitItem.get('armorDamageAmount') ?? 0;
       if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, optimal, falloff });
     } else if (gn === 'Remote Hull Repairer') {
