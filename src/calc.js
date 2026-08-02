@@ -914,16 +914,28 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
 // mode the same way. Returns the mode typeID, or null.
 function applyTacticalMode(fit, ship, slots) {
   if (!ship?.name) return null;
-  // The Skua ships no mode items of its own; it reuses the Caldari T3D (Jackdaw) modes.
-  const MODE_PROXY = { Skua: 'Jackdaw' };
-  const proxy = MODE_PROXY[ship.name] ?? ship.name;
-  const hasDefenseMode = !!(typeIDByName(`${proxy} Defense Mode`) ?? tidByName(`${proxy} Defense Mode`));
-  const modeName = slots?.tactical ?? (hasDefenseMode ? 'Defense' : null);
+  // Every T3D carries its OWN mode items. The Skua used to be proxied to the Jackdaw's modes on the
+  // belief that it shipped none — it does (90060/90062/90064); they were simply absent from the
+  // bundle, because all 18 tactical modes are published=0 and build-bundle.py filtered on published.
+  // The proxy therefore applied the WRONG hull's mode (Skua maxSpeed 2303 vs eos 2729). See
+  // MODE_GROUP in scripts/build-bundle.py.
+  //
+  // Default mode when the fit names none: the first one this hull actually has. Most T3Ds call it
+  // "Defense"; the Anhinga's are Primary/Secondary/Tertiary.
+  const MODE_NAMES = ['Defense', 'Primary'];
+  const modeTid = (n) => typeIDByName(`${ship.name} ${n} Mode`) ?? tidByName(`${ship.name} ${n} Mode`);
+  const modeName = slots?.tactical ?? MODE_NAMES.find((n) => modeTid(n)) ?? null;
   if (!modeName) return null;
-  const tid = typeIDByName(`${proxy} ${modeName} Mode`) ?? tidByName(`${proxy} ${modeName} Mode`);
+  const tid = modeTid(modeName);
   if (tid) fit.setShipMode(tid);
   return tid ?? null;
 }
+
+// Super-weapon effects that immobilise the ship and which CCP ships with an EMPTY modifier list, so
+// the engine cannot apply them and calc.js must. Deliberately NOT a range: 6201/6474 sit far from
+// the doomsday block, and the neighbouring immobilisers (cyno, jump portals, clone vat, industrial
+// core) DO carry modifiers and are already handled by the engine.
+const IMMOBILISING_SUPERWEAPON_EFFECTS = new Set([4489, 4490, 4491, 4492, 6201, 6474]);
 
 // ── Command (warfare) bursts — shared by calcFitStats and computeProjectedReps ───────────────
 // EVE does NOT stack same-type warfare buffs from different sources: only the strongest of each
@@ -1215,13 +1227,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   //   ROF PostDiv → rofMult (cycle); MissileFlightTime PostDiv → missileFlight (explosionDelay);
   //   MissileMaxVelocity PostDiv → missileVel; MaxTargetRange PostDiv → lockRange; Agility PostDiv
   //   → agility (inertia). Default = Primary (matches the UI default).
-  const ANHINGA_MODES = {
-    Primary:   { lockRange: 5.0,   missileVel: 0.667, missileFlight: 11.0, rofMult: 0.750 },
-    Secondary: {                   missileFlight: 0.5,                     rofMult: 0.500 },
-    Tertiary:  { agility: 0.750,   missileVel: 1.5,                        rofMult: 0.750 },
-  };
-  const anhMode = (ship?.name === 'Anhinga')
-    ? (ANHINGA_MODES[slots.tactical] ?? ANHINGA_MODES.Primary) : null;
+  // (The Anhinga's mode bonuses used to be hand-transcribed into an ANHINGA_MODES table here,
+  // because its mode ITEMS were missing from the bundle — every value in that table was exactly
+  // 1/<the mode's own PostDiv attribute>. The items are now generated (see MODE_GROUP in
+  // scripts/build-bundle.py) and their effects patched in, so lock range (6010), agility (6016)
+  // and launcher rate of fire (12799) come from the engine like every other hull's. Missile
+  // velocity and flight time still have to be applied by hand — but data-driven off the mode
+  // type, not a table — because this file reads charge attributes raw; see MODE_MISSILE_VEL.)
 
   // ── 2c. T3 Cruiser subsystems ─────────────────────────────────────────────
   // slots.subsystems = array of {name} for the 4 fitted subsystems (Core/Defensive/
@@ -1369,16 +1381,23 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   let maxVelocity = s.get('maxVelocity');
   // Projected stasis webs reduce velocity (caller supplies the combined stacking-penalised multiplier).
   if (opts.projectedWebMult != null && opts.projectedWebMult < 1) maxVelocity *= opts.projectedWebMult;
-  // An active titan doomsday immobilises the ship: its speedFactor of -100 boosts maxVelocity by -100%
-  // (eos superweapon effects 4489-4492 → boostItemAttr('maxVelocity', -100) → ×0).
+  // Immobilising super weapons: an active one boosts maxVelocity by its speedFactor of -100, i.e.
+  // to a dead stop. eos implements each as boostItemAttr('maxVelocity', speedFactor).
+  //
+  // ONLY the effects CCP ships EMPTY belong here. The other modules with this behaviour (cyno
+  // generators 2857, jump portals 2152/3674, clone vat 2858, capital industrial core 4575) carry
+  // real modifiers in our bundle, so the ENGINE already applies them — listing those too would
+  // immobilise twice. Verified per-effect against the bundle rather than assumed.
+  //   4489-4492  racial titan doomsdays ('Judgment', 'Oblivion', 'Aurora Ominae', 'Gjallarhorn')
+  //   6201       the four Reapers
+  //   6474       Gravitational Transportation Field Oscillator  (a Komodo read 360 m/s vs eos's 0)
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isActive(slot.state)) continue;
-    if (!(fitItem.effectIDs ?? []).some(e => e >= 4489 && e <= 4492)) continue;
+    if (!(fitItem.effectIDs ?? []).some(e => IMMOBILISING_SUPERWEAPON_EFFECTS.has(e))) continue;
     const sf = fitItem.get('speedFactor') ?? 0;
     if (sf) maxVelocity *= Math.max(0, 1 + sf / 100);
   }
   let agility     = s.get('agility');
-  if (anhMode?.agility) agility *= anhMode.agility; // Anhinga Tertiary mode agility (PostDiv → mult)
   let mass        = s.get('mass');
   let sigRadius   = s.get('signatureRadius');
   // Projected target painter raises signature radius (caller pre-stacks multiple painters).
@@ -1720,7 +1739,6 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const engineDmgMult = fitItem.get('missileDamageMultiplier') ?? fitItem.get('damageMultiplier') ?? 1;
       let cycleMs = fitItem.get('speed') ?? fitItem.get('duration') ?? 0;
       if (!cycleMs) continue;
-      if (anhMode?.rofMult) cycleMs *= anhMode.rofMult; // Anhinga mode RoF bonus (faster cycle)
       // Missile specialization RoF (Effect 1851 selfRof): -2%/lvl to launcher cycle for the
       // specialization skill the launcher requires (e.g. T2 LML → Light Missile Specialization).
       // eos-handled (no dogma modifier data), so apply analytically like the damage bonuses.
@@ -2031,12 +2049,42 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           }
         }
 
-        // Sharpshooter mode velocity (Effect 6076: modeMaxRangePostDiv divides charge maxVelocity) — unpenalized
-        let modeVel = 1;
-        if (tacticalModeTid && reqMLO) {
-          const mRangeDiv = (TYPES[tacticalModeTid]?.attrs ?? {}).modeMaxRangePostDiv;
-          if (mRangeDiv && mRangeDiv !== 1) modeVel = 1 / mRangeDiv;
-        }
+        // T3D tactical-mode missile velocity / flight time — unpenalized.
+        //
+        // These MUST be applied here rather than left to the engine. The engine does apply them
+        // (effects 6076/12794/12795/12796/12798, all PostDiv onto the CHARGE's maxVelocity /
+        // explosionDelay), but this range calculation reads the charge's attributes RAW off
+        // TYPES[chTid] and builds its own multiplier chain — so an engine-applied charge modifier
+        // is invisible here. Same split as the hull missile bonuses (see SHIP_MISSILE_DMG).
+        //
+        // Keyed by EFFECT, not by attribute presence. The Skua's Sharpshooter mode still carries a
+        // vestigial modeMaxRangePostDiv=0.6 from before CCP split that bonus into the two per-skill
+        // ones, but it does NOT carry effect 6076 — so the attribute is dead weight and eos ignores
+        // it. Reading attributes alone applied both and put a Sharpshooter Skua's rockets at 78 km
+        // against eos's 35 km. Each entry also carries its own charge-skill filter, as pyfa's
+        // handlers do.
+        const MODE_MISSILE_VEL = [   // [effect, mode attribute, required charge skill]
+          [6076,  'modeMaxRangePostDiv',                          'Missile Launcher Operation'],
+          [12798, 'modeAnhingaMissileMaxVelocityPostDiv',          'Missile Launcher Operation'],
+          [12794, 'modeRocketMissileMaxVelocityBonusPostDivSkua',  'Rockets'],
+          [12795, 'modeLightMissileMaxVelocityBonusPostDivSkua',   'Light Missiles'],
+        ];
+        const MODE_MISSILE_FLIGHT = [
+          [12796, 'modeAnhingaMissileFlightTimePostDiv',           'Missile Launcher Operation'],
+        ];
+        const modeDiv = (table) => {
+          let mult = 1;
+          if (!tacticalModeTid) return mult;
+          const mA = TYPES[tacticalModeTid]?.attrs ?? {};
+          const mE = TYPES[tacticalModeTid]?.e ?? [];
+          for (const [eid, attr, skill] of table) {
+            const v = mA[attr];
+            if (v && v !== 1 && mE.includes(eid) && chRs.includes(skill)) mult *= 1 / v;
+          }
+          return mult;
+        };
+        const modeVel    = modeDiv(MODE_MISSILE_VEL);
+        const modeFlight = modeDiv(MODE_MISSILE_FLIGHT);
 
         // T3 cruiser subsystem missile bonuses (e.g. Loki Offensive: +5%/lvl missile velocity via
         // subsystemBonus → maxVelocity, requiring the Missiles skill). Read the skill-scaled bonus
@@ -2085,8 +2133,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         //
         // modeVel / subsysVel / shipVel are already skill-filtered at their own sites.
         const gate = v => (reqMLO ? v : 1);
-        const velMult    = gate(skillVel)    * gate(poolVel)    * modeVel * gate(implVel)    * subsysVel * shipVel * (anhMode?.missileVel ?? 1);
-        const flightMult = gate(skillFlight) * gate(poolFlight) * gate(implFlight) * subsysFlight * shipFlight * (anhMode?.missileFlight ?? 1);
+        const velMult    = gate(skillVel)    * gate(poolVel)    * modeVel * gate(implVel)    * subsysVel * shipVel;
+        const flightMult = gate(skillFlight) * gate(poolFlight) * modeFlight * gate(implFlight) * subsysFlight * shipFlight;
         let finalVel    = baseVel * velMult;
         let finalFlight = baseFlight * flightMult; // ms
         let aoeVel = baseAoeVel, aoeRad = baseAoeRad;
@@ -2739,7 +2787,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // capital lock past the normal limit. The magic 300 km clamped a Salvation with an active
   // ISA to 300 km instead of 6457 km.
   const rangeCap = s.get('maximumRangeCap') || 300000;
-  const targetRange = Math.min(s.get('maxTargetRange') * (anhMode?.lockRange ?? 1), rangeCap) / 1000; // km
+  const targetRange = Math.min(s.get('maxTargetRange'), rangeCap) / 1000; // km
   // A ship's max locked targets is capped by the pilot's own limit: base 2 + Target Management (V, +5)
   // + Advanced Target Management (V, +5) = 12 with all skills trained. Big hulls (carriers/supers) list
   // a higher ship value (e.g. Revenant 14) but a character can never lock more than their own cap.
