@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, checkFitSkills, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { calcFitStats, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 
@@ -780,6 +780,53 @@ function check(group, label, actual, expected, tol = 0.005) {
                     'Anhinga Primary Mode', 'Anhinga Secondary Mode', 'Anhinga Tertiary Mode']
     .filter((n) => tid(n)).length;
   check('t3dmode', 'Skua/Anhinga mode items in bundle', modeTids, 6, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12c. PROJECTED SENSOR MODULES — EWAR resistance from bursts, and boost stacking.
+//
+// Two bugs behind the same symptom (lock range far off eos on fits under command links):
+//
+//   - EWAR resistance is overwhelmingly a COMMAND BURST effect (buff 19, Electronic Hardening),
+//     not a hull attribute. projectionResistances() built its own Fit and never applied bursts, so
+//     it reported a flat 1.0 for every boosted fit and projected damps landed at full strength.
+//   - Projected Remote Sensor Boosters were not modelled at all; and once added, they cannot be
+//     multiplied onto the finished number, because a BONUS competes for stacking slots with the
+//     target's own signal amps. eos puts them in one 'default' penalized group.
+//
+// eos-sourced numbers: `Module.getModifiedItemAttr('warfareBuff2Value')` on a Stork with an
+// Information Command Burst II + Electronic Hardening Charge is -18.5625; and driving eos's own
+// ModifiedAttributeDict (what Effect6427 does) —
+//   Celestis + Signal Amplifier II            -> maxTargetRange 121875.0
+//   ...then boostItemAttr('maxTargetRange', 36, stackingPenalties=True) -> 160743.8393
+//   ...and  boostItemAttr('scanResolution', 30, stackingPenalties=True) ->    532.6859
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPROJECTED SENSOR MODULES');
+  const celestis = { typeID: tid('Celestis'), name: 'Celestis' };
+  const celSlots = { high: [], mid: [], low: [M('Signal Amplifier II', 'online')], rigs: [] };
+
+  const base = calcFitStats(celestis, celSlots, [], null, {});
+  check('projsensor', 'Celestis + Signal Amp II lock (km)', base.targetRange, 121.875, 0.005);
+
+  // A projected +36% must NOT be a flat x1.36 — the Signal Amplifier is already holding the first
+  // stacking slot, so the booster takes it and pushes the amp to second. Flat multiplication gives
+  // 165.75 km; eos gives 160.74.
+  const boosted = calcFitStats(celestis, celSlots, [], null,
+    { projectedBoosts: { lock: [36], scan: [30] } });
+  check('projsensor', 'projected RSB lock, stacked (km)', boosted.targetRange, 160.7438, 0.005);
+  check('projsensor', 'projected RSB scan resolution', boosted.scanRes, 532.6859, 0.005);
+  check('projsensor', 'flat multiply would be wrong', boosted.targetRange < 165 ? 1 : 0, 1, 0);
+
+  // Buff 19 has to reach projectionResistances, or every boosted fit reads as unresisted.
+  const burstFit = { high: [M('Information Command Burst II', 'active', 'Electronic Hardening Charge')],
+                     mid: [], low: [], rigs: [] };
+  const bursts = computeCommandBursts({ typeID: tid('Stork'), name: 'Stork' }, burstFit, null, {});
+  const noBurst = projectionResistances(celestis, celSlots, null, {});
+  const withBurst = projectionResistances(celestis, celSlots, null, { externalBursts: bursts });
+  check('projsensor', 'no burst -> no EWAR resistance', noBurst.damp, 1, 0);
+  check('projsensor', 'Electronic Hardening damp resist', withBurst.damp, 0.814375, 0.0005);
+  check('projsensor', 'Electronic Hardening disrupt resist', withBurst.disrupt, 0.814375, 0.0005);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

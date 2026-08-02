@@ -58,8 +58,10 @@ for (const line of lines) {
     }
     // Projections: the harness emits each ACTIVE source fit's spec plus its range, and we rebuild
     // the effect with our own computeProjectedReps (see projection_effects.mjs).
+    // externalBursts matters here: EWAR resistance comes from the Electronic Hardening burst
+    // (buff 19), not from the hull, so omitting them reports "no resistance" on every boosted fit.
     const resist = (r.spec.projectedFits ?? []).length
-      ? projectionResistances(r.spec.ship, r.spec.slots, null) : null;
+      ? projectionResistances(r.spec.ship, r.spec.slots, null, { externalBursts }) : null;
     projectedEffects = buildProjectedEffects(r.spec.projectedFits, null, resist);
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
                       { implants: r.spec.implants, boosters: r.spec.boosters,
@@ -67,6 +69,7 @@ for (const line of lines) {
                         projectedWebMult: projectedEffects.webMult,
                         projectedNeutGJs: projectedEffects.neutGJs,
                         projectedDebuffs: projectedEffects.debuffs,
+                        projectedBoosts: projectedEffects.boosts,
                         projectedReps: projectedEffects.reps });
   } catch (ex) {
     errored++;

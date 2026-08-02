@@ -1018,14 +1018,36 @@ export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts
     const fit = new Fit(shipTypeID);
     for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
     for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
+    const modItems = [];
     for (const sec of ['high', 'mid', 'low', 'rigs', 'services']) {
       for (const s of (slots[sec] ?? [])) {
         if (!s?.typeID || s.type === 'empty') continue;
-        fit.addModule(s.typeID, s.state ?? 'active', s.mutations);
+        const m = fit.addModule(s.typeID, s.state ?? 'active', s.mutations);
+        if (s.ammo) {
+          const chName = s.ammo.replace(/\s*\(\d+\)$/, '');
+          const chTid = typeIDByName(chName) ?? tidByName(chName);
+          if (chTid && TYPES[chTid]) fit.setCharge(m, chTid);
+        }
+        modItems.push({ slot: s, fitItem: m });
       }
     }
     applyTacticalMode(fit, ship, slots);
     fit.calculate();
+    // EWAR resistance is overwhelmingly a COMMAND BURST effect, not a hull attribute: buff 19
+    // (Electronic Hardening Charge) is what gives sensorDampenerResistance/weaponDisruptionResistance
+    // at all on most hulls. Reading the attributes straight off a freshly calculated Fit therefore
+    // returned a flat 1.0 — no resistance — for every boosted fit, and every projected sensor damp
+    // hit at full strength. A Celestis under an Information Command Burst read 26.5 km of lock range
+    // against eos's 48.5. calcFitStats already applies these; this function has to as well.
+    const burstByType = collectBursts(modItems, opts.externalBursts);
+    for (const [buffID, eff] of burstByType) {
+      const def = WARFARE_BUFFS[buffID];
+      if (!def?.ship || !eff) continue;
+      for (const attrName of def.ship) {
+        const aid = AID[attrName];
+        if (aid != null) fit.ship.attrs.applyMod(aid, 6, eff, false);
+      }
+    }
     for (const [key, attr] of Object.entries(EWAR_RESIST_ATTRS)) {
       const v = fit.ship.get(attr);
       if (Number.isFinite(v) && v > 0) out[key] = v;
@@ -1074,6 +1096,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   const neuts = [];
   const painters = [];   // {sigBonus, optimal, falloff}
   const damps = [];      // {lockBonus, scanResBonus, optimal, falloff}
+  const sensorBoosts = []; // projected Remote Sensor Booster: {lockBonus, scanResBonus, optimal, falloff}
   const trackDisr = [];  // {tracking, optimal:rangeBonus, falloff:falloffBonus, opt, fall}
   const guideDisr = [];  // {missileRange, explosionDelay, aoeVel, aoeCloud, opt, fall}
   const ecm = [];        // {strength, optimal, falloff}
@@ -1111,6 +1134,14 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       const lr = fitItem.get('maxTargetRangeBonus') ?? 0;
       const sr = fitItem.get('scanResolutionBonus') ?? 0;
       if (lr < 0 || sr < 0) damps.push({ name: slot.name, lockBonus: lr, scanResBonus: sr, optimal, falloff });
+    } else if (gn === 'Remote Sensor Booster') {
+      // The friendly mirror image of a damp (eos Effect6427): same two attributes, positive, same
+      // stacking pool. It is ASSISTANCE, so unlike a damp it is NOT reduced by the target's EWAR
+      // resistance. Missing it entirely is why a Machariel with a Scimitar's remote sensor booster
+      // projected onto it read 180 km of lock range against eos's 300.
+      const lr = fitItem.get('maxTargetRangeBonus') ?? 0;
+      const sr = fitItem.get('scanResolutionBonus') ?? 0;
+      if (lr > 0 || sr > 0) sensorBoosts.push({ name: slot.name, lockBonus: lr, scanResBonus: sr, optimal, falloff });
     } else if (gn === 'Weapon Disruptor') {
       const trk = fitItem.get('trackingSpeedBonus') ?? 0;
       const mv  = fitItem.get('missileVelocityBonus') ?? 0;
@@ -1143,7 +1174,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (amt[kind] > 0) reps.push({ kind, name, rawPS: (amt[kind] / dur) * qty, optimal: 1e9, falloff: 0 });
     }
   }
-  return { reps, webs, neuts, painters, damps, trackDisr, guideDisr, ecm };
+  return { reps, webs, neuts, painters, damps, sensorBoosts, trackDisr, guideDisr, ecm };
 }
 
 export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
@@ -1345,6 +1376,21 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const aid = AID[attrName];
       if (aid != null) s.attrs.applyMod(aid, 6, eff, false);
     }
+  }
+
+  // Projected Remote Sensor Boosters. These have to go through the attribute pool rather than be
+  // multiplied onto the finished number, because they are BONUSES and therefore compete for
+  // stacking slots with the target's own signal amplifiers and Sensor Optimization burst — eos puts
+  // all of them in one 'default' penalized group. A projected +72% on a Celestis that already had a
+  // Signal Amplifier II (+30%) and an Information Command Burst (+46.4%) is worth ×1.53, not ×1.72;
+  // multiplying afterwards gave 70.6 km against eos's 62.9. Projected DAMPS are still applied
+  // post-hoc as opts.projectedDebuffs, and that stays correct: eos chains penalties separately from
+  // bonuses, so a pure-penalty chain never competes with the ship's own bonuses.
+  for (const b of (opts.projectedBoosts?.lock ?? [])) {
+    if (b && AID.maxTargetRange != null) s.attrs.applyMod(AID.maxTargetRange, 6, b, false);
+  }
+  for (const b of (opts.projectedBoosts?.scan ?? [])) {
+    if (b && AID.scanResolution != null) s.attrs.applyMod(AID.scanResolution, 6, b, false);
   }
 
   // HP — engine now applies all skill multipliers (Shield Management, Hull Upgrades, Mechanic)

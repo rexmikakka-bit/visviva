@@ -25,6 +25,7 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
   const webMults = [];
   let neutGJs = 0;
   const col = { sig: [], lock: [], scan: [], trk: [], topt: [], tfall: [], mrng: [], edly: [], avel: [], acld: [] };
+  const boosts = { lock: [], scan: [] };   // projected Remote Sensor Boosters (fed to the attribute pool)
 
   for (const pf of (projectedFits ?? [])) {
     let eff;
@@ -57,6 +58,13 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
         col.lock.push(d.lockBonus * R.damp * rf(d.optimal, d.falloff));
         col.scan.push(d.scanResBonus * R.damp * rf(d.optimal, d.falloff));
       }
+      // Remote Sensor Boosters are ASSISTANCE — no EWAR resistance. They are NOT folded into the
+      // debuff stack: being bonuses, they have to compete with the target's own signal amps and
+      // Sensor Optimization burst inside one penalized group, which only the attribute pool can do.
+      for (const b of (eff.sensorBoosts ?? [])) {
+        if (b.lockBonus) boosts.lock.push(b.lockBonus * rf(b.optimal, b.falloff));
+        if (b.scanResBonus) boosts.scan.push(b.scanResBonus * rf(b.optimal, b.falloff));
+      }
       for (const t of (eff.trackDisr ?? [])) {
         const f = rf(t.optimal, t.falloff);
         col.trk.push(t.tracking * R.disrupt * f); col.topt.push(t.optimalBonus * R.disrupt * f);
@@ -79,5 +87,5 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
     aoeVel: stackPct(col.avel), aoeCloud: stackPct(col.acld),
   };
   const hasDebuff = Object.values(debuffs).some((v) => Math.abs(v) > 0.05);
-  return { reps, webMult, neutGJs, debuffs: hasDebuff ? debuffs : null };
+  return { reps, webMult, neutGJs, debuffs: hasDebuff ? debuffs : null, boosts };
 }

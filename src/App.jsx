@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
 import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations, haptic } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
@@ -100,6 +100,14 @@ export default function App(){
     const reps={shield:0,armor:0,hull:0};
     const webMults=[]; let neutGJs=0;
     const col={sig:[],lock:[],scan:[],trk:[],topt:[],tfall:[],mrng:[],edly:[],avel:[],acld:[]};
+    const boosts={lock:[],scan:[]};   // projected Remote Sensor Boosters -> attribute pool, not the debuff stack
+    // Target EWAR resistance. Overwhelmingly a COMMAND BURST effect (buff 19, Electronic Hardening)
+    // rather than a hull attribute, so externalBursts has to go in or every boosted fit reads as
+    // having no resistance and projected damps/disruptors hit at full strength. Applied PER SOURCE
+    // MODULE, before stacking — stack(b*r) != stack(b)*r, and eos does the former.
+    const tShip=activeFit?.ship;
+    const R=(projFits.length&&tShip)?projectionResistances({name:tShip,typeID:tidByName(tShip)},slots,skills,{externalBursts}):null;
+    const rz=k=>(R&&Number.isFinite(R[k])?R[k]:1);
     for(const pf of projFits){
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
@@ -107,19 +115,23 @@ export default function App(){
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
       for(const r of eff.reps)reps[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
-      for(const w of eff.webs)webMults.push(1+(w.speedFactor*rf(w.optimal,w.falloff))/100);
-      for(const n of eff.neuts)neutGJs+=n.gjPerSec*rf(n.optimal,n.falloff);
-      for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rf(p.optimal,p.falloff));
-      for(const d of (eff.damps||[])){col.lock.push(d.lockBonus*rf(d.optimal,d.falloff));col.scan.push(d.scanResBonus*rf(d.optimal,d.falloff));}
-      for(const t of (eff.trackDisr||[])){const f=rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
-      for(const g of (eff.guideDisr||[])){const f=rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
+      for(const w of eff.webs)webMults.push(1+(w.speedFactor*rz('web')*rf(w.optimal,w.falloff))/100);
+      for(const n of eff.neuts)neutGJs+=n.gjPerSec*rz('neut')*rf(n.optimal,n.falloff);
+      for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rz('painter')*rf(p.optimal,p.falloff));
+      for(const d of (eff.damps||[])){col.lock.push(d.lockBonus*rz('damp')*rf(d.optimal,d.falloff));col.scan.push(d.scanResBonus*rz('damp')*rf(d.optimal,d.falloff));}
+      // Remote Sensor Booster: ASSISTANCE (not resisted), and a BONUS — so it must compete with the
+      // ship's own signal amps/Sensor Optimization burst in one penalized group. Only the attribute
+      // pool can do that, so these are handed to calcFitStats rather than stacked here.
+      for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
+      for(const t of (eff.trackDisr||[])){const f=rz('disrupt')*rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
+      for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
     }
     const webMult=webMults.length?stackingPenalty(webMults):1;
     const stackPct=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
     const debuffs={sig:stackPct(col.sig),lockRange:stackPct(col.lock),scanRes:stackPct(col.scan),tracking:stackPct(col.trk),turretOptimal:stackPct(col.topt),turretFalloff:stackPct(col.tfall),missileRange:stackPct(col.mrng),explosionDelay:stackPct(col.edly),aoeVel:stackPct(col.avel),aoeCloud:stackPct(col.acld)};
     const hasDebuff=Object.values(debuffs).some(v=>Math.abs(v)>0.05);
-    return {reps,webMult,neutGJs,debuffs:hasDebuff?debuffs:null};
-  },[projFits,fitsDB,skills]);
+    return {reps,webMult,neutGJs,debuffs:hasDebuff?debuffs:null,boosts};
+  },[projFits,fitsDB,skills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
   const snapshotStats=useMemo(()=>{
     const shipName=activeFit?.ship;
@@ -144,7 +156,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneDps?.total ?? 0;
     }catch{ return 0; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
