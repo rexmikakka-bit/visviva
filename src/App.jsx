@@ -125,7 +125,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return null;
     try{
-      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec});
+      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
   const shipMeta=useMemo(()=>{
@@ -136,7 +136,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneInfo ?? [];
     }catch{ return []; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
@@ -144,7 +144,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,pilotSec:slots?.pilotSec});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneDps?.total ?? 0;
     }catch{ return 0; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
@@ -152,7 +152,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName||!(fighters?.length)) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
       return cs?.fighterDetails ?? [];
     }catch{ return []; }
   },[activeFit,slots,drones,skills,implants,boosters,fighters,dmgProfile]);

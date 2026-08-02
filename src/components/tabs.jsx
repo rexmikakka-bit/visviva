@@ -61,7 +61,7 @@ import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, Da
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
-  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec})??{}:{};
+  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
   // stats. A missile launcher's range comes entirely from its charge (velocity x flight time), so an
   // unloaded launcher has no range at all — keying by typeID let a loaded launcher's range bleed onto
@@ -150,6 +150,21 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   const pilotSecHint = isATFrig
     ? `+${((TYPES[ship?.typeID]?.a?.[5727] ?? -7.5) * Math.max(-10, Math.min(0, pilotSec))).toFixed(1)}% small turret & rocket/light-missile damage`
     : `+${(Math.max(0, Math.min(5, pilotSec)) * 10).toFixed(0)}% armor rep & shield boost amount`;
+
+  // SYSTEM security — where a STRUCTURE is anchored. Unrelated to pilot security above: it scales
+  // structure rig bonuses (hiSecModifier/lowSecModifier/nullSecModifier -> `securityModifier`), so
+  // the same rig is 20% weaker in hisec. Defaults to nullsec because eos does and pyfa is the
+  // reference; only shown when the fit actually has structure rigs to be affected.
+  const SYS_SEC_OPTS = [
+    { key: 'hisec',   label: 'Hi',   hint: 'High security'   },
+    { key: 'lowsec',  label: 'Low',  hint: 'Low security'    },
+    { key: 'nullsec', label: 'Null', hint: 'Null security'   },
+    { key: 'wspace',  label: 'W-C',  hint: 'Wormhole space'  },
+  ];
+  const systemSecurity = slots.systemSecurity ?? 'nullsec';
+  const setSystemSecurity = (v) => setSlots(prev => ({ ...prev, systemSecurity: v }));
+  const _rigsAffected = (slots.rigs ?? []).some(r =>
+    r?.typeID && TYPES[r.typeID]?.a?.nullSecModifier != null);
 
   const updateMod=(secKey,modId,updated,keepOpen=false)=>{
     setSlots(prev=>{
@@ -244,6 +259,26 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
             onChange={e=>setPilotSec(parseFloat(e.target.value))}
             style={{width:"100%",accentColor:C.accent,cursor:"pointer"}}/>
           <div style={{fontSize:10,color:C.textMute,marginTop:3}}>{pilotSecHint}</div>
+        </div>
+      )}
+      {_isStructure&&(
+        <div style={{padding:"8px 10px 4px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>SYSTEM SECURITY</span>
+            <span style={{fontSize:10,color:C.textMute}}>{_rigsAffected?'affects rig bonuses':'no rigs affected'}</span>
+          </div>
+          <div style={{display:"flex",gap:6}}>
+            {SYS_SEC_OPTS.map(o=>{
+              const on=systemSecurity===o.key;
+              return(<button key={o.key} onClick={()=>setSystemSecurity(o.key)} title={o.hint} aria-pressed={on}
+                style={{flex:1,padding:"5px 0",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",
+                        background:on?C.accentLight:"none",border:`1px solid ${on?C.accent:C.border}`,
+                        color:on?C.accent:C.textMute}}>{o.label}</button>);
+            })}
+          </div>
+          <div style={{fontSize:10,color:C.textMute,marginTop:3}}>
+            Structure rig bonuses are {systemSecurity==='hisec'?'at base strength in hi-sec':'20% stronger outside hi-sec'}
+          </div>
         </div>
       )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 10px 4px"}}>
@@ -503,7 +538,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,pilotSec:slots?.pilotSec,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,damageProfile:dmgProfile.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;

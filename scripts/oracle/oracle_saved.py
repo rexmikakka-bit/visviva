@@ -25,8 +25,12 @@ _FULL_SPOOL = None
 
 # FittingModuleState int -> our string state.
 _STATE_STR = {-1: "offline", 0: "online", 1: "active", 2: "overheated"}
-# Slot enum (eos.const.Slot): LOW=1 MED=2 HIGH=3 RIG=4 SUBSYSTEM=5.
-_SLOT_KEY = {1: "low", 2: "mid", 3: "high", 4: "rigs", 5: "subsystems"}
+# Slot enum (eos.const.Slot): LOW=1 MED=2 HIGH=3 RIG=4 SUBSYSTEM=5 MODE=6 SYSTEM=7 SERVICE=8.
+# SERVICE is structure-only and was missing: unmapped slots are SKIPPED, so every service module on
+# a structure fit vanished from the spec. That is not a small omission — a fitted service module is
+# what puts a structure into Full Power State (Effect7008/7009, x4 shield+armor), so calc.js saw a
+# low-power hull while eos saw a full-power one and every structure would have read 4x low on EHP.
+_SLOT_KEY = {1: "low", 2: "mid", 3: "high", 4: "rigs", 5: "subsystems", 8: "services"}
 
 
 def _resist_str(ship, layer):
@@ -117,10 +121,16 @@ def extract_spec(fit):
         # only carries the fit's own modules, so bucket these like projected fits.
         "commandBoosted": bool(getattr(fit, "commandFits", None)),
     }
+    # System security (structure fits only): scales structure RIG bonuses by hiSec/lowSec/nullSec
+    # modifier. eos defaults to NULLSEC when unset, so a fit explicitly set to hisec computes 20%
+    # weaker rig bonuses. Without emitting this, calc.js used its own default and a real hisec
+    # Fortizar diverged by exactly +19.6% on weapon DPS.
+    _SEC_STR = {0: "hisec", 1: "lowsec", 2: "nullsec", 3: "wspace"}
     spec = {
         "ship": {"typeID": fit.ship.item.ID, "name": fit.ship.item.typeName},
         "slots": slots, "drones": drones,
         "implants": implants, "boosters": boosters,
+        "systemSecurity": _SEC_STR.get(int(fit.getSystemSecurity()), "nullsec"),
     }
     return spec, flags
 

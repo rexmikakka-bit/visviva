@@ -62,6 +62,30 @@ export function initEngine(types, effects, attrs) {
   // Build name→ID and name→typeID lookups
   for (const [id, meta] of Object.entries(ATTRS)) if (meta.n) AID[meta.n] = Number(id);
   for (const [tid, t] of Object.entries(TYPES)) if (t.n) TYPE_BY_NAME[t.n] = Number(tid);
+
+  // Drop byte-identical duplicate modifiers within one effect. A single source applying the SAME
+  // modifier twice is never correct dogma — eos hand-codes each effect and applies each bonus once —
+  // but the modifier lists come from CCP's FSD dump and effect 7098
+  // (structureConversionRigBasicBonuses, on all 104 Outpost Conversion Rigs) carries three entries
+  // twice. The second application landed in the same stacking pool at the penalised rank, so a
+  // 'Draccous' Fortizar with one Outpost rig read scanResolution 384 against pyfa's 130
+  // (40 × 3.25 × (1 + 2.25·e^(-1/7.1289)) instead of 40 × 3.25). Cleaned once here rather than in
+  // _applyEffect, which runs per module per recalculation. Found by the structure oracle sweep.
+  let _dupDropped = 0;
+  for (const eff of Object.values(EFFECTS)) {
+    const mods = eff?.m;
+    if (!Array.isArray(mods) || mods.length < 2) continue;
+    const seen = new Set();
+    const uniq = [];
+    for (const m of mods) {
+      const key = JSON.stringify(m);
+      if (seen.has(key)) { _dupDropped++; continue; }
+      seen.add(key);
+      uniq.push(m);
+    }
+    if (uniq.length !== mods.length) eff.m = uniq;
+  }
+  initEngine.duplicateModifiersDropped = _dupDropped;
 }
 
 export const typeIDByName = (name) => TYPE_BY_NAME[name] ?? null;
@@ -82,6 +106,16 @@ function stackingFactor(rank) {
 
 // Mode modules whose bonuses are ROLE bonuses, exempt from the stacking penalty.
 const MODE_MODULE_GROUPS = new Set(['Siege Module', 'Triage Module', 'Bastion Module']);
+
+// System security -> which of the rig's three security modifier attributes applies. CCP models this
+// as the client writing the applicable value into `securityModifier`; see the note in calculate().
+// wspace uses the nullsec value, matching eos's secMap.
+const SEC_MODIFIER_ATTR = {
+  hisec:  'hiSecModifier',
+  lowsec: 'lowSecModifier',
+  nullsec:'nullSecModifier',
+  wspace: 'nullSecModifier',
+};
 
 // Pilot security-status hull bonuses (CONCORD ships + AT frigates). CCP models these with a chain of
 // "intermediary" effects that scale a bonus attr by the pilot's (capped, inverted) sec status, then a
@@ -314,6 +348,9 @@ export class Fit {
     const tid = Number(shipTypeID);
     if (!TYPES[tid]) throw new Error(`Unknown ship typeID: ${tid}`);
     this.ship      = new DogmaItem(tid);
+    // Where the structure is anchored. Only affects structure rigs (see calculate() step 1b).
+    // Defaults to nullsec because eos does, and pyfa is the reference implementation.
+    this.systemSecurity = 'nullsec';
     this._modules  = [];   // DogmaItem[]
     this._implants = [];
     this._boosters = [];
@@ -379,6 +416,23 @@ export class Fit {
     for (const s of this._subsystems) reset(s);
     for (const d of this._drones)   reset(d);
     for (const m of this._modules)  if (m._charge) reset(m._charge);
+
+    // 1b. System security → `securityModifier`. Structure rig bonuses scale with where the
+    // structure is anchored: CCP ships hiSecModifier/lowSecModifier/nullSecModifier on the rig and
+    // has the CLIENT write the applicable one into `securityModifier`, which Effect6672 then
+    // PostMuls into every bonus attribute (scan res, lock range, PD range, missile velocity, ...).
+    // Our bundle carries `securityModifier` frozen at its hisec value of 1, so every structure
+    // combat rig was 20% weak in low/null. Setting the attribute here — before any effect runs — is
+    // enough; effect 6672 is present with real modifiers and does the rest through normal dogma.
+    // Defaults to NULLSEC because that is what eos defaults to (Fit.getSystemSecurity), and pyfa is
+    // the reference. 167 structure modules carry these attributes.
+    {
+      const key = SEC_MODIFIER_ATTR[this.systemSecurity] ?? SEC_MODIFIER_ATTR.nullsec;
+      for (const m of this._modules) {
+        const sec = m._td?.a?.[key];
+        if (sec != null) m.attrs.setBase('securityModifier', sec);
+      }
+    }
     this._skillItems = {};
 
     // 2. Skill pass (runs FIRST — skills modify module attrs before modules read them) (runs once, after item effects but BEFORE ship hull effects)

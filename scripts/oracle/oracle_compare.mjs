@@ -40,7 +40,8 @@ for (const line of lines) {
   let cs;
   try {
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
-                      { implants: r.spec.implants, boosters: r.spec.boosters });
+                      { implants: r.spec.implants, boosters: r.spec.boosters,
+                        systemSecurity: r.spec.systemSecurity });
   } catch (ex) {
     errored++;
     const key = String(ex.message).slice(0, 60);

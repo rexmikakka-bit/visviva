@@ -1145,6 +1145,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   if (Array.isArray(opts.damageProfile)) fit._damageProfile = opts.damageProfile;
   // Pilot security status drives CONCORD/AT-frigate hull bonuses (dogma-engine section 5g).
   fit._pilotSec = opts.pilotSec ?? 0;
+  // SYSTEM security (where a structure is anchored) is unrelated to pilot security: it scales
+  // structure rig bonuses by 1.0 in hisec vs 1.2 in low/null/wspace. Defaults to nullsec inside
+  // Fit, matching eos — pass 'hisec' to model a hisec structure.
+  if (opts.systemSecurity) fit.systemSecurity = opts.systemSecurity;
   fit.calculate();
 
   // ── Booster side effects (user-toggled) ───────────────────────────────────
@@ -1495,7 +1499,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     if (!fitItem || !isActive(slot.state)) continue;
     const gn = fitItem.groupName;
 
-    if (gn === 'Smart Bomb' || gn === 'Super Weapon') {
+    // 'Structure Doomsday Weapon' / 'Structure Area Denial Module' are the structure-side names for
+    // exactly this shape — intrinsic damage on a fixed cycle. They were missing, so an Arcing Vorton
+    // Projector read 0 DPS against eos's 7407.4 and a Point Defense Battery 0 against 83.3.
+    // Same failure mode as the structure missile launchers: this branch keys on ship-side group
+    // names, and CCP's structure groups are named differently. Found by the structure oracle sweep.
+    if (gn === 'Smart Bomb' || gn === 'Super Weapon' ||
+        gn === 'Structure Doomsday Weapon' || gn === 'Structure Area Denial Module') {
       // Smartbombs (AoE) and doomsday super weapons deal intrinsic damage each cycle (no charge). The
       // engine applies duration reductions (Energy Pulse Weapons / titan RoF) and any damage bonuses.
       //
@@ -1513,8 +1523,19 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const ticks = (beamDurMs > 0 && beamCycleMs > 0)
           ? Math.max(1, Math.floor(beamDurMs / beamCycleMs))
           : 1;
-        const dEm=fitItem.get('emDamage')||0, dTh=fitItem.get('thermalDamage')||0,
-              dKin=fitItem.get('kineticDamage')||0, dExp=fitItem.get('explosiveDamage')||0;
+        // Most weapons in this branch carry their damage on the MODULE. The Point Defense Battery
+        // doesn't: it takes a charge and carries only a damageMultiplier, so read the charge and
+        // scale. Read the ENGINE-computed charge, not raw type data, or hull/skill bonuses to the
+        // charge are lost (CLAUDE.md gotcha #5).
+        const _self = ['emDamage','thermalDamage','kineticDamage','explosiveDamage']
+          .map(a => fitItem.get(a) || 0);
+        const _useCharge = _self.every(v => v === 0) && fitItem._charge;
+        const _mult = _useCharge ? (fitItem.get('damageMultiplier') ?? 1) : 1;
+        const _src = _useCharge
+          ? ['emDamage','thermalDamage','kineticDamage','explosiveDamage']
+              .map(a => (fitItem._charge.get(a) || 0) * _mult)
+          : _self;
+        const [dEm, dTh, dKin, dExp] = _src;
         weaponDps.em  += dEm*ticks/durS;  weaponVolley.em  += dEm;
         weaponDps.th  += dTh*ticks/durS;  weaponVolley.th  += dTh;
         weaponDps.kin += dKin*ticks/durS; weaponVolley.kin += dKin;
@@ -1676,6 +1697,15 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const bcsFactors = [];
         for (const { slot: s2, fitItem: fi2 } of modItems) {
           if (!fi2 || !isOnline(s2.state)) continue;
+          // STRUCTURE weapon upgrades (category 66) are already applied by the ENGINE: the Standup
+          // BCS's effect 6449 is a real dogma modifier (ship hiddenMissileDamageMultiplier -> charge
+          // damage), unlike the ship BCS whose effect is eos-handled and leaves the engine at 1.
+          // `engineChargeMult` below picks the engine's contribution up from the charge, so counting
+          // these analytically too squares the bonus — a Fortizar with 2 Standup BCS read 1.1956²
+          // instead of 1.1956 (weapon DPS 1933.3 against eos's 1617.0). Found by diffing a real
+          // saved structure fit; the one-module-per-fit sweep cannot catch it, because a BCS alone
+          // has no weapon to boost.
+          if ((TYPES[fi2.typeID]?.c ?? TYPES[fi2.typeID]?.category) === 66) continue;
           const b = fi2.get?.('missileDamageMultiplierBonus') ?? TYPES[fi2.typeID]?.attrs?.missileDamageMultiplierBonus;
           if (b && b !== 1) bcsFactors.push(b);
         }
