@@ -52,6 +52,12 @@ def build_fit(spec):
                     m.charge = charge
             fit.modules.append(m)
 
+    # T3 destroyer tactical mode. eos keeps it on fit.mode, NOT in a rack — same as oracle_saved.py
+    # reads it back out. Spec says {"mode": "Sharpshooter"}; the item is "<Ship> <Mode> Mode".
+    if spec.get("mode"):
+        mode_item = db.getItem(f'{spec["ship"]} {spec["mode"]} Mode')
+        fit.mode = e["Mode"](mode_item)
+
     for d in spec.get("drones", []):
         drone = e["Drone"](db.getItem(d["name"], eager="group.category"))
         drone.amount = d.get("qty", 1)
@@ -117,6 +123,37 @@ def stats(fit):
 
 # ── Fit specs mirrored from src/regression.test.mjs ──────────────────────────
 FITS = {
+    # T3 destroyer tactical modes. Both hulls' mode ITEMS were missing from our bundle until the
+    # published=0 filter in build-bundle.py was fixed, so these validate the mode path end to end:
+    # the Skua in Sharpshooter exercises the per-charge-skill missile velocity bonuses (12794
+    # rockets / 12795 light missiles), the Anhinga in Primary exercises missile flight time
+    # (12796), launcher rate of fire (12799) and lock range (6010).
+    "skua_sharpshooter": {
+        "ship": "Skua",
+        "mode": "Sharpshooter",
+        "high": [
+            {"name": "Rocket Launcher II", "state": "active", "ammo": "Scourge Rocket"},
+            {"name": "Rocket Launcher II", "state": "active", "ammo": "Scourge Rocket"},
+        ],
+        "mid": [], "low": [], "rigs": [],
+    },
+    "skua_lml_propulsion": {
+        "ship": "Skua",
+        "mode": "Propulsion",
+        "high": [
+            {"name": "Light Missile Launcher II", "state": "active", "ammo": "Scourge Light Missile"},
+        ],
+        "mid": [], "low": [], "rigs": [],
+    },
+    "anhinga_primary": {
+        "ship": "Anhinga",
+        "mode": "Primary",
+        "high": [
+            {"name": "Rapid Heavy Missile Launcher II", "state": "active", "ammo": "Scourge Heavy Missile"},
+        ],
+        "mid": [], "low": [], "rigs": [],
+    },
+
     "bane": {
         "ship": "Bane",
         "high": [

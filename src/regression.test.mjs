@@ -727,6 +727,62 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12b. T3 DESTROYER TACTICAL MODES — Skua and Anhinga.
+//
+// All 18 tactical modes are published=0, and build-bundle.py filtered fit_types on published, so
+// the only modes in the bundle were 12 legacy ones that predated the generator. The Skua's and the
+// Anhinga's could never arrive. Two separate bugs hid behind that:
+//   - calc.js proxied the Skua to the JACKDAW's modes, on the belief it shipped none. It ships its
+//     own (90060/90062/90064), so a Propulsion Skua read maxSpeed 2303 against eos's 2729.
+//   - the Anhinga's mode bonuses were hand-transcribed into an ANHINGA_MODES table, every value of
+//     which was exactly 1/<the mode's own PostDiv attribute>.
+// Fixed by admitting group 1306 by ID (MODE_GROUP) and patching the 7 effects CCP ships empty
+// (5560/12767/12794/12795/12796/12798/12799) into scripts/data-patches.json.
+//
+// Every number below is eos's, via `oracle.py skua_sharpshooter | skua_lml_propulsion |
+// anhinga_primary` (specs live in that file, so they can be re-measured).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nT3D TACTICAL MODES');
+  // Expected missile range. Our model is a two-point distribution over flight-time quantization
+  // (a missile flies a whole number of ticks); its MEAN is what eos's vel x flight represents.
+  const missileRange = (cs) => {
+    const g = (cs.graphWeapons ?? [])[0];
+    return g ? g.lowerRange * (1 - g.higherChance) + g.higherRange * g.higherChance : 0;
+  };
+  const modeFit = (ship, tactical, mod, ammo, n = 1) => calcFitStats(
+    { typeID: tid(ship), name: ship },
+    { high: Array.from({ length: n }, () => M(mod, 'active', ammo)),
+      mid: [], low: [], rigs: [], tactical },
+    [], null, {});
+
+  // Sharpshooter Skua: rocket charge velocity x3.5 (effect 12794). The mode ALSO carries a
+  // vestigial modeMaxRangePostDiv=0.6 but NOT effect 6076 — reading the attribute without checking
+  // the effect applied a phantom second bonus and gave 47 km.
+  const skuaSS = modeFit('Skua', 'Sharpshooter', 'Rocket Launcher II', 'Scourge Rocket', 2);
+  check('t3dmode', 'Skua sharpshooter rocket range (m)', missileRange(skuaSS), 35439, 0.005);
+  check('t3dmode', 'Skua sharpshooter weapon DPS', skuaSS.weaponDps.total, 83.5, 0.01);
+
+  // Propulsion Skua: its OWN mode, not the Jackdaw's. modeVelocityPostDiv 0.6 -> x1.667.
+  const skuaProp = modeFit('Skua', 'Propulsion', 'Light Missile Launcher II', 'Scourge Light Missile');
+  check('t3dmode', 'Skua propulsion light-missile range (m)', missileRange(skuaProp), 42188, 0.005);
+  check('t3dmode', 'Skua propulsion lock range (km)', skuaProp.targetRange, 68.75, 0.005);
+
+  // Primary Anhinga: flight time x11 (12796), launcher RoF x0.75 (12799), lock range x5 (6010).
+  const anh = modeFit('Anhinga', 'Primary', 'Rapid Heavy Missile Launcher II', 'Scourge Heavy Missile');
+  check('t3dmode', 'Anhinga primary missile range (m)', missileRange(anh), 461221, 0.005);
+  check('t3dmode', 'Anhinga primary lock range (km)', anh.targetRange, 300, 0.005);
+  check('t3dmode', 'Anhinga primary weapon DPS', anh.weaponDps.total, 76.5, 0.01);
+  check('t3dmode', 'Anhinga primary volley', anh.weaponVolley.total, 204.9, 0.01);
+
+  // The modes must be present at all — this is the data gap that started it.
+  const modeTids = ['Skua Defense Mode', 'Skua Propulsion Mode', 'Skua Sharpshooter Mode',
+                    'Anhinga Primary Mode', 'Anhinga Secondary Mode', 'Anhinga Tertiary Mode']
+    .filter((n) => tid(n)).length;
+  check('t3dmode', 'Skua/Anhinga mode items in bundle', modeTids, 6, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {

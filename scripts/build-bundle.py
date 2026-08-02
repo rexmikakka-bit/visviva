@@ -72,10 +72,18 @@ def find_db(explicit=None):
         if not os.path.isfile(explicit):
             sys.exit(f"eve.db not found at {explicit}")
         return explicit
-    for c in ['eve.db',
-              os.path.join('Pyfa-master', 'eve.db'), os.path.join('pyfa-master', 'eve.db'),
-              os.path.join('Pyfa-master', 'app', 'eve.db'), os.path.join('pyfa-master', 'app', 'eve.db')]:
+    # ORDER MATTERS. The repo-root eve.db is a STALE leftover (client build 3383521), superseded by
+    # the pyfa v2.68 install (3424810) — and it used to be probed FIRST. Nothing caught that,
+    # because the source clone carries no eve.db either, so auto-detect silently regenerated the
+    # whole bundle from the OLD client build: it reverts real attribute values (Aralez,
+    # Berserker SW-900, ...) and invalidates every validated baseline in one commit. Probe the
+    # installed pyfa first; keep the repo-root copy as a last resort.
+    for c in [os.path.join('Pyfa-268', 'eve.db'), os.path.join('Pyfa-268', 'app', 'eve.db'),
+              os.path.join('Pyfa-master', 'eve.db'), os.path.join('Pyfa-master', 'app', 'eve.db')]:
         p = os.path.join(ROOT, c)
+        if os.path.isfile(p):
+            return p
+    for p in [r'C:\Program Files\pyfa\app\eve.db', os.path.join(ROOT, 'eve.db')]:
         if os.path.isfile(p):
             return p
     sys.exit("Could not find eve.db. Pass --db path/to/eve.db (it ships inside pyfa).")
@@ -214,8 +222,16 @@ def main():
                     out.append(nm)
         return out
 
+    # T3 destroyer tactical modes ("Ship Modifiers", group 1306) are ALL published=0 — they are not
+    # items you own, they are the dogma carrier for the mode a T3D is sitting in. The published
+    # filter therefore excludes every one of them, and the 12 in the bundle were only there because
+    # they predate this generator and survived as legacy entries. Any mode CCP added since (the
+    # Skua's and the Anhinga's) could never arrive, so applyTacticalMode silently found no type and
+    # the hull's mode bonuses just didn't apply. Admit the whole group by ID.
+    MODE_GROUP = 1306
     fit_types = [tid for tid, t in types.items()
-                 if t[3] == 1 and groups.get(t[2], (None, 0))[1] in CATS]
+                 if (t[3] == 1 and groups.get(t[2], (None, 0))[1] in CATS)
+                 or t[2] == MODE_GROUP]
 
     # ── rebuild types ───────────────────────────────────────────────────────
     # Drop types eve.db no longer has AT ALL. Keeping them used to seem harmless, but a dead type can
@@ -370,9 +386,13 @@ def main():
         for nm, an, o, n in value_changes[:25]:
             print(f"   {nm}  [{an}]  {o} -> {n}")
 
-    if new_effect_ids:
-        print(f"\n!! {len(new_effect_ids)} NEW EFFECTS have NO modifier data and will do NOTHING:")
-        for e in new_effect_ids[:15]:
+    # A new effect that a data-patch already supplied a modifier for is NOT inert, so listing it
+    # here trains the reader to ignore the one warning that must never be ignored. Report only the
+    # effects that are still empty AFTER patches were applied.
+    still_inert = [e for e in new_effect_ids if not new_effs.get(str(e), {}).get('m')]
+    if still_inert:
+        print(f"\n!! {len(still_inert)} NEW EFFECTS have NO modifier data and will do NOTHING:")
+        for e in still_inert[:15]:
             print(f"     {e}")
         print("   eve.db does not carry modifierInfo. Supply it from CCP's FSD dump, add it to")
         print("   scripts/data-patches.json, or write a custom handler in dogma-engine.js.")

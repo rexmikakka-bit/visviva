@@ -263,6 +263,103 @@
         "operation": 6,
         "skillTypeID": 3349
       }
+    ],
+    "5560": [
+      {
+        "_why": "roleBonusMarauderMJDRReactivationDelayBonus (Anhinga Tertiary Mode, 90065). CCP ships this empty. Reduces Micro Jump Drive moduleReactivationDelay by roleBonusMarauder (-90) on the mode. Mirrors pyfa Effect5560 (filteredItemBoost on group Micro Jump Drive); ModAdd of a negative percent -> operation 6 PostPercent.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "modifiedAttributeID": 669,
+        "modifyingAttributeID": 1923,
+        "operation": 6,
+        "groupID": 1189,
+        "skillTypeID": null
+      }
+    ],
+    "12767": [
+      {
+        "_why": "tacticalBonusSkuaDefensiveShieldRechargeRate (Skua Defense Mode, 90060). CCP ships this empty. PostDiv shieldRechargeRate by modeShieldRechargePostDiv (1.5 -> 33% faster recharge). Mirrors pyfa Effect12767 (fit.ship.multiplyItemAttr).",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 479,
+        "modifyingAttributeID": 6057,
+        "operation": 5,
+        "skillTypeID": null
+      }
+    ],
+    "12794": [
+      {
+        "_why": "shipRocketMaxVelocityBonusPostDivSkua (Skua Sharpshooter Mode, 90064). CCP ships this empty. PostDiv the CHARGE maxVelocity of rockets by modeRocketMissileMaxVelocityBonusPostDivSkua (0.2857 -> x3.5 missile speed). Mirrors pyfa Effect12794 (filteredChargeMultiply on requiresSkill Rockets); our LocationRequiredSkillModifier reaches both the module and its loaded charge, and launchers carry no maxVelocity so the module side is a no-op.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 37,
+        "modifyingAttributeID": 6079,
+        "operation": 5,
+        "skillTypeID": 3320
+      }
+    ],
+    "12795": [
+      {
+        "_why": "shipLightMissileMaxVelocityBonusPostDivSkua (Skua Sharpshooter Mode, 90064). CCP ships this empty. PostDiv light-missile CHARGE maxVelocity by modeLightMissileMaxVelocityBonusPostDivSkua (0.6 -> x1.667). Mirrors pyfa Effect12795.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 37,
+        "modifyingAttributeID": 6078,
+        "operation": 5,
+        "skillTypeID": 3321
+      }
+    ],
+    "12796": [
+      {
+        "_why": "shipModeMissileFlightTimePostDiv (Anhinga Primary/Secondary Mode). CCP ships this empty. PostDiv CHARGE explosionDelay (flight time) by modeAnhingaMissileFlightTimePostDiv (Primary 0.0909 -> x11 flight time; Secondary 2.0 -> x0.5). Mirrors pyfa Effect12796, filtered on Missile Launcher Operation.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 281,
+        "modifyingAttributeID": 6080,
+        "operation": 5,
+        "skillTypeID": 3319
+      }
+    ],
+    "12798": [
+      {
+        "_why": "shipModeMissileVelocityPostDiv (Anhinga Primary/Tertiary Mode). CCP ships this empty. PostDiv CHARGE maxVelocity by modeAnhingaMissileMaxVelocityPostDiv (Primary 1.5 -> x0.667; Tertiary 0.667 -> x1.5). Mirrors pyfa Effect12798.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 37,
+        "modifyingAttributeID": 6081,
+        "operation": 5,
+        "skillTypeID": 3319
+      }
+    ],
+    "12799": [
+      {
+        "_why": "shipModeAnhingaCruiseLauncherTorpedoLauncherRapidHeavyLauncherROFPostDiv (all 3 Anhinga modes). CCP ships this empty. PostDiv launcher speed (rate of fire) by the mode attr (1.333 -> x0.75 cycle; Secondary 2.0 -> x0.5). Mirrors pyfa Effect12799, which filters on the three launcher GROUPS - one modifier per group.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "modifiedAttributeID": 51,
+        "modifyingAttributeID": 6082,
+        "operation": 5,
+        "groupID": 1245,
+        "skillTypeID": null
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "modifiedAttributeID": 51,
+        "modifyingAttributeID": 6082,
+        "operation": 5,
+        "groupID": 506,
+        "skillTypeID": null
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "modifiedAttributeID": 51,
+        "modifyingAttributeID": 6082,
+        "operation": 5,
+        "groupID": 508,
+        "skillTypeID": null
+      }
     ]
   },
   "attributes": {}

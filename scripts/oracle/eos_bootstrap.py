@@ -94,6 +94,7 @@ def get_eos():
     from eos.saveddata.fit import Fit
     from eos.saveddata.character import Character
     from eos.saveddata.module import Module
+    from eos.saveddata.mode import Mode
     from eos.saveddata.drone import Drone
     from eos.saveddata.fighter import Fighter
     from eos.saveddata.booster import Booster
@@ -109,6 +110,7 @@ def get_eos():
         "Fit": Fit,
         "Character": Character,
         "Module": Module,
+        "Mode": Mode,
         "Drone": Drone,
         "Fighter": Fighter,
         "Booster": Booster,

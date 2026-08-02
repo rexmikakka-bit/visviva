@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 98)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 107)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -227,6 +227,47 @@ Two things that are easy to get wrong here:
 
 `SKILL_CATALOG` also back-fills `SKILL_CAMEL_TO_PYFA` for its derived keys, so a level set on a
 requirement-only skill actually reaches the engine instead of falling through to the all-V default.
+
+### ⚠️ T3D tactical modes are `published=0` — and the generator filtered on `published`
+
+All 18 "Ship Modifiers" (group **1306**) — the items that carry a T3 destroyer's mode bonuses — are
+unpublished, because they are not items you own. `build-bundle.py`'s `fit_types` filter required
+`published==1`, so **none of them could ever enter the bundle**; the 12 that were in it were legacy
+entries predating the generator, and every mode CCP has added since was silently missing. The filter
+now admits group 1306 by ID (`MODE_GROUP`).
+
+Two bugs had grown over that gap, both of the "special case that hides a data problem" shape:
+
+- `calc.js` proxied the **Skua** to the *Jackdaw's* modes (`MODE_PROXY`), on the stated belief that
+  the Skua ships no modes of its own. It ships three (90060/90062/90064). A Propulsion Skua read
+  `maxSpeed` 2303 against eos's 2729.
+- The **Anhinga's** mode bonuses were hand-transcribed into an `ANHINGA_MODES` table — every value in
+  which was exactly `1/<the mode's own PostDiv attribute>`.
+
+Seven of the modes' effects ship EMPTY (5560, 12767, 12794, 12795, 12796, 12798, 12799); they are now
+in `scripts/data-patches.json`, mirroring pyfa's handlers. Lock range, agility and launcher RoF come
+from the engine; **missile velocity and flight time still have to be applied in `calc.js`**, because
+this file reads charge attributes RAW and builds its own multiplier chain — an engine-applied charge
+modifier is invisible to it. Same split as `SHIP_MISSILE_DMG`.
+
+**An attribute being present does NOT mean its effect applies.** The Skua's Sharpshooter mode still
+carries a vestigial `modeMaxRangePostDiv = 0.6` from before CCP split that bonus into two per-skill
+ones, but it does **not** carry effect **6076** — so eos ignores the attribute entirely. Keying the
+mode-bonus table off attribute presence applied a phantom second multiplier and put a Sharpshooter
+Skua's rockets at 47 km against eos's 35 km. `MODE_MISSILE_VEL` is keyed by **effect ID**, and the
+attribute is only read once that effect is confirmed present on the mode.
+
+### ⚠️ `build-bundle.py` auto-detect could silently pick the STALE eve.db
+
+The repo-root `eve.db` is a superseded leftover (client build **3383521**); the authoritative one is
+the pyfa v2.68 install (**3424810**). `find_db()` probed the repo-root copy **first**, and the only
+thing that had ever kept that from mattering was `Pyfa-master/` also existing. It carries no
+`eve.db`, so a plain `python scripts/build-bundle.py` regenerated the entire bundle from the old
+client build — reverting real attribute values (Aralez, Berserker SW-900, …) and invalidating every
+validated baseline in one commit. The probe order is now installs-first, repo-root last.
+
+**Always check the first two lines the generator prints** — it echoes the db path and client build.
+If it does not say `3424810`, stop.
 
 ### Stacking groups (this bit is subtle)
 
