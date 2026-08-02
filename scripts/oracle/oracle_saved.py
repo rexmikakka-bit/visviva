@@ -137,11 +137,8 @@ def extract_spec(fit, depth=0):
         # our spec carries no projection at all, and the fit shows up as a phantom engine divergence.
         # That is exactly what made saved Deacon #132 read eos 35.6 vs ours 0.0 armorRepEhpS —
         # rebuilding the same hull+modules by hand gives eos 0.0 too, i.e. our number was right.
-        "projected": bool(getattr(fit, "projectedModules", []) or
-                          getattr(fit, "projectedFits", {}) or
-                          getattr(fit, "projectedDrones", []) or
-                          getattr(fit, "projectedFighters", []) or
-                          getattr(fit, "projectedFitDict", {})),
+        # Set below: only projections we could NOT model keep the fit out of the comparison.
+        "projected": False,
         # Set below, once we know whether any ACTIVE link exists that we failed to emit.
         "commandBoosted": False,
     }
@@ -154,6 +151,31 @@ def extract_spec(fit, depth=0):
     #  2. For ACTIVE links we emit the BOOSTER fit's own spec rather than eos's resulting buff
     #     values, so the comparison also exercises our computeCommandBursts() instead of trusting it.
     # Not recursed: a booster fit's own links don't propagate, matching App.jsx.
+    # ── Projected fits ───────────────────────────────────────────────────────────────────────
+    # Same two lessons as command links. eos skips projections whose `active` flag is false, and 64
+    # of the 120 projected-fit links here are inactive; flagging those was a false positive. For the
+    # ACTIVE ones emit the SOURCE fit's spec plus its projectionRange, and let the JS side rebuild
+    # the effect via computeProjectedReps + calcRangeFactor exactly as App.jsx does — so our own
+    # projection maths stays under test rather than being imported from eos.
+    # NOT handled, and still flagged: projected MODULES (all 12 are Effect Beacons — wormhole/abyssal
+    # system effects, which our engine has no concept of) and projected fighters.
+    projected_fits = []
+    unhandled_projection = bool(getattr(fit, "projectedModules", []) or
+                                getattr(fit, "projectedFighters", []) or
+                                getattr(fit, "projectedDrones", []))
+    if depth == 0:
+        for pf in (getattr(fit, "projectedFits", []) or []):
+            try:
+                info = pf.getProjectionInfo(fit.ID)
+                if not info or not info.active or pf is fit:
+                    continue
+                pspec, _ = extract_spec(pf, depth + 1)
+                pspec["projectionRangeKm"] = (info.projectionRange or 0) / 1000.0                     if info.projectionRange else None
+                pspec["amount"] = getattr(info, "amount", 1) or 1
+                projected_fits.append(pspec)
+            except Exception:  # noqa: BLE001
+                unhandled_projection = True
+
     command_fits = []
     unhandled_active = False
     if depth == 0:
@@ -167,6 +189,7 @@ def extract_spec(fit, depth=0):
             except Exception:  # noqa: BLE001 -- one bad link must not lose the whole fit
                 unhandled_active = True
     flags["commandBoosted"] = unhandled_active
+    flags["projected"] = unhandled_projection
     # System security (structure fits only): scales structure RIG bonuses by hiSec/lowSec/nullSec
     # modifier. eos defaults to NULLSEC when unset, so a fit explicitly set to hisec computes 20%
     # weaker rig bonuses. Without emitting this, calc.js used its own default and a real hisec
@@ -177,7 +200,12 @@ def extract_spec(fit, depth=0):
         "slots": slots, "drones": drones,
         "implants": implants, "boosters": boosters,
         "systemSecurity": _SEC_STR.get(int(fit.getSystemSecurity()), "nullsec"),
+        # PILOT security status — distinct from system security. CONCORD hulls gain tank from
+        # POSITIVE sec; AT frigates (Sidewinder, effect 12165) gain up to +75% small-weapon damage at
+        # -10. Not emitting it meant every Sidewinder read exactly 1/1.75 = -42.9% on weapon DPS.
+        "pilotSec": fit.getPilotSecurity(),
         "commandFits": command_fits,
+        "projectedFits": projected_fits,
     }
     return spec, flags
 

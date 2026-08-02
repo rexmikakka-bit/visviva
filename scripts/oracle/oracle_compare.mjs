@@ -9,7 +9,8 @@
 // (same ship/module across many fits) -- those are the real engine bugs.
 
 import { readFileSync } from 'fs';
-import { calcFitStats, computeCommandBursts } from '../../src/calc.js';
+import { calcFitStats, computeCommandBursts, layerEHP } from '../../src/calc.js';
+import { buildProjectedEffects } from './projection_effects.mjs';
 
 const args = process.argv.slice(2);
 const file = args.find((a) => !a.startsWith('--'));
@@ -34,10 +35,16 @@ const errorSummary = {};
 for (const line of lines) {
   const r = JSON.parse(line);
   total++;
-  const flagged = r.flags.mutated || r.flags.projected || r.flags.fighters || r.flags.commandBoosted;
+  // Skip ONLY what we genuinely cannot model. `mutated` and `fighters` used to skip too, back when
+  // the harness dropped mutation rolls — but mutated modules are now emitted properly (97% clean)
+  // and fighters were already 86% clean, so excluding them just hides real results. `projected` and
+  // `commandBoosted` are now set only when an ACTIVE link could not be emitted, so they still mean
+  // "unmodellable" rather than merely "present".
+  const flagged = r.flags.projected || r.flags.commandBoosted;
   if (flagged && !showAll) { skippedFlagged++; continue; }
 
   let cs;
+  let projectedEffects = { reps: { shield: 0, armor: 0, hull: 0 }, webMult: 1, neutGJs: 0, debuffs: null };
   try {
     // Command (gang) boosts: the harness emits each ACTIVE booster fit's own spec, so we recompute
     // its bursts with OUR code rather than importing eos's answer — that keeps computeCommandBursts
@@ -49,9 +56,16 @@ for (const line of lines) {
               { implants: b.implants, boosters: b.boosters })) externalBursts.push(burst);
       } catch { /* a booster fit we cannot build shows up as a divergence, not a crash */ }
     }
+    // Projections: the harness emits each ACTIVE source fit's spec plus its range, and we rebuild
+    // the effect with our own computeProjectedReps (see projection_effects.mjs).
+    projectedEffects = buildProjectedEffects(r.spec.projectedFits, null);
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
                       { implants: r.spec.implants, boosters: r.spec.boosters,
-                        systemSecurity: r.spec.systemSecurity, externalBursts });
+                        systemSecurity: r.spec.systemSecurity, pilotSec: r.spec.pilotSec, externalBursts,
+                        projectedWebMult: projectedEffects.webMult,
+                        projectedNeutGJs: projectedEffects.neutGJs,
+                        projectedDebuffs: projectedEffects.debuffs,
+                        projectedReps: projectedEffects.reps });
   } catch (ex) {
     errored++;
     const key = String(ex.message).slice(0, 60);
@@ -63,12 +77,19 @@ for (const line of lines) {
   // weapon{Dps,Volley}Max, which ramp ONLY the disintegrator's own contribution (co-fitted
   // smartbombs/guns don't spool) — so compare against those directly rather than scaling the whole
   // total by the factor.
+  // eos's effectiveTank folds INCOMING remote reps into armorRepair/shieldRepair (that is what
+  // _getAppliedArmorRr does), so add ours too — otherwise a fit being repped externally always
+  // reads as a divergence. computeProjectedReps returns RAW hp/s; layerEHP converts to the
+  // resist-weighted EHP/s eos reports, using the same helper calc.js uses for local reps.
+  const projReps = projectedEffects.reps ?? { shield: 0, armor: 0, hull: 0 };
+  const projArmorEhpS  = projReps.armor  > 0 ? layerEHP(projReps.armor,  cs.resists?.armor  ?? {}) : 0;
+  const projShieldEhpS = projReps.shield > 0 ? layerEHP(projReps.shield, cs.resists?.shield ?? {}) : 0;
   const ours = {
     weaponDps: cs.weaponDpsMax ?? cs.weaponDps?.total ?? 0,
     weaponVolley: cs.weaponVolleyMax ?? cs.weaponVolley?.total ?? 0,
     totalEHP: cs.totalEHP ?? 0,
-    armorRepEhpS: cs.armorRepEhpS ?? 0,
-    shieldRepEhpS: cs.shieldRepEhpS ?? 0,
+    armorRepEhpS: (cs.armorRepEhpS ?? 0) + projArmorEhpS,
+    shieldRepEhpS: (cs.shieldRepEhpS ?? 0) + projShieldEhpS,
     scanRes: cs.scanRes ?? 0,
     maxSpeed: (cs.maxVelocityAB ?? cs.maxVelocity ?? 0),  // eos maxSpeed includes active MWD/AB
     maxTargetRange: cs.targetRange ?? 0,   // calc.js returns km
