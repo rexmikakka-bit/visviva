@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 107)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 132)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -308,19 +308,38 @@ With the phantom types pruned, the full product gives the Astarte a repair amoun
 **The lesson worth keeping:** a rule that only works with a magic exception is usually a symptom.
 Two errors were cancelling, and the "asymmetry" was the shape of the cancellation.
 
-### Implant SETS — three exist, all use the FULL product (incl. Omega)
+### Implant SETS — FOUR exist, all use the FULL product (incl. Omega)
 
-`Asklepian` (armor rep), `Nirvana` (shield HP) and `Amulet` (armor HP) all follow the same shape: each
-member carries a bonus attr, and a set-multiplier effect (PreMul on that attr, domain=charID) which the
-dispatcher SKIPS. Each needs a custom handler in `dogma-engine.js` applying the FULL set product
-including Omega (1.1^5 x 1.25 = 2.0131).
+`Asklepian` (armor rep), `Nirvana` (shield HP), `Amulet` (armor HP) and `Mimesis` (entropic
+disintegrator SPOOL) all follow the same shape: each member carries a bonus attr, and a
+set-multiplier effect (PreMul on that attr, domain=charID) which the dispatcher SKIPS. Each needs a
+custom handler in `dogma-engine.js` applying the FULL set product including Omega (1.1^5 x 1.25 =
+2.0131 for the first three; Mid-grade Mimesis is 1.2^5 x 1.6 = 3.981312).
 
 If a fit's tank/EHP is low by roughly 10-13%, suspect a set with no handler. Amulet was missing
 entirely — a Revelation Navy Issue came out at 4.49M EHP instead of pyfa's 5.07M.
 
+**Mimesis is the odd one out and shows the failure looks different when the target isn't the ship.**
+It boosts MODULES, not the hull: members carry `damageMultiplierBonusMaxModifier` and
+`damageMultiplierBonusPerCycleModifier`, which effects 7232/7233 apply to Precursor Weapons (group
+1986) — how far an entropic disintegrator's spool ramps, and how fast. Those two effects DO carry
+modifiers, so the un-amplified bonus was applying all along and only the ×3.98 amplification was
+missing; the symptom was full-spool DPS 20% low (a Draugur at 388.8 against eos's 490.6) with
+*unspooled* DPS matching exactly. If spooled and unspooled disagree about whether they're correct,
+look here.
+
 When adding one, filter members on attribute PRESENCE (`'attr' in type.a`), not on a truthy value:
 attributes have defaults, and Omega (which carries no bonus attr) will otherwise read back the default
 and inject a phantom bonus.
+
+### ⚠️ Pilot-security bonuses must NOT also sit in `SHIP_MISSILE_DMG`
+
+A few hulls (Sidewinder & kin) scale a damage bonus by the pilot's *negative* security status:
+magnitude is `ATFrigDmgBonus × sec`, not the raw attribute. Effect **12165** was listed in
+`SHIP_MISSILE_DMG` *as well as* in the dedicated pilot-sec block in `calc.js`, so the raw −7.5% was
+applied on top of the sec-scaled +75%: `1.75 × 0.925 = 1.61875`, and a −10.0 sec Sidewinder read
+190.4 weapon DPS against eos's 205.8. `SHIP_MISSILE_DMG` is for bonuses whose magnitude *is* the
+attribute; anything scaled by something else belongs only with its own handler.
 
 ### ⚠️ Charges modify their parent MODULE (domain "otherID")
 
