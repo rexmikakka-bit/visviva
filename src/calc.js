@@ -1052,6 +1052,13 @@ export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts
       const v = fit.ship.get(attr);
       if (Number.isFinite(v) && v > 0) out[key] = v;
     }
+    // Not a resistance, but it comes off the same computed target fit and every caller that wants
+    // resistances also needs it: with disallowAssistance set, the ship refuses ALL incoming remote
+    // assistance (reps, remote sensor boosters, remote tracking computers) while still taking EWAR
+    // normally. eos gates each assistance effect on exactly this attribute. In the current game the
+    // only common source is an ACTIVE HIC bubble (Warp Disrupt Field Generator, effect 3380) —
+    // Siege/Bastion/Triage all carry disallowAssistance=0 and do NOT block assistance.
+    out.disallowAssistance = !!fit.ship.get('disallowAssistance');
   } catch { /* resistances are an optimisation on top of a correct-enough default of 1 */ }
   return out;
 }
