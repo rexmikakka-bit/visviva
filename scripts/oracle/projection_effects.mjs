@@ -10,9 +10,12 @@
  */
 import { computeProjectedReps, calcRangeFactor, stackingPenalty } from '../../src/calc.js';
 
-// App.jsx defaults an unset projection range to 30 km; eos stores one per link, which the harness
-// passes through as projectionRangeKm.
-const DEFAULT_RANGE_KM = 30;
+// A NULL projection range means "no attenuation", not "30 km". eos is explicit about this —
+// calculateRangeFactor() opens with `if distance is None: return 1` — and most saved links have no
+// explicit range. App.jsx defaults to 30 km because there a human is choosing a distance, but
+// applying that here silently weakened every unranged projection: a Paladin being webbed by a
+// projected Vindicator read 689 m/s against eos's 15.
+const NO_ATTENUATION = null;
 
 export function buildProjectedEffects(projectedFits, skills = null) {
   const reps = { shield: 0, armor: 0, hull: 0 };
@@ -26,8 +29,10 @@ export function buildProjectedEffects(projectedFits, skills = null) {
       eff = computeProjectedReps(pf.ship, pf.slots, skills,
         { implants: pf.implants, boosters: pf.boosters, drones: pf.drones });
     } catch { continue; }
-    const rangeM = (pf.projectionRangeKm ?? DEFAULT_RANGE_KM) * 1000;
-    const rf = (o, fo) => calcRangeFactor(o, fo, rangeM, true);
+    const rangeKm = pf.projectionRangeKm ?? NO_ATTENUATION;
+    const rf = rangeKm == null
+      ? () => 1                                   // matches eos: distance None -> factor 1
+      : (o, fo) => calcRangeFactor(o, fo, rangeKm * 1000, true);
     // `amount` is how many copies of that source are projecting (eos ProjectionInfo.amount).
     const n = Math.max(1, pf.amount ?? 1);
     for (let i = 0; i < n; i++) {
