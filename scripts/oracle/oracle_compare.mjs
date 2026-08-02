@@ -9,7 +9,7 @@
 // (same ship/module across many fits) -- those are the real engine bugs.
 
 import { readFileSync } from 'fs';
-import { calcFitStats, computeCommandBursts, layerEHP } from '../../src/calc.js';
+import { calcFitStats, computeCommandBursts, layerEHP, projectionResistances } from '../../src/calc.js';
 import { buildProjectedEffects } from './projection_effects.mjs';
 
 const args = process.argv.slice(2);
@@ -58,7 +58,9 @@ for (const line of lines) {
     }
     // Projections: the harness emits each ACTIVE source fit's spec plus its range, and we rebuild
     // the effect with our own computeProjectedReps (see projection_effects.mjs).
-    projectedEffects = buildProjectedEffects(r.spec.projectedFits, null);
+    const resist = (r.spec.projectedFits ?? []).length
+      ? projectionResistances(r.spec.ship, r.spec.slots, null) : null;
+    projectedEffects = buildProjectedEffects(r.spec.projectedFits, null, resist);
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
                       { implants: r.spec.implants, boosters: r.spec.boosters,
                         systemSecurity: r.spec.systemSecurity, pilotSec: r.spec.pilotSec, externalBursts,

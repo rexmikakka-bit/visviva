@@ -908,6 +908,67 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
 // Build a fit and extract its active remote shield/armor repairers: rep-per-second (with the source
 // module's overheat state already applied by the engine) and optimal/falloff range. For projecting
 // remote assistance onto another fit, scaled by distance.
+// T3 Destroyer tactical mode. `slots.tactical` = 'Defense' | 'Propulsion' | 'Sharpshooter'; the mode
+// is a real dogma type named "<Ship> <Mode> Mode" whose effects apply hull PostDiv bonuses — one of
+// which (modeEwarResistancePostDiv) feeds projectionResistances below, so both callers must set the
+// mode the same way. Returns the mode typeID, or null.
+function applyTacticalMode(fit, ship, slots) {
+  if (!ship?.name) return null;
+  // The Skua ships no mode items of its own; it reuses the Caldari T3D (Jackdaw) modes.
+  const MODE_PROXY = { Skua: 'Jackdaw' };
+  const proxy = MODE_PROXY[ship.name] ?? ship.name;
+  const hasDefenseMode = !!(typeIDByName(`${proxy} Defense Mode`) ?? tidByName(`${proxy} Defense Mode`));
+  const modeName = slots?.tactical ?? (hasDefenseMode ? 'Defense' : null);
+  if (!modeName) return null;
+  const tid = typeIDByName(`${proxy} ${modeName} Mode`) ?? tidByName(`${proxy} ${modeName} Mode`);
+  if (tid) fit.setShipMode(tid);
+  return tid ?? null;
+}
+
+// ── EWAR resistance of the TARGET of a projection ───────────────────────────
+// Incoming projected effects are scaled by a resistance attribute on the ship being hit — eos does
+// this in ModifiedAttributeDict.getResistance(), which looks up the effect's resistanceID and reads
+// that attribute off the target. Baseline is 1 (no resistance); a Siege/Bastion module sets
+// sensorDampenerResistanceBonus -70 (→ 0.30) and a T3 destroyer's Sharpshooter mode divides by
+// modeEwarResistancePostDiv 3 (→ 0.3333).
+//
+// CRUCIAL: the resistance multiplies each SOURCE MODULE's bonus BEFORE stacking, not the stacked
+// total afterwards — stack(b·r) ≠ stack(b)·r. Applying it after gave a sieged Phoenix Navy Issue
+// 25.9 km lock range against eos's 95.1; per-module it reproduces eos exactly.
+const EWAR_RESIST_ATTRS = {
+  damp:     'sensorDampenerResistance',   // remote sensor dampeners  → lock range / scan res
+  web:      'stasisWebifierResistance',   // stasis webifiers         → velocity
+  neut:     'energyWarfareResistance',    // energy neutralisers      → capacitor
+  painter:  'targetPainterResistance',    // target painters          → signature
+  disrupt:  'weaponDisruptionResistance', // tracking/guidance disruptors
+};
+
+/** The projection-resistance multipliers of a fit, keyed as in EWAR_RESIST_ATTRS. All default to 1. */
+export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
+  const out = Object.fromEntries(Object.keys(EWAR_RESIST_ATTRS).map(k => [k, 1]));
+  const shipTypeID = ship?.typeID ?? tidByName(ship?.name);
+  if (!shipTypeID || !TYPES[shipTypeID] || !slots) return out;
+  try {
+    const sk = { ...SKILL_DEFAULTS, ...skills };
+    const fit = new Fit(shipTypeID);
+    for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
+    for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
+    for (const sec of ['high', 'mid', 'low', 'rigs', 'services']) {
+      for (const s of (slots[sec] ?? [])) {
+        if (!s?.typeID || s.type === 'empty') continue;
+        fit.addModule(s.typeID, s.state ?? 'active', s.mutations);
+      }
+    }
+    applyTacticalMode(fit, ship, slots);
+    fit.calculate();
+    for (const [key, attr] of Object.entries(EWAR_RESIST_ATTRS)) {
+      const v = fit.ship.get(attr);
+      if (Number.isFinite(v) && v > 0) out[key] = v;
+    }
+  } catch { /* resistances are an optimisation on top of a correct-enough default of 1 */ }
+  return out;
+}
+
 export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
   if (!ship || !slots) return [];
   const sk = { ...SKILL_DEFAULTS, ...skills };
@@ -1082,20 +1143,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   }
 
   // ── 2b. T3 Destroyer tactical mode ────────────────────────────────────────
-  // slots.tactical = 'Defense' | 'Propulsion' | 'Sharpshooter'. The mode is a real
-  // dogma type named "<Ship> <Mode> Mode" whose effects apply hull PostDiv bonuses.
-  let tacticalModeTid = null;
-  if (ship?.name) {
-    // The Skua ships no mode items of its own; it reuses the Caldari T3D (Jackdaw) modes.
-    const MODE_PROXY = { Skua: 'Jackdaw' };
-    const proxy = MODE_PROXY[ship.name] ?? ship.name;
-    const hasDefenseMode = !!(typeIDByName(`${proxy} Defense Mode`) ?? tidByName(`${proxy} Defense Mode`));
-    const modeName = slots.tactical ?? (hasDefenseMode ? 'Defense' : null);
-    if (modeName) {
-      tacticalModeTid = typeIDByName(`${proxy} ${modeName} Mode`) ?? tidByName(`${proxy} ${modeName} Mode`);
-      if (tacticalModeTid) fit.setShipMode(tacticalModeTid);
-    }
-  }
+  const tacticalModeTid = applyTacticalMode(fit, ship, slots);
   // Anhinga's Primary/Secondary/Tertiary modes DO exist as dogma types (90061/90063/90065) whose
   // effects are all PostDiv (attr / value); the per-field multipliers below are 1/value of those:
   //   ROF PostDiv → rofMult (cycle); MissileFlightTime PostDiv → missileFlight (explosionDelay);

@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, checkFitSkills, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { calcFitStats, checkFitSkills, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 
@@ -610,6 +610,31 @@ function check(group, label, actual, expected, tol = 0.005) {
     check('struct', '2 launchers + 2 Standup BCS DPS', cs.weaponDps.total, 1617.02, 0.001);
     check('struct', '2 launchers + 2 Standup BCS volley', cs.weaponVolley.total, 3156.36, 0.001);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 11c. EWAR RESISTANCE — the multiplier a projection's TARGET applies to incoming ewar. eos reads it
+//      in ModifiedAttributeDict.getResistance(); we had no concept of it, so projected dampeners
+//      landed at full strength. Found by diffing two real saved fits whose lock range was ~4x low.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nEWAR RESISTANCE (projection targets)');
+  // A Siege Module carries sensorDampenerResistanceBonus -70, so a sieged dread takes 30% of a
+  // dampener's nominal strength. Verified against eos on saved fit #1179 (Phoenix Navy Issue).
+  const dread = { typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' };
+  const sieged = projectionResistances(dread, { high: [M('Siege Module II', 'active')], mid: [], low: [], rigs: [] }, null);
+  check('ewarres', 'sieged dread damp resistance', sieged.damp, 0.30, 0.001);
+  check('ewarres', 'sieged dread weapon-disruption resistance', sieged.disrupt, 0.30, 0.001);
+  const unsieged = projectionResistances(dread, { high: [], mid: [], low: [], rigs: [] }, null);
+  check('ewarres', 'no siege -> no resistance', unsieged.damp, 1, 0.001);
+
+  // A T3 destroyer's Sharpshooter mode divides ewar resistance by modeEwarResistancePostDiv (3).
+  // Verified against eos on saved fit #28 (Jackdaw). Defense mode does NOT grant it.
+  const jack = { typeID: tid('Jackdaw'), name: 'Jackdaw' };
+  const sharp = projectionResistances(jack, { high: [], mid: [], low: [], rigs: [], tactical: 'Sharpshooter' }, null);
+  check('ewarres', 'Jackdaw Sharpshooter damp resistance', sharp.damp, 1 / 3, 0.001);
+  const defense = projectionResistances(jack, { high: [], mid: [], low: [], rigs: [], tactical: 'Defense' }, null);
+  check('ewarres', 'Jackdaw Defense mode: no damp resistance', defense.damp, 1, 0.001);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

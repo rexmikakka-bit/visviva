@@ -17,7 +17,10 @@ import { computeProjectedReps, calcRangeFactor, stackingPenalty } from '../../sr
 // projected Vindicator read 689 m/s against eos's 15.
 const NO_ATTENUATION = null;
 
-export function buildProjectedEffects(projectedFits, skills = null) {
+export function buildProjectedEffects(projectedFits, skills = null, resist = null) {
+  // Target EWAR resistances (see projectionResistances in calc.js). Applied PER SOURCE MODULE,
+  // before stacking — stack(b*r) != stack(b)*r, and eos does the former.
+  const R = { damp: 1, web: 1, neut: 1, painter: 1, disrupt: 1, ...(resist ?? {}) };
   const reps = { shield: 0, armor: 0, hull: 0 };
   const webMults = [];
   let neutGJs = 0;
@@ -37,21 +40,22 @@ export function buildProjectedEffects(projectedFits, skills = null) {
     const n = Math.max(1, pf.amount ?? 1);
     for (let i = 0; i < n; i++) {
       for (const r of eff.reps)  reps[r.kind] += r.rawPS * rf(r.optimal, r.falloff);
-      for (const w of eff.webs)  webMults.push(1 + (w.speedFactor * rf(w.optimal, w.falloff)) / 100);
-      for (const q of eff.neuts) neutGJs += q.gjPerSec * rf(q.optimal, q.falloff);
-      for (const p of (eff.painters ?? [])) col.sig.push(p.sigBonus * rf(p.optimal, p.falloff));
+      for (const w of eff.webs)  webMults.push(1 + (w.speedFactor * R.web * rf(w.optimal, w.falloff)) / 100);
+      for (const q of eff.neuts) neutGJs += q.gjPerSec * R.neut * rf(q.optimal, q.falloff);
+      for (const p of (eff.painters ?? [])) col.sig.push(p.sigBonus * R.painter * rf(p.optimal, p.falloff));
       for (const d of (eff.damps ?? [])) {
-        col.lock.push(d.lockBonus * rf(d.optimal, d.falloff));
-        col.scan.push(d.scanResBonus * rf(d.optimal, d.falloff));
+        col.lock.push(d.lockBonus * R.damp * rf(d.optimal, d.falloff));
+        col.scan.push(d.scanResBonus * R.damp * rf(d.optimal, d.falloff));
       }
       for (const t of (eff.trackDisr ?? [])) {
         const f = rf(t.optimal, t.falloff);
-        col.trk.push(t.tracking * f); col.topt.push(t.optimalBonus * f); col.tfall.push(t.falloffBonus * f);
+        col.trk.push(t.tracking * R.disrupt * f); col.topt.push(t.optimalBonus * R.disrupt * f);
+        col.tfall.push(t.falloffBonus * R.disrupt * f);
       }
       for (const g of (eff.guideDisr ?? [])) {
         const f = rf(g.optimal, g.falloff);
-        col.mrng.push(g.missileRange * f); col.edly.push(g.explosionDelay * f);
-        col.avel.push(g.aoeVel * f);       col.acld.push(g.aoeCloud * f);
+        col.mrng.push(g.missileRange * R.disrupt * f); col.edly.push(g.explosionDelay * R.disrupt * f);
+        col.avel.push(g.aoeVel * R.disrupt * f);       col.acld.push(g.aoeCloud * R.disrupt * f);
       }
     }
   }
