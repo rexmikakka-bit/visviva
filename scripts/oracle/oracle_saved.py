@@ -114,8 +114,17 @@ def extract_spec(fit):
     flags = {
         "mutated": mutated,
         "fighters": len(fit.fighters) > 0,
+        # ALL FIVE projection collections, not just modules+fits. projectedDrones and
+        # projectedFighters were missing, so a fit with (say) an Armor Maintenance Bot projected onto
+        # it looked unflagged: eos folds the incoming reps into effectiveTank via _getAppliedArmorRr,
+        # our spec carries no projection at all, and the fit shows up as a phantom engine divergence.
+        # That is exactly what made saved Deacon #132 read eos 35.6 vs ours 0.0 armorRepEhpS —
+        # rebuilding the same hull+modules by hand gives eos 0.0 too, i.e. our number was right.
         "projected": bool(getattr(fit, "projectedModules", []) or
-                          getattr(fit, "projectedFits", {})),
+                          getattr(fit, "projectedFits", {}) or
+                          getattr(fit, "projectedDrones", []) or
+                          getattr(fit, "projectedFighters", []) or
+                          getattr(fit, "projectedFitDict", {})),
         # Gang/command boosts come from a LINKED command fit (fit.commandFits), not the fit's own
         # modules. eos folds those buffs into ship attrs (scan res, resists, speed...) but our spec
         # only carries the fit's own modules, so bucket these like projected fits.
