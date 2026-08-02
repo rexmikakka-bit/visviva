@@ -125,7 +125,14 @@ def extract_spec(fit, depth=0):
     # fit.implants made calc.js apply implants eos ignored -- e.g. #2096 Corax Navy, full High-grade
     # Nirvana set: our 8987.6 shieldHP vs eos 5850, purely because the fit uses character implants.
     # appliedImplants is [] for character-source fits, so both engines see the same implants.
-    implants = [{"name": i.item.typeName} for i in fit.appliedImplants]
+    # ...and honour each implant's own `active` flag: pyfa lets you leave an implant in the fit but
+    # switched OFF, and eos then ignores it. Emitting it unconditionally made calc.js apply a bonus
+    # eos did not -- a Cerberus with a DISABLED Zainou 'Deadeye' Rapid Launch RL-1005 read 652.6
+    # weapon DPS against eos's 620.0, exactly the implant's +5% rate of fire (1/0.95). This is the
+    # fourth time an eos `active` flag has had to be threaded through this harness (projected drones,
+    # inactive command links, inactive projections); when eos exposes one, honour it.
+    implants = [{"name": i.item.typeName, "active": bool(getattr(i, "active", True))}
+                for i in fit.appliedImplants if getattr(i, "active", True)]
     boosters = [{"name": b.item.typeName, "active": bool(b.active)} for b in fit.boosters]
 
     flags = {
