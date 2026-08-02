@@ -318,6 +318,23 @@ export class DogmaItem {
   get effectIDs() { return this._td.e ?? []; }
 }
 
+// Effects that fire while a module is merely FITTED — including at state 'offline'. eos marks these
+// with `type = 'offline'` on the effect class (eos/effects.py); there is no equivalent flag in
+// eve.db, whose dgmeffects table has only published/isAssistance/isOffensive/resistanceID, and whose
+// effectCategory for 854 is 0 (passive). So this list is transcribed from eos and is the COMPLETE
+// set it defines (854, 3046, 6737, 11714).
+//
+//   854  cloakingScanResolutionMultiplier — a fitted cloak halves scanResolution even offline. This
+//        is a pyfa modelling convention (in game the penalty applies while cloaked), and pyfa is the
+//        reference: a Stork with an OFFLINE Prototype Cloaking Device read 594 scan res against
+//        eos's 296.875 — exactly 2x — until this was honoured.
+//   3046 modifyMaxVelocityOfShipPassive — Expanded Cargoholds slow the ship whenever fitted.
+//
+// 6737 (command burst charge multipliers) and 11714 (Disruptive Lance blocks cloaking) are eos's
+// other two, deliberately NOT here: 6737 is charge-side and calc.js already reads warfare buffs off
+// the charge directly, and 11714 only sets activationBlocked, which we do not model.
+const OFFLINE_STATE_EFFECTS = new Set([854, 3046]);
+
 // ─── Effect category → active state mapping ───────────────────────────────────
 // effectCategory: 0=passive, 1=activation(always?), 2=target, 4=online, 5=active, 6=overheat
 function effectActiveForState(effectCat, itemState) {
@@ -516,7 +533,8 @@ export class Fit {
       ...this._subsystems.map(s => ({ item: s, isModule: false, isBooster: false })),
       ...this._implants.map(i => ({ item: i, isModule: false, isBooster: false })),
       ...this._boosters.map(i => ({ item: i, isModule: false, isBooster: true })),
-      ...this._modules.filter(m => m.state !== 'offline').map(i => ({ item: i, isModule: true, isBooster: false })),
+      // OFFLINE modules are included, but only OFFLINE_STATE_EFFECTS fire for them (gated below).
+      ...this._modules.map(i => ({ item: i, isModule: true, isBooster: false })),
       ...this._drones.map(i => ({ item: i, isModule: false, isBooster: false })),
     ];
 
@@ -580,6 +598,12 @@ export class Fit {
         //   cat=5 (overload) → only fire when overheated
         //   cat=0/4 (passive/online) → fire for all non-offline states
         const eCat = EFFECTS[eid]?.c;
+        // An OFFLINE module is inert except for the handful of effects eos classifies as
+        // type='offline' — they apply while the module is merely FITTED. There is no data flag for
+        // this (CCP's effectCategory says 0/passive for effect 854, and eve.db's dgmeffects has no
+        // isOffline column); it lives only in eos's hand-written effect classes, so the set is
+        // transcribed from them. See OFFLINE_STATE_EFFECTS.
+        if (item.state === 'offline' && !OFFLINE_STATE_EFFECTS.has(eid)) continue;
         if (eCat === 1 && item.state !== 'active' && item.state !== 'overheated') continue;
         if (eCat === 5 && item.state !== 'overheated') continue;
         this._applyEffect(eid, item, null, direct);
@@ -605,8 +629,9 @@ export class Fit {
     const edata = EFFECTS[eid];
     if (!edata) return;
 
-    // Check if effect is active for this item's state
-    if (!effectActiveForState(edata.c, src.state)) return;
+    // Check if effect is active for this item's state. OFFLINE_STATE_EFFECTS are exempt: eos runs
+    // them whenever the module is FITTED, at any state (see the set's definition).
+    if (!OFFLINE_STATE_EFFECTS.has(eid) && !effectActiveForState(edata.c, src.state)) return;
 
     const level = skillLevel ?? src.level ?? 0;
     // domain='structureID' is the Structure-category equivalent of domain='shipID' — CCP's dogma

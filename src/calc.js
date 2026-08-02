@@ -885,7 +885,7 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
     return { slot, fitItem: m };
   });
-  for (const imp of (opts.implants ?? [])) { if (!imp.name || imp.name === '[Empty]') continue; const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID; if (tid && TYPES[tid]) fit.addImplant(tid); }
+  for (const imp of (opts.implants ?? [])) { if (!imp.name || imp.name === '[Empty]' || imp.active === false) continue; const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID; if (tid && TYPES[tid]) fit.addImplant(tid); }
   for (const bst of (opts.boosters ?? [])) { if (!bst.name || bst.active === false) continue; const tid = bst.typeID ?? typeIDByName(bst.name) ?? tidByName(bst.name); if (tid && TYPES[tid]) fit.addBooster(tid); }
   fit.calculate();
   const bursts = [];
@@ -1077,7 +1077,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
     return { slot, fitItem: m };
   });
-  for (const imp of (opts.implants ?? [])) { if (!imp.name || imp.name === '[Empty]') continue; const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID; if (tid && TYPES[tid]) fit.addImplant(tid); }
+  for (const imp of (opts.implants ?? [])) { if (!imp.name || imp.name === '[Empty]' || imp.active === false) continue; const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID; if (tid && TYPES[tid]) fit.addImplant(tid); }
   for (const bst of (opts.boosters ?? [])) { if (!bst.name || bst.active === false) continue; const tid = bst.typeID ?? typeIDByName(bst.name) ?? tidByName(bst.name); if (tid && TYPES[tid]) fit.addBooster(tid); }
   // Remote-rep drones (Armor/Shield/Hull Maintenance Bots) projected from the source ship also rep
   // the target — often a logi frigate's entire rep output is its flight of maintenance bots. Build
@@ -1188,7 +1188,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   if (!ship || !slots) return null;
 
   const sk = { ...SKILL_DEFAULTS, ...skills };
-  const implants       = opts.implants ?? [];
+  // An implant can be left in the fit but switched OFF (pyfa exposes Implant.active, and eos then
+  // ignores it — boosters already honoured this, implants did not). Filter once here so every
+  // downstream loop (engine implants, damage multipliers, missile-range consumables) agrees.
+  const implants       = (opts.implants ?? []).filter((i) => i && i.active !== false);
   const boosters       = opts.boosters ?? [];
   const factorInReload = !!opts.factorInReload;
 

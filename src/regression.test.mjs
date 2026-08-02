@@ -848,6 +848,50 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12d. FITTED-BUT-INERT: offline modules and switched-off implants.
+//
+// Two independent "it's there but it isn't on" bugs, both found in the saved-fit corpus.
+//
+//   - eos classifies a few effects as type='offline': they apply while the module is merely
+//     FITTED, at any state. There is no data flag for this (eve.db's dgmeffects has no isOffline
+//     column, and effectCategory for 854 is 0/passive), so OFFLINE_STATE_EFFECTS in
+//     dogma-engine.js is transcribed from eos. A Stork with an OFFLINE Prototype Cloaking Device
+//     read 594 scan resolution against eos's 296.875 — exactly 2x, the cloak's x0.5.
+//   - An implant can sit in a fit but be switched OFF. Boosters already honoured `active`;
+//     implants did not. A Cerberus whose Zainou 'Deadeye' Rapid Launch RL-1005 was disabled read
+//     652.6 weapon DPS against eos's 620.0 — exactly the implant's +5% RoF (1/0.95).
+//
+// eos-sourced: Stork + offline Prototype Cloaking Device I -> scanResolution 296.875; Cerberus with
+// 6x HAM II (Caldari Navy Scourge) + BCS II + 2x Caldari Navy BCS -> 620.0127 weapon DPS, and
+// 652.6449 with the implant ACTIVE.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFITTED-BUT-INERT (offline modules, disabled implants)');
+  const stork = { typeID: tid('Stork'), name: 'Stork' };
+  const cloaked = (state) => calcFitStats(stork,
+    { high: [M('Prototype Cloaking Device I', state)], mid: [], low: [], rigs: [] }, [], null, {}).scanRes;
+  check('inert', 'Stork bare scan resolution', calcFitStats(stork, EMPTY, [], null, {}).scanRes, 593.75, 0.005);
+  check('inert', 'OFFLINE cloak still halves scan res', cloaked('offline'), 296.875, 0.005);
+  check('inert', 'online cloak, same value', cloaked('online'), 296.875, 0.005);
+
+  const cerb = { typeID: tid('Cerberus'), name: 'Cerberus' };
+  const cerbSlots = {
+    high: Array.from({ length: 6 }, () => M('Heavy Assault Missile Launcher II', 'active',
+                                            'Caldari Navy Scourge Heavy Assault Missile')),
+    mid: [],
+    low: [M('Ballistic Control System II', 'online'),
+          M('Caldari Navy Ballistic Control System', 'online'),
+          M('Caldari Navy Ballistic Control System', 'online')],
+    rigs: [],
+  };
+  const RL = "Zainou 'Deadeye' Rapid Launch RL-1005";
+  const cerbDps = (implants) => calcFitStats(cerb, cerbSlots, [], null, { implants }).weaponDps.total;
+  check('inert', 'Cerberus DPS, no implant', cerbDps([]), 620.0127, 0.005);
+  check('inert', 'Rapid Launch implant ACTIVE', cerbDps([{ name: RL }]), 652.6449, 0.005);
+  check('inert', 'Rapid Launch implant DISABLED', cerbDps([{ name: RL, active: false }]), 620.0127, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13. ALL HULLS COMPUTE — every ship must produce stats without throwing.
 // ─────────────────────────────────────────────────────────────────────────────
 {
