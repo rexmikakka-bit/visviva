@@ -1095,6 +1095,11 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
     if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
   }
+  // The SOURCE's tactical mode changes what it projects. calcFitStats and projectionResistances both
+  // applied it; this function did not, so a T3D projecting remote reps repped as if it had no mode
+  // at all — a Confessor in Defense Mode (x1.3333 armorDamageAmount) projected 43.6 HP/s instead of
+  // 58.1. eos defaults a modeless T3D to its first mode, which applyTacticalMode also does.
+  applyTacticalMode(fit, ship, slots);
   fit.calculate();
   // Command bursts on the SOURCE of a projection. A logi under a Shield Command Burst reps harder,
   // and the buff lands on cycle TIME rather than amount: a Basilisk's Large Remote Shield Booster
@@ -1128,7 +1133,14 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (amt > 0) reps.push({ kind: 'shield', name: slot.name, rawPS: amt / dur, optimal, falloff });
     } else if (gn === 'Remote Armor Repairer' || gn === 'Mutadaptive Remote Armor Repairer'
                || gn === 'Ancillary Remote Armor Repairer') {
-      const amt = fitItem.get('armorDamageAmount') ?? 0;
+      // An Ancillary Remote Armor Repairer loaded with Nanite Repair Paste reps x3 (eos:
+      // saveddata/module.py, `if group == 'Ancillary Remote Armor Repairer' and self.charge`). The
+      // LOCAL ancillary path already did this; the projected one did not, so a spider-repping pair
+      // of Confessors counted the remote AAR at a third of its output.
+      // eos keys purely on "a charge is loaded" — an ARAR takes nothing but paste.
+      const isAncillary = gn === 'Ancillary Remote Armor Repairer';
+      const pasteMult = (isAncillary && slot.ammo) ? (fitItem.get('chargedArmorDamageMultiplier') || 3) : 1;
+      const amt = (fitItem.get('armorDamageAmount') ?? 0) * pasteMult;
       if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, optimal, falloff });
     } else if (gn === 'Remote Hull Repairer') {
       const amt = fitItem.get('structureDamageAmount') ?? 0;
