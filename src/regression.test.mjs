@@ -660,6 +660,30 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // -----------------------------------------------------------------------------
+// 11e. ANCILLARY REMOTE REPS — these sit in their OWN dogma groups ('Ancillary Remote Shield
+//      Booster' / 'Ancillary Remote Armor Repairer'), not the plain ones, so matching only the plain
+//      group name dropped them from projections entirely. Verified against eos on saved fit #769: a
+//      projected Osprey's four boosters are 78.86 / 89.38 / 124.86 / 39.43 HP/s and the ancillary
+//      (the 124.86) was contributing zero, leaving the whole logi a third light.
+// -----------------------------------------------------------------------------
+{
+  console.log('ANCILLARY REMOTE REPS');
+  const osp = { typeID: tid('Osprey'), name: 'Osprey' };
+  const shieldFit = { high: [M('Medium Ancillary Remote Shield Booster', 'active', 'Navy Cap Booster 50')],
+                      mid: [], low: [], rigs: [] };
+  const sh = computeProjectedReps(osp, shieldFit, null, {});
+  check('ancrep', 'ancillary remote SHIELD booster is counted', sh.reps.length, 1, 0);
+  check('ancrep', 'ancillary remote shield HP/s', sh.reps[0]?.rawPS, 96.484, 0.002);
+
+  const gua = { typeID: tid('Guardian'), name: 'Guardian' };
+  const armorFit = { high: [M('Small Ancillary Remote Armor Repairer', 'active', 'Nanite Repair Paste')],
+                     mid: [], low: [], rigs: [] };
+  const ar = computeProjectedReps(gua, armorFit, null, {});
+  check('ancrep', 'ancillary remote ARMOR repairer is counted', ar.reps.length, 1, 0);
+  check('ancrep', 'ancillary remote armor HP/s', ar.reps[0]?.rawPS, 12.333, 0.002);
+}
+
+// -----------------------------------------------------------------------------
 // 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
 //     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
 //     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial
