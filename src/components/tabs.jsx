@@ -57,7 +57,7 @@ function checkFitRestriction(modTypeID, ship) {
   if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
   return `Cannot be fit to ${ship.hullClass || ship.name || 'this ship'}`;
 }
-import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet } from "./ui.jsx";
+import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
@@ -459,7 +459,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 }
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
+function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
   // Per-section collapse state — all open by default.
   const [collapsed,setCollapsed]=useState({});
   const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
@@ -470,6 +470,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const [peakMode,setPeakMode]=useState("regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
   const [showProfilePicker,setShowProfilePicker]=useState(false);
+  const [showTargetPicker,setShowTargetPicker]=useState(false);
   // Market price state — hub controlled from Settings > Market, prices fetched from Fuzzwork.
   const [prices,setPrices]=useState(null);
   const [priceLoading,setPriceLoading]=useState(false);
@@ -538,7 +539,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;
@@ -580,19 +581,30 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
      regen:cs.hullRepPS>0?`Rep: ${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
   ];
 
-  const weapDpsTotal  = fmtDps(cs.weaponDps?.total??0);
-  const droneDpsTotal = fmtDps((cs.droneDps?.total??0) + (cs.fighterDps?.total??0));
-  const totalDpsN     = fmtDps(cs.totalDps?.total??0);
-  const totalVolleyN  = fmtDps(cs.totalVolley?.total??0);
+  // With a target resist profile selected, every firepower figure shown is the RESIST-WEIGHTED one
+  // (cs.effective); with "None" the two are identical, so this needs no branching of its own.
+  // cs.weaponDps and friends stay raw for anything that wants unmitigated numbers.
+  const _tgtOn = !!(tgtProfile?.r && tgtProfile.r.some(v=>v>0));
+  const eff = cs.effective ?? {};
+  const _wDps = (_tgtOn?eff.weaponDps:cs.weaponDps)??{}, _tDps = (_tgtOn?eff.totalDps:cs.totalDps)??{};
+  const _tVol = (_tgtOn?eff.totalVolley:cs.totalVolley)??{};
+  const _dDps = _tgtOn?eff.droneDps:cs.droneDps, _fDps = _tgtOn?eff.fighterDps:cs.fighterDps;
+  const _wDpsMax = (_tgtOn?eff.weaponDpsMax:cs.weaponDpsMax)??0;
+  const _tDpsMax = (_tgtOn?eff.totalDpsMax:cs.totalDpsMax)??0;
+  const _tVolMax = (_tgtOn?eff.totalVolleyMax:cs.totalVolleyMax)??0;
+  const weapDpsTotal  = fmtDps(_wDps.total??0);
+  const droneDpsTotal = fmtDps((_dDps?.total??0) + (_fDps?.total??0));
+  const totalDpsN     = fmtDps(_tDps.total??0);
+  const totalVolleyN  = fmtDps(_tVol.total??0);
   // Entropic disintegrators spool up: show min–max ranges for the spooled weapon/total.
   const hasSpool      = !!cs.hasSpoolWeapon;
-  const weapDpsDisp   = hasSpool ? `${fmtDps(cs.weaponDps?.total??0)}-${fmtDps(cs.weaponDpsMax??0)}` : weapDpsTotal;
-  const totalDpsDisp  = hasSpool ? `${fmtDps(cs.totalDps?.total??0)}-${fmtDps(cs.totalDpsMax??0)}`   : totalDpsN;
-  const totalVolDisp  = hasSpool ? `${fmtDps(cs.totalVolley?.total??0)}-${fmtDps(cs.totalVolleyMax??0)}` : totalVolleyN;
+  const weapDpsDisp   = hasSpool ? `${weapDpsTotal}-${fmtDps(_wDpsMax)}` : weapDpsTotal;
+  const totalDpsDisp  = hasSpool ? `${totalDpsN}-${fmtDps(_tDpsMax)}`    : totalDpsN;
+  const totalVolDisp  = hasSpool ? `${totalVolleyN}-${fmtDps(_tVolMax)}` : totalVolleyN;
   // Selected firepower stat's damage-type split (tap a column to switch). Fighters are lumped
   // with drones (as Pyfa does) in the "Drone" column.
-  const _dfSplit = ['em','th','kin','exp','total'].reduce((o,k)=>{o[k]=(cs.droneDps?.[k]??0)+(cs.fighterDps?.[k]??0);return o;},{});
-  const dmgSplit      = ({weapon:cs.weaponDps,drone:_dfSplit,total:cs.totalDps,volley:cs.totalVolley}[dmgSource])??{};
+  const _dfSplit = ['em','th','kin','exp','total'].reduce((o,k)=>{o[k]=(_dDps?.[k]??0)+(_fDps?.[k]??0);return o;},{});
+  const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_tVol}[dmgSource])??{};
   const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:"Volley"}[dmgSource]);
   // Cap: incoming GJ/s (peak regen + injector fill) and cap-battery neut resistance %.
   const capInGJs      = peakRegen(cs.capCapacity,cs.capRechargeMs)+(cs.capFillPS??0);
@@ -601,6 +613,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   return(
     <div style={{flex:1,overflowY:"auto",padding:"10px 10px 20px"}}>
       {showProfilePicker&&<DamageProfileSheet current={dmgProfile} onSelect={setDmgProfile} onClose={()=>setShowProfilePicker(false)}/>}
+      {showTargetPicker&&<TargetProfileSheet current={tgtProfile} onSelect={setTgtProfile} onClose={()=>setShowTargetPicker(false)}/>}
 
       {/* Fit Validation */}
       {(()=>{
@@ -761,6 +774,15 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             Reload
           </button>
         }/>
+        {isOpen("firepower")&&<div onClick={()=>setShowTargetPicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
+          <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
+          <span style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{display:"flex",gap:3}}>
+              {[["em",tgtProfile?.r?.[0]??0],["th",tgtProfile?.r?.[1]??0],["kin",tgtProfile?.r?.[2]??0],["exp",tgtProfile?.r?.[3]??0]].map(([k,v])=>(<span key={k} style={{width:5,height:5,borderRadius:99,background:DMG[k].color,opacity:v>0.001?0.4+v*0.6:0.12}}/>))}
+            </span>
+            <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??"None (0%)"}</span>
+          </span>
+        </div>}
         {isOpen("firepower")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
           {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],["Volley",totalVolDisp,"volley"]].map(([label,val,srcKey],i,arr)=>{

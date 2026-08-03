@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { C } from "../theme.js";
+import { TargetProfileSheet } from "./ui.jsx";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
@@ -37,9 +38,11 @@ function generateCurve(catKey,yKey,xKey,params={}){
   // that are physically bounded (shield %, cap %) pass a cap so they never run past 100%.
   const XS = 1/(xZoom||1);
   const dom = (base,capMax)=>{ const d=base*XS; return capMax!=null?Math.min(d,capMax):d; };
-  // Use real fit DPS from calcFitStats when available
-  const realDps   = cs?.totalDps?.total   ?? cs?.weaponDps?.total   ?? 0;
-  const realVolley= cs?.totalVolley?.total ?? cs?.weaponVolley?.total ?? 0;
+  // Use real fit DPS from calcFitStats when available. Resist-weighted when a target profile is
+  // set, so the Y axis scales to the curve actually drawn (which uses volleyEff); identical to the
+  // raw totals when the profile is "None".
+  const realDps   = cs?.effective?.totalDps?.total    ?? cs?.totalDps?.total    ?? cs?.weaponDps?.total    ?? 0;
+  const realVolley= cs?.effective?.totalVolley?.total ?? cs?.totalVolley?.total ?? cs?.weaponVolley?.total ?? 0;
   let pts=[],xMax,yMax;
   if(catKey==="damage"){
     const weapons = cs?.graphWeapons ?? [];
@@ -96,7 +99,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const applied = (distM, tgtSig, tgtSpeed) => {
       let total = 0;
       for (const w of weapons) {
-        const vol = w.volley.em + w.volley.th + w.volley.kin + w.volley.exp;
+        const _v = w.volleyEff ?? w.volley;
+        const vol = _v.em + _v.th + _v.kin + _v.exp;
         const per = wantVolley ? vol : vol / w.cycleS;
         total += per * weaponMult(w, distM, tgtSig, tgtSpeed);
       }
@@ -113,7 +117,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
         // Stepped cumulative damage: each weapon lands a discrete volley at t=0, then every cycle,
         // pausing for reload after each clip of numShots (so the staircase flattens during reload).
         const TMAX=dom(120);
-        const wv = weapons.map(w=>({ vol:(w.volley.em+w.volley.th+w.volley.kin+w.volley.exp)*weaponMult(w,0,profSig,profVel),
+        const wv = weapons.map(w=>({ vol:(()=>{const v=w.volleyEff??w.volley;return v.em+v.th+v.kin+v.exp;})()*weaponMult(w,0,profSig,profVel),
                                      cycleS:w.cycleS, numShots:w.numShots||0, reloadS:w.reloadS||0 }))
                           .filter(x=>x.vol>0 && x.cycleS>0);
         const evts=[];
@@ -327,7 +331,7 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   </div>);
 }
 
-function TargetControls({targetProfile,setTargetProfile,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
+function TargetControls({tgtProfile,onPickResists,targetProfile,setTargetProfile,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
   const pickProfile=(key)=>{const p=TARGET_PROFILES[key];setTargetProfile(key);setTgtSig(p.sig);if(p.vel!=null){setTargetVel(p.vel);setTargetVelMax(Math.max(p.vel,100));}};
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
@@ -343,6 +347,12 @@ function TargetControls({targetProfile,setTargetProfile,targetAngle,setTargetAng
         <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label}</button>
       ))}
       {targetProfile==="custom"&&<span style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>Custom</span>}
+    </div>
+    {/* Target RESISTS — how much of your damage actually lands. Separate from the sig/speed
+        presets above, which govern application (tracking), not mitigation. */}
+    <div onClick={onPickResists} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,cursor:"pointer"}}>
+      <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
+      <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??"None (0%)"}</span>
     </div>
     {/* Editable sig + speed */}
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
@@ -374,8 +384,9 @@ function TargetControls({targetProfile,setTargetProfile,targetAngle,setTargetAng
   </div>);
 }
 
-function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects}){
+function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,setTgtProfile}){
   const[catKey,setCatKey]=useState("damage"),[yKey,setYKey]=useState("dps"),[xKey,setXKey]=useState("dist");
+  const[showTgtResists,setShowTgtResists]=useState(false);
   const[targetProfile,setTargetProfile]=useState("ideal"),[targetAngle,setTargetAngle]=useState(45),[selfAngle,setSelfAngle]=useState(270);
   const[targetVel,setTargetVel]=useState(200),[selfVel,setSelfVel]=useState(0);
   // Stable 100%-reference for the target speed wheel (set by profile/field, NOT by dragging the wheel).
@@ -397,7 +408,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
@@ -455,7 +466,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       </div>
     </div>}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} onCursorChange={setCursor}/></div>
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVel} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500} ship={ship}/></div>}
+    {showTgtResists&&<TargetProfileSheet current={tgtProfile} onSelect={setTgtProfile} onClose={()=>setShowTgtResists(false)}/>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} onPickResists={()=>setShowTgtResists(true)} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVel} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500} ship={ship}/></div>}
   </div>);
 }
 

@@ -21,6 +21,7 @@
 import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
+import { TARGET_PROFILES } from './data/target-profiles.js';
 
 const tid = (n) => typeIDByName(n);
 const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
@@ -1034,6 +1035,56 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('postperc', 'overheat is -15% sieged or not',
         (phxCycle('overheated', true) / phxCycle('active', true))
           / (phxCycle('overheated', false) / phxCycle('active', false)), 1, 0.0005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12g. TARGET RESIST PROFILES — outgoing damage weighted by what you are shooting.
+//
+// The counterpart to the incoming damage profile: that one weights EHP, this one weights DPS.
+// The raw figures MUST stay unmitigated — the oracle diffs weaponDps against eos, which reports
+// unmitigated damage, so folding resists into it would invalidate every comparison in the corpus.
+// Resist-weighted values live under cs.effective and are identical to raw when no profile is set.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nTARGET RESIST PROFILES');
+  const flat = TARGET_PROFILES.flatMap((g) => g.items);
+  check('tgtres', 'profile table is populated', flat.length >= 190 ? 1 : 0, 1, 0);
+  check('tgtres', 'every profile has 4 resists in [0,1]',
+        flat.filter((p) => !Array.isArray(p.r) || p.r.length !== 4
+                        || p.r.some((v) => !(v >= 0 && v <= 1))).length, 0, 0);
+
+  // Pure-kinetic Scourge HAMs, so a target's kinetic resist is the only one that bites.
+  const cerb = { typeID: tid('Cerberus'), name: 'Cerberus' };
+  const slots = {
+    high: Array.from({ length: 6 }, () => M('Heavy Assault Missile Launcher II', 'active',
+                                            'Caldari Navy Scourge Heavy Assault Missile')),
+    mid: [], low: Array.from({ length: 3 }, () => M('Ballistic Control System II', 'online')), rigs: [],
+  };
+  const raw = calcFitStats(cerb, slots, [], null, {});
+  check('tgtres', 'damage is pure kinetic', raw.weaponDps.kin / raw.weaponDps.total, 1, 0.0001);
+  check('tgtres', 'no profile → effective equals raw',
+        raw.effective.weaponDps.total, raw.weaponDps.total, 0.0000001);
+
+  // Asteroid Guristas: 30% kinetic resist → exactly 0.70x on a pure-kinetic fit.
+  const gur = flat.find((p) => p.n === 'Guristas');
+  const vsGur = calcFitStats(cerb, slots, [], null, { targetResists: gur.r });
+  check('tgtres', 'Guristas kinetic resist is 30%', gur.r[2], 0.30, 0.0001);
+  check('tgtres', 'effective DPS vs Guristas', vsGur.effective.weaponDps.total,
+        raw.weaponDps.total * 0.70, 0.0001);
+  check('tgtres', 'raw DPS is NOT mitigated', vsGur.weaponDps.total, raw.weaponDps.total, 0.0000001);
+  check('tgtres', 'volley weighted the same way', vsGur.effective.weaponVolley.total,
+        raw.weaponVolley.total * 0.70, 0.0001);
+  // The graph reads volleyEff, so it has to be weighted too or the curve and the readout disagree.
+  check('tgtres', 'graph volley is weighted', vsGur.graphWeapons[0].volleyEff.total,
+        vsGur.graphWeapons[0].volley.kin * 0.70, 0.0001);
+
+  // A resist on a damage type the fit does not deal must change nothing.
+  const vsEm = calcFitStats(cerb, slots, [], null, { targetResists: [0.9, 0, 0, 0] });
+  check('tgtres', 'irrelevant resist does nothing', vsEm.effective.weaponDps.total,
+        raw.weaponDps.total, 0.0000001);
+  // 100% resist across the board zeroes it.
+  const vsAll = calcFitStats(cerb, slots, [], null, { targetResists: [1, 1, 1, 1] });
+  check('tgtres', 'full resist zeroes effective DPS', vsAll.effective.weaponDps.total, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

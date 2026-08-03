@@ -183,7 +183,7 @@ export function ShipInfoSheet({ship, onClose}) {
   );
 }
 
-export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,priceHub,setPriceHub}){
+export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
   const[selectedClass,setSelectedClass]=useState(null);
   const[selectedShip,setSelectedShip]=useState(activeFit?.ship??null);
   // Ship name whose info sheet is open (browser rows), or null. Resolved through lookupShip at
@@ -372,9 +372,9 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
       <div style={{display:"flex"}}><div style={{width:60}}/>{["Fit","Stats","Graph"].map(t=><button key={t} onClick={()=>setFitSubTab(t)} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
     </div>
     <div onTouchStart={_onSwipeStart} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
-      {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile}/>}
-      {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
-      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects}/>}
+      {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile}/>}
+      {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile}/>}
     </div>
   </div>);
 }
