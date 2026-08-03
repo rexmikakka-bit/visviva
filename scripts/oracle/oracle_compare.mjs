@@ -66,6 +66,7 @@ for (const line of lines) {
     cs = calcFitStats(r.spec.ship, r.spec.slots, r.spec.drones, null,
                       { implants: r.spec.implants, boosters: r.spec.boosters,
                         systemSecurity: r.spec.systemSecurity, pilotSec: r.spec.pilotSec, externalBursts,
+                        environment: r.spec.environment,
                         projectedWebMult: projectedEffects.webMult,
                         projectedNeutGJs: projectedEffects.neutGJs,
                         projectedDebuffs: projectedEffects.debuffs,

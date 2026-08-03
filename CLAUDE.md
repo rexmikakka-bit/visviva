@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 158)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 175)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -368,6 +368,35 @@ the source fit is missing before suspecting the rep maths.
 When adding one, filter members on attribute PRESENCE (`'attr' in type.a`), not on a truthy value:
 attributes have defaults, and Omega (which carries no bonus attr) will otherwise read back the default
 and inject a phantom bonus.
+
+### Environment effects (the system a fit is sitting in)
+
+Wormhole class effects, metaliminal storms and event beacons live in group **920 "Effect Beacon"**
+(category 2, Celestial) — so no `CATS` filter was ever going to admit them; `build-bundle.py` now
+takes the group by ID, like `MODE_GROUP`. CCP ships **no modifierInfo** for any of them, so they
+arrive inert and are driven from `src/data/system-effects.json`, generated from pyfa's ~100
+hand-written handlers by `scripts/build-system-effects.py` and interpreted by `_applyEnvironment()`.
+
+Stored on the fit as `slots.environment` (a NAME, so it survives a bundle regeneration), which also
+gets persistence and undo for free.
+
+**They run EARLY — before module effects.** pyfa marks every one `runTime='early'` and that is
+load-bearing: the overload effects boost attributes (`overloadHardeningBonus` and friends) that a
+module's OWN overload effect reads in the module pass. Applied afterwards, the module has already
+consumed the un-boosted value — a Lachesis in a C6 Red Giant read 84.2% armor explosive resist
+against eos's 92.3.
+
+**The generator must fail loudly, not skip.** An environment effect that quietly does nothing is
+this project's recurring failure mode, so `build-system-effects.py` refuses to write while anything
+is unparsed. Getting to zero needed four passes: attribute-presence filters
+(`'heatDamage' in mod.itemModifiedAttributes`, how every overload effect selects its modules),
+`lambda x: True`, loop-unrolling for `.format()`/f-string attribute names, and a `.format()` arg
+that is itself a call (`damage.capitalize()` — `[^)]*` stops at the inner paren and breaks argument
+splitting entirely). Four effects (3698, 3794–3796, generic NPC "dungeon" beacons) are left inert
+**because pyfa does not implement them either** — matching pyfa is the point.
+
+`check-effect-coverage.mjs` knows about the table, so the ~100 beacon effects do not need to be
+blanket-accepted into the empty-effect baseline; anything the table does not cover still shows up.
 
 ### ⚠️ Pilot-security bonuses must NOT also sit in `SHIP_MISSILE_DMG`
 

@@ -169,10 +169,31 @@ def extract_spec(fit, depth=0):
     # ACTIVE ones emit the SOURCE fit's spec plus its projectionRange, and let the JS side rebuild
     # the effect via computeProjectedReps + calcRangeFactor exactly as App.jsx does — so our own
     # projection maths stays under test rather than being imported from eos.
-    # NOT handled, and still flagged: projected MODULES (all 12 are Effect Beacons — wormhole/abyssal
-    # system effects, which our engine has no concept of) and projected fighters.
+    # Projected MODULES used to be flagged wholesale as unmodellable, because every one of them is
+    # an Effect Beacon (a wormhole class effect or a metaliminal storm) and the engine had no
+    # concept of the system a fit sits in. It does now — slots.environment — so emit the beacon by
+    # name and let the JS side apply it. Anything else in projectedModules is still genuinely
+    # unhandled and keeps the flag.
+    environment = None
+    other_projected_modules = False
+    for pm in (getattr(fit, "projectedModules", []) or []):
+        if pm.item is None:
+            continue
+        # HONOUR THE STATE. A projected beacon at state -1 (offline) is inert in eos — its effects
+        # are 'projected','passive', which need ONLINE or better. Ten saved Jackdaws park a Weak
+        # Metaliminal Plasma Firestorm offline, and emitting those unconditionally applied a storm
+        # eos was ignoring: thermal resists read 26.3 against eos's 33. That is the fifth eos
+        # active/state flag this harness has had to be taught (projected drones, inactive command
+        # links, inactive projections, disabled implants, now offline beacons) — when eos exposes
+        # one, honour it.
+        if pm.state is not None and pm.state < 0:
+            continue
+        if getattr(pm.item, "group", None) is not None and pm.item.group.name == "Effect Beacon":
+            environment = pm.item.typeName      # last one wins; you cannot be in two systems
+        else:
+            other_projected_modules = True
     projected_fits = []
-    unhandled_projection = bool(getattr(fit, "projectedModules", []) or
+    unhandled_projection = bool(other_projected_modules or
                                 getattr(fit, "projectedFighters", []) or
                                 getattr(fit, "projectedDrones", []))
     if depth == 0:
@@ -227,6 +248,8 @@ def extract_spec(fit, depth=0):
         "pilotSec": fit.getPilotSecurity(),
         "commandFits": command_fits,
         "projectedFits": projected_fits,
+        # The system the fit is sitting in (Effect Beacon), read out of projectedModules above.
+        "environment": environment,
     }
     return spec, flags
 

@@ -3,7 +3,7 @@ import { C } from "../theme.js";
 import { BottomSheet } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
-import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName } from "../calc.js";
+import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
 
 const BOOSTER_SIDE_EFFECTS = {
   "Blue Pill":     [{attr:"Shield Capacity",penalty:"-22.5%"},{attr:"Turret Optimal Range",penalty:"-22.5%"},{attr:"Cap Capacity",penalty:"-22.5%"},{attr:"Missile Explosion Velocity",penalty:"-22.5%"}],
@@ -59,6 +59,59 @@ export function buildBoosterFromName(name){
   const se=boosterSideEffectsFor(name);
   const drugBase=name.replace(/^(Synth|Improved|Standard|Strong|Nugoehuvi Synth) /,"");
   return{id:Date.now()+Math.random(),name,effect:drugBase,active:true,color:C.warning,sideEffects:se};
+}
+
+// Environment picker — every "Effect Beacon" (group 920) in the bundle, grouped so the wormhole
+// class effects and the metaliminal storms are easy to find among the event/incursion beacons.
+// Listed by NAME rather than typeID because that is what gets stored on the fit: it survives a
+// bundle regeneration and reads sensibly in an exported fit.
+const ENV_GROUPS=[
+  {cat:"Wormhole",     test:n=>/^Class \d/.test(n)},
+  {cat:"Metaliminal Storm", test:n=>/Metaliminal/.test(n)},
+  {cat:"Pochven / Triglavian", test:n=>/Liminality|Triglavian|:?\bPochven\b/i.test(n)},
+  {cat:"Incursion",    test:n=>/Incursion|Sansha/i.test(n)},
+  {cat:"Other",        test:()=>true},
+];
+function environmentList(){
+  const out=ENV_GROUPS.map(g=>({cat:g.cat,items:[]}));
+  const seen=new Set();
+  for(const t of Object.values(TYPES)){
+    const gn=t.gn??t.groupName, n=t.n??t.name;
+    if(gn!=="Effect Beacon"||!n||seen.has(n))continue;
+    seen.add(n);
+    out[ENV_GROUPS.findIndex(g=>g.test(n))].items.push(n);
+  }
+  for(const g of out) g.items.sort((a,b)=>a.localeCompare(b));
+  return out.filter(g=>g.items.length);
+}
+function EnvironmentPickerSheet({current,onSelect,onClose}){
+  const[search,setSearch]=useState("");
+  const[openCat,setOpenCat]=useState(()=>new Set(["Wormhole"]));
+  const q=search.trim().toLowerCase();
+  const groups=environmentList().map(g=>({cat:g.cat,items:g.items.filter(n=>!q||n.toLowerCase().includes(q))})).filter(g=>g.items.length);
+  const toggle=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
+  return(<BottomSheet title="System Effects" onClose={onClose} height="80vh">
+    <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
+        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search systems..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+      </div>
+    </div>
+    <div onClick={()=>onSelect(null)} style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:!current?C.accentLight:"transparent"}}>
+      <span style={{fontSize:12,fontWeight:!current?700:500,color:!current?C.accent:C.text}}>Normal space (no effects)</span>
+    </div>
+    {groups.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
+      <div onClick={()=>toggle(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+        <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",display:"inline-block",width:10}}>▶</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.text}}>{g.cat}</span>
+        <span style={{fontSize:10,color:C.textMute}}>({g.items.length})</span>
+      </div>
+      {open&&g.items.map(n=>{const sel=current===n;return(
+        <div key={n} onClick={()=>onSelect(n)} style={{padding:"9px 14px 9px 26px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+          <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?C.accent:C.text}}>{n}</span>
+        </div>);})}
+    </div>);})}
+  </BottomSheet>);
 }
 
 function BoosterPickerSheet({onAdd,onClose}){
@@ -169,16 +222,29 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
   </BottomSheet>);
 }
 
-export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits}){
+export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment}){
   const[section,setSection]=useState("boosters");
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
   const[showProjPicker,setShowProjPicker]=useState(false);
   const[showCmdPicker,setShowCmdPicker]=useState(false);
+  const[showEnvPicker,setShowEnvPicker]=useState(false);
 
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-      {[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"}].map(t=>(<button key={t.tabId} onClick={()=>setSection(t.tabId)} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent"}}>{t.label}</button>))}
+      {[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"},{tabId:"environment",label:"System"}].map(t=>(<button key={t.tabId} onClick={()=>setSection(t.tabId)} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent"}}>{t.label}</button>))}
     </div>
+    {section==="environment"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
+      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>The system this fit is sitting in. Wormhole class effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.</div>
+      <div style={{background:C.surface,border:`1px solid ${environment?C.accentBorder:C.border}`,borderRadius:8,padding:"11px 12px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:10,color:C.textMute}}>Current system</div>
+          <div style={{fontSize:13,fontWeight:700,color:environment?C.accent:C.textMid,marginTop:2}}>{environment??"Normal space (no effects)"}</div>
+        </div>
+        {environment&&<button onClick={()=>setEnvironment(null)} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>}
+      </div>
+      <button onClick={()=>setShowEnvPicker(true)} style={{width:"100%",padding:"10px 0",background:C.surfaceAlt,border:`1px dashed ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer"}}>{environment?"Change System":"+ Set System Effects"}</button>
+      {showEnvPicker&&<EnvironmentPickerSheet current={environment} onSelect={n=>{setEnvironment(n);setShowEnvPicker(false);}} onClose={()=>setShowEnvPicker(false)}/>}
+    </div>)}
     {section==="boosters"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
       <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Toggle boosters to simulate their stat effects on this fit.</div>
       {boosters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No boosters added</div>}
