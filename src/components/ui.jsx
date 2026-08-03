@@ -520,7 +520,55 @@ function ModuleVariationsTab({typeID, currentName, onSwap}) {
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
 const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Speed Penalty",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
 const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??name.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
-const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; if(/Range|maxRange|falloff/i.test(name)) return `${(v/1000).toFixed(2)} km`; if(/duration|reloadTime|explosionDelay/i.test(name)) return `${(v/1000).toFixed(2)} s`; if(/mass/i.test(name)) return `${Math.round(v).toLocaleString()} kg`; const a=Math.abs(v); return a>=100?v.toFixed(1):a>=1?v.toFixed(2):v.toFixed(4); };
+// Display scaling for a mutated attribute. Both the read-only rendering and the TYPED input go
+// through this, so the units a value is shown in are exactly the units you type it back in — if the
+// unit for an attribute is ever corrected, both follow automatically.
+const mutaUnit=(name)=>{
+  if(/Range|maxRange|falloff/i.test(name)) return {scale:1000,unit:"km",dp:2};
+  if(/duration|reloadTime|explosionDelay/i.test(name)) return {scale:1000,unit:"s",dp:2};
+  if(/mass/i.test(name)) return {scale:1,unit:"kg",dp:0};
+  return {scale:1,unit:"",dp:null};   // dp null → magnitude-dependent precision
+};
+// Plain (no thousands separators) rendering in display units — what goes INTO the text box, so it
+// stays parseable when the user edits it.
+const mutaValStr=(name,v)=>{
+  const u=mutaUnit(name);
+  if(u.dp!=null) return (v/u.scale).toFixed(u.dp);
+  const a=Math.abs(v); return a>=100?v.toFixed(1):a>=1?v.toFixed(2):v.toFixed(4);
+};
+const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(v).toLocaleString()} kg`; return u.unit?`${mutaValStr(name,v)} ${u.unit}`:mutaValStr(name,v); };
+
+// Typed entry for a mutated attribute, alongside the slider. Commits on blur/Enter rather than per
+// keystroke so a half-typed "1." or "-" doesn't churn the fit through a recalculation.
+function MutaValueInput({name,value,min,max,onCommit}){
+  const u=mutaUnit(name);
+  const[txt,setTxt]=useState(()=>mutaValStr(name,value));
+  const[editing,setEditing]=useState(false);
+  // Follow the slider while the box isn't focused; leave the user's keystrokes alone while it is.
+  useEffect(()=>{ if(!editing) setTxt(mutaValStr(name,value)); },[name,value,editing]);
+  const commit=()=>{
+    setEditing(false);
+    const n=Number(txt.replace(/,/g,"").trim());
+    if(!Number.isFinite(n)){ setTxt(mutaValStr(name,value)); return; }   // gibberish → revert
+    // A mutaplasmid cannot roll outside its own range, so a typed value must not escape it either.
+    const raw=Math.min(max,Math.max(min,n*u.scale));
+    onCommit(raw);
+    setTxt(mutaValStr(name,raw));
+  };
+  return(<span style={{display:"inline-flex",alignItems:"baseline",gap:3}}>
+    <input value={txt} inputMode="decimal" aria-label={`${mutaLabel(name)} value`}
+      onFocus={e=>{setEditing(true);e.target.select();}}
+      onChange={e=>setTxt(e.target.value)}
+      onBlur={commit}
+      onKeyDown={e=>{
+        if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}
+        else if(e.key==="Escape"){setEditing(false);setTxt(mutaValStr(name,value));e.currentTarget.blur();}
+      }}
+      style={{width:64,padding:"1px 4px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:4,
+              color:C.accent,fontSize:11,fontWeight:700,textAlign:"right",fontFamily:"inherit"}}/>
+    {u.unit&&<span style={{fontSize:9,color:C.textMute}}>{u.unit}</span>}
+  </span>);
+}
 // Serialize a mutated module to the standard abyssal paste format.
 function abyssalToText(mod){
   const m=mutaplasmidData[mod.mutaplasmid]; if(!m) return mod.name;
@@ -576,7 +624,10 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       return(<div key={r.name} style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
           <span style={{fontSize:11,fontWeight:600,color:C.text}}>{mutaLabel(r.name)}</span>
-          <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{fmtMutaVal(r.name,cur)} <span style={{fontSize:9,color:Math.abs(pct)<0.1?C.textMute:(pct>0?C.rig:C.warning)}}>({pct>=0?"+":""}{pct.toFixed(0)}%)</span></span>
+          <span style={{display:"inline-flex",alignItems:"baseline",gap:5}}>
+            <MutaValueInput name={r.name} value={cur} min={r.min} max={r.max} onCommit={v=>setVal(r.name,v)}/>
+            <span style={{fontSize:9,color:Math.abs(pct)<0.1?C.textMute:(pct>0?C.rig:C.warning)}}>({pct>=0?"+":""}{pct.toFixed(0)}%)</span>
+          </span>
         </div>
         <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01} value={cur} onChange={e=>setVal(r.name,Number(e.target.value))} style={{width:"100%",accentColor:C.accent}}/>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}><span>{fmtMutaVal(r.name,r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,r.max)}</span></div>
