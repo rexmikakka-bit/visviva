@@ -44,10 +44,12 @@
 
 // ─── Data is injected by initEngine() — works in both Vite and Node.js ───────────
 let TYPES = {}, EFFECTS = {}, ATTRS = {};
+let SYSTEM_EFFECTS = {};   // environment (Effect Beacon) ops, injected by initEngine
 let AID = {}, TYPE_BY_NAME = {};
 
-export function initEngine(types, effects, attrs) {
+export function initEngine(types, effects, attrs, systemEffects) {
   TYPES = types; EFFECTS = effects; ATTRS = attrs;
+  SYSTEM_EFFECTS = systemEffects ?? {};
   // Convert TYPES attrs from {attrID: value} → {attrName: value}
   const _AID_TO_NAME = {};
   for (const [id, meta] of Object.entries(ATTRS)) {
@@ -404,6 +406,15 @@ export class Fit {
     this._shipMode = typeID ? new DogmaItem(typeID) : null;
     return this._shipMode;
   }
+  // ENVIRONMENT — the system the fit is sitting in: a wormhole class effect, a metaliminal storm,
+  // an event beacon ("Effect Beacon", group 920). Not something you fit; it is the dogma carrier
+  // for the system's modifiers, projected onto everything in it. CCP ships no modifierInfo for
+  // these, so they arrive inert and are driven from src/data/system-effects.json — see
+  // _applyEnvironment() and scripts/build-system-effects.py.
+  setEnvironment(typeID) {
+    this._environment = typeID ? new DogmaItem(typeID) : null;
+    return this._environment;
+  }
   // T3 cruiser subsystems (Core/Defensive/Offensive/Propulsion). Each is a real dogma type
   // whose effects apply hull/slot bonuses. Processed like the ship mode: direct, non-penalized,
   // before modules so their attribute changes (CPU/PG reductions, etc.) are visible to modules.
@@ -526,6 +537,14 @@ export class Fit {
       }
     }
 
+    // 2d. ENVIRONMENT (wormhole class effect / metaliminal storm / event beacon). pyfa marks every
+    //     one of these `runTime = 'early'`, and that is load-bearing rather than cosmetic: the
+    //     overload effects boost attributes like overloadHardeningBonus which a module's OWN
+    //     overload effect then reads in step 3. Applied after that pass instead, the module has
+    //     already consumed the un-boosted value — a Lachesis in a C6 Red Giant read 84.2% armor
+    //     explosive resist against eos's 92.3.
+    this._applyEnvironment();
+
     // 3. Run effects for all non-ship items (modules read skill-modified attrs) (implants, boosters, modules, drones)
     //    The ship runs AFTER skills so skill-scaled ship attrs are ready.
     const nonShipGroups = [
@@ -622,6 +641,59 @@ export class Fit {
 
     // 5. Custom handlers (implant sets, booster side-effects, etc.)
     this._runCustomHandlers();
+
+  }
+
+  // Environment effects are data-driven from SYSTEM_EFFECTS (generated from pyfa's hand-written
+  // handlers — see scripts/build-system-effects.py). Each op reads one attribute off the beacon and
+  // applies it to the ship, or to modules/charges/drones filtered by required skill, group, or
+  // simply carrying a given attribute (which is how the overload effects select overloadable
+  // modules).
+  _applyEnvironment() {
+    const env = this._environment;
+    if (!env) return;
+    const OP = { mul: 4, boost: 6, inc: 2 };   // PostMul / PostPercent / ModAdd
+    for (const eid of (env.effectIDs ?? [])) {
+      for (const op of (SYSTEM_EFFECTS[eid] ?? SYSTEM_EFFECTS[String(eid)] ?? [])) {
+        // Warfare-buff beacons (Pochven, insurgency) hand buffs to the fit like a command burst.
+        // calc.js owns that machinery, so record them and let it read them back out.
+        if (op.t === 'buff') {
+          for (let i = 1; i <= (op.n ?? 4); i++) {
+            const id = env.get(`warfareBuff${i}ID`), val = env.get(`warfareBuff${i}Value`);
+            if (id && val) (this._envBuffs ??= []).push({ buffID: Math.round(id), value: val });
+          }
+          continue;
+        }
+        const val = env.get(op.s);
+        if (val == null || !Number.isFinite(val)) continue;
+        // A multiplier of exactly 1 or a bonus of 0 is a no-op; skip so it cannot occupy a
+        // stacking slot that a real modifier should have had.
+        if ((op.op === 'mul' && val === 1) || (op.op !== 'mul' && val === 0)) continue;
+        const aid = AID[op.a];
+        if (aid == null) continue;
+        const direct = !op.p;                  // p = stacking-penalised
+        const match = (item) => {
+          const f = op.f;
+          if (!f) return true;
+          if (f.skill) return f.skill.some(sk => item.requiresSkill(sk));
+          if (f.group) return f.group.includes(item.groupName);
+          if (f.hasAttr) return f.hasAttr in (item._td?.a ?? {});
+          return false;
+        };
+        if (op.t === 'ship') { this.ship.attrs.applyMod(aid, OP[op.op], val, direct); continue; }
+        const coll = op.t === 'drones' ? this._drones : this._modules;
+        for (const it of coll) {
+          if (op.t === 'charges') {
+            // filtered on the CHARGE, applied to the CHARGE
+            if (it._charge && match(it._charge)) it._charge.attrs.applyMod(aid, OP[op.op], val, direct);
+          } else if (match(it)) {
+            it.attrs.applyMod(aid, OP[op.op], val, direct);
+          }
+        }
+        // 'fighters' ops are dropped here on purpose: the engine has no fighter collection —
+        // calc.js computes fighters from raw type data — so there is nothing to modify.
+      }
+    }
   }
 
   // ── Internal: apply one effect from a source item ───────────────────────────

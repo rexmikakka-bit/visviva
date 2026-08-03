@@ -229,9 +229,16 @@ def main():
     # Skua's and the Anhinga's) could never arrive, so applyTacticalMode silently found no type and
     # the hull's mode bonuses just didn't apply. Admit the whole group by ID.
     MODE_GROUP = 1306
+    # Environment effects ("Effect Beacon", group 920) are category 2 (Celestial), so no CATS filter
+    # was ever going to admit them — they are not something you fit, they are the system you are
+    # sitting in. Same dogma-carrier role as the tactical modes above: wormhole class effects
+    # (Pulsar/Wolf-Rayet/Black Hole/Magnetar/Red Giant/Cataclysmic, 6 classes each), the metaliminal
+    # storms, and a handful of event beacons. Without them a WH fit's resists, reps, sig and speed
+    # are all simply wrong, and they were the last thing the oracle could not model.
+    BEACON_GROUP = 920
     fit_types = [tid for tid, t in types.items()
                  if (t[3] == 1 and groups.get(t[2], (None, 0))[1] in CATS)
-                 or t[2] == MODE_GROUP]
+                 or t[2] == MODE_GROUP or t[2] == BEACON_GROUP]
 
     # ── rebuild types ───────────────────────────────────────────────────────
     # Drop types eve.db no longer has AT ALL. Keeping them used to seem harmless, but a dead type can

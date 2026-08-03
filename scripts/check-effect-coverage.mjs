@@ -33,6 +33,14 @@ const BASELINE = join(ROOT, 'scripts', 'effect-coverage-baseline.json');
 
 const T = JSON.parse(readFileSync(join(ROOT, 'src/data/dogma-types.json'), 'utf8'));
 const E = JSON.parse(readFileSync(join(ROOT, 'src/data/dogma-effects.json'), 'utf8'));
+// Environment effects (Effect Beacon, group 920) carry no modifierInfo from CCP and are instead
+// implemented from a generated table — see scripts/build-system-effects.py. They are empty in the
+// bundle but are NOT no-ops, so exclude the ones we actually handle. The handful the table does not
+// cover stay in the baseline, which is the point: those ARE silent no-ops and should stay visible.
+let SYSFX = new Set();
+try {
+  SYSFX = new Set(Object.keys(JSON.parse(readFileSync(join(ROOT, 'src/data/system-effects.json'), 'utf8')).effects ?? {}));
+} catch { /* table is optional */ }
 
 let bundleBuild = 'unknown';
 try {
@@ -57,6 +65,7 @@ function currentEmptyEffects() {
     const e = E[eid];
     if (!e) continue;                       // effect not in bundle at all — different problem
     if ((e.m ?? []).length) continue;       // has modifiers — not a no-op
+    if (SYSFX.has(eid)) continue;           // handled by the system-effects table
     out[eid] = { c: e.c ?? null, n: u.count, ex: u.ex };
   }
   return out;

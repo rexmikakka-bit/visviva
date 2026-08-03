@@ -22,6 +22,8 @@ import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommand
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
+import SYSFX from './data/system-effects.json' with { type: 'json' };
+const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
 const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
@@ -1085,6 +1087,68 @@ function check(group, label, actual, expected, tol = 0.005) {
   // 100% resist across the board zeroes it.
   const vsAll = calcFitStats(cerb, slots, [], null, { targetResists: [1, 1, 1, 1] });
   check('tgtres', 'full resist zeroes effective DPS', vsAll.effective.weaponDps.total, 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12h. ENVIRONMENT EFFECTS — the system a fit is sitting in.
+//
+// Wormhole class effects and metaliminal storms ("Effect Beacon", group 920). CCP ships no
+// modifierInfo for any of them, so they are hand-coded in pyfa and transcribed into
+// src/data/system-effects.json by scripts/build-system-effects.py; dogma-engine.js interprets the
+// table. This was the last thing the oracle could not model — 13 saved fits used to be skipped.
+//
+// ORDER MATTERS: pyfa marks these runTime='early', so they run BEFORE module effects. The overload
+// effects boost attributes (overloadHardeningBonus and friends) that a module's own overload effect
+// then reads; applying the environment afterwards leaves the module reading the un-boosted value.
+//
+// eos reference, Rifter + 200mm AutoCannon II / Republic Fleet EMP S, all skills V.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nENVIRONMENT EFFECTS');
+  const rifter = { typeID: tid('Rifter'), name: 'Rifter' };
+  const base = { high: [M('200mm AutoCannon II', 'active', 'Republic Fleet EMP S')], mid: [], low: [], rigs: [] };
+  const inSystem = (environment) => calcFitStats(rifter, { ...base, environment }, [], null, {});
+
+  const none = inSystem(null);
+  check('env', 'no environment: sig',      none.sigRadius,          35,      0.0005);
+  check('env', 'no environment: armor HP', none.armorHP,            562.5,   0.0005);
+  check('env', 'no environment: shield HP',none.shieldHP,           562.5,   0.0005);
+  check('env', 'no environment: DPS',      none.weaponDps.total,    44.8063, 0.0005);
+
+  // Wolf-Rayet: sig x0.5, armor HP x2, small projectile damage x3, shield resists worsened.
+  const wr = inSystem('Class 6 Wolf Rayet Effects');
+  check('env', 'Wolf-Rayet: sig halved',    wr.sigRadius,        17.5,     0.0005);
+  check('env', 'Wolf-Rayet: armor HP x2',   wr.armorHP,          1125,     0.0005);
+  check('env', 'Wolf-Rayet: shield HP same',wr.shieldHP,         562.5,    0.0005);
+  check('env', 'Wolf-Rayet: DPS x3',        wr.weaponDps.total,  134.4189, 0.0005);
+
+  // Pulsar: the mirror image — shield HP x2, sig x2, cap recharge faster, armor resists worsened.
+  const pulsar = inSystem('Class 6 Pulsar Effects');
+  check('env', 'Pulsar: shield HP x2',   pulsar.shieldHP,          1125,    0.0005);
+  check('env', 'Pulsar: sig doubled',    pulsar.sigRadius,         70,      0.0005);
+  check('env', 'Pulsar: armor HP same',  pulsar.armorHP,           562.5,   0.0005);
+  check('env', 'Pulsar: DPS unchanged',  pulsar.weaponDps.total,   44.8063, 0.0005);
+
+  // Metaliminal Plasma Firestorm: +armor HP and +turret damage, no sig change.
+  const storm = inSystem('Weak Metaliminal Plasma Firestorm');
+  check('env', 'Plasma storm: armor HP', storm.armorHP,          618.75,   0.0005);
+  check('env', 'Plasma storm: DPS',      storm.weaponDps.total,  53.76756, 0.0005);
+  check('env', 'Plasma storm: sig same', storm.sigRadius,        35,       0.0005);
+
+  // An unknown name must be inert rather than throwing — saved fits outlive bundle regenerations.
+  check('env', 'unknown system is inert', inSystem('Not A Real System').weaponDps.total,
+        none.weaponDps.total, 0.0000001);
+
+  // The generated table has to actually cover the common systems, or every check above could pass
+  // while the table silently emptied.
+  const covered = ['Class 6 Wolf Rayet Effects', 'Class 6 Pulsar Effects', 'Class 6 Black Hole Effects',
+                   'Class 6 Magnetar Effects', 'Class 6 Red Giant Effects', 'Class 6 Cataclysmic Variable Effects',
+                   'Weak Metaliminal Plasma Firestorm', 'Strong Metaliminal Electrical Storm']
+    .filter((n) => {
+      const t = TYPES[tid(n)];
+      return t && (t.e ?? []).some((e) => SYSTEM_EFFECTS[e] || SYSTEM_EFFECTS[String(e)]);
+    }).length;
+  check('env', 'common systems have handlers', covered, 8, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

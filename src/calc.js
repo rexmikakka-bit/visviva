@@ -1146,6 +1146,13 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
     if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
   }
+  // The system the SOURCE is sitting in affects what it projects too (a Wolf-Rayet logi reps the
+  // same, but a storm changes its damage). Cheap to thread through and wrong to omit.
+  if (opts.environment) {
+    const envTid = typeof opts.environment === 'number' ? opts.environment
+      : (typeIDByName(opts.environment) ?? tidByName(opts.environment));
+    if (envTid && TYPES[envTid]) fit.setEnvironment(envTid);
+  }
   // The SOURCE's T3 CRUISER subsystems. `allSlots` above deliberately lists the racks; subsystems
   // are a separate collection and were simply missing here, so a projected Loki/Legion/Tengu/Proteus
   // lost every subsystem bonus it has. A logi Loki's remote shield boosters cycled 5854 ms instead
@@ -1345,6 +1352,17 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   // ── 2b. T3 Destroyer tactical mode ────────────────────────────────────────
   const tacticalModeTid = applyTacticalMode(fit, ship, slots);
+  // ENVIRONMENT — wormhole class effect / metaliminal storm / event beacon the fit is sitting in.
+  // Accepted as a typeID or a name; stored on the fit as slots.environment so it persists and is
+  // covered by undo, with opts.environment as an override for programmatic callers (the oracle).
+  const _envRaw = opts.environment ?? slots.environment ?? null;
+  let environmentTid = null;
+  if (_envRaw) {
+    environmentTid = typeof _envRaw === 'number' ? _envRaw
+      : (typeIDByName(_envRaw) ?? tidByName(_envRaw));
+    if (environmentTid && TYPES[environmentTid]) fit.setEnvironment(environmentTid);
+    else environmentTid = null;
+  }
   // Anhinga's Primary/Secondary/Tertiary modes DO exist as dogma types (90061/90063/90065) whose
   // effects are all PostDiv (attr / value); the per-field multipliers below are 1/value of those:
   //   ROF PostDiv → rofMult (cycle); MissileFlightTime PostDiv → missileFlight (explosionDelay);
