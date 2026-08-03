@@ -1101,6 +1101,24 @@ export function applyRemoteRepDiminishing(entries) {
   return applied;
 }
 
+// ── Target resist profiles (outgoing damage) ────────────────────────────────
+// The mirror image of the incoming damage profile: that one says what is hitting YOU and weights
+// EHP, this one says how resistant the thing you are SHOOTING is and weights DPS. Values are
+// RESIST FRACTIONS per damage type, [em, th, kin, exp], matching src/data/target-profiles.js.
+//
+// Everything the app reports stays RAW; the resist-weighted figures are exposed alongside under
+// `effective`. Keeping both matters for more than tidiness — the oracle diffs our raw DPS against
+// eos, and eos reports unmitigated damage, so folding resists into weaponDps would make every
+// comparison in the corpus wrong.
+export const NO_TARGET_RESISTS = [0, 0, 0, 0];
+export function applyTargetResists(dmg, r) {
+  if (!dmg) return dmg;
+  const res = (Array.isArray(r) && r.length === 4) ? r : NO_TARGET_RESISTS;
+  const em = (dmg.em ?? 0) * (1 - res[0]), th = (dmg.th ?? 0) * (1 - res[1]);
+  const kin = (dmg.kin ?? 0) * (1 - res[2]), exp = (dmg.exp ?? 0) * (1 - res[3]);
+  return { em, th, kin, exp, total: em + th + kin + exp };
+}
+
 export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
   if (!ship || !slots) return [];
   const sk = { ...SKILL_DEFAULTS, ...skills };
@@ -1253,6 +1271,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // downstream loop (engine implants, damage multipliers, missile-range consumables) agrees.
   const implants       = (opts.implants ?? []).filter((i) => i && i.active !== false);
   const boosters       = opts.boosters ?? [];
+  // Resists of whatever this fit is shooting, [em,th,kin,exp] as fractions. Absent → all zero,
+  // which makes every `effective` figure identical to its raw counterpart.
+  const _tgtRes = (Array.isArray(opts.targetResists) && opts.targetResists.length === 4)
+    ? opts.targetResists : NO_TARGET_RESISTS;
   const factorInReload = !!opts.factorInReload;
 
   // ── 1. Find ship typeID ───────────────────────────────────────────────────
@@ -1703,6 +1725,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // Track the spooling contribution separately so weapon*Max spools only this portion, not the total.
   let spoolBaseVolley   = 0;
   let spoolBaseDps      = 0;
+  // Per-damage-type versions of the same, needed to resist-weight the max-spool figure: the scalar
+  // totals above cannot be split back into em/th/kin/exp once summed.
+  const spoolBaseDpsT    = { em:0, th:0, kin:0, exp:0 };
+  const spoolBaseVolleyT = { em:0, th:0, kin:0, exp:0 };
 
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isActive(slot.state)) continue;
@@ -1819,7 +1845,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         weaponVolley.total += slotVolTotal;
         // Record this weapon's contribution to the spool base only if it actually spools, so the
         // max-spool display ramps this weapon alone and leaves co-fitted non-spool guns at base.
-        if (spoolMax > 0 && spoolPerCycle > 0) { spoolBaseDps += slotDpsTotal; spoolBaseVolley += slotVolTotal; }
+        if (spoolMax > 0 && spoolPerCycle > 0) {
+          spoolBaseDps += slotDpsTotal; spoolBaseVolley += slotVolTotal;
+          for (const t of ['em','th','kin','exp']) { spoolBaseDpsT[t] += dps(t); spoolBaseVolleyT[t] += vol(t); }
+        }
       }
       // Store ammo-adjusted range stats for display
       slotEngineStats.set(slot, {
@@ -2998,6 +3027,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   for (const d of [weaponDps, weaponVolley, droneDps, droneVolley, fighterDps, fighterVolley])
     for (const k in d) if (!Number.isFinite(d[k])) d[k] = 0;
 
+  // Resist-weighted volley per graph weapon, so the damage graph reflects the target profile
+  // without every call site knowing about it. Done once here rather than at the four
+  // graphWeapons.push sites — two of which are drone entries that are easy to miss.
+  for (const w of graphWeapons) if (w && w.volley) w.volleyEff = applyTargetResists(w.volley, _tgtRes);
+
   return {
     // Resources
     cpuUsed:  Math.round(cpuUsed  * 100) / 100,
@@ -3061,6 +3095,30 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     weaponVolleyMax: weaponVolley.total + spoolBaseVolley * (weaponSpoolFactor - 1),
     totalDpsMax:     weaponDps.total    + spoolBaseDps    * (weaponSpoolFactor - 1) + droneDps.total + fighterDps.total,
     totalVolleyMax:  weaponVolley.total + spoolBaseVolley * (weaponSpoolFactor - 1) + droneVolley.total + fighterVolley.total,
+    // Resist-weighted versions of everything above, against the selected target profile. With no
+    // profile (or "None") the resists are all zero and these equal the raw figures exactly, so the
+    // UI and graph can read them unconditionally.
+    targetResists: _tgtRes,
+    effective: (() => {
+      const w = applyTargetResists(weaponDps, _tgtRes), wv = applyTargetResists(weaponVolley, _tgtRes);
+      const d = applyTargetResists(droneDps, _tgtRes),  dv = applyTargetResists(droneVolley, _tgtRes);
+      const f = applyTargetResists(fighterDps, _tgtRes), fv = applyTargetResists(fighterVolley, _tgtRes);
+      const sd = applyTargetResists(spoolBaseDpsT, _tgtRes).total;
+      const sv = applyTargetResists(spoolBaseVolleyT, _tgtRes).total;
+      const sum = (...xs) => ({
+        em: xs.reduce((a,x)=>a+x.em,0), th: xs.reduce((a,x)=>a+x.th,0),
+        kin: xs.reduce((a,x)=>a+x.kin,0), exp: xs.reduce((a,x)=>a+x.exp,0),
+        total: xs.reduce((a,x)=>a+x.total,0),
+      });
+      return {
+        weaponDps: w, weaponVolley: wv, droneDps: d, droneVolley: dv, fighterDps: f, fighterVolley: fv,
+        totalDps: sum(w,d,f), totalVolley: sum(wv,dv,fv),
+        weaponDpsMax:   w.total  + sd * (weaponSpoolFactor - 1),
+        weaponVolleyMax: wv.total + sv * (weaponSpoolFactor - 1),
+        totalDpsMax:    w.total  + sd * (weaponSpoolFactor - 1) + d.total + f.total,
+        totalVolleyMax: wv.total + sv * (weaponSpoolFactor - 1) + dv.total + fv.total,
+      };
+    })(),
     // Per-weapon hit-math data + ship geometry for the damage graph
     graphWeapons,
     shipRadius: s.get('radius') ?? 0,

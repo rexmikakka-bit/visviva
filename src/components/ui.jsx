@@ -5,6 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { metaOf, META_COLORS, META_ORDER } from "../lib/meta.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
+import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
@@ -785,6 +786,43 @@ function ImportFitSheet({onClose,onImport}){
 }
 
 // ═══ FIT TAB ════════════════════════════════════════════════════
+// Picker for the TARGET's resists — what you are shooting, weighting outgoing DPS. Deliberately the
+// same shape as DamageProfileSheet (which is the incoming-damage counterpart) so the two read as a
+// pair. The swatch shows resist STRENGTH per damage type, so a dark bar means "your damage of this
+// type is being absorbed".
+function TargetProfileSheet({current,onSelect,onClose}){
+  const[search,setSearch]=useState("");
+  const[openCat,setOpenCat]=useState(()=>new Set(["Generic"]));
+  const q=search.trim().toLowerCase();
+  const cats=TARGET_PROFILES.map(g=>({cat:g.cat,items:g.items.filter(it=>!q||it.n.toLowerCase().includes(q)||g.cat.toLowerCase().includes(q))})).filter(g=>g.items.length);
+  const toggleCat=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
+  const Bar=({r})=>(<span style={{display:"flex",gap:2,flexShrink:0}}>
+    {[["em",r[0]],["th",r[1]],["kin",r[2]],["exp",r[3]]].map(([k,v])=>(
+      <span key={k} title={`${k} ${Math.round(v*100)}%`} style={{width:11,height:11,borderRadius:2,background:DMG[k].color,opacity:0.15+v*0.85}}/>))}
+  </span>);
+  return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh">
+    <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
+      <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
+        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search targets..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+      </div>
+    </div>
+    {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
+      <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+        <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",display:"inline-block",width:10}}>▶</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.text}}>{g.cat}</span>
+        <span style={{fontSize:10,color:C.textMute}}>({g.items.length})</span>
+      </div>
+      {open&&g.items.map(it=>{const sel=current?.n===it.n;return(
+        <div key={g.cat+it.n} onClick={()=>{onSelect({n:it.n,r:it.r});onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"9px 14px 9px 26px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+          <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?C.accent:C.text}}>{it.n}</span>
+          <Bar r={it.r}/>
+        </div>);})}
+    </div>);})}
+  </BottomSheet>);
+}
+
 function DamageProfileSheet({current,onSelect,onClose}){
   const[search,setSearch]=useState("");
   const[openCat,setOpenCat]=useState(()=>new Set(["Generic"]));
@@ -817,4 +855,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
