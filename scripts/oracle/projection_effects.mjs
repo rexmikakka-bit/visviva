@@ -8,7 +8,7 @@
  *
  * Shared by oracle_compare.mjs and any ad-hoc analysis so there is exactly one copy.
  */
-import { computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty } from '../../src/calc.js';
+import { computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, applyRemoteRepDiminishing } from '../../src/calc.js';
 
 // A NULL projection range means "no attenuation", not "30 km". eos is explicit about this —
 // calculateRangeFactor() opens with `if distance is None: return 1` — and most saved links have no
@@ -24,7 +24,7 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
   // A ship with disallowAssistance set (in practice: an ACTIVE HIC bubble) refuses ALL incoming
   // remote assistance — reps and remote sensor boosters — while still taking EWAR normally.
   const noAssist = !!R.disallowAssistance;
-  const reps = { shield: 0, armor: 0, hull: 0 };
+  const repEntries = { shield: [], armor: [], hull: [] };
   const webMults = [];
   let neutGJs = 0;
   const col = { sig: [], lock: [], scan: [], trk: [], topt: [], tfall: [], mrng: [], edly: [], avel: [], acld: [] };
@@ -53,7 +53,11 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
     // `amount` is how many copies of that source are projecting (eos ProjectionInfo.amount).
     const n = Math.max(1, pf.amount ?? 1);
     for (let i = 0; i < n; i++) {
-      if (!noAssist) for (const r of eff.reps) reps[r.kind] += r.rawPS * rf(r.optimal, r.falloff);
+      // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
+      // needs every source's amount AND cycle time together (see applyRemoteRepDiminishing).
+      if (!noAssist) for (const r of eff.reps) {
+        repEntries[r.kind].push({ amount: r.amount * rf(r.optimal, r.falloff), cycleS: r.cycleS });
+      }
       for (const w of eff.webs)  webMults.push(1 + (w.speedFactor * R.web * rf(w.optimal, w.falloff)) / 100);
       for (const q of eff.neuts) neutGJs += q.gjPerSec * R.neut * rf(q.optimal, q.falloff);
       for (const p of (eff.painters ?? [])) col.sig.push(p.sigBonus * R.painter * rf(p.optimal, p.falloff));
@@ -81,6 +85,9 @@ export function buildProjectedEffects(projectedFits, skills = null, resist = nul
     }
   }
 
+  const reps = { shield: applyRemoteRepDiminishing(repEntries.shield),
+                 armor:  applyRemoteRepDiminishing(repEntries.armor),
+                 hull:   applyRemoteRepDiminishing(repEntries.hull) };
   const webMult = webMults.length ? stackingPenalty(webMults) : 1;
   const stackPct = (arr) => arr.length ? (stackingPenalty(arr.map((p) => 1 + p / 100)) - 1) * 100 : 0;
   const debuffs = {

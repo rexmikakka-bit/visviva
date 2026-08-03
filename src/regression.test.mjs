@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 
@@ -963,6 +963,77 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('pilotsec', 'Sidewinder DPS at 0.0 sec', swDps(0), 117.5967, 0.005);
   check('pilotsec', 'Sidewinder DPS at -5.0 sec', swDps(-5), 161.6954, 0.005);
   check('pilotsec', 'Sidewinder DPS at -10.0 sec', swDps(-10), 205.7942, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12f. The last four saved-fit divergences. All numbers from eos.
+//
+//  (a) SAVIOR is the FIFTH implant set. Like Mimesis it targets MODULES, so effect 8018 (duration +
+//      capacitorNeed of anything requiring Remote Armor Repair Systems / Shield Emission Systems)
+//      was already applying the raw bonus; only the set multiplier Effect8017 (domain=charID) was
+//      dispatcher-skipped. It makes remote reps CYCLE FASTER.
+//  (b) REMOTE-REP DIMINISHING RETURNS (eos Fit.__getAppliedRr). Incoming remote reps do not add up
+//      linearly. Invisible on one logi; a Leshak under 14 projected Large Remote Armor Repairer IIs
+//      gets a 0.951217 multiplier. Note eos truncates the cycle to whole SECONDS inside the curve
+//      but uses the exact cycle for the final division — reproducing both is what lands the number.
+//  (c) computeProjectedReps ignored the SOURCE's T3 CRUISER SUBSYSTEMS, so a projected Loki lost
+//      every subsystem bonus — including its Offensive - Support Processor, which strengthens the
+//      Shield Command Burst that shortens its remote shield boosters' cycle.
+//  (d) Only BASTION's rate-of-fire bonus belongs to eos's 'postPerc' penalty group; SIEGE's is
+//      unpenalised. We put every mode module's RoF there, so siege and overload penalised each
+//      other and a sieged + overheated launcher lost 2.2% of its DPS.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSAVIOR SET / RR CURVE / PROJECTED SUBSYSTEMS / SIEGE+OVERLOAD');
+
+  // (a) eos: Nestor + Large Remote Armor Repairer II = 128.0 HP/s bare, 157.2849 with the set.
+  const nestor = { typeID: tid('Nestor'), name: 'Nestor' };
+  const rrFit = { high: [M('Large Remote Armor Repairer II', 'active')], mid: [], low: [], rigs: [] };
+  const savior = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Omega']
+    .map((x) => ({ name: `Mid-grade Savior ${x}` }));
+  check('savior', 'remote armor rep, no implants',
+        computeProjectedReps(nestor, rrFit, null, {}).reps[0]?.rawPS, 128.0, 0.002);
+  check('savior', 'remote armor rep, full Mid-grade Savior',
+        computeProjectedReps(nestor, rrFit, null, { implants: savior }).reps[0]?.rawPS, 157.2849, 0.002);
+
+  // (b) eos _getAppliedArmorRr for 14 x (844.8 HP per 3.2554931 s) = 3455.7663, against a naive
+  //     3633.0. A single source must come through untouched.
+  const many = Array.from({ length: 14 }, () => ({ amount: 844.8, cycleS: 3.2554931 }));
+  check('rrcurve', 'diminishing returns, 14 sources', applyRemoteRepDiminishing(many), 3455.7663, 0.0005);
+  check('rrcurve', 'single source is unaffected',
+        applyRemoteRepDiminishing([{ amount: 768, cycleS: 6 }]), 128.0, 0.0005);
+  check('rrcurve', 'no sources', applyRemoteRepDiminishing([]), 0, 0);
+
+  // (c) eos: Loki + Gistum A-Type Medium Remote Shield Booster + Shield Command Burst II (Active
+  //     Shielding) = 66.6667 HP/s without subsystems, 67.8643 with them (burst -15% -> -16.5%).
+  const loki = { typeID: tid('Loki'), name: 'Loki' };
+  const lokiHigh = [M('Gistum A-Type Medium Remote Shield Booster', 'active'),
+                    M('Shield Command Burst II', 'active', 'Active Shielding Charge')];
+  const lokiSubs = ['Loki Core - Immobility Drivers', 'Loki Defensive - Adaptive Defense Node',
+                    'Loki Offensive - Support Processor', 'Loki Propulsion - Wake Limiter']
+    .map((n) => ({ name: n, typeID: tid(n) }));
+  const lokiReps = (subsystems) => computeProjectedReps(loki,
+    { high: lokiHigh, mid: [], low: [], rigs: [], subsystems }, null, {}).reps[0]?.rawPS;
+  check('projsubs', 'projected Loki without subsystems', lokiReps([]), 66.6667, 0.002);
+  check('projsubs', 'projected Loki WITH subsystems', lokiReps(lokiSubs), 67.8643, 0.002);
+
+  // (d) eos cycle times for a Phoenix Navy Issue + Rapid Torpedo Launcher II. Overheat is -15% in
+  //     BOTH columns; the bug made it -13.04% (= -15% x exp(-1/7.1289)) only when sieged.
+  const phx = { typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' };
+  const phxCycle = (state, siege) => {
+    const high = [M('Rapid Torpedo Launcher II', state, 'Caldari Navy Scourge Torpedo')];
+    if (siege) high.push(M('Siege Module II', 'active'));
+    const cs = calcFitStats(phx, { high, mid: [], low: [], rigs: [] }, [], null, {});
+    return (cs.graphWeapons ?? []).find((w) => w.kind === 'missile').cycleS * 1000;
+  };
+  check('postperc', 'launcher cycle, active',            phxCycle('active', false),     17805.2985, 0.0005);
+  check('postperc', 'launcher cycle, active + siege',    phxCycle('active', true),       3561.0597, 0.0005);
+  check('postperc', 'launcher cycle, overheated',        phxCycle('overheated', false), 15134.5037, 0.0005);
+  check('postperc', 'launcher cycle, overheated + siege', phxCycle('overheated', true),  3026.9007, 0.0005);
+  // The overheat bonus must be the SAME -15% whether or not the ship is sieged.
+  check('postperc', 'overheat is -15% sieged or not',
+        (phxCycle('overheated', true) / phxCycle('active', true))
+          / (phxCycle('overheated', false) / phxCycle('active', false)), 1, 0.0005);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

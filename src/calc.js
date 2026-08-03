@@ -1068,6 +1068,39 @@ export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts
   return out;
 }
 
+// Remote-repair DIMINISHING RETURNS (eos Fit.__getAppliedRr). Incoming remote reps do not simply
+// add up: past a few thousand HP/s each source is scaled down, which is what stops a wall of logi
+// from being linearly better. Applies to all three layers (hull/armor/shield), independently.
+//
+//   totalRaw = Σ amount_i / int(cycle_i)          <- int() on the cycle, in SECONDS, is deliberate
+//   mod_i    = 7000 + (amount_i / int(cycle_i)) * 20
+//   mult_i   = 1 - ((rrps_i + mod_i) / (totalRaw + mod_i) - 1)²
+//   applied  = Σ mult_i * amount_i / cycle_i      <- exact cycle here, not the truncated one
+//
+// eos's own comment on the truncation: "for considerations of RR diminishing returns cycle time is
+// rounded this way". The mixed truncated/exact cycle is not a typo — reproducing it is what makes
+// the numbers land: a Leshak under 14 projected Large Remote Armor Repairer IIs gets a 0.951217
+// multiplier, 3455.77 HP/s rather than the naive 3633.0.
+//
+// Below a few thousand HP/s the multiplier is ~1, which is why single-logi fits never showed this.
+export function applyRemoteRepDiminishing(entries) {
+  if (!entries || !entries.length) return 0;
+  const RR_ADDITION = 7000, RR_MULTIPLIER = 20;
+  // eos divides by int(cycle) and would raise on a sub-second cycle; no remote rep has one, but
+  // fall back to the exact cycle rather than dividing by zero.
+  const trunc = (c) => (Math.trunc(c) || c);
+  let totalRaw = 0;
+  for (const e of entries) totalRaw += e.amount / trunc(e.cycleS);
+  let applied = 0;
+  for (const e of entries) {
+    const rrps = e.amount / trunc(e.cycleS);
+    const mod = RR_ADDITION + rrps * RR_MULTIPLIER;
+    const mult = 1 - ((rrps + mod) / (totalRaw + mod) - 1) ** 2;
+    applied += mult * e.amount / e.cycleS;
+  }
+  return applied;
+}
+
 export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
   if (!ship || !slots) return [];
   const sk = { ...SKILL_DEFAULTS, ...skills };
@@ -1094,6 +1127,16 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     if (anyDroneActive && drone.active !== true) continue;
     const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
     if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
+  }
+  // The SOURCE's T3 CRUISER subsystems. `allSlots` above deliberately lists the racks; subsystems
+  // are a separate collection and were simply missing here, so a projected Loki/Legion/Tengu/Proteus
+  // lost every subsystem bonus it has. A logi Loki's remote shield boosters cycled 5854 ms instead
+  // of 5715 (its Offensive - Support Processor shortens them), repping 2.4% light.
+  if (Array.isArray(slots.subsystems) && slots.subsystems.length) {
+    const subTids = slots.subsystems
+      .map(s => s && (s.typeID ?? typeIDByName(s.name) ?? tidByName(s.name)))
+      .filter(Boolean);
+    if (subTids.length) fit.setSubsystems(subTids);
   }
   // The SOURCE's tactical mode changes what it projects. calcFitStats and projectionResistances both
   // applied it; this function did not, so a T3D projecting remote reps repped as if it had no mode
@@ -1130,7 +1173,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     // engine-computed, so the charge bonus (cap booster / nanite paste) is already baked in.
     if (gn === 'Remote Shield Booster' || gn === 'Ancillary Remote Shield Booster') {
       const amt = fitItem.get('shieldBonus') ?? 0;
-      if (amt > 0) reps.push({ kind: 'shield', name: slot.name, rawPS: amt / dur, optimal, falloff });
+      if (amt > 0) reps.push({ kind: 'shield', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Remote Armor Repairer' || gn === 'Mutadaptive Remote Armor Repairer'
                || gn === 'Ancillary Remote Armor Repairer') {
       // An Ancillary Remote Armor Repairer loaded with Nanite Repair Paste reps x3 (eos:
@@ -1141,10 +1184,10 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       const isAncillary = gn === 'Ancillary Remote Armor Repairer';
       const pasteMult = (isAncillary && slot.ammo) ? (fitItem.get('chargedArmorDamageMultiplier') || 3) : 1;
       const amt = (fitItem.get('armorDamageAmount') ?? 0) * pasteMult;
-      if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, optimal, falloff });
+      if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Remote Hull Repairer') {
       const amt = fitItem.get('structureDamageAmount') ?? 0;
-      if (amt > 0) reps.push({ kind: 'hull', name: slot.name, rawPS: amt / dur, optimal, falloff });
+      if (amt > 0) reps.push({ kind: 'hull', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Stasis Web' || gn === 'Stasis Grappler') {
       const sf = fitItem.get('speedFactor') ?? 0;
       if (sf < 0) webs.push({ name: slot.name, speedFactor: sf, optimal, falloff });
