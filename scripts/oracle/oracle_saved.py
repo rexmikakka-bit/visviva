@@ -72,7 +72,12 @@ def extract_spec(fit, depth=0):
     depth>0 means this fit is being emitted as somebody else's COMMAND BOOSTER, in which case we
     only need enough to recompute its bursts and must not recurse into its own links.
     """
-    slots = {"high": [], "mid": [], "low": [], "rigs": [], "subsystems": []}
+    # "services" must be here even though _SLOT_KEY already maps slot 8 to it: without the key,
+    # slots[key].append() raised KeyError on the first service module and the whole fit was dropped
+    # by main()'s except. That silently removed every STRUCTURE fit with a service module from the
+    # corpus — an Azbel, a Fortizar and one more — which is precisely the class of fit the structure
+    # work was validating, so the sweep was blind exactly where it needed to see.
+    slots = {"high": [], "mid": [], "low": [], "rigs": [], "subsystems": [], "services": []}
     mutated = False
     for m in fit.modules:
         if m.isEmpty:
@@ -226,6 +231,37 @@ def extract_spec(fit, depth=0):
     return spec, flags
 
 
+def _normalise_linked_fits(fit, _depth=0):
+    """Put COMMAND and PROJECTED fits on the same all-V character as the fit under test.
+
+    `fit.character = all_v_char()` only covers the top-level fit. A linked booster or logi keeps
+    whatever character it was saved with -- the user's real one -- so eos computed its warfare buffs
+    and remote reps at REAL skills while calc.js computes everything at all-V. That is a harness
+    normalisation gap, not an engine difference, and it reads as a divergence on the fit being
+    tested: a Jackdaw under a Nighthawk's Shield Command Bursts got +19.5% shield HP from eos
+    (booster at real skills) against our +22.5% (all-V), i.e. 424117.6 EHP vs 443134.7. With the
+    booster normalised, eos returns 443134.7 -- exactly ours.
+
+    eos caches per-fit results, so setting .character alone is not enough; the linked fit has to be
+    cleared or it silently keeps the old numbers. Depth-limited to match extract_spec, which does not
+    descend past a projection's own links.
+    """
+    if _depth > 1:
+        return
+    for linked in list(getattr(fit, "commandFits", None) or []) + \
+                  list(getattr(fit, "projectedFits", None) or []):
+        try:
+            linked.character = all_v_char()
+            linked.clear()
+            _normalise_linked_fits(linked, _depth + 1)
+        except Exception:  # noqa: BLE001 -- a link we cannot normalise must not lose the whole fit
+            pass
+    try:
+        fit.clear()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def main():
     e = get_eos()
     db = e["db"]
@@ -251,6 +287,7 @@ def main():
                 continue
             fit.character = all_v_char()
             fit.damagePattern = _UNIFORM_DP
+            _normalise_linked_fits(fit)
             fit.calculateModifiedAttributes()
             spec, flags = extract_spec(fit)
             rec = {
