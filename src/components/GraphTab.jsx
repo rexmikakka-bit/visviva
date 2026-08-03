@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { C } from "../theme.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import {
@@ -287,12 +287,25 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
     onChange(angle);
     onVelocityChange&&onVelocityChange(Math.round(newVelFrac*safeMV));
   }
+  // Double-tap / double-click a compass to park it: heading 0 (straight at the enemy), speed 0.
+  // The first tap of a double still moves the vector — harmless, since the reset lands on top of it
+  // and the alternative is delaying every single tap by the double-tap window just to find out.
+  const reset=()=>{onChange(0);onVelocityChange&&onVelocityChange(0);};
+  const lastTap=useRef(0);
   const onClick=e=>{const rect=e.currentTarget.getBoundingClientRect();handlePt(e.clientX,e.clientY,rect);};
-  const onTouch=e=>{e.preventDefault();const rect=e.currentTarget.getBoundingClientRect();handlePt(e.touches[0].clientX,e.touches[0].clientY,rect);};
+  const onDoubleClick=e=>{e.preventDefault();reset();};
+  const onTouch=e=>{
+    e.preventDefault();
+    const now=Date.now();
+    // Consume the timestamp on a match so a third tap starts a fresh pair rather than chaining.
+    if(now-lastTap.current<300){lastTap.current=0;reset();return;}
+    lastTap.current=now;
+    const rect=e.currentTarget.getBoundingClientRect();handlePt(e.touches[0].clientX,e.touches[0].clientY,rect);
+  };
 
   return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
     <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{label}</span>
-    <svg width={90} height={90} style={{cursor:"crosshair",touchAction:"none"}} onClick={onClick} onTouchStart={onTouch}>
+    <svg width={90} height={90} style={{cursor:"crosshair",touchAction:"none"}} onClick={onClick} onDoubleClick={onDoubleClick} onTouchStart={onTouch}>
       <circle cx={cx} cy={cy} r={rMax+6} fill={C.surfaceAlt} stroke={C.border} strokeWidth="1"/>
       {[0.25,0.5,0.75,1.0].map(f=><circle key={f} cx={cx} cy={cy} r={rMax*f} fill="none" stroke={C.borderStrong} strokeWidth="0.5" strokeDasharray={f===1?"none":"2,4"}/>)}
       <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,2"/>
@@ -345,7 +358,7 @@ function TargetControls({targetProfile,setTargetProfile,targetAngle,setTargetAng
       </label>
     </div>
     <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>Flight Vectors</div>
-    <div style={{fontSize:10,color:C.textMute,marginBottom:8}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal).</div>
+    <div style={{fontSize:10,color:C.textMute,marginBottom:8}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
       <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel||500} onChange={setSelfAngle} onVelocityChange={setSelfVel}/>
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
