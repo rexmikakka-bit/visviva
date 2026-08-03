@@ -9,7 +9,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 135)
+node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 147)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -289,6 +289,16 @@ Two rules, both established against pyfa and both load-bearing:
    The Capital Sensor Array is deliberately **not** exempt — its multiplier *is* penalised, which is
    precisely what produces the 6457 km above.
 
+   **Exception, and it is per-module not per-group: only BASTION's rate-of-fire bonus joins eos's
+   `'postPerc'` penalty group.** Siege's RoF passes no `stackingPenalties` flag at all (defaults
+   False → unpenalised); Effect6658's two Bastion RoF boosts explicitly pass
+   `penaltyGroup='postPerc'`. Those, plus overload RoF (Effect3001), are the *only* three uses of
+   `'postPerc'` in all of eos — grep for it. We used to put every mode module's `speed` bonus there,
+   which is invisible with one member and wrong with two: sieged **and** overheated, siege and
+   overload penalised each other and the overload's −15% arrived as −13.04%
+   (`= −15% × exp(−1/7.1289)`), costing a Phoenix Navy Issue 2.2% of its DPS *with volley matching
+   exactly* — the classic "divisor is wrong" signature.
+
 Both rules are covered by the regression suite. Changing either will break real fits.
 
 ### Implant sets (RESOLVED — was a data bug, not a mechanic)
@@ -308,10 +318,10 @@ With the phantom types pruned, the full product gives the Astarte a repair amoun
 **The lesson worth keeping:** a rule that only works with a magic exception is usually a symptom.
 Two errors were cancelling, and the "asymmetry" was the shape of the cancellation.
 
-### Implant SETS — FOUR exist, all use the FULL product (incl. Omega)
+### Implant SETS — FIVE exist, all use the FULL product (incl. Omega)
 
-`Asklepian` (armor rep), `Nirvana` (shield HP), `Amulet` (armor HP) and `Mimesis` (entropic
-disintegrator SPOOL) all follow the same shape: each member carries a bonus attr, and a
+`Asklepian` (armor rep), `Nirvana` (shield HP), `Amulet` (armor HP), `Mimesis` (entropic
+disintegrator SPOOL) and `Savior` (remote-rep CYCLE TIME) all follow the same shape: each member carries a bonus attr, and a
 set-multiplier effect (PreMul on that attr, domain=charID) which the dispatcher SKIPS. Each needs a
 custom handler in `dogma-engine.js` applying the FULL set product including Omega (1.1^5 x 1.25 =
 2.0131 for the first three; Mid-grade Mimesis is 1.2^5 x 1.6 = 3.981312).
@@ -327,6 +337,33 @@ modifiers, so the un-amplified bonus was applying all along and only the ×3.98 
 missing; the symptom was full-spool DPS 20% low (a Draugur at 388.8 against eos's 490.6) with
 *unspooled* DPS matching exactly. If spooled and unspooled disagree about whether they're correct,
 look here.
+
+`Savior` is the second module-targeting set. Members carry `remoteRepDurationCapBonus`, which effect
+8018 applies to the duration and capacitorNeed of anything requiring Remote Armor Repair Systems or
+Shield Emission Systems — so remote reps cycle FASTER. As with Mimesis, only the multiplier
+(Effect8017, domain=charID) was missing: a projected Nestor's Large Remote Armor Repairer II read
+141.62 HP/s against eos's 157.28.
+
+### ⚠️ Incoming remote reps have DIMINISHING RETURNS
+
+Remote reps do not add up linearly — eos's `Fit.__getAppliedRr` scales each source down as the total
+climbs, per layer (hull/armor/shield independently). `applyRemoteRepDiminishing` in `calc.js` ports
+it. Two details are load-bearing and look like typos if you skim: the curve divides by the cycle time
+**truncated to whole seconds**, but the final term divides by the **exact** cycle. eos even comments
+on it ("for considerations of RR diminishing returns cycle time is rounded this way").
+
+Below a few thousand HP/s the multiplier is ~1, which is why single-logi fits never showed it. A
+Leshak under 14 projected Large Remote Armor Repairer IIs gets ×0.951217 — 3455.77 HP/s rather than
+the naive 3633.0.
+
+### `computeProjectedReps` must build the SOURCE as completely as `calcFitStats` does
+
+Three separate bugs, all the same shape: the projection source was built without something the fit
+under test would have had. Its **tactical mode** (a Defense-mode Confessor reps ×4/3), its **T3
+cruiser subsystems** (a logi Loki's Offensive - Support Processor strengthens the Shield Command
+Burst that shortens its remote boosters' cycle), and its **ancillary paste multiplier** (×3, which
+the LOCAL path already applied). If a projected source's output is a clean fraction low, check what
+the source fit is missing before suspecting the rep maths.
 
 When adding one, filter members on attribute PRESENCE (`'attr' in type.a`), not on a truthy value:
 attributes have defaults, and Omega (which carries no bonus attr) will otherwise read back the default

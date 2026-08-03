@@ -724,10 +724,18 @@ export class Fit {
       // Members of eos's 'postPerc' penalty group route here instead of going fully direct.
       let postPercGroup = false;
       if (!effectiveDirect && MODE_MODULE_GROUPS.has(src.groupName) && !IC_STACKED_SRC.has(srcAttr)) {
-        // A mode module's RoF bonus (speed) shares eos's 'postPerc' group with overload RoF — the two
-        // penalise against each other but not against BCS/damage mods. Every OTHER mode-module bonus
-        // (resists, range, tank) is a role bonus applied unpenalised.
-        if (Number(dstAttr) === AID.speed) postPercGroup = true;
+        // Only BASTION's RoF bonus shares eos's 'postPerc' group with overload RoF. This used to be a
+        // blanket rule for every mode module's `speed` bonus, which is wrong for SIEGE: eos passes no
+        // stackingPenalties flag on the siege RoF boost at all (it defaults False → unpenalised),
+        // while Effect6658's two Bastion RoF boosts explicitly pass penaltyGroup='postPerc'. Those
+        // three lines are the ONLY uses of 'postPerc' in eos.
+        //
+        // The difference is invisible until a weapon is BOTH sieged and overheated, because with one
+        // member the group applies at full strength either way. Overheated + sieged, the two
+        // penalised each other and the overload's -15% RoF arrived as -13.04% (= -15% x
+        // exp(-1/7.1289)): a sieged Phoenix Navy Issue with overheated Rapid Torpedo Launchers
+        // cycled 2336 ms against eos's 2283, i.e. 2.2% low on DPS with volley matching exactly.
+        if (Number(dstAttr) === AID.speed && eid === 6658) postPercGroup = true;
         else effectiveDirect = true;
       }
 
@@ -1361,6 +1369,41 @@ export class Fit {
                 const raw = mi.getBase(modAttr) ?? 0; if (!raw) continue;
                 const ex = extraPct(raw); if (!ex) continue;
                 for (const m of targets) m.attrs.applyMod(AID[dstAttr] ?? dstAttr, 6, ex, true);
+              }
+            }
+          }
+        }
+      }
+    }
+    // ── 5f3. Savior implant set (implantSetSavior) — the FIFTH set ───────────────
+    // Like Mimesis, this one targets MODULES rather than the hull, and for the same reason the
+    // un-amplified bonus was already applying: effect 8018 carries real modifiers (duration and
+    // capacitorNeed of anything requiring Remote Armor Repair Systems or Shield Emission Systems),
+    // while the set multiplier Effect8017 is domain=charID and dispatcher-skipped.
+    //
+    // Members carry remoteRepDurationCapBonus (Mid-grade Alpha..Epsilon = -1/-1.5/-2/-2.5/-3), so
+    // the set makes remote reps CYCLE FASTER. Missing the multiplier left a projected Nestor's Large
+    // Remote Armor Repairer II at 141.62 HP/s against eos's 157.28 (cycle 5422 ms vs 4882.86).
+    //
+    // FULL product including Omega, as with every other set: Mid-grade = 1.1^5 x 1.25 = 2.0131375.
+    {
+      const members = imp.filter(i => 'implantSetSavior' in (i._td?.a ?? {}));
+      if (members.length >= 2) {
+        const setProduct = members.reduce((p, i) => p * (i.getBase('implantSetSavior') ?? 1), 1);
+        if (setProduct > 1) {
+          // Top the already-applied (1 + raw/100) up to (1 + raw*setProduct/100). raw is NEGATIVE
+          // here (shorter cycle), which the same expression handles.
+          const extraPct = (raw) => ((1 + raw * setProduct / 100) / (1 + raw / 100) - 1) * 100;
+          const REMOTE_REP_SKILLS = ['Remote Armor Repair Systems', 'Shield Emission Systems'];
+          const targets = mods.filter(m => REMOTE_REP_SKILLS.some(s => m.requiresSkill(s)));
+          if (targets.length) {
+            // Attribute PRESENCE, not truthiness — the Omega carries only implantSetSavior.
+            for (const mi of members.filter(i => 'remoteRepDurationCapBonus' in (i._td?.a ?? {}))) {
+              const raw = mi.getBase('remoteRepDurationCapBonus') ?? 0; if (!raw) continue;
+              const ex = extraPct(raw); if (!ex) continue;
+              for (const m of targets) {
+                m.attrs.applyMod(AID.duration ?? 'duration', 6, ex, true);
+                m.attrs.applyMod(AID.capacitorNeed ?? 'capacitorNeed', 6, ex, true);
               }
             }
           }

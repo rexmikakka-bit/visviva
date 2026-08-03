@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
 import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations, haptic } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
@@ -97,7 +97,9 @@ export default function App(){
     return out;
   },[cmdFits,fitsDB,skills]);
   const projectedEffects=useMemo(()=>{
-    const reps={shield:0,armor:0,hull:0};
+    // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
+    // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
+    const repEntries={shield:[],armor:[],hull:[]};
     const webMults=[]; let neutGJs=0;
     const col={sig:[],lock:[],scan:[],trk:[],topt:[],tfall:[],mrng:[],edly:[],avel:[],acld:[]};
     const boosts={lock:[],scan:[]};   // projected Remote Sensor Boosters -> attribute pool, not the debuff stack
@@ -117,7 +119,7 @@ export default function App(){
       const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
-      if(!noAssist)for(const r of eff.reps)reps[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
+      if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});
       for(const w of eff.webs)webMults.push(1+(w.speedFactor*rz('web')*rf(w.optimal,w.falloff))/100);
       for(const n of eff.neuts)neutGJs+=n.gjPerSec*rz('neut')*rf(n.optimal,n.falloff);
       for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rz('painter')*rf(p.optimal,p.falloff));
@@ -129,6 +131,7 @@ export default function App(){
       for(const t of (eff.trackDisr||[])){const f=rz('disrupt')*rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
       for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
     }
+    const reps={shield:applyRemoteRepDiminishing(repEntries.shield),armor:applyRemoteRepDiminishing(repEntries.armor),hull:applyRemoteRepDiminishing(repEntries.hull)};
     const webMult=webMults.length?stackingPenalty(webMults):1;
     const stackPct=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
     const debuffs={sig:stackPct(col.sig),lockRange:stackPct(col.lock),scanRes:stackPct(col.scan),tracking:stackPct(col.trk),turretOptimal:stackPct(col.topt),turretFalloff:stackPct(col.tfall),missileRange:stackPct(col.mrng),explosionDelay:stackPct(col.edly),aoeVel:stackPct(col.avel),aoeCloud:stackPct(col.acld)};
