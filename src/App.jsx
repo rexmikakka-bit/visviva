@@ -20,6 +20,7 @@ import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
 const OPEN_TABS_KEY = 'visviva_open_tabs';
+const NEW_TAB_PREF_KEY = 'visviva_open_in_new_tab';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -84,6 +85,15 @@ export default function App(){
   // rename/delete handlers.
   const[openTabs,setOpenTabs]=useState(()=>{try{const s=localStorage.getItem(OPEN_TABS_KEY);if(s)return JSON.parse(s);}catch{}return [];});
   useEffect(()=>{try{localStorage.setItem(OPEN_TABS_KEY,JSON.stringify(openTabs));}catch{}},[openTabs]);
+  // Off by default: opening every fit in its own tab fills the strip within a session, and most
+  // opens are "show me this fit", not "keep the last one to hand". So a plain open REPLACES the
+  // current tab, and you ask for a new one explicitly (the + in the strip, or Open in New Tab in
+  // the Fits list). Setting flips it to pyfa's always-new-tab behaviour.
+  const[openInNewTab,setOpenInNewTab]=useState(()=>{try{return localStorage.getItem(NEW_TAB_PREF_KEY)==="1";}catch{return false;}});
+  useEffect(()=>{try{localStorage.setItem(NEW_TAB_PREF_KEY,openInNewTab?"1":"0");}catch{}},[openInNewTab]);
+  // One-shot override for the explicit "open in a new tab" affordances, consumed by the next
+  // loadFit. A ref rather than state so setting it cannot race the load it is meant to modify.
+  const wantNewTab=useRef(false);
   // The fit restored at launch comes straight out of localStorage rather than through loadFit, so
   // nothing would have registered its tab and the strip would start empty with a fit already open.
   // Seed it once on mount.
@@ -244,12 +254,24 @@ export default function App(){
   const loadFit=(ship,fitName)=>{
     const fit=fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
-    // Opening a fit puts it in the tab strip (or raises it if already there). Soft cap: past
-    // MAX_OPEN_TABS the oldest tab that is not the one being opened is dropped, so the strip stays
-    // scannable on a phone. Nothing is lost -- the Fits list is still the full library.
+    // Opening a fit raises its tab if it already has one; otherwise it either REPLACES the current
+    // tab (the default -- see openInNewTab) or is appended. Soft cap on append: past MAX_OPEN_TABS
+    // the oldest tab is dropped, so the strip stays scannable on a phone. Nothing is lost -- the
+    // Fits list is still the full library.
+    const newTab=wantNewTab.current||openInNewTab; wantNewTab.current=false;
+    // `activeFit` here is still the PREVIOUS fit: setActiveFit above only queues the update, which
+    // is exactly what "replace the tab I was in" needs.
+    const prevFit=activeFit;
     if(fit) setOpenTabs(prev=>{
-      const without=(prev??[]).filter(t=>!(t.ship===ship&&(t.id!=null?t.id===fit.id:t.name===fitName)));
-      const next=[...without,{ship,id:fit.id,name:fitName}];
+      const list=prev??[];
+      const at=list.findIndex(t=>t.ship===ship&&(t.id!=null?t.id===fit.id:t.name===fitName));
+      if(at>=0)return list;
+      const entry={ship,id:fit.id,name:fitName};
+      if(!newTab&&prevFit){
+        const cur=list.findIndex(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName);
+        if(cur>=0){const next=[...list];next[cur]=entry;return next;}
+      }
+      const next=[...list,entry];
       return next.length>MAX_OPEN_TABS?next.slice(next.length-MAX_OPEN_TABS):next;
     });
     setSlots(fit?.slots??generateEmptySlots(lookupShip(ship)));
@@ -384,6 +406,35 @@ export default function App(){
       if(next) loadFit(next.ship,next.name);
     }
   };
+  // Auto-hide the strip while you scroll a fit, so a phone spends its rows on the fit instead of on
+  // navigation; it collapses to a segmented line that still says which tab you are in, and comes
+  // back on scroll-up, on reaching the top, or on a tap.
+  //
+  // Scroll events do not bubble, so this is a CAPTURE-phase listener on window: most screens scroll
+  // the DOCUMENT (the app column is `minHeight:100vh` and grows past the viewport) while sheets and
+  // panels scroll a div of their own, and capturing at the top catches both without any screen
+  // having to know the strip exists. Document scrolls report `document` as the target, which has no
+  // scrollTop -- read the scrolling element instead.
+  const[tabsCollapsed,setTabsCollapsed]=useState(false);
+  const lastScrollTop=useRef(0);
+  useEffect(()=>{
+    const onScroll=(e)=>{
+      const t=e.target;
+      const y=(t&&typeof t.scrollTop==='number')?t.scrollTop:(document.scrollingElement?.scrollTop??0);
+      const prev=lastScrollTop.current;lastScrollTop.current=y;
+      if(y<=4){setTabsCollapsed(false);return;}
+      if(y-prev>6)setTabsCollapsed(true);
+      else if(prev-y>24)setTabsCollapsed(false);
+    };
+    window.addEventListener('scroll',onScroll,true);
+    return()=>window.removeEventListener('scroll',onScroll,true);
+  },[]);
+  // Changing screen swaps in a different scroller sitting at its own offset; carrying the collapsed
+  // state across would hide the strip on a screen you have not scrolled.
+  useEffect(()=>{setTabsCollapsed(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
+  // The + sends you to the Fits list with "next open goes in a new tab" armed. Backing out without
+  // picking anything must disarm it, or a fit opened much later inherits the request.
+  useEffect(()=>{if(fittingsView!=="browse")wantNewTab.current=false;},[fittingsView]);
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
   return(<div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
@@ -393,8 +444,10 @@ export default function App(){
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
       {!(bottomTab==="fittings"&&fittingsView&&fittingsView!=="active")&&
-        <FitTabs tabs={openFitTabs} activeFit={activeFit} onSelect={t=>loadFit(t.ship,t.name)}
-                 onClose={closeFitTab} onOpenLibrary={()=>{setBottomTab("fittings");setFittingsView("browse");}}/>}
+        <FitTabs tabs={openFitTabs} activeFit={activeFit} collapsed={tabsCollapsed}
+                 onSelect={t=>loadFit(t.ship,t.name)} onClose={closeFitTab}
+                 onExpand={()=>setTabsCollapsed(false)}
+                 onOpenLibrary={()=>{wantNewTab.current=true;setBottomTab("fittings");setFittingsView("browse");}}/>}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
@@ -418,7 +471,7 @@ export default function App(){
     {showSkillGaps&&<SkillGapSheet missing={skillCheck.missing} onClose={()=>setShowSkillGaps(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}
