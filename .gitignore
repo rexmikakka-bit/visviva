@@ -35,6 +35,13 @@ scripts/oracle/_*.jsonl
 scripts/oracle/*.err
 scripts/oracle/__pycache__/
 
+# ── Generated native iOS project ─────────────────────────────────────────────
+# Unlike android/, ios/ is NOT committed. The TestFlight workflow regenerates it with
+# `npx cap add ios` on every run, so a stale native project can never drift from the web
+# code, and the ~thousands of CocoaPods files stay out of the repo. Everything that would
+# otherwise be hand-edited in Xcode lives in scripts/patch-ios-project.sh instead.
+ios/
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs
 *.log

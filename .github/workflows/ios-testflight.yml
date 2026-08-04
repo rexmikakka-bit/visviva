@@ -1,0 +1,220 @@
+name: iOS TestFlight
+
+# Builds a signed iOS release on a GitHub-hosted Mac and uploads it to TestFlight.
+# This repo is public, so macOS runners are free — no Mac hardware needed to ship.
+#
+# MANUAL TRIGGER ONLY, on purpose. This publishes something outward-facing (a build that testers
+# can install) and burns a build number that can never be reused, so it should never fire off an
+# ordinary push. Run it from Actions -> iOS TestFlight -> Run workflow.
+#
+# The `ios/` directory is deliberately NOT committed: it is regenerated here every run, so there is
+# no chance of a stale native project drifting from the web code. Everything that would otherwise
+# be hand-edited in Xcode lives in scripts/patch-ios-project.sh.
+#
+# One-time setup (secrets, certificates, App Store Connect) is documented in IOS_RELEASE.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      marketing_version:
+        description: 'Version testers see (e.g. 1.0.0). Build number is the run number, always increasing.'
+        required: true
+        default: '1.0.0'
+      upload:
+        description: 'Upload to TestFlight. Set false for a signing dry run that only produces an .ipa artifact.'
+        type: boolean
+        required: true
+        default: true
+
+jobs:
+  testflight:
+    name: Archive and upload
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    env:
+      # Build numbers must strictly increase; App Store Connect rejects a duplicate outright.
+      # github.run_number is monotonic per workflow and never resets.
+      BUILD_NUMBER: ${{ github.run_number }}
+      MARKETING_VERSION: ${{ inputs.marketing_version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # Fail before spending 20 minutes on an archive if a secret is missing or empty. Every one of
+      # these is required to produce a signed build; a blank one otherwise surfaces as an opaque
+      # codesign or altool error much later.
+      - name: Check required secrets are present
+        env:
+          REQUIRED: |
+            IOS_DIST_CERT_P12_BASE64
+            IOS_DIST_CERT_PASSWORD
+            IOS_PROVISIONING_PROFILE_BASE64
+            IOS_TEAM_ID
+            ASC_KEY_ID
+            ASC_ISSUER_ID
+            ASC_KEY_P8_BASE64
+          IOS_DIST_CERT_P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          missing=0
+          for name in $REQUIRED; do
+            eval "value=\${$name:-}"
+            if [ -z "$value" ]; then echo "::error::secret $name is not set"; missing=1; fi
+          done
+          [ "$missing" -eq 0 ] || { echo "See IOS_RELEASE.md for how to produce each one."; exit 1; }
+
+      - run: npm ci
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Generate the native iOS project
+        run: |
+          if [ -d ios ]; then npx cap sync ios; else npx cap add ios; fi
+
+      - name: Generate app icons and splash screens
+        run: |
+          npm i --no-save @capacitor/assets
+          npx capacitor-assets generate --ios
+
+      # Apple rejects an app icon with an alpha channel at upload time, and Capacitor's placeholder
+      # artwork would otherwise ship silently if the generate step above matched no source files.
+      # Both failures are cheap to catch here and expensive to catch after an archive.
+      - name: Verify the app icon is real and opaque
+        run: |
+          ICON=$(find ios/App/App/Assets.xcassets/AppIcon.appiconset -name '*1024*.png' | head -1)
+          [ -n "$ICON" ] || { echo "::error::no 1024pt app icon was generated"; exit 1; }
+          if [ "$(sips -g hasAlpha "$ICON" | awk '/hasAlpha/{print $2}')" = "yes" ]; then
+            echo "::error::$ICON has an alpha channel — App Store Connect will reject it"; exit 1
+          fi
+          echo "app icon OK: $ICON"
+
+      - name: Apply iOS-only project settings
+        run: bash scripts/patch-ios-project.sh
+
+      # A throwaway keychain scoped to this runner. Never the login keychain: that one is shared
+      # with whatever else the image is doing, and unlocking it leaks the signing key more widely
+      # than necessary.
+      - name: Install the signing certificate
+        env:
+          P12_BASE64: ${{ secrets.IOS_DIST_CERT_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/dist.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          # Without this, codesign blocks on a GUI password prompt that no one is there to answer.
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Prepend ours to the existing search list rather than replacing it — dropping the login
+          # keychain also drops the Apple intermediate certs the signature chains to.
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/dist.p12"
+          echo "installed identities:"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      # The profile carries its own name and UUID, so reading them back out of it avoids two more
+      # secrets that could silently disagree with the file.
+      - name: Install the provisioning profile
+        id: profile
+        env:
+          PROFILE_BASE64: ${{ secrets.IOS_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "$PROFILE_BASE64" | base64 --decode > "$RUNNER_TEMP/profile.mobileprovision"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          UUID=$(/usr/libexec/PlistBuddy -c "Print :UUID" "$RUNNER_TEMP/profile.plist")
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :Name" "$RUNNER_TEMP/profile.plist")
+          APPID=$(/usr/libexec/PlistBuddy -c "Print :Entitlements:application-identifier" "$RUNNER_TEMP/profile.plist")
+          cp "$RUNNER_TEMP/profile.mobileprovision" ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID".mobileprovision
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "profile: $NAME ($UUID) for $APPID"
+          # A profile for the wrong bundle id fails deep inside codesign with an unhelpful message.
+          WANT=$(node -p "require('./capacitor.config.json').appId")
+          case "$APPID" in
+            *".$WANT") ;;
+            *) echo "::error::profile is for $APPID but capacitor.config.json says $WANT"; exit 1 ;;
+          esac
+
+      - name: Archive
+        env:
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.profile.outputs.name }}
+        run: |
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            MARKETING_VERSION="$MARKETING_VERSION" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CODE_SIGN_IDENTITY="Apple Distribution"
+
+      - name: Export the .ipa
+        env:
+          TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+          PROFILE_NAME: ${{ steps.profile.outputs.name }}
+        run: |
+          APP_ID=$(node -p "require('./capacitor.config.json').appId")
+          # Built with PlistBuddy rather than a heredoc: a heredoc's terminator has to sit at column
+          # zero, which fights the indentation of a YAML block scalar and silently produces a
+          # malformed plist.
+          OPTS="$RUNNER_TEMP/ExportOptions.plist"
+          PB=/usr/libexec/PlistBuddy
+          # PlistBuddy can only Add into a file that already exists, so seed an empty dict.
+          printf '%s' '<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict/></plist>' > "$OPTS"
+          $PB -c "Add :method string app-store-connect" "$OPTS"
+          $PB -c "Add :teamID string $TEAM_ID" "$OPTS"
+          $PB -c "Add :signingStyle string manual" "$OPTS"
+          $PB -c "Add :uploadSymbols bool true" "$OPTS"
+          $PB -c "Add :destination string export" "$OPTS"
+          $PB -c "Add :provisioningProfiles dict" "$OPTS"
+          $PB -c "Add :provisioningProfiles:$APP_ID string $PROFILE_NAME" "$OPTS"
+          $PB -c "Print" "$OPTS"
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export"
+          ls -la "$RUNNER_TEMP/export"
+
+      # Kept even on a dry run: it is the thing you can hand to someone with a Mac, and it makes a
+      # signing failure distinguishable from an upload failure.
+      - name: Upload the .ipa as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VisViva-${{ inputs.marketing_version }}-${{ github.run_number }}
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+
+      - name: Upload to TestFlight
+        if: ${{ inputs.upload }}
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          # altool looks the key up by ID in this exact directory; passing a path does not work.
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode > ~/.appstoreconnect/private_keys/AuthKey_"$ASC_KEY_ID".p8
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+          echo "Uploaded $MARKETING_VERSION ($BUILD_NUMBER). Processing in App Store Connect takes 5-15 min."

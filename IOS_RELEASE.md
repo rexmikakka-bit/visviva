@@ -1,0 +1,175 @@
+# Shipping to TestFlight without a Mac
+
+`.github/workflows/ios-testflight.yml` builds a signed iOS release on a GitHub-hosted Mac and
+uploads it to TestFlight. This repo is public, so macOS runners cost nothing. **No Mac is
+required at any point** — including for the signing certificate, which people usually assume
+needs Keychain Access.
+
+Everything below is a **one-time setup**. After it, shipping a build is: Actions → iOS TestFlight
+→ Run workflow.
+
+---
+
+## A. Apple Developer Program
+
+Enroll at [developer.apple.com/programs](https://developer.apple.com/programs/) — $99/year.
+Usually approved within hours, occasionally a couple of days. Nothing else here works without it.
+
+Once in, note your **Team ID**: Account → Membership details. Ten characters, e.g. `A1B2C3D4E5`.
+
+---
+
+## B. The signing certificate (run these on Windows)
+
+A distribution certificate is just an RSA key plus Apple's signature over a Certificate Signing
+Request. `openssl` produces a CSR exactly as well as a Mac's Keychain Access does.
+
+Run these in **Git Bash** from any scratch directory:
+
+```bash
+# 1. Private key — this file is the thing that must never leak.
+openssl genrsa -out ios_distribution.key 2048
+
+# 2. Certificate Signing Request.
+#    NOTE THE DOUBLE SLASH: Git Bash rewrites a leading "/" into a Windows path and mangles the
+#    subject. "//emailAddress=..." is the escape. On macOS/Linux use a single slash.
+openssl req -new -key ios_distribution.key -out ios_distribution.csr \
+  -subj "//emailAddress=rexmikakka@gmail.com/CN=Rex Mikakka/C=US"
+```
+
+Then, in the browser: **developer.apple.com → Certificates, IDs & Profiles → Certificates → +**
+→ **Apple Distribution** → upload `ios_distribution.csr` → download `distribution.cer`.
+
+Back in Git Bash, in the same directory as the `.cer`:
+
+```bash
+# 3. Apple hands back DER; PKCS#12 wants PEM.
+openssl x509 -inform DER -in distribution.cer -out distribution.pem
+
+# 4. Bundle the key and the certificate into a .p12.
+#    -legacy IS REQUIRED on OpenSSL 3.x. Without it you get AES-256-CBC + SHA-256, which macOS's
+#    `security import` refuses; -legacy produces the RC2/SHA-1 form it accepts. (If you are on
+#    OpenSSL 1.x the flag does not exist — drop it, the default is already the old form.)
+openssl pkcs12 -export -legacy \
+  -inkey ios_distribution.key -in distribution.pem \
+  -out distribution.p12 -name "Apple Distribution"
+```
+
+Pick a password when prompted — you will need it again in step E.
+
+Verify it round-trips before going further:
+
+```bash
+openssl pkcs12 -in distribution.p12 -info -nokeys -legacy | grep -i "MAC:\|PKCS7"
+# want: "MAC: sha1" and "pbeWithSHA1And40BitRC2-CBC"
+# if you see "sha256" / "AES-256-CBC", -legacy did not take and the runner will fail to import it
+```
+
+---
+
+## C. Bundle ID and provisioning profile
+
+Still under **Certificates, IDs & Profiles**:
+
+1. **Identifiers → +** → App IDs → App. Description: `Vis Viva`. Bundle ID: **Explicit**,
+   `com.rexmikakka.visviva` — this must match `appId` in `capacitor.config.json` exactly. No
+   capabilities need enabling.
+2. **Profiles → +** → Distribution → **App Store Connect** → select that App ID → select the
+   certificate from step B → name it something you will recognise (e.g. `VisViva App Store`) →
+   download `VisViva_App_Store.mobileprovision`.
+
+The workflow reads the profile's name and UUID out of the file itself, so there is nothing to
+copy down here.
+
+---
+
+## D. App Store Connect
+
+1. **appstoreconnect.apple.com → Apps → +** → New App. Platform iOS, the same bundle ID,
+   SKU anything (e.g. `visviva`), name `Vis Viva`. **The app record must exist before the first
+   upload** — the upload fails otherwise.
+2. **Users and Access → Integrations → App Store Connect API → Team Keys → +**. Name it
+   `GitHub Actions`, role **App Manager**. Download `AuthKey_XXXXXXXXXX.p8` — Apple lets you
+   download it exactly once. Note the **Key ID** (in the filename) and the **Issuer ID** (shown
+   above the key list, a UUID).
+
+---
+
+## E. GitHub secrets
+
+Settings → Secrets and variables → Actions → New repository secret, for each of:
+
+| Secret | Value |
+| --- | --- |
+| `IOS_DIST_CERT_P12_BASE64` | `base64 -w0 distribution.p12` |
+| `IOS_DIST_CERT_PASSWORD` | the password you chose in step B |
+| `IOS_PROVISIONING_PROFILE_BASE64` | `base64 -w0 VisViva_App_Store.mobileprovision` |
+| `IOS_TEAM_ID` | your ten-character Team ID from step A |
+| `ASC_KEY_ID` | the Key ID from step D (the `XXXXXXXXXX` in the filename) |
+| `ASC_ISSUER_ID` | the Issuer ID UUID from step D |
+| `ASC_KEY_P8_BASE64` | `base64 -w0 AuthKey_XXXXXXXXXX.p8` |
+
+`base64 -w0` prints one unbroken line with no trailing newline — paste the whole thing. The
+workflow checks all seven are non-empty before it does anything expensive.
+
+Once the secrets are in, **delete the local `.p12`, `.key` and `.p8`** or move them somewhere
+you actually back up. Losing the `.p8` means generating a new API key; losing the `.key` means
+revoking and reissuing the certificate.
+
+---
+
+## F. Run it
+
+**Do a dry run first.** Actions → iOS TestFlight → Run workflow → set **upload** to `false`.
+That exercises every step including signing and produces a downloadable `.ipa` artifact, but
+publishes nothing and burns no build number in App Store Connect. If it goes green, signing is
+correct and the only thing left untested is the upload itself.
+
+Then run it again with **upload** `true`.
+
+- **Version** is what testers see (`1.0.0`). Change it when you want to.
+- **Build number** is the workflow run number, so it always increases. App Store Connect rejects
+  a duplicate build number permanently, which is why this is not something you type.
+
+Processing in App Store Connect takes 5–15 minutes after the upload succeeds.
+
+---
+
+## G. TestFlight
+
+App Store Connect → your app → **TestFlight**.
+
+- **Internal Testing** — up to 100 testers on your own team, **no review**, installable within
+  minutes of processing. This is what you want for yourself.
+- **External Testing** — up to 10,000 testers, requires a Beta App Review (usually a day or two).
+  Before doing this, read `MOBILE_SETUP.md` §9: CCP's developer license is non-commercial, and
+  the IP disclaimer already in Settings → footer needs mirroring in the listing.
+
+Testers install via the TestFlight app on iOS.
+
+---
+
+## What the workflow does, and where it can fail
+
+| Step | Fails when |
+| --- | --- |
+| Check required secrets | One of the seven is missing or empty. Names them explicitly. |
+| Generate the native iOS project | `npx cap add ios` — needs `capacitor.config.json` and a successful `npm run build` first. |
+| Generate app icons | Sources are `assets/logo.svg` etc. |
+| Verify the app icon | No 1024pt icon produced, or it has an alpha channel — Apple rejects alpha at upload, so this catches it in two minutes rather than after a 20-minute archive. |
+| Apply iOS project settings | `scripts/patch-ios-project.sh` — the `visviva://` URL scheme for ESI login and the export-compliance flag. Regenerated every run because `ios/` is not committed. |
+| Install the signing certificate | The `.p12` was built without `-legacy` (see step B), or the password secret is wrong. |
+| Install the provisioning profile | Explicitly checks the profile's bundle ID against `capacitor.config.json` — a mismatch otherwise fails deep inside `codesign` with an unhelpful message. |
+| Archive / Export | Certificate, profile and Team ID have to agree with each other. |
+| Upload to TestFlight | The app record does not exist yet (step D), the build number was already used, or the API key lacks App Manager. |
+
+---
+
+## Still outstanding, unrelated to signing
+
+**ESI login does not work in these builds.** `ESI_CLIENT_ID` in `src/esi-config.js` is empty.
+Register the application at [developers.eveonline.com](https://developers.eveonline.com/) —
+Authentication & API Access, public client / PKCE — with **both** callback URLs (the web origin
+and `visviva://auth-callback`), paste the Client ID in, and ship a new build. The iOS URL scheme
+is already wired up by `patch-ios-project.sh`; everything downstream of a successful login is
+fixture-verified (see CLAUDE.md's ESI section).
