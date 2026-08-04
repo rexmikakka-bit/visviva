@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover is what makes env(safe-area-inset-*) report real values; without it the
+         insets are 0 and the bottom nav sits under the iPhone home indicator (and under Android's
+         gesture bar). user-scalable=no suppresses the pinch-zoom that feels wrong in an app shell. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no" />
     <title>VisViva</title>
   </head>
   <body>
