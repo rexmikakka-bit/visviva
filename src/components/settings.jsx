@@ -101,14 +101,27 @@ function SkillsPanel({skills,setSkills}){
   );
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInReload,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
+// A labelled on/off row: title, one line of explanation, and an iOS-style switch on the right.
+function ToggleRow({label,note,on,onChange}){
+  return(<div onClick={()=>onChange(!on)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${on?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:"pointer"}}>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:13,fontWeight:600,color:C.text}}>{label}</div>
+      {note&&<div style={{fontSize:11,color:C.textMute,lineHeight:1.45,marginTop:3}}>{note}</div>}
+    </div>
+    <div role="switch" aria-checked={!!on} aria-label={label} style={{flexShrink:0,width:38,height:22,borderRadius:99,background:on?C.accent:C.surfaceAlt,border:`1px solid ${on?C.accent:C.borderStrong}`,padding:2,display:"flex",justifyContent:on?"flex-end":"flex-start",alignItems:"center",transition:"background .15s"}}>
+      <div style={{width:18,height:18,borderRadius:99,background:on?"#0e0e10":C.textMute}}/>
+    </div>
+  </div>);
+}
+
+export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
   const[section,setSection]=useState("skills");
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
     <div style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:16,fontWeight:700,color:C.text}}>Settings</span><button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button></div>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"overrides",label:"Overrides"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
+        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"interface",label:"Interface"},{key:"overrides",label:"Overrides"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
       </div>
       <div style={{flex:1,overflowY:"auto",padding:16}}>
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
@@ -136,6 +149,15 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
           <div style={{marginTop:12,fontSize:11,color:C.textMute,lineHeight:1.5}}>Prices are sell-order percentile via Fuzzwork's aggregates API, matching pyfa's default. Cached for 1 hour per hub.</div>
         </div>}
         {section==="implants"&&<ImplantLoadoutsManager implants={implants} setImplants={setImplants} loadouts={loadouts} setLoadouts={setLoadouts}/>}
+        {section==="interface"&&<div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Fit Tabs</div>
+          <ToggleRow label="Always open fits in a new tab" on={!!openInNewTab} onChange={setOpenInNewTab}
+            note="Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa."/>
+          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4}}>The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"18px 0 8px"}}>Damage</div>
+          <ToggleRow label="Factor in reload time" on={!!factorInReload} onChange={setFactorInReload}
+            note="Averages reload downtime into DPS for weapons that use charges. Same switch as the Reload button on the Stats tab."/>
+        </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
       <div style={{flexShrink:0,padding:"10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",borderTop:`1px solid ${C.border}`,background:C.surfaceAlt,fontSize:10,lineHeight:1.5,color:C.textMute,textAlign:"center"}}>
