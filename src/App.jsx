@@ -15,9 +15,11 @@ import { SettingsOverlay } from "./components/settings.jsx";
 import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, SkillGapSheet } from "./components/layout.jsx";
 import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
+import { FitTabs, resolveTabs, MAX_OPEN_TABS } from "./components/FitTabs.jsx";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
+const OPEN_TABS_KEY = 'visviva_open_tabs';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -76,6 +78,26 @@ export default function App(){
   const[boosters,setBoosters]=useState(initialFit?.boosters??[]);
   const[implantLoadouts,setImplantLoadouts]=useState(()=>{try{return JSON.parse(localStorage.getItem(IMPLANT_LOADOUTS_KEY)??'[]');}catch{return [];}});
   useEffect(()=>{try{localStorage.setItem(IMPLANT_LOADOUTS_KEY,JSON.stringify(implantLoadouts));}catch{}},[implantLoadouts]);
+  // Open fit tabs: pointers to fits in fitsDB, restored on launch like browser tabs. Stored as
+  // {ship,id,name}; resolveTabs() reconciles them against the live fitsDB on every render, so a
+  // renamed fit relabels itself and a deleted one drops out without this needing to hook the
+  // rename/delete handlers.
+  const[openTabs,setOpenTabs]=useState(()=>{try{const s=localStorage.getItem(OPEN_TABS_KEY);if(s)return JSON.parse(s);}catch{}return [];});
+  useEffect(()=>{try{localStorage.setItem(OPEN_TABS_KEY,JSON.stringify(openTabs));}catch{}},[openTabs]);
+  // The fit restored at launch comes straight out of localStorage rather than through loadFit, so
+  // nothing would have registered its tab and the strip would start empty with a fit already open.
+  // Seed it once on mount.
+  useEffect(()=>{
+    if(!activeFit?.ship||!activeFit?.fitName)return;
+    setOpenTabs(prev=>{
+      const list=prev??[];
+      if(list.some(t=>t.ship===activeFit.ship&&t.name===activeFit.fitName))return list;
+      const fit=fitsDB[activeFit.ship]?.find(f=>f.name===activeFit.fitName);
+      if(!fit)return list;
+      return [...list,{ship:activeFit.ship,id:fit.id,name:activeFit.fitName}];
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
   const[priceHub,setPriceHub]=useState(()=>{try{return localStorage.getItem('visviva_pricehub')??'Jita';}catch{return 'Jita';}});
   useEffect(()=>{try{localStorage.setItem('visviva_pricehub',priceHub);}catch{}},[priceHub]);
   const[priceSource,setPriceSource]=useState(()=>{try{return localStorage.getItem('visviva_pricesource')??'fuzzwork';}catch{return 'fuzzwork';}});
@@ -222,6 +244,14 @@ export default function App(){
   const loadFit=(ship,fitName)=>{
     const fit=fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
+    // Opening a fit puts it in the tab strip (or raises it if already there). Soft cap: past
+    // MAX_OPEN_TABS the oldest tab that is not the one being opened is dropped, so the strip stays
+    // scannable on a phone. Nothing is lost -- the Fits list is still the full library.
+    if(fit) setOpenTabs(prev=>{
+      const without=(prev??[]).filter(t=>!(t.ship===ship&&(t.id!=null?t.id===fit.id:t.name===fitName)));
+      const next=[...without,{ship,id:fit.id,name:fitName}];
+      return next.length>MAX_OPEN_TABS?next.slice(next.length-MAX_OPEN_TABS):next;
+    });
     setSlots(fit?.slots??generateEmptySlots(lookupShip(ship)));
     setDrones(fit?.drones??[]);
     setFighters(fit?.fighters??[]);
@@ -341,12 +371,30 @@ export default function App(){
     return()=>window.removeEventListener('keydown',onKey);
   });// no dep array: `undo` closes over the current stack each render
 
+  const openFitTabs=resolveTabs(openTabs,fitsDB);
+  // Closing the tab you are looking at moves to its neighbour, the way a browser does; closing any
+  // other tab leaves the current fit alone. Closing the last tab just empties the strip -- the fit
+  // stays loaded, since the strip is a shortcut rather than the thing holding the fit open.
+  const closeFitTab=(tab)=>{
+    const idx=openFitTabs.findIndex(t=>t.ship===tab.ship&&t.id===tab.id);
+    const wasActive=activeFit?.ship===tab.ship&&activeFit?.fitName===tab.name;
+    setOpenTabs(prev=>(prev??[]).filter(t=>!(t.ship===tab.ship&&(t.id!=null?t.id===tab.id:t.name===tab.name))));
+    if(wasActive){
+      const next=openFitTabs[idx+1]??openFitTabs[idx-1];
+      if(next) loadFit(next.ship,next.name);
+    }
+  };
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
   return(<div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
     <div style={{width:"100%",maxWidth:430,minHeight:"100vh",display:"flex",flexDirection:"column",background:C.bg}}>
       <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={()=>setShowShipInfo(true)} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
+      {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
+          row of fit names would just be noise. */}
+      {!(bottomTab==="fittings"&&fittingsView&&fittingsView!=="active")&&
+        <FitTabs tabs={openFitTabs} activeFit={activeFit} onSelect={t=>loadFit(t.ship,t.name)}
+                 onClose={closeFitTab} onOpenLibrary={()=>{setBottomTab("fittings");setFittingsView("browse");}}/>}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
