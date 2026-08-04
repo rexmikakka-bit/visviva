@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, cheaperEquivalent, moduleVariations, haptic } from "./lib/core.js";
+import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
 import { C } from "./theme.js";
@@ -230,6 +230,7 @@ export default function App(){
     setPriceBanner({kind:"loading",msg:"Checking market prices…"});
     const idsToPrice=new Set();
     for(const s of fitted){
+      if(s.mutaplasmid)continue;   // abyssal: not a market item, and its roll belongs to THIS base type
       idsToPrice.add(s.typeID);
       for(const v of (moduleVariations?.[String(s.typeID)]??[]))if(v?.typeID)idsToPrice.add(v.typeID);
     }
@@ -238,11 +239,9 @@ export default function App(){
     catch{setPriceBanner({kind:"none",msg:"Couldn't fetch market prices — try again"});setTimeout(()=>setPriceBanner(null),3500);return;}
     let swapped=0;
     const patchSection=sec=>(slots[sec]??[]).map(s=>{
-      if(!s?.typeID)return s;
-      const better=cheaperEquivalent(s.typeID,priceMap);
-      if(!better)return s;
-      swapped++;
-      return{...s,typeID:better.typeID,name:better.name};
+      const next=optimizeSlotPrice(s,priceMap);   // returns `s` itself when nothing changes
+      if(next!==s)swapped++;
+      return next;
     });
     const patched={...slots};
     for(const sec of sections)patched[sec]=patchSection(sec);
@@ -433,8 +432,13 @@ export default function App(){
   // state across would hide the strip on a screen you have not scrolled.
   useEffect(()=>{setTabsCollapsed(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
   // The + sends you to the Fits list with "next open goes in a new tab" armed. Backing out without
-  // picking anything must disarm it, or a fit opened much later inherits the request.
-  useEffect(()=>{if(fittingsView!=="browse")wantNewTab.current=false;},[fittingsView]);
+  // picking anything must disarm it, or a fit opened much later inherits the request -- but the
+  // request has to survive DRILLING IN, which is the normal way to reach a fit: the list moves
+  // "browse" -> "fits" (a ship's fits) before you ever tap one. Disarm only on actually leaving the
+  // list, i.e. back to the active fit or off the Fits tab entirely.
+  useEffect(()=>{
+    if(bottomTab!=="fittings"||fittingsView==="active")wantNewTab.current=false;
+  },[bottomTab,fittingsView]);
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
   return(<div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
@@ -469,7 +473,7 @@ export default function App(){
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showSkillGaps&&<SkillGapSheet missing={skillCheck.missing} onClose={()=>setShowSkillGaps(false)}/>}
-    {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} cargo={[]} onClose={()=>setShowExportFit(false)}/>}
+    {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}

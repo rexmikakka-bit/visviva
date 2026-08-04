@@ -2,6 +2,7 @@ import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { lookupShip, navIcons } from "../lib/core.js";
+import { fitToEFT } from "../lib/eft-export.js";
 
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
 
@@ -26,45 +27,24 @@ export function ChooserSheet({title, options, onClose}) {
   );
 }
 
-export function ExportFitModal({activeFit, slots, implants, boosters, cargo, onClose}) {
+export function ExportFitModal({activeFit, slots, implants, boosters, drones, fighters, cargo, onClose}) {
   const _lsGet=()=>{try{return JSON.parse(localStorage.getItem(EXPORT_PREFS_KEY)||'{}');}catch{return {};}};
   const _p=_lsGet();
   const [incCharges,  setIncCharges]  = useState(_p.charges  ?? true);
   const [incImplants, setIncImplants] = useState(_p.implants ?? true);
   const [incBoosters, setIncBoosters] = useState(_p.boosters ?? true);
   const [incCargo,    setIncCargo]    = useState(_p.cargo    ?? false);
+  const [incMutations,setIncMutations]= useState(_p.mutations ?? true);
   const [copied,      setCopied]      = useState(false);
 
-  const genEFT = () => {
-    const ship = activeFit?.ship ?? 'Unknown';
-    const name = activeFit?.fitName ?? 'Unnamed';
-    const lines = [`[${ship}, ${name}]`];
-    for (const sec of ['high', 'mid', 'low', 'rigs']) {
-      for (const slot of (slots?.[sec] ?? [])) {
-        if (!slot.typeID) { lines.push(''); continue; }
-        const charge = incCharges && slot.ammo ? `, ${slot.ammo}` : '';
-        lines.push(`${slot.name}${charge}`);
-      }
-      if (sec !== 'rigs') lines.push('');
-    }
-    const filledImplants = (implants ?? []).filter(i => i.name && i.name !== '[Empty]');
-    if (incImplants && filledImplants.length) {
-      lines.push('');
-      for (const imp of filledImplants) lines.push(imp.name);
-    }
-    if (incBoosters && boosters?.length) {
-      lines.push('');
-      for (const b of boosters) lines.push(b.name ?? '');
-    }
-    if (incCargo && cargo?.length) {
-      lines.push('');
-      for (const c of cargo) { const qty = c.qty > 1 ? ` x${c.qty}` : ''; lines.push(`${c.name}${qty}`); }
-    }
-    return lines.join('\n');
-  };
+  const genEFT = () => fitToEFT(
+    {ship: activeFit?.ship ?? 'Unknown', name: activeFit?.fitName ?? 'Unnamed',
+     slots, implants, boosters, drones, fighters, cargo},
+    {charges: incCharges, implants: incImplants, boosters: incBoosters,
+     cargo: incCargo, mutations: incMutations});
 
   const doExport = () => {
-    try { localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({charges:incCharges,implants:incImplants,boosters:incBoosters,cargo:incCargo})); } catch(e) {}
+    try { localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({charges:incCharges,implants:incImplants,boosters:incBoosters,cargo:incCargo,mutations:incMutations})); } catch(e) {}
     const txt = genEFT();
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>{
@@ -93,6 +73,7 @@ export function ExportFitModal({activeFit, slots, implants, boosters, cargo, onC
         <CheckRow label="Implants" val={incImplants} setVal={setIncImplants}/>
         <CheckRow label="Boosters" val={incBoosters} setVal={setIncBoosters}/>
         <CheckRow label="Cargo" val={incCargo} setVal={setIncCargo}/>
+        <CheckRow label="Abyssal Rolls (mutated modules)" val={incMutations} setVal={setIncMutations}/>
         <button onClick={doExport} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:10,border:'none',background:copied?C.rig:C.accent,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
           {copied ? '✓ Copied to clipboard!' : 'Copy EFT to Clipboard'}
         </button>
