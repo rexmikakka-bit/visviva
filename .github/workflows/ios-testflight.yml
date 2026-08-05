@@ -166,8 +166,18 @@ jobs:
           TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
           PROFILE_NAME: ${{ steps.profile.outputs.name }}
         run: |
+          # Capacitor 8 wires plugins through Swift Package Manager, not CocoaPods, so `cap add ios`
+          # produces only App.xcodeproj — there is no .xcworkspace to point at (that file is a
+          # CocoaPods artifact). Detected rather than hardcoded so this keeps working if a future
+          # Capacitor, or an added plugin without a Package.swift, brings Pods back.
+          if [ -d ios/App/App.xcworkspace ]; then
+            CONTAINER=(-workspace ios/App/App.xcworkspace)
+          else
+            CONTAINER=(-project ios/App/App.xcodeproj)
+          fi
+          echo "building with: ${CONTAINER[*]}"
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
+            "${CONTAINER[@]}" \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
