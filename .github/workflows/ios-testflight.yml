@@ -118,7 +118,13 @@ jobs:
         run: |
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD=$(uuidgen)
-          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
+          # Trim trailing CR/LF from the secrets. A secret set from a file produced on Windows
+          # carries a stray \r that is invisible in the GitHub UI and surfaces here as
+          # "SecKeychainItemImport: The user name or passphrase you entered is not correct" —
+          # which reads like a wrong password rather than an off-by-one-byte password.
+          P12_BASE64=$(printf '%s' "$P12_BASE64" | tr -d '\r\n')
+          P12_PASSWORD=$(printf '%s' "$P12_PASSWORD" | tr -d '\r\n')
+          printf '%s' "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/dist.p12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
