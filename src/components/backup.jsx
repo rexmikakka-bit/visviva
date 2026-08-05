@@ -50,7 +50,7 @@ function BackupPanel() {
     try { obj = JSON.parse(text); }
     catch { setStatus({ ok: false, msg: "That isn't valid JSON." }); return; }
     if (obj?.app !== BACKUP_APP || !obj?.data) {
-      setStatus({ ok: false, msg: "Not a Vis Viva backup file." });
+      setStatus({ ok: false, msg: "Not a Visviva backup file." });
       return;
     }
     const c = countFits(obj.data["pyfa-fitsdb"]);

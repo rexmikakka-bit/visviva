@@ -42,13 +42,13 @@ class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     this.setState({ info });
     // Surface it in the console too, for anyone with devtools open.
-    console.error("Vis Viva crashed:", error, info?.componentStack);
+    console.error("Visviva crashed:", error, info?.componentStack);
   }
 
   report() {
     const { error, info } = this.state;
     const lines = [
-      `Vis Viva error report`,
+      `Visviva error report`,
       `time: ${new Date().toISOString()}`,
       `ua: ${navigator.userAgent}`,
       `url: ${location.href}`,
@@ -101,7 +101,7 @@ class ErrorBoundary extends Component {
         <div style={S.card}>
           <h1 style={S.h}>Something went wrong</h1>
           <p style={S.p}>
-            Vis Viva hit an error and couldn't finish drawing. Your saved fits are still in this
+            Visviva hit an error and couldn't finish drawing. Your saved fits are still in this
             browser's storage — nothing was deleted. Back them up below before reloading, just in case.
           </p>
 

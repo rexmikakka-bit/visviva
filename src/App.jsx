@@ -440,10 +440,17 @@ export default function App(){
     if(bottomTab!=="fittings"||fittingsView==="active")wantNewTab.current=false;
   },[bottomTab,fittingsView]);
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
-  return(<div style={{background:C.bg,minHeight:"100vh",display:"flex",justifyContent:"center"}}>
+  // `height`, not `minHeight`: the shell is exactly one viewport tall and clips, so the flex
+  // children below finally have a bounded height and each screen's own overflowY:auto region takes
+  // over. With minHeight the column just grew and the DOCUMENT scrolled, which is what dragged the
+  // bottom nav off the bottom of the screen.
+  return(<div className="app-shell" style={{background:C.bg,display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
-    <div style={{width:"100%",maxWidth:430,minHeight:"100vh",display:"flex",flexDirection:"column",background:C.bg}}>
-      <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={()=>setShowShipInfo(true)} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
+    <div className="app-col" style={{height:"100%",display:"flex",flexDirection:"column",background:C.bg}}>
+      {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
+          sheet rendered on `showShipInfo && activeFit?.ship`, so tapping the header thumbnail with
+          no fit open armed the flag invisibly and the next fit you created opened the sheet. */}
+      <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
@@ -452,7 +459,9 @@ export default function App(){
                  onSelect={t=>loadFit(t.ship,t.name)} onClose={closeFitTab}
                  onExpand={()=>setTabsCollapsed(false)}
                  onOpenLibrary={()=>{wantNewTab.current=true;setBottomTab("fittings");setFittingsView("browse");}}/>}
-      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
+          shrink below its content and would let the screens push the bottom nav off-screen again. */}
+      <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
