@@ -172,7 +172,19 @@ Testers install via the TestFlight app on iOS.
 | Install the signing certificate | The `.p12` was built without `-legacy` (see step B), or the password secret is wrong. |
 | Install the provisioning profile | Explicitly checks the profile's bundle ID against `capacitor.config.json` — a mismatch otherwise fails deep inside `codesign` with an unhelpful message. |
 | Archive / Export | Certificate, profile and Team ID have to agree with each other. |
+| Verify the Xcode toolchain | The runner's iOS SDK is below Apple's floor. Apple raises this roughly annually and enforces it **at upload**, so this check exists to fail in seconds rather than after a full archive. Fix by bumping both `runs-on:` and `MIN_IOS_SDK_MAJOR` — see below. |
 | Upload to TestFlight | The app record does not exist yet (step D), the build number was already used, or the API key lacks App Manager. |
+
+### When Apple raises the SDK floor
+
+Uploads start failing with a 409: *"This app was built with the iOS X SDK. All iOS and iPadOS
+apps must be built with the iOS Y SDK or later."* The build itself is fine — the runner image
+just ships an older Xcode. Fix both together in `.github/workflows/ios-testflight.yml`:
+
+1. `runs-on:` → the newest `macos-*` image (check which Xcode it carries in
+   [actions/runner-images](https://github.com/actions/runner-images/tree/main/images/macos)).
+2. `MIN_IOS_SDK_MAJOR:` → the new floor.
+
 
 ---
 

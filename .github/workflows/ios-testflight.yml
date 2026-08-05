@@ -29,10 +29,15 @@ on:
 jobs:
   testflight:
     name: Archive and upload
-    runs-on: macos-15
+    # macos-26 (Tahoe) for Xcode 26. App Store Connect enforces a minimum SDK and raises it roughly
+    # annually; macos-15 ships Xcode 16.4 / iOS 18.5 SDK, which is now rejected at upload.
+    runs-on: macos-26
     timeout-minutes: 60
 
     env:
+      # Apple's current floor for uploads. Bump this and the runner image together when Apple
+      # raises it — the check below turns that from a 409 after a full build into an instant fail.
+      MIN_IOS_SDK_MAJOR: '26'
       # Build numbers must strictly increase; App Store Connect rejects a duplicate outright.
       # github.run_number is monotonic per workflow and never resets.
       BUILD_NUMBER: ${{ github.run_number }}
@@ -40,6 +45,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      # App Store Connect rejects a build made with too old an SDK, but only at UPLOAD — after the
+      # whole archive has been built and transferred. Checking here turns that into a five-second
+      # failure that names the actual problem.
+      - name: Verify the Xcode toolchain is new enough for App Store Connect
+        run: |
+          xcodebuild -version
+          SDK=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "iOS SDK: $SDK (App Store Connect requires >= $MIN_IOS_SDK_MAJOR)"
+          if [ "${SDK%%.*}" -lt "$MIN_IOS_SDK_MAJOR" ]; then
+            echo "::error::iOS SDK $SDK is below Apple's floor of $MIN_IOS_SDK_MAJOR — the upload would be rejected with a 409."
+            echo "Available Xcodes on this runner:"; ls -d /Applications/Xcode*.app
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
