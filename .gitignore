@@ -42,6 +42,20 @@ scripts/oracle/__pycache__/
 # otherwise be hand-edited in Xcode lives in scripts/patch-ios-project.sh instead.
 ios/
 
+# ── Signing material (NEVER commit — this repo is public) ────────────────────
+# The iOS distribution private key, its .p12 bundle, the App Store Connect API key and
+# provisioning profiles. These belong in GitHub Actions secrets (see IOS_RELEASE.md) and
+# nowhere else. Keep the working copies outside the repo entirely; this is a backstop.
+*.key
+*.p12
+*.pem
+*.csr
+*.cer
+*.p8
+*.mobileprovision
+*.keystore
+*.jks
+
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs
 *.log
