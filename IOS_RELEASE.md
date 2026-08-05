@@ -31,11 +31,22 @@ Run these in **Git Bash** from any scratch directory:
 openssl genrsa -out ios_distribution.key 2048
 
 # 2. Certificate Signing Request.
-#    NOTE THE DOUBLE SLASH: Git Bash rewrites a leading "/" into a Windows path and mangles the
-#    subject. "//emailAddress=..." is the escape. On macOS/Linux use a single slash.
-openssl req -new -key ios_distribution.key -out ios_distribution.csr \
-  -subj "//emailAddress=rexmikakka@gmail.com/CN=Rex Mikakka/C=US"
+#    MSYS_NO_PATHCONV=1 is required in Git Bash. Without it, Git Bash rewrites the leading "/" of
+#    -subj into a Windows path and destroys the subject. Doubling the slash ("//emailAddress")
+#    also stops the mangling, but OpenSSL then reads the attribute name as "/emailAddress" and
+#    SKIPS it — the field vanishes with only a warning on stderr. On macOS/Linux drop the prefix.
+MSYS_NO_PATHCONV=1 openssl req -new -key ios_distribution.key -out ios_distribution.csr \
+  -subj "/emailAddress=you@example.com/CN=Your Name/C=US"
+
+# Read the subject back. "It produced a file" is not the same as "it produced the right file" —
+# a missing emailAddress means the escaping did not take.
+openssl req -in ios_distribution.csr -noout -subject
 ```
+
+Apple does not use the CSR's subject: the certificate it issues is named from your developer
+account (`Apple Distribution: Your Name (TEAMID)`), so the email here does not have to match the
+one on the account. Getting it right is still worth doing — a mangled `-subj` is a reliable sign
+the shell is eating your arguments.
 
 Then, in the browser: **developer.apple.com → Certificates, IDs & Profiles → Certificates → +**
 → **Apple Distribution** → upload `ios_distribution.csr` → download `distribution.cer`.
