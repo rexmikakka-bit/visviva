@@ -44,7 +44,7 @@ function BottomSheet({title,onClose,children,height="70vh"}){
   return(
     <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)"}}/>
-      <div style={{position:"relative",width:"100%",maxWidth:430,background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:height,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div className="vv-sheet" style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:height,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
         <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
@@ -195,6 +195,25 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
   const[infoItem,setInfoItem]=useState(null);
   const doPaste=()=>{const parsed=parseAbyssal(pasteText);if(!parsed){setPasteErr("Could not parse. Expected: module name, then mutaplasmid name, then attr value pairs.");return;}onSelect(parsed);onClose();};
   const[navPath,setNavPath]=useState([]);
+  // Drill-down direction, so a level slides in from the side you came from.
+  const[navDir,setNavDir]=useState(0);
+  const goBack=()=>{if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
+  const goInto=id=>{setNavDir(1);setNavPath([...navPath,id]);};
+  // Swipe left-to-right to go up a level, the way iOS back-swipe works. Axis-locked on the first
+  // meaningful movement so scrolling a long module list never triggers it.
+  const _nav=useRef({x:0,y:0,axis:null});
+  const _navStart=e=>{const t=e.touches[0];if(t)_nav.current={x:t.clientX,y:t.clientY,axis:null};};
+  const _navMove=e=>{
+    const t=e.touches[0];if(!t||_nav.current.axis)return;
+    const dx=t.clientX-_nav.current.x,dy=t.clientY-_nav.current.y;
+    if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+    _nav.current.axis=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y";
+  };
+  const _navEnd=e=>{
+    const t=e.changedTouches[0],axis=_nav.current.axis;_nav.current.axis=null;
+    if(!t||axis!=="x")return;
+    if(t.clientX-_nav.current.x>70)goBack();
+  };
   const metaColor={T1:C.textMid,T2:C.accent,Storyline:C.warning,Faction:C.danger,Deadspace:"#f0abfc",Officer:"#f0abfc",Abyssal:C.high};
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
@@ -271,9 +290,11 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
           <button onClick={doPaste} disabled={!pasteText.trim()} style={{marginTop:6,width:"100%",padding:"8px 0",background:pasteText.trim()?C.accent:C.surfaceAlt,border:"none",borderRadius:8,color:pasteText.trim()?"#fff":C.textMute,fontSize:12,fontWeight:700,cursor:pasteText.trim()?"pointer":"default"}}>Add to Fit</button>
         </div>}
       </div>
+      {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
+          moment you started looking through a long category. */}
       {!searchResults&&navPath.length>0&&(
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-          <button onClick={()=>setNavPath(navPath.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>Back</button>
+        <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+          <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
           <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{breadcrumb.join(" / ")}</span>
         </div>
       )}
@@ -283,10 +304,11 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
           {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
         </div>
       ):(
-        <div>
+        <div key={navPath.join(">")} onTouchStart={_navStart} onTouchMove={_navMove} onTouchEnd={_navEnd}
+             className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
           {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
           {currentLevel.nodes.map(node=>(
-            <div key={node.id} onClick={()=>setNavPath([...navPath,node.id])} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
+            <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
               <div>
                 <div style={{fontSize:14,fontWeight:600,color:C.text}}>{node.name}</div>
                 <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{countAll(node)} modules</div>

@@ -192,12 +192,46 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
   const[infoShip,setInfoShip]=useState(null);
   const[fitSubTab,setFitSubTab]=useState("Fit");
   const _SUBTABS=["Fit","Stats","Graph"];
-  const _swipe=useRef({x:0,y:0});
-  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY};};
-  const _onSwipeEnd=e=>{const t=e.changedTouches[0];if(!t)return;const dx=t.clientX-_swipe.current.x,dy=t.clientY-_swipe.current.y;
-    if(Math.abs(dx)>60&&Math.abs(dx)>Math.abs(dy)*1.6){const i=_SUBTABS.indexOf(fitSubTab);
-      if(dx<0&&i<_SUBTABS.length-1){setFitSubTab(_SUBTABS[i+1]);haptic();}
-      else if(dx>0&&i>0){setFitSubTab(_SUBTABS[i-1]);haptic();}}};
+  // Sub-tab swipe. The panel follows your finger during the drag and slides in from the correct
+  // side on commit, instead of cutting from one tab to the next.
+  //
+  // Only ONE panel is ever mounted — Stats and Graph both run a full calcFitStats, so keeping all
+  // three alive to slide a track would triple that work on every render. During the drag the
+  // transform is written straight to the node through a ref rather than through state, so dragging
+  // never re-renders the panel underneath it.
+  const _swipe=useRef({x:0,y:0,axis:null});
+  const _panel=useRef(null);
+  const[_slideDir,_setSlideDir]=useState(0);   // -1 = came from the left, +1 = from the right
+  const _setX=(px,animate)=>{const el=_panel.current;if(!el)return;
+    el.style.transition=animate?"transform .18s cubic-bezier(.22,.61,.36,1)":"none";
+    el.style.transform=px?`translateX(${px}px)`:"";};
+  const _goTo=(i,dir)=>{_setSlideDir(dir);setFitSubTab(_SUBTABS[i]);haptic();};
+  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY,axis:null};};
+  const _onSwipeMove=e=>{
+    const t=e.touches[0];if(!t)return;
+    const dx=t.clientX-_swipe.current.x,dy=t.clientY-_swipe.current.y;
+    // Lock the axis once, so a vertical scroll never turns into a horizontal drag halfway down.
+    if(!_swipe.current.axis){
+      if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
+      _swipe.current.axis=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y";
+    }
+    if(_swipe.current.axis!=="x")return;
+    const i=_SUBTABS.indexOf(fitSubTab);
+    // Rubber-band at the ends: there is nothing to swipe to, so resist rather than lie.
+    const atEdge=(dx>0&&i===0)||(dx<0&&i===_SUBTABS.length-1);
+    _setX(dx*(atEdge?0.18:0.55),false);
+  };
+  const _onSwipeEnd=e=>{
+    const t=e.changedTouches[0];
+    const wasX=_swipe.current.axis==="x";
+    _swipe.current.axis=null;
+    if(!t||!wasX){_setX(0,true);return;}
+    const dx=t.clientX-_swipe.current.x;
+    const i=_SUBTABS.indexOf(fitSubTab);
+    if(dx<-60&&i<_SUBTABS.length-1){_setX(0,false);_goTo(i+1,1);}
+    else if(dx>60&&i>0){_setX(0,false);_goTo(i-1,-1);}
+    else _setX(0,true);   // not far enough — spring back
+  };
   const[search,setSearch]=useState("");
   const[nextId,setNextId]=useState(()=>Object.values(fitsDB).reduce((max,fits)=>fits.reduce((m,f)=>Math.max(m,f.id+1),max),20));
   const[editingFitId,setEditingFitId]=useState(null);
@@ -260,7 +294,7 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
       {!search&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
-          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Vis Viva</div>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Visviva</div>
           <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>Select a ship class below, choose a hull, then tap <strong style={{color:C.accent}}>+ New Fit</strong> to get started</div>
         </div>
       )}
@@ -369,12 +403,17 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
         </div>
         <div style={{width:70,flexShrink:0}}/>
       </div>
-      <div style={{display:"flex"}}><div style={{width:60}}/>{["Fit","Stats","Graph"].map(t=><button key={t} onClick={()=>setFitSubTab(t)} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
+      <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
     </div>
-    <div onTouchStart={_onSwipeStart} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
+    <div onTouchStart={_onSwipeStart} onTouchMove={_onSwipeMove} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
+      {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
+          nothing here — the panels already unmount and remount on every tab change. */}
+      <div ref={_panel} key={fitSubTab} className={_slideDir>0?"vv-from-right":_slideDir<0?"vv-from-left":undefined}
+           style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,willChange:"transform"}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
       {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile}/>}
+      </div>
     </div>
   </div>);
 }

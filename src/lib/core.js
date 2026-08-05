@@ -120,7 +120,28 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
   _bundleListeners.forEach(fn => fn());
 }).catch(() => { _bundleReady = true; _bundleListeners.forEach(fn => fn()); });
 
-const GLOBAL_CSS=`.hs{-ms-overflow-style:none;scrollbar-width:none}.hs::-webkit-scrollbar{display:none}input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background:#1a1a1d;}`;
+const GLOBAL_CSS=`
+.hs{-ms-overflow-style:none;scrollbar-width:none}.hs::-webkit-scrollbar{display:none}
+input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background:#1a1a1d;}
+
+/* The app is exactly one viewport tall and never scrolls as a whole: each screen owns its own
+   scroller. That is what keeps the header and the bottom nav pinned instead of scrolling away
+   with the page. dvh first with a vh fallback — dvh needs iOS 15.4 and our floor is 15.0. */
+.app-shell{height:100vh;height:100dvh;overflow:hidden}
+
+/* Phones get the full screen width; the 430px column is a DESKTOP affordance, and capping there
+   left a dead strip either side on any phone wider than 430pt (an iPhone Pro Max is 440). */
+.app-col,.vv-sheet{width:100%;max-width:430px}
+@media (max-width:640px){.app-col,.vv-sheet{max-width:none}}
+
+/* Directional slide for sub-tab and drill-down changes. Applied by remounting with a key, which
+   costs nothing extra here: switching tabs already unmounts one panel and mounts the other. */
+@keyframes vv-from-right{from{transform:translateX(30%);opacity:.3}to{transform:none;opacity:1}}
+@keyframes vv-from-left {from{transform:translateX(-30%);opacity:.3}to{transform:none;opacity:1}}
+.vv-from-right{animation:vv-from-right .2s cubic-bezier(.22,.61,.36,1)}
+.vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}
+@media (prefers-reduced-motion:reduce){.vv-from-right,.vv-from-left{animation:none}}
+`;
 import { C } from "../theme.js";
 import { metaOf, META_COLORS, META_ORDER } from "./meta.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";

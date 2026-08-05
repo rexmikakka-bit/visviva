@@ -88,7 +88,7 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
 export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>VisViva</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Visviva</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImport();onClose();}else if(item.action==="export"){if(onExport)onExport();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else if(item.action==="feedback"){if(onFeedback)onFeedback();onClose();}else if(item.action==="optimizePrice"){if(onOptimizePrice)onOptimizePrice();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
@@ -158,12 +158,17 @@ export function SkillGapSheet({missing,onClose}){
 
 export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
-  const shipName=activeFit?.ship??"VisViva";
+  const shipName=activeFit?.ship??"Visviva";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
-  return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"14px 14px 12px"}}>
+  // The header's background runs to the physical top of the screen while its CONTENT starts below
+  // the notch / Dynamic Island. env(safe-area-inset-top) only reports a real value because
+  // index.html sets viewport-fit=cover; without that it is 0 and this is a no-op.
+  return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
+                      padding:"14px 14px 12px",paddingTop:"calc(14px + env(safe-area-inset-top, 0px))"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
       <div style={{textAlign:"left"}}>
-        <div style={{fontSize:10,fontWeight:600,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:2}}>VisViva</div>
+        {/* No textTransform — it rendered the name as "VISVIVA". The app is called Visviva. */}
+        <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,marginBottom:2}}>Visviva</div>
         <div style={{fontSize:19,fontWeight:700,color:C.text,lineHeight:1.2}}>{shipName}</div>
         <div style={{fontSize:12,color:C.textMid,marginTop:1}}>{subLabel}</div>
       </div>

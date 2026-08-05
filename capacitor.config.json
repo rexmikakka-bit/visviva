@@ -1,6 +1,6 @@
 {
   "appId": "com.rexmikakka.visviva",
-  "appName": "Vis Viva",
+  "appName": "Visviva",
   "webDir": "dist",
   "backgroundColor": "#0e0e10",
   "plugins": {
@@ -18,10 +18,10 @@
     "StatusBar": {
       "style": "DARK",
       "backgroundColor": "#0e0e10",
-      "overlaysWebView": false
+      "overlaysWebView": true
     }
   },
   "ios": {
-    "contentInset": "always"
+    "contentInset": "never"
   }
 }

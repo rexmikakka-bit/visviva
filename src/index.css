@@ -55,11 +55,12 @@ body {
 }
 
 #root {
-  width: 1126px;
+  /* Was `width:1126px` with a 1px inline border on each side — scaffolding from the Vite starter.
+     On a phone that border ate 2px of screen, so the app never quite reached the edges. */
+  width: 100%;
   max-width: 100%;
   margin: 0 auto;
   text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;
