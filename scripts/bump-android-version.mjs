@@ -20,7 +20,20 @@ function parseProps(text) {
 
 const existing = existsSync(propsPath) ? parseProps(readFileSync(propsPath, 'utf8')) : {};
 const nextCode = (parseInt(existing.versionCode, 10) || 0) + 1;
-const nextName = `1.0.${nextCode}`;
+
+// versionName used to be hardcoded to `1.0.${versionCode}`, which tied the marketing version to the
+// build counter and made a minor bump impossible to express — the eleventh build could only ever be
+// called 1.0.11, even when it carried a feature. Pass one explicitly for a feature release:
+//   node scripts/bump-android-version.mjs 1.1.0
+// With no argument it keeps the previous name's major.minor and advances the patch, so plain test
+// builds still just tick over.
+const arg = process.argv[2];
+if (arg && !/^\d+\.\d+\.\d+$/.test(arg)) {
+  console.error(`versionName must look like 1.2.3 (got "${arg}")`);
+  process.exit(1);
+}
+const prev = /^(\d+)\.(\d+)\.(\d+)$/.exec(existing.versionName ?? '');
+const nextName = arg ?? (prev ? `${prev[1]}.${prev[2]}.${Number(prev[3]) + 1}` : `1.0.${nextCode}`);
 
 const content = `# Auto-managed by scripts/bump-android-version.mjs — do not hand-edit versionCode.
 # versionCode must strictly increase for Android to allow installing over a previous copy.
