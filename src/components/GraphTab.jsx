@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
 import { TargetProfileSheet } from "./ui.jsx";
@@ -413,19 +413,37 @@ function TargetControls({tgtProfile,onPickResists,targetProfile,setTargetProfile
   </div>);
 }
 
+// The graph's engagement setup — speeds, angles, target sig, axis choice, zoom — is a WORKBENCH
+// you tune over several minutes, and it lives in component state that unmounts the moment you swipe
+// to the Fit tab to change a module. Everything you had dialled in was gone when you came back.
+// Persisted to localStorage instead, and restored on mount. Deliberately NOT part of the fit: it
+// describes the engagement you are imagining, not the ship, so it is one setup shared by all fits.
+const GRAPH_PREFS_KEY='visviva_graph_prefs';
+function loadGraphPrefs(){
+  try{return JSON.parse(localStorage.getItem(GRAPH_PREFS_KEY)||'{}')??{};}catch{return {};}
+}
+const GP=loadGraphPrefs();
+const gp=(k,dflt)=>(GP[k]===undefined?dflt:GP[k]);
+
 function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,setTgtProfile}){
-  const[catKey,setCatKey]=useState("damage"),[yKey,setYKey]=useState("dps"),[xKey,setXKey]=useState("dist");
-  const[showTgtResists,setShowTgtResists]=useState(false);
-  const[targetProfile,setTargetProfile]=useState("ideal"),[targetAngle,setTargetAngle]=useState(45),[selfAngle,setSelfAngle]=useState(270);
-  const[targetVel,setTargetVel]=useState(200),[selfVel,setSelfVel]=useState(0);
+  const[catKey,setCatKey]=useState(()=>gp('catKey',"damage")),[yKey,setYKey]=useState(()=>gp('yKey',"dps")),[xKey,setXKey]=useState(()=>gp('xKey',"dist"));
+  const[showTgtResists,setShowTgtResists]=useState(()=>gp('showTgtResists',false));
+  const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',45)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',270));
+  const[targetVel,setTargetVel]=useState(()=>gp('targetVel',200)),[selfVel,setSelfVel]=useState(()=>gp('selfVel',0));
   // Stable 100%-reference for the target speed wheel (set by profile/field, NOT by dragging the wheel).
-  const[targetVelMax,setTargetVelMax]=useState(1000);
+  const[targetVelMax,setTargetVelMax]=useState(()=>gp('targetVelMax',1000));
   // Target sig radius (null = ideal/perfect tracking). Set by profile, editable by tapping.
-  const[tgtSig,setTgtSig]=useState(null);
+  const[tgtSig,setTgtSig]=useState(()=>gp('tgtSig',null));
   const[cursor,setCursor]=useState(null);
   // Axis scale (zoom). 1 = auto-fit range from generateCurve; >1 zooms in (smaller max),
   // <1 zooms out (larger max). Applied to the auto max, so it survives fit/axis changes.
-  const[xZoom,setXZoom]=useState(1),[yZoom,setYZoom]=useState(1);
+  const[xZoom,setXZoom]=useState(()=>gp('xZoom',1)),[yZoom,setYZoom]=useState(()=>gp('yZoom',1));
+  // One write whenever any of it changes. Cheap, and it means leaving by ANY route (swipe, tab bar,
+  // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
+  useEffect(()=>{
+    try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
+      {catKey,yKey,xKey,showTgtResists,targetProfile,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
+  },[catKey,yKey,xKey,showTgtResists,targetProfile,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
   const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
   const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
     const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};

@@ -322,7 +322,7 @@ const MODULE_USAGE={
 // Pure display-row computation (shared by render and drag-reorder so they can't diverge).
 // Only the high-slot section groups identical modules (same name + same ammo).
 const _TURRET_GROUPS=new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Mining Laser','Frequency Mining Laser','Citizen Mining Laser','Precursor Weapon']);
-function _isGroupable(m){
+function isGroupableModule(m){
   if(m.type==="empty"||!m.typeID)return false;
   const gn=TYPES[String(m.typeID)]?.gn??'';
   return _TURRET_GROUPS.has(gn)||/^Missile Launcher/i.test(gn);
@@ -331,7 +331,7 @@ function computeDisplayRows(mods,secKey,grouped){
   if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id]}));
   const seen=new Map();
   mods.forEach(m=>{
-    if(!_isGroupable(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
+    if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
     const key=m.mutaplasmid?`__abyssal_${m.id}`:(m.ammo?`${m.name}||${m.ammo}`:m.name);
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
     else seen.set(key,{...m,count:1,groupIds:[m.id]});
@@ -367,7 +367,15 @@ function generateEmptySlots(ship,subsystems){
 }
 
 function parseEFT(text){
-  const rawLines=text.replace(/\r/g,"").split("\n").map(l=>l.trim());
+  // Fits pasted from Discord are almost always wrapped in a ``` code fence, because that is how you
+  // make one render as a block there. Strip it — leading and trailing fences, with an optional
+  // language tag — so the fit imports as pasted instead of failing on "```" as a ship name. The
+  // third replace catches a lone fence on its own line, which is what a clipped selection leaves.
+  const fenced = String(text ?? "")
+    .replace(/^\s*```[^\n]*\n?/, "")
+    .replace(/\n?[ \t]*```[ \t]*$/, "")
+    .replace(/^[ \t]*```[ \t]*$/gm, "");
+  const rawLines=fenced.replace(/\r/g,"").split("\n").map(l=>l.trim());
   if(!rawLines.length)return{error:"Empty text"};
   const hm=rawLines[0].match(/^\[(.+?),\s*(.+)\]$/);
   if(!hm)return{error:"Invalid EFT header — expected [Ship Name, Fit Name]"};
@@ -975,4 +983,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

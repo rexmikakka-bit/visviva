@@ -121,7 +121,7 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
       <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:16,fontWeight:700,color:C.text}}>Settings</span><button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button></div>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"interface",label:"Interface"},{key:"overrides",label:"Overrides"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
+        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"interface",label:"Interface"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
       </div>
       <div style={{flex:1,overflowY:"auto",padding:16}}>
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
@@ -129,7 +129,7 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
         {section==="esi"&&<EsiSettingsPanel setSkills={setSkills}/>}
         {section==="market"&&<div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Price Source</div>
-          {[{key:"fuzzwork",label:"Fuzzwork Market",note:null},{key:"evetycoon",label:"EVE Tycoon",note:"coming soon"},{key:"ceve",label:"ceve-market.org",note:"coming soon"}].map(m=>{
+          {[{key:"fuzzwork",label:"Fuzzwork Market",note:null},{key:"ceve",label:"ceve-market.org",note:null}].map(m=>{
             const active=priceSource===m.key;
             const disabled=!!m.note;
             return(<div key={m.key} onClick={disabled?undefined:()=>setPriceSource(m.key)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:disabled?"default":"pointer",opacity:disabled?.45:1}}>
@@ -146,7 +146,13 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
               <button key={h} onClick={()=>setPriceHub(h)} style={{padding:"7px 14px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",background:h===priceHub?C.accentLight:"none",border:`1px solid ${h===priceHub?C.accentBorder:C.border}`,color:h===priceHub?C.accent:C.textMid}}>{h}</button>
             ))}
           </div>
-          <div style={{marginTop:12,fontSize:11,color:C.textMute,lineHeight:1.5}}>Prices are sell-order percentile via Fuzzwork's aggregates API, matching pyfa's default. Cached for 1 hour per hub.</div>
+          <div style={{marginTop:12,fontSize:11,color:C.textMute,lineHeight:1.5}}>
+            <div><strong style={{color:C.textMid}}>Fuzzwork</strong> — sell-order percentile, matching pyfa's default. One request for the whole fit; the fastest option.</div>
+            <div style={{marginTop:6}}><strong style={{color:C.textMid}}>ceve-market</strong> — lowest sell order in the hub's region. One small request per item.</div>
+            
+            <div style={{marginTop:6}}>All sources cache for 1 hour per hub.</div>
+            <div style={{marginTop:8,color:C.warning}}>ceve-market only works in the installed app — it sends no CORS headers, so a web browser blocks it. Fuzzwork works everywhere.</div>
+          </div>
         </div>}
         {section==="implants"&&<ImplantLoadoutsManager implants={implants} setImplants={setImplants} loadouts={loadouts} setLoadouts={setLoadouts}/>}
         {section==="interface"&&<div>

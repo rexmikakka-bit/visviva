@@ -30,6 +30,7 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 | `src/App.jsx` | The entire UI. ~4,400 lines — see "merge hazards" below. |
 | `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
 | `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
+| `src/lib/ship-taxonomy.js` | The nested ship-browser menu (Battleships > Faction Battleships > Pirate Faction). Pure + derived — see "ship browser taxonomy" below. |
 | `src/data/dogma-*.json` | The dogma bundle: types, effects, attributes. **Generated + hand-patched.** |
 | `src/data/ship-traits.json` | Per-hull trait bonuses + flavour description (Ship + Structure). **Generated** by `build-bundle.py` from eve.db's `invtraits`/`invtypes`; overrides `data-bundle.js`'s stale `shipTraits`. |
 | `src/data/type-descriptions.json` | Item flavour text for the info panel (modules, charges, implants, drones, fighters, subsystems, deployables, **structure modules**). **Generated** by `build-bundle.py`. Lazy-imported — see the null-guard note below. |
@@ -118,6 +119,48 @@ core `runMigrations` is DOM-free and covered by the regression suite.
 9. **`data-bundle.js`'s `meta` strings are wrong** — faction/storyline/deadspace/officer modules all
    came through as "T2". Meta group is derived from CCP's `metaGroupID` (shipped as `mg` on every type
    in `dogma-types.json`); see `metaOf()` in `App.jsx`. Never trust the bundle's `meta` field.
+
+9b. **`data-bundle.js`'s `shipsByClass` is also incomplete — and `mg` and `raceID` are the WRONG
+    signals for classifying a hull.** Three traps, all found building the nested ship browser
+    (`src/lib/ship-taxonomy.js`, 2026-08-06):
+    - `shipsByClass` has **zero** entries for `Command Carrier` and `Lancer Dreadnought` — four live
+      hulls each. `core.js` backfills the ship *list* from `TYPES` for exactly this reason, but the
+      bundle rows are still the only place `raceID` lives, so anything keyed on `raceID` silently
+      drops those eight hulls. Build from `TYPES` (`t.gn` = CCP's group name) and derive the rest.
+    - **TIER comes from the required skill; RACE comes from `factionID`.** `t.rs` holds skill
+      **NAMES**, not IDs (easy to misread — a naive `TYPES[id].n` lookup on them "works" by falling
+      through to a not-found branch). The skills distinguish a **navy** hull (one racial skill) from
+      a **pirate** one (**two** — the Machariel needs Minmatar + Gallente BS), and that is all they
+      are good for. They do **not** tell you who built the hull: the Vendetta requires "Gallente
+      Carrier" but is Serpentis, the Python and the Marshal require no racial skill at all, and
+      nothing in the Outrider's skill list mentions ORE. `invtypes.factionID` is authoritative and
+      is emitted to `src/data/ship-factions.json` by `build-bundle.py` (so it refreshes on an
+      eve.db upgrade). `FACTION_BUCKET` maps it; unmapped factions fall back to the skill race.
+    - **"Special edition" is CCP's own MARKET group, not a guess from the name.** `invmarketgroups`
+      has `Ships / Special Edition Ships` (marketGroupID **1612**); `build-bundle.py` walks the
+      parent chain and emits `s:1`. Two cases fold in: a hull with **no** marketGroupID at all (not
+      sold anywhere → an event prize; among ships that is exactly the Stratios Emergency Responder),
+      and a Shuttle with metaGroupID 3/4 (CCP files Goru's and the Guristas shuttle under "Faction
+      Shuttles", but they are the same unbuyable novelty — the four racial shuttles carry
+      metaGroupID 1 or nothing, so this splits them without naming a hull).
+      **The flag alone is NOT the routing rule.** It also covers ~35 Alliance Tournament hulls (Utu,
+      Chremoas, Adrestia, Skua…), and those must stay in their functional class — an AT Assault
+      Frigate is fitted as an Assault Frigate. `SPECIAL_EDITION_CLASS` lists only the groups where a
+      special hull has no natural home (the base size classes + Shuttle/Corvette), so the redirect
+      catches the Echelon and the Guardian-Vexor without gutting the T2 lists.
+    - **`data-bundle.js`'s `raceIcons` keys are NOT SDE raceIDs.** It ships eight icons keyed
+      1/2/4/8/16/32/135/512, and **135 is ORE's gold hexagon while 512 is the Triglavian red
+      glyph** — confirmed by decoding the PNGs, not by reading the keys. Taking them for raceIDs
+      (ORE=128, Triglavian=135) put the ORE logo on every Triglavian category and left ORE with no
+      icon. There is no icon for CONCORD, EDENCOM, Upwell or Pirate Faction; those fall back to the
+      generic ship glyph. The suite asserts every mapped key actually exists in the bundle.
+    - **`mg` (metaGroupID) is absent on plain T1 hulls.** The Rokh, Hyperion, Abaddon and Maelstrom
+      carry no `mg` at all, so the faction test must be `mg === 4`, never `mg === 1` for "standard".
+
+    The taxonomy is derived, never hand-listed, so the failure mode is a hull quietly falling out of
+    the tree and becoming unreachable in the UI. Regression section 14 asserts total coverage
+    (every fittable hull reachable exactly once) rather than specific counts, so an eve.db upgrade
+    that adds hulls passes as long as they land somewhere.
 
 10. **Structures need character skills applied to their FITTED MODULES but never to their own hull
     stats, and `domain='structureID'` is NOT a projected/ignorable domain** — three real engine bugs

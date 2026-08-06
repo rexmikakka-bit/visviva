@@ -389,7 +389,7 @@ const ATTR_LABEL = {
   maxRange:'Optimal Range', optimalSigRadius:'Signature Resolution',
   damageMultiplier:'Damage Modifier', shieldBonus:'Shield HP Bonus',
   armorDamageAmount:'Armor Repaired', capacitorNeed:'Activation Cost',
-  speedFactor:'Speed Penalty', maxVelocityBonus:'Max Velocity Bonus',
+  speedFactor:'Velocity Bonus', maxVelocityBonus:'Max Velocity Bonus',
   signatureRadiusBonus:'Sig. Radius Bonus', massAddition:'Mass Added',
   aoeCloudSize:'Explosion Radius', aoeVelocity:'Explosion Velocity',
   explosionDelay:'Flight Time', missileVelocity:'Missile Velocity',
@@ -581,7 +581,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap}) {
 
 
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
-const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Speed Penalty",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
+const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"RoF Multiplier",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
 const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??name.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
 // Display scaling for a mutated attribute. Both the read-only rendering and the TYPED input go
 // through this, so the units a value is shown in are exactly the units you type it back in — if the
@@ -747,7 +747,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           const Opt=({active,onClick,title,sub})=>(
             <div onClick={onClick} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 12px",background:active?C.accentLight:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,cursor:"pointer"}}>
               <div><div style={{fontSize:13,fontWeight:600,color:active?C.accent:C.text}}>{title}</div>{sub&&<div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sub}</div>}</div>
-              {active&&<span style={{color:C.accent}}>v</span>}
+              {active&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
             </div>);
           const Bar=({p})=>{const seg=[["em",C.em||"#6ba4ff"],["th",C.th||"#ff5b5b"],["kin",C.kin||"#b9b9b9"],["exp",C.exp||"#e0a44a"]];const v={em:p[0],th:p[1],kin:p[2],exp:p[3]};return(<div style={{display:"flex",height:5,borderRadius:3,overflow:"hidden",width:62,flexShrink:0}}>{seg.map(([k,c])=>v[k]>0?<div key={k} style={{flex:v[k],background:c}}/>:null)}</div>);};
           const q=rahQuery.trim().toLowerCase();
@@ -808,7 +808,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
                     {aMeta&&<span style={{fontSize:10,color:META_COLORS[aMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700}}>{aMeta}</span>}
-                    {on&&<span style={{color:C.accent}}>v</span>}
+                    {on&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
                     {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
                   </div>
                 </div>);
@@ -840,7 +840,23 @@ function ImportFitSheet({onClose,onImport}){
   const[parsed,setParsed]=useState(null);
   const[err,setErr]=useState(null);
   const process=(t)=>{if(!t.trim()){setParsed(null);setErr(null);return;}const r=parseEFT(t);if(r.error){setParsed(null);setErr(r.error);}else{setParsed(r);setErr(null);}};
-  const readClip=async()=>{try{const t=await navigator.clipboard.readText();setText(t);process(t);}catch{setErr("Clipboard access denied — paste manually below.");}};
+  // navigator.clipboard.readText() is not permitted inside the native WebView, which is why this
+  // button did nothing in the installed app and the fit had to be pasted by hand. Capacitor's
+  // Clipboard plugin reads through the OS instead; the web API stays as the browser fallback.
+  const readClip=async()=>{
+    setErr(null);
+    let t=null;
+    try{
+      const Cap=(typeof window!=="undefined")&&window.Capacitor;
+      if(Cap?.isNativePlatform?.()){
+        const {Clipboard}=await import('@capacitor/clipboard');
+        t=(await Clipboard.read())?.value ?? null;
+      }
+    }catch{}
+    if(t==null){try{t=await navigator.clipboard.readText();}catch{}}
+    if(t==null){setErr("Couldn't read the clipboard — paste manually below.");return;}
+    haptic();setText(t);process(t);
+  };
   return(
     <BottomSheet title="Import EFT Fit" onClose={onClose} height="88vh">
       <div style={{padding:14}}>

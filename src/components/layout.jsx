@@ -174,12 +174,19 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
         {/* Uppercase by design -- it reads as a wordmark above the hull name. Hidden when collapsed:
             it is the least useful line once you are deep in a fit. */}
         <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",
-                     maxHeight:collapsed?0:14,opacity:collapsed?0:1,overflow:"hidden",marginBottom:collapsed?0:2,
+                     maxHeight:collapsed?0:20,opacity:collapsed?0:1,lineHeight:1.6,overflow:"hidden",marginBottom:collapsed?0:2,
                      transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Visviva</div>
-        <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.2,whiteSpace:"nowrap",
+        {/* lineHeight 1.2 left the line box 1px shorter than the glyphs need, and `overflow:hidden`
+            (there for the ellipsis) then shaved the descenders off names like Apocalypse. */}
+        <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
                      overflow:"hidden",textOverflow:"ellipsis",transition:"font-size .2s ease"}}>{shipName}</div>
-        <div style={{fontSize:12,color:C.textMid,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                     maxHeight:collapsed?0:18,opacity:collapsed?0:1,
+        {/* `maxHeight` here is the COLLAPSE animation (18 -> 0), not a layout size — but with no
+            explicit lineHeight this line inherited the body's 1.93, making its natural box 23.2px.
+            Clamping that to 18 cut the bottom off every descender: "Caldari Battleship" lost the
+            tail of its p. Pin the line height so the clamp is comfortably above it instead of
+            slicing through the text. */}
+        <div style={{fontSize:12,color:C.textMid,marginTop:1,lineHeight:1.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                     maxHeight:collapsed?0:20,opacity:collapsed?0:1,
                      transition:"max-height .2s ease, opacity .15s ease"}}>{subLabel}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>

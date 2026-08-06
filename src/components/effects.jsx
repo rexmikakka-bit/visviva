@@ -65,30 +65,63 @@ export function buildBoosterFromName(name){
 // class effects and the metaliminal storms are easy to find among the event/incursion beacons.
 // Listed by NAME rather than typeID because that is what gets stored on the fit: it survives a
 // bundle regeneration and reads sensibly in an exported fit.
+// A category may split into a second level (`sub`), which is what makes the two big families
+// browsable: 36 wormhole beacons and 14 storms are otherwise one flat alphabetical wall where
+// "Class 4 Pulsar" sits six rows away from "Class 3 Pulsar".
+//   Wormhole  → phenomenon (Black Hole, Pulsar, ...) then class 1-6.
+//   Metaliminal → storm type (Electrical, Gamma Ray, ...) then Weak/Strong.
+// `sub` returns the second-level name and the SHORT label the row shows there (the phenomenon and
+// the word "Metaliminal" are already in the header, so repeating them in every row is noise).
 const ENV_GROUPS=[
-  {cat:"Wormhole",     test:n=>/^Class \d/.test(n)},
-  {cat:"Metaliminal Storm", test:n=>/Metaliminal/.test(n)},
+  {cat:"Wormhole", test:n=>/^Class \d/.test(n),
+   sub:n=>{const m=/^Class (\d+) (.+?) Effects$/.exec(n); return m?{name:m[2],label:`Class ${m[1]}`,rank:+m[1]}:null;}},
+  {cat:"Metaliminal Storm", test:n=>/Metaliminal|Volatile Ice Storm/.test(n),
+   sub:n=>{
+     const m=/^(Weak|Strong) (.+)$/.exec(n); if(!m) return null;
+     // "Weak Lowsec Metaliminal Yoiul Festival YC122 Storm" — keep the security band, it is the
+     // only thing telling the two Yoiul variants apart.
+     const type=m[2].replace(/^Metaliminal /,"").replace(/ Storm$/,"").replace(/Metaliminal /,"");
+     return {name:type,label:m[1],rank:m[1]==="Weak"?0:1};
+   }},
   {cat:"Pochven / Triglavian", test:n=>/Liminality|Triglavian|:?\bPochven\b/i.test(n)},
   {cat:"Incursion",    test:n=>/Incursion|Sansha/i.test(n)},
   {cat:"Other",        test:()=>true},
 ];
 function environmentList(){
-  const out=ENV_GROUPS.map(g=>({cat:g.cat,items:[]}));
+  const out=ENV_GROUPS.map(g=>({cat:g.cat,items:[],subs:[]}));
   const seen=new Set();
   for(const t of Object.values(TYPES)){
     const gn=t.gn??t.groupName, n=t.n??t.name;
     if(gn!=="Effect Beacon"||!n||seen.has(n))continue;
     seen.add(n);
-    out[ENV_GROUPS.findIndex(g=>g.test(n))].items.push(n);
+    const gi=ENV_GROUPS.findIndex(g=>g.test(n)), g=ENV_GROUPS[gi], grp=out[gi];
+    const s=g.sub?.(n);
+    if(!s){ grp.items.push({name:n,label:n}); continue; }
+    let bucket=grp.subs.find(b=>b.name===s.name);
+    if(!bucket){ bucket={name:s.name,items:[]}; grp.subs.push(bucket); }
+    bucket.items.push({name:n,label:s.label,rank:s.rank});
   }
-  for(const g of out) g.items.sort((a,b)=>a.localeCompare(b));
-  return out.filter(g=>g.items.length);
+  for(const g of out){
+    g.items.sort((a,b)=>a.label.localeCompare(b.label));
+    g.subs.sort((a,b)=>a.name.localeCompare(b.name));
+    // Class 1-6 and Weak-before-Strong are both meaningful orders; neither is alphabetical.
+    for(const b of g.subs) b.items.sort((a,b2)=>(a.rank??0)-(b2.rank??0));
+    g.count=g.items.length+g.subs.reduce((s,b)=>s+b.items.length,0);
+  }
+  return out.filter(g=>g.count);
 }
 function EnvironmentPickerSheet({current,onSelect,onClose}){
   const[search,setSearch]=useState("");
   const[openCat,setOpenCat]=useState(()=>new Set(["Wormhole"]));
   const q=search.trim().toLowerCase();
-  const groups=environmentList().map(g=>({cat:g.cat,items:g.items.filter(n=>!q||n.toLowerCase().includes(q))})).filter(g=>g.items.length);
+  // Search matches the FULL beacon name, not the short row label — typing "pulsar" has to find
+  // rows that render as just "Class 4".
+  const hit=(it)=>!q||it.name.toLowerCase().includes(q);
+  const groups=environmentList().map(g=>({
+    cat:g.cat,
+    items:g.items.filter(hit),
+    subs:g.subs.map(b=>({name:b.name,items:b.items.filter(it=>hit(it)||b.name.toLowerCase().includes(q))})).filter(b=>b.items.length),
+  })).map(g=>({...g,count:g.items.length+g.subs.reduce((s,b)=>s+b.items.length,0)})).filter(g=>g.count);
   const toggle=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
   return(<BottomSheet title="System Effects" onClose={onClose} height="80vh">
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
@@ -101,14 +134,32 @@ function EnvironmentPickerSheet({current,onSelect,onClose}){
       <span style={{fontSize:12,fontWeight:!current?700:500,color:!current?C.accent:C.text}}>Normal space (no effects)</span>
     </div>
     {groups.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
-      <div onClick={()=>toggle(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+      <div onClick={()=>toggle(g.cat)} className="press" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
         <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",display:"inline-block",width:10}}>▶</span>
         <span style={{fontSize:11,fontWeight:700,color:C.text}}>{g.cat}</span>
-        <span style={{fontSize:10,color:C.textMute}}>({g.items.length})</span>
+        <span style={{fontSize:10,color:C.textMute}}>({g.count})</span>
       </div>
-      {open&&g.items.map(n=>{const sel=current===n;return(
-        <div key={n} onClick={()=>onSelect(n)} style={{padding:"9px 14px 9px 26px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
-          <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?C.accent:C.text}}>{n}</span>
+      {open&&g.subs.map(b=>{
+        const key=`${g.cat}/${b.name}`;
+        // A search auto-expands everything; otherwise the sub-levels start closed so the category
+        // opens onto six phenomena rather than 36 beacons.
+        const bOpen=!!q||openCat.has(key);
+        const selHere=b.items.some(it=>it.name===current);
+        return(<div key={key}>
+          <div onClick={()=>toggle(key)} className="press" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px 8px 26px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+            <span style={{fontSize:9,color:C.textMute,transform:bOpen?"rotate(90deg)":"none",display:"inline-block",width:10}}>▶</span>
+            <span style={{fontSize:12,fontWeight:600,color:selHere?C.accent:C.text}}>{b.name}</span>
+            <span style={{fontSize:10,color:C.textMute}}>({b.items.length})</span>
+          </div>
+          {bOpen&&b.items.map(it=>{const sel=current===it.name;return(
+            <div key={it.name} onClick={()=>onSelect(it.name)} className="press" style={{padding:"9px 14px 9px 44px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+              <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?C.accent:C.text}}>{it.label}</span>
+            </div>);})}
+        </div>);
+      })}
+      {open&&g.items.map(it=>{const sel=current===it.name;return(
+        <div key={it.name} onClick={()=>onSelect(it.name)} className="press" style={{padding:"9px 14px 9px 26px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+          <span style={{fontSize:12,fontWeight:sel?700:500,color:sel?C.accent:C.text}}>{it.label}</span>
         </div>);})}
     </div>);})}
   </BottomSheet>);
@@ -242,7 +293,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>
         {environment&&<button onClick={()=>setEnvironment(null)} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>}
       </div>
-      <button onClick={()=>setShowEnvPicker(true)} style={{width:"100%",padding:"10px 0",background:C.surfaceAlt,border:`1px dashed ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer"}}>{environment?"Change System":"+ Set System Effects"}</button>
+      <button className="press" onClick={()=>{haptic();setShowEnvPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>{environment?"Change System":"+ Set System Effects"}</button>
       {showEnvPicker&&<EnvironmentPickerSheet current={environment} onSelect={n=>{setEnvironment(n);setShowEnvPicker(false);}} onClose={()=>setShowEnvPicker(false)}/>}
     </div>)}
     {section==="boosters"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
@@ -250,7 +301,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       {boosters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No boosters added</div>}
       {boosters.map(b=>(<div key={b.id} style={{background:C.surface,border:`1px solid ${b.active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px"}}>
-          <button onClick={()=>setBoosters(boosters.map(x=>x.id===b.id?{...x,active:!x.active}:x))} style={{width:24,height:24,borderRadius:5,background:b.active?C.accentLight:"none",border:`1px solid ${b.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",fontSize:11,fontWeight:700,color:b.active?C.accent:C.textMute}}>{b.active?"v":""}</button>
+          <button onClick={()=>setBoosters(boosters.map(x=>x.id===b.id?{...x,active:!x.active}:x))} style={{width:24,height:24,borderRadius:5,background:b.active?C.accentLight:"none",border:`1px solid ${b.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:b.active?C.accent:C.textMute}}>{b.active?"✓":""}</button>
           <div style={{flex:1}}>
             <div style={{fontSize:12,fontWeight:600,color:b.active?C.text:C.textMid}}>{b.name}</div>
             <div style={{fontSize:10,color:C.rig,marginTop:1}}>{b.effect}</div>
