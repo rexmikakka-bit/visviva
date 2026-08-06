@@ -362,6 +362,55 @@ def main():
             ship_traits[str(tid)] = entry
             trait_hulls += 1
 
+    # ── hull race + faction (drives the ship browser's racial categories) ───
+    # The ship browser derives a hull's racial bucket from its REQUIRED SKILL, which is right for
+    # the empire hulls but has nothing to say about the ones no empire built: the Vendetta needs
+    # "Gallente Carrier" but is a Serpentis hull, the Python and the Marshal require no racial skill
+    # at all, and the Outrider's ORE-ness lives nowhere in its skill list. invtypes.factionID is the
+    # authoritative answer and eve.db has it for every hull, so emit it rather than maintaining a
+    # by-name table that would rot on the next expansion.
+    #
+    # HULL_CATS only (ships + structures) — this is browser metadata, not dogma, and no other
+    # category has a meaningful faction.
+    #
+    # Also emits `s:1` for "special edition" — CCP's OWN market taxonomy has a
+    # `Ships / Special Edition Ships` group (marketGroupID 1612), which is a far better answer than
+    # guessing from the name or the metaGroupID. Two extra cases fold in:
+    #   - No marketGroupID at all → not sold anywhere, so it is an event/prize hull. Among ships
+    #     that is exactly one thing: the Stratios Emergency Responder.
+    #   - A Shuttle with metaGroupID 3 or 4 (Storyline/Faction). CCP files Goru's and the Guristas
+    #     shuttle under "Faction Shuttles" rather than Special Edition, but they are the same kind
+    #     of unbuyable novelty; the four racial shuttles carry metaGroupID 1 or nothing, so this
+    #     splits them cleanly without naming any hull.
+    SPECIAL_EDITION_ROOT = 1612
+    mkt_parent = {r[0]: r[1] for r in db.execute(
+        "SELECT marketGroupID,parentGroupID FROM invmarketgroups")}
+
+    def in_special_edition(mgid):
+        seen = 0
+        while mgid is not None and seen < 16:
+            if mgid == SPECIAL_EDITION_ROOT:
+                return True
+            mgid = mkt_parent.get(mgid)
+            seen += 1
+        return False
+
+    race_faction = {}
+    for tid, rc, fc, mgid, meta in db.execute(
+            "SELECT typeID,raceID,factionID,marketGroupID,metaGroupID FROM invtypes"):
+        row = types.get(tid)
+        if row is None or groups.get(row[2], ('', 0))[1] not in HULL_CATS:
+            continue
+        gname = groups.get(row[2], ('', 0))[0]
+        special = (in_special_edition(mgid) or mgid is None
+                   or (gname == 'Shuttle' and meta in (3, 4)))
+        if rc is None and fc is None and not special:
+            continue
+        entry = {k: v for k, v in (('r', rc), ('f', fc)) if v is not None}
+        if special:
+            entry['s'] = 1
+        race_faction[str(tid)] = entry
+
     # ── item flavour text (modules/charges/implants/drones/fighters/…) ──────
     # Iterate the TYPES we actually emit, not `fit_types`: `fit_types` requires published=1, and the
     # T3 destroyer tactical modes (Confessor/Svipul/Jackdaw/Hecate/Bomber "... Mode", 89 of them) are
@@ -382,6 +431,7 @@ def main():
     print(f"traits:  {trait_hulls:,} hulls with traits/description "
           f"({sum(1 for t in ship_traits.values() if t.get('skills') or t.get('role')):,} carry trait bonuses)")
     print(f"descs:   {len(type_descs):,} item descriptions")
+    print(f"faction: {len(race_faction):,} hulls with a race/faction")
     print(f"attrs:   +{attrs_added:,} attribute slots added to existing types")
     print(f"         {len(value_changes):,} value changes   |   +{len(new_attr_ids)} new attribute definitions")
     print(f"effects: {len(effect_changes):,} type effect-list changes   |   +{len(new_effect_ids)} new effects")
@@ -432,6 +482,7 @@ def main():
                       ('dogma-effects.json', new_effs),
                       ('dogma-attrs.json', new_attrs),
                       ('ship-traits.json', ship_traits),
+                      ('ship-factions.json', race_faction),
                       ('type-descriptions.json', type_descs)]:
         p = os.path.join(DATA, name)
         json.dump(obj, open(p, 'w'), separators=(',', ':'))

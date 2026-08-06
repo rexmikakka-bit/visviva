@@ -525,7 +525,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
 }
 
 // ── the modal: preview + save/share ─────────────────────────────────────────────
-function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProps }) {
+function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = "Jita", priceSource = "fuzzwork", ...cardProps }) {
   const cardRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
@@ -554,7 +554,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
     for (const d of (drones ?? [])) { if (d?.typeID > 0) ids.push(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) ids.push(id); } }
     for (const i of (implants ?? [])) { if (i?.name && i.name !== "[Empty]") { const id = tidByName(i.name); if (id) ids.push(id); } }
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) ids.push(id); } }
-    fetchPrices(ids, priceHub).then(() => { if (!dead) setPricesReady(true); }).catch(() => {});
+    fetchPrices(ids, priceHub, priceSource).then(() => { if (!dead) setPricesReady(true); }).catch(() => {});
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -23,6 +23,7 @@ import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
+import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -691,6 +692,25 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // -----------------------------------------------------------------------------
+// 11g. MICRO JUMP DRIVE SIGNATURE BLOOM — effect 4921 (microJumpDrive) ships EMPTY from CCP, so an
+//      active MJD did nothing at all to the ship's signature and the sig bloom while it spools was
+//      missing from every readout. pyfa hand-implements it (Effect4921: boostItemAttr
+//      'signatureRadius' by 'signatureRadiusBonusPercent', which is 150 on every MJD). Patched via
+//      scripts/data-patches.json. Verified against eos on a Megathron with a Large Micro Jump Drive:
+//      380 m online, 950 m active.
+// -----------------------------------------------------------------------------
+{
+  console.log('\nMICRO JUMP DRIVE SIG BLOOM');
+  const mega = { typeID: tid('Megathron'), name: 'Megathron' };
+  const mk = (state) => ({ high: [], mid: [M('Large Micro Jump Drive', state)], low: [], rigs: [] });
+  const off = calcFitStats(mega, mk('online'), [], null, {});
+  const on  = calcFitStats(mega, mk('active'), [], null, {});
+  check('mjdsig', 'sig radius with MJD online', off.sigRadius, 380, 0.001);
+  check('mjdsig', 'sig radius with MJD ACTIVE', on.sigRadius, 950, 0.001);
+  check('mjdsig', 'bloom is +150%', on.sigRadius / off.sigRadius, 2.5, 0.001);
+}
+
+// -----------------------------------------------------------------------------
 // 11e. ANCILLARY REMOTE REPS — these sit in their OWN dogma groups ('Ancillary Remote Shield
 //      Booster' / 'Ancillary Remote Armor Repairer'), not the plain ones, so matching only the plain
 //      group name dropped them from projections entirely. Verified against eos on saved fit #769: a
@@ -1195,6 +1215,115 @@ function check(group, label, actual, expected, tol = 0.005) {
     }
   }
   check('hulls', 'hulls computing cleanly', total - crashed, total, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 14. SHIP BROWSER TAXONOMY — the nested browse menu is derived, not hand-listed, so the failure
+//     mode is a hull that quietly falls out of the tree and becomes unreachable in the UI (which
+//     is exactly what data-bundle.js's stale `shipsByClass` did to Command Carriers and Lancer
+//     Dreadnoughts — four hulls each, zero entries). These assert total coverage rather than
+//     specific numbers, so an eve.db upgrade that adds hulls passes as long as they land somewhere.
+//
+//     Race comes from the REQUIRED SKILL, not from data-bundle's raceID: every hull carries its
+//     racial skill, including the ones the legacy bundle has never heard of.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSHIP BROWSER TAXONOMY');
+  const tree = buildShipTaxonomy();
+  const placed = tree.flatMap(shipsUnder);
+  const ids = new Set(placed.map((s) => s.typeID));
+  const STRUCT = new Set(['Citadel', 'Engineering Complex', 'Refinery']);
+  const expected = Object.entries(TYPES).filter(([, t]) => {
+    const c = t.c ?? t.category;
+    return (c === 6 && t.gn && t.gn !== 'Capsule') || (c === 65 && STRUCT.has(t.gn));
+  });
+  const missing = expected.filter(([id]) => !ids.has(Number(id))).map(([, t]) => t.n);
+  if (missing.length) console.log(`      UNREACHABLE: ${missing.slice(0, 8).join(', ')}`);
+  check('taxo', 'every fittable hull is reachable', placed.length - missing.length, expected.length, 0);
+  check('taxo', 'no hull appears twice', ids.size, placed.length, 0);
+
+  // A node lists ships or lists children, never both — the UI renders one or the other.
+  let mixed = 0;
+  const walk = (n) => { if (n.ships && n.children) mixed++; (n.children ?? []).forEach(walk); };
+  tree.forEach(walk);
+  check('taxo', 'no node mixes ships and children', mixed, 0, 0);
+
+  check('taxo', 'top level matches the specified order', tree.map((n) => n.label).join('|'), TOP_ORDER.join('|'), 0);
+
+  // Supercarriers share the Standard Carriers node with carriers — they are not an advanced tier.
+  const gCarrier = nodeAtPath(tree, ['Capital Ships', 'Carriers', 'Standard Carriers', 'Gallente']);
+  const gNames = (gCarrier?.ships ?? []).map((s) => s.name);
+  check('taxo', 'Thanatos is a standard Gallente carrier', gNames.includes('Thanatos') ? 1 : 0, 1, 0);
+  check('taxo', 'Nyx sits beside it, not under an advanced tier', gNames.includes('Nyx') ? 1 : 0, 1, 0);
+
+  // Command Carriers / Lancer Dreadnoughts are the hulls the legacy bundle drops entirely.
+  check('taxo', 'Command Carriers present', shipsUnder(nodeAtPath(tree, ['Capital Ships', 'Carriers', 'Command Carriers']) ?? {}).length, 4, 0);
+  check('taxo', 'Lancer Dreadnoughts present', shipsUnder(nodeAtPath(tree, ['Capital Ships', 'Dreadnoughts', 'Lancer Dreadnoughts']) ?? {}).length, 4, 0);
+
+  // Tier classification: pirate hulls require TWO racial skills, navy ones require one plus mg=4.
+  const cls = (n) => classifyHull(TYPES[tid(n)], tid(n));
+  check('taxo', 'Machariel is pirate faction', cls('Machariel').tier, 'pirate', 0);
+  check('taxo', 'Raven Navy Issue is navy faction', cls('Raven Navy Issue').tier, 'navy', 0);
+  // The Rokh carries no metaGroupID at all — "not 4" has to be the test, never "is 1".
+  check('taxo', 'Rokh is a standard battleship', cls('Rokh').tier, 'standard', 0);
+  check('taxo', 'Leshak is precursor', cls('Leshak').tier, 'precursor', 0);
+  check('taxo', 'Thunderchild is EDENCOM', cls('Thunderchild').tier, 'edencom', 0);
+
+  // Race bucket comes from invtypes.factionID, NOT from the required skill. The skill says what you
+  // have to train, not who built the hull — every case below is one the skill gets wrong.
+  const at = (n) => {
+    let found = null;
+    const walk = (node, p) => {
+      if (node.ships?.some((s) => s.name === n)) found ??= [...p, node.label].join(' > ');
+      (node.children ?? []).forEach((c) => walk(c, [...p, node.label]));
+    };
+    tree.forEach((t) => walk(t, []));
+    return found ?? 'NOT PLACED';
+  };
+  // Requires "Gallente Carrier" but is a Serpentis hull.
+  check('taxo', 'Vendetta is pirate, not Gallente', at('Vendetta'), 'Capital Ships > Carriers > Standard Carriers > Pirate Faction', 0);
+  // Requires TWO racial skills, so the tier is right but the race bucket was Amarr.
+  check('taxo', 'Revenant is pirate, not Amarr', at('Revenant'), 'Capital Ships > Carriers > Standard Carriers > Pirate Faction', 0);
+  check('taxo', 'Loggerhead is pirate, not Caldari', at('Loggerhead'), 'Capital Ships > Force Auxiliaries > Pirate Faction', 0);
+  // No racial skill at all — these two used to land in a nameless "Other" bucket.
+  check('taxo', 'Python is pirate', at('Python'), 'Battleships > Advanced Battleships > Black Ops > Pirate Faction', 0);
+  check('taxo', 'Marshal is CONCORD', at('Marshal'), 'Battleships > Advanced Battleships > Black Ops > CONCORD', 0);
+  // ORE-ness appears nowhere in the Outrider's skill list.
+  check('taxo', 'Outrider is ORE', at('Outrider'), 'Destroyers > Advanced Destroyers > Command Destroyers > ORE', 0);
+  // Special edition comes from CCP's OWN market group (Ships / Special Edition Ships), plus hulls
+  // with no market group at all and the non-racial shuttles. Not from the name or the metaGroup.
+  check('taxo', 'Echelon is special edition, not CONCORD navy', at('Echelon'), 'Special Edition Ships > Frigates', 0);
+  check('taxo', 'Guardian-Vexor is special edition', at('Guardian-Vexor'), 'Special Edition Ships > Cruisers', 0);
+  // The only ship in the game with no marketGroupID at all.
+  check('taxo', 'Stratios Emergency Responder is special edition', at('Stratios Emergency Responder'), 'Special Edition Ships > Cruisers', 0);
+  check('taxo', 'Leopard is a special edition shuttle', at('Leopard'), 'Special Edition Ships > Shuttles', 0);
+  // CCP files this one under "Faction Shuttles", not Special Edition; metaGroupID 3/4 separates the
+  // novelty shuttles from the four racial ones without naming any hull.
+  check('taxo', "Goru's Shuttle is a special edition shuttle", at("Goru's Shuttle"), 'Special Edition Ships > Shuttles', 0);
+  check('taxo', 'Shuttles left with only the racial four', shipsUnder(tree.find((n) => n.label === 'Shuttles')).length, 4, 0);
+  check('taxo', 'Corvettes left with only the racial four', shipsUnder(tree.find((n) => n.label === 'Corvettes')).length, 4, 0);
+
+  // ...but the Alliance Tournament hulls carry the SAME special-edition flag and must NOT move: an
+  // AT Assault Frigate is still an Assault Frigate and is fitted as one. Only groups where a
+  // special hull has no natural home are redirected.
+  check('taxo', 'Utu stays an Assault Frigate', at('Utu'), 'Frigates > Advanced Frigates > Assault Frigates > Gallente', 0);
+  check('taxo', 'Skua stays a Tactical Destroyer', at('Skua'), 'Destroyers > Advanced Destroyers > Tactical Destroyers > Caldari', 0);
+  // Flagged special edition by CCP, but it is a mining hull first — the mining rule runs before.
+  check('taxo', 'Perseverance stays with the mining hulls', at('Perseverance'), 'Mining Barges > Mining Destroyers', 0);
+
+  // The empire hulls must NOT move.
+  check('taxo', 'Thanatos still Gallente', at('Thanatos'), 'Capital Ships > Carriers > Standard Carriers > Gallente', 0);
+  check('taxo', 'Rokh still standard Caldari', at('Rokh'), 'Battleships > Standard Battleships > Caldari', 0);
+
+  // data-bundle.js's raceIcons keys are NOT SDE raceIDs: 135 is ORE's gold hexagon and 512 is the
+  // Triglavian red glyph (decoded from the PNGs). Reading them as raceIDs put ORE's logo on every
+  // Triglavian category and left ORE with none.
+  check('taxo', 'ORE icon key', String(RACE_ICON_ID.ORE), '135', 0);
+  check('taxo', 'Triglavian icon key', String(RACE_ICON_ID.Triglavian), '512', 0);
+  const iconKeys = new Set(Object.keys((await import('./data-bundle.js')).raceIcons ?? {}));
+  const missingIcon = Object.entries(RACE_ICON_ID).filter(([, v]) => !iconKeys.has(String(v))).map(([k]) => k);
+  if (missingIcon.length) console.log(`      NO ICON IN BUNDLE: ${missingIcon.join(', ')}`);
+  check('taxo', 'every mapped race icon exists', missingIcon.length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

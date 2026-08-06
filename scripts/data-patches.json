@@ -3,7 +3,7 @@
     "Hand-applied fixes for data CCP does not ship usable. build-bundle.py re-applies these at the",
     "end of every build, so regenerating the bundles is idempotent and these fixes never get lost.",
     "",
-    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here \u2014 they",
+    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here — they",
     "come from eve.db automatically now that the allowlist is gone. This file is for:",
     "  1. effects whose modifierInfo CCP ships empty (they are applied client-side in EVE), and",
     "  2. attribute flags eve.db does not carry (notably `stackable`).",
@@ -370,6 +370,16 @@
         "modifyingAttributeID": 854,
         "operation": 7,
         "skillTypeID": null
+      }
+    ],
+    "4921": [
+      {
+        "_why": "microJumpDrive. CCP ships this effect EMPTY, so an active Micro Jump Drive did nothing to the ship's signature — the sig bloom while it spools was missing from every stat readout. pyfa hand-implements it as Effect4921: fit.ship.boostItemAttr('signatureRadius', module.getModifiedItemAttr('signatureRadiusBonusPercent')). signatureRadiusBonusPercent (973) is 150 on every MJD, i.e. +150% sig while active. The effect is type='active' in pyfa, so it only applies in the active/overloaded states, which is what the engine's state gate gives us.",
+        "domain": "shipID",
+        "func": "ItemModifier",
+        "modifiedAttributeID": 552,
+        "modifyingAttributeID": 973,
+        "operation": 6
       }
     ]
   },

@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
-import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -188,7 +188,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     setSlots(prev=>{
       const sec=[...prev[secKey]],idx=sec.findIndex(m=>m.id===modId);
       if(idx<0)return prev;
-      if(grouped&&secKey==="high"&&updated.ammo!==undefined){const origName=sec[idx].name;return{...prev,[secKey]:sec.map(m=>m.name===origName?{...m,...updated,id:m.id}:m)};}
+      // Loading a charge fans out to every identical module in the rack — but only for things
+      // that are actually GROUPED. It used to match on name alone, so two Skirmish Command
+      // Bursts always ended up with the same charge and running two different scripts was
+      // impossible. Bursts (and anything else non-groupable) are one row each already.
+      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){const origName=sec[idx].name;return{...prev,[secKey]:sec.map(m=>m.name===origName&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};}
       sec[idx]={...sec[idx],...updated};
 
       // EVE only lets ONE propulsion module run at a time: activating an MWD shuts off an
@@ -484,7 +488,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 }
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
+function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   // Per-section collapse state — all open by default.
   const [collapsed,setCollapsed]=useState({});
   const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
@@ -525,11 +529,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
     if(!allPriceIDs.length)return;
     let cancelled=false;
     setPriceLoading(true);
-    fetchPrices(allPriceIDs,priceHub)
+    fetchPrices(allPriceIDs,priceHub,priceSource)
       .then(m=>{if(!cancelled){setPrices(m);setPriceLoading(false);}})
       .catch(()=>{if(!cancelled)setPriceLoading(false);});
     return()=>{cancelled=true;};
-  },[fitFingerprint,priceHub]);// eslint-disable-line react-hooks/exhaustive-deps
+  },[fitFingerprint,priceHub,priceSource]);// eslint-disable-line react-hooks/exhaustive-deps
   const groupTotals=useMemo(()=>{
     const sum=items=>items.reduce((acc,{typeID,qty,abyssal})=>acc+(abyssal?0:(prices?.get(typeID)??0)*qty),0);
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),character:sum(priceItems.character),drones:sum(priceItems.drones)};

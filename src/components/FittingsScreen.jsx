@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
+import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.js";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
@@ -186,7 +187,10 @@ export function ShipInfoSheet({ship, onClose}) {
 }
 
 export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
-  const[selectedClass,setSelectedClass]=useState(null);
+  // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
+  // the position in it is a PATH of node labels rather than a single class name. An empty path is
+  // the top-level list. See src/lib/ship-taxonomy.js.
+  const[browsePath,setBrowsePath]=useState([]);
   const[selectedShip,setSelectedShip]=useState(activeFit?.ship??null);
   // Ship name whose info sheet is open (browser rows), or null. Resolved through lookupShip at
   // render time because shipsByClass rows are only {name,typeID} — ShipInfoSheet's Attributes tab
@@ -318,14 +322,34 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
     return results;
   })():null;
 
-  // Same sheet the ship image in the fit header opens. Shared by the browse and class-ships views,
-  // which are separate `return`s — hence one element reused rather than two copies. lookupShip
-  // resolves the full record (cpu/pg/slots) that the Attributes tab needs.
+  // Same sheet the ship image in the fit header opens. Shared by the browse and fits views, which
+  // are separate `return`s — hence one element reused rather than two copies. lookupShip resolves
+  // the full record (cpu/pg/slots) that the Attributes tab needs.
   const shipInfoSheet=infoShip
     ? <ShipInfoSheet ship={lookupShip(infoShip)??{name:infoShip}} onClose={()=>setInfoShip(null)}/>
     : null;
 
+  // Derived from the dogma bundle, so it costs one pass over ~440 hulls and never changes after.
+  const shipTree=useMemo(()=>buildShipTaxonomy(),[]);
+  const browseNode=browsePath.length?nodeAtPath(shipTree,browsePath):null;
+  // nodeAtPath returns null if a stale path survives a bundle change; fall back to the root rather
+  // than rendering nothing.
+  const browseKids=browsePath.length?(browseNode?.children??null):shipTree;
+  const browseShips=browseNode?.ships??null;
+  const enterNode=label=>{setBrowsePath(p=>[...p,label]);haptic("light");};
+  const leaveNode=()=>{setBrowsePath(p=>p.slice(0,-1));haptic("light");};
+
   if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    {browsePath.length>0&&(
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <button onClick={leaveNode} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>Back</button>
+        <img src={(raceIcons??{})[String(browseNode?.raceID)]??shipSmallIcon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{browsePath[browsePath.length-1]}</div>
+          {browsePath.length>1&&<div style={{fontSize:10,color:C.textMute,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{browsePath.slice(0,-1).join(" / ")}</div>}
+        </div>
+      </div>
+    )}
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
@@ -334,8 +358,8 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
       </div>
     </div>
     <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
-      {!search&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit}/>}
-      {!search&&Object.keys(fitsDB).length===0&&(
+      {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit}/>}
+      {!search&&browsePath.length===0&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
           <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Visviva</div>
@@ -352,65 +376,54 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
           {rr.type!=="fit"&&<InfoButton title={`${rr.ship} info`} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>}
         </div>))}
       </>)}
-      {!searchResults&&Object.entries(shipsByClass||{}).sort(([a],[b])=>a.localeCompare(b)).map(([cls, ships])=>{
+      {!searchResults&&browseKids&&browseKids.map(n=>{
+        const ships=shipsUnder(n);
         const fitCount=ships.reduce((s,sh)=>s+(fitsDB[sh.name]||[]).length,0);
+        // Race nodes get the racial icon; every other level gets the generic ship glyph.
+        const icon=(raceIcons??{})[String(n.raceID)]??shipSmallIcon;
         return (
-          <div key={cls} onClick={()=>{setSelectedClass(cls);setView("class-ships");}}
-            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:selectedClass===cls?C.accentLight:"transparent"}}>
-            <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
-            <div style={{flex:1}}>
-              <div style={{fontSize:13,fontWeight:600,color:selectedClass===cls?C.accent:C.text}}>{cls}</div>
-              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ships.length} ships{fitCount>0?` · ${fitCount} fits`:""}</div>
+          <div key={n.key} onClick={()=>enterNode(n.label)} className="press no-select"
+            style={{display:"flex",alignItems:"center",gap:10,padding:"11px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+            <img src={icon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:C.text}}>{n.label}</div>
+              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ships.length} ship{ships.length!==1?"s":""}{fitCount>0?` · ${fitCount} fit${fitCount!==1?"s":""}`:""}</div>
             </div>
             <span style={{color:C.textMute,fontSize:16}}>{">"}</span>
           </div>
         );
       })}
+      {!searchResults&&browseShips&&browseShips.map(s=>{
+        const sfits=(fitsDB[s.name]||[]);
+        return(<div key={s.typeID} style={{marginBottom:4}}>
+          <div onClick={()=>{setSelectedShip(s.name);setView('fits');}} className="press no-select" style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
+            <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:5}}>
+                {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
+                <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+              </div>
+              <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
+            </div>
+            <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
+          </div>
+          {selectedShip===s.name&&sfits.length>0&&<div style={{paddingLeft:16,marginTop:2}}>
+            {sfits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderRadius:6,cursor:"pointer",background:C.surfaceAlt,marginBottom:2,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accentBorder:C.border}`}} onClick={()=>loadFit(s.name,fit.name)}>
+              <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accent:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>Modified {fit.modified}</div></div>
+              <span style={{color:C.textMute,fontSize:13}}>{">"}</span>
+            </div>))}
+          </div>}
+        </div>);
+      })}
     </div>
     {shipInfoSheet}
   </div>);
-
-  if(view==="class-ships"){
-    const classShips=(shipsByClass[selectedClass]||[]).sort((a,b)=>a.name.localeCompare(b.name));
-    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>setView("browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>Back</button>
-        <img src={shipSmallIcon} style={{width:18,height:18,flexShrink:0}} alt=""/>
-        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedClass}</span>
-      </div>
-      <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
-        {classShips.map(s=>{
-          const sfits=(fitsDB[s.name]||[]);
-          return(<div key={s.typeID} style={{marginBottom:4}}>
-            <div onClick={()=>{setSelectedShip(s.name);setView('fits');}} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
-              <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:'flex',alignItems:'center',gap:5}}>
-                  {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
-                  <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
-                </div>
-                <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
-              </div>
-              <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
-            </div>
-            {selectedShip===s.name&&sfits.length>0&&<div style={{paddingLeft:16,marginTop:2}}>
-              {sfits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderRadius:6,cursor:"pointer",background:C.surfaceAlt,marginBottom:2,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accentBorder:C.border}`}} onClick={()=>loadFit(s.name,fit.name)}>
-                <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accent:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>Modified {fit.modified}</div></div>
-                <span style={{color:C.textMute,fontSize:13}}>{">"}</span>
-              </div>))}
-            </div>}
-          </div>);
-        })}
-      </div>
-      {shipInfoSheet}
-    </div>);
-  }
 
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>setView(selectedClass?"class-ships":"browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
+        <button onClick={()=>setView("browse")} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
         <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedShip}</span>
         <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
       </div>

@@ -38,6 +38,12 @@ const ALLOWED = [
     why: 'Fuzzwork aggregates API for fit pricing. Online-only; prices degrade gracefully to "—" offline.',
   },
   {
+    host: 'www.ceve-market.org',
+    why: 'Alternative price source (Settings -> Market). Same graceful degradation as Fuzzwork: a failed '
+       + 'fetch leaves the price map empty and the UI shows "—". Sends no CORS headers, so it only '
+       + 'resolves in the installed app, where CapacitorHttp bypasses the browser CORS rules.',
+  },
+  {
     host: 'community.eveonline.com',
     why: 'NOT a fetch — appears inside an item DESCRIPTION string in data-bundle.js (a CSM link in '
        + "CCP's flavour text). Never requested. This scan can't distinguish a fetched URL from one "
