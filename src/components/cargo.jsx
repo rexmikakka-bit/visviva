@@ -3,7 +3,7 @@ import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, NumpadModal } from "./ui.jsx";
-import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges } from "../lib/core.js";
+import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 
 export function CargoBrowserSheet({onAdd,onClose,slots}){
@@ -117,7 +117,7 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
       <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>Cargo Bay</span><span style={{fontSize:11,color:C.textMute,marginLeft:8}}>{totalVol} / {cap.toLocaleString()} m3</span></div>
-      <button onClick={()=>setShowCargoPicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>
+      <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>
     </div>
     <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((parseFloat(totalVol)/cap)*100,100):0}%`,height:"100%",background:parseFloat(totalVol)>cap?C.danger:C.accent}}/></div>
     <div style={{flex:1,overflowY:"auto",padding:12}}>
@@ -125,10 +125,13 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
       {items.map(item=>(<div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:6}}>
         <div style={{width:32,height:32,borderRadius:7,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,overflow:"hidden"}}>{(()=>{const tid=item.typeID??tidByName(item.name);return tid?<img className="eve-icon" src={eveIcon(tid,32)} width={30} height={30} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>📦</span>;})()}</div>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{(item.qty*volOf(item)).toFixed(1)} m3</div></div>
-        <button onClick={()=>setNumpad(item)} style={{display:"flex",flexDirection:"column",alignItems:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer"}}>
+        <button className="press" onClick={()=>{haptic();setNumpad(item);}} style={{display:"flex",flexDirection:"column",alignItems:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer"}}>
           <span style={{fontSize:14,fontWeight:800,color:C.text}}>{item.qty.toLocaleString()}</span>
           <span style={{fontSize:8,color:C.textMute,marginTop:1}}>tap to edit</span>
         </button>
+        {/* There was no way to take anything back OUT of the cargo bay. */}
+        <button className="press" onClick={()=>{haptic("heavy");setItems(items.filter(i=>i.id!==item.id));}} aria-label={`Remove ${item.name}`} title="Remove from cargo"
+          style={{width:28,height:28,flexShrink:0,borderRadius:7,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:C.danger,fontSize:16,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
       </div>))}
     </div>
     {numpad&&<NumpadModal label={numpad.name} initial={numpad.qty} onConfirm={qty=>setItems(items.map(i=>i.id===numpad.id?{...i,qty}:i))} onClose={()=>setNumpad(null)}/>}

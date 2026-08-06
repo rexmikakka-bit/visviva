@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { BottomSheet } from "./ui.jsx";
-import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT } from "../lib/core.js";
+import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
 
@@ -259,7 +259,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>
         <BoosterSideEffects booster={b} onUpdate={nb=>setBoosters(boosters.map(x=>x.id===b.id?nb:x))}/>
       </div>))}
-      <button onClick={()=>setShowBoosterPicker(true)} style={{width:"100%",padding:"10px 0",background:C.surfaceAlt,border:`1px dashed ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer",marginTop:4}}>+ Add Booster</button>
+      <button className="press" onClick={()=>{haptic();setShowBoosterPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Booster</button>
       {showBoosterPicker&&<BoosterPickerSheet onAdd={b=>setBoosters(prev=>[...prev,b])} onClose={()=>setShowBoosterPicker(false)}/>}
     </div>)}
     {section==="projected"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
@@ -280,11 +280,15 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const painterSig=stk((eff.painters||[]).map(p=>p.sigBonus*rf(p.optimal,p.falloff)));
         const dampLock=stk((eff.damps||[]).map(d=>d.lockBonus*rf(d.optimal,d.falloff)));
         const tdTrack=stk((eff.trackDisr||[]).map(t=>t.tracking*rf(t.optimal,t.falloff)));
+        // A range script zeroes trackingSpeedBonus and moves the whole effect onto optimal and
+        // falloff, so reading `tracking` alone made a range-scripted disruptor look inert.
+        const tdOpt=stk((eff.trackDisr||[]).map(t=>(t.optimalBonus||0)*rf(t.optimal,t.falloff)));
+        const tdFall=stk((eff.trackDisr||[]).map(t=>(t.falloffBonus||0)*rf(t.optimal,t.falloff)));
         const gdRange=stk((eff.guideDisr||[]).map(g=>g.missileRange*rf(g.optimal,g.falloff)));
         const hasReps=totals.shield+totals.armor+totals.hull>0.5;
         const hasWeb=webMs.length>0, hasNeut=neutGJs>0.05, hasCap=capGJs>0.05;
-        const hasPaint=Math.abs(painterSig)>0.5, hasDamp=Math.abs(dampLock)>0.5, hasTD=Math.abs(tdTrack)>0.5, hasGD=Math.abs(gdRange)>0.5;
-        const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasGD;
+        const hasPaint=Math.abs(painterSig)>0.5, hasDamp=Math.abs(dampLock)>0.5, hasTD=Math.abs(tdTrack)>0.5, hasTDrng=Math.abs(tdOpt)>0.5||Math.abs(tdFall)>0.5, hasGD=Math.abs(gdRange)>0.5;
+        const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasTDrng||hasGD;
         const setRange=(km)=>setProjFits(projFits.map((p,j)=>j===i?{...p,rangeKm:Math.max(0,km)}:p));
         return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -308,12 +312,13 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
               {hasPaint&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>+{Math.round(painterSig)}%</div><div style={{fontSize:9,color:C.textMute}}>your sig (paint)</div></div>}
               {hasDamp&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(dampLock)}%</div><div style={{fontSize:9,color:C.textMute}}>your lock range</div></div>}
               {hasTD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(tdTrack)}%</div><div style={{fontSize:9,color:C.textMute}}>your tracking</div></div>}
+              {hasTDrng&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(Math.abs(tdOpt)>=Math.abs(tdFall)?tdOpt:tdFall)}%</div><div style={{fontSize:9,color:C.textMute}}>your turret range</div></div>}
               {hasGD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(gdRange)}%</div><div style={{fontSize:9,color:C.textMute}}>your missile range</div></div>}
             </div>
           ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>Nothing on this fit projects onto a target</div>}
         </div>);
       })}
-      <button onClick={()=>setShowProjPicker(true)} style={{width:"100%",padding:"10px 0",background:C.surfaceAlt,border:`1px dashed ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
+      <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
       {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>{
         const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
@@ -333,7 +338,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
           {bursts.map((b,j)=><div key={j} style={{fontSize:11,color:C.rig,paddingLeft:8,marginBottom:3}}>- {b.label}: {b.value>0?"+":""}{Math.round(b.value*10)/10}{WARFARE_BUFF_UNIT[b.buffID]||"%"}</div>)}
         </div>);
       })}
-      <button onClick={()=>setShowCmdPicker(true)} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
+      <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
       {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
     </div>)}
   </div>);

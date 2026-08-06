@@ -250,6 +250,39 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
     setEditingFitId(null);
   };
 
+  // Renaming commits on blur as well as on Enter. It used to DISCARD on blur, so tapping the
+  // keyboard's done/checkmark -- which blurs rather than sending Enter -- threw away the name you
+  // had just typed. Escape is still the way to cancel.
+  const commitRename=()=>{
+    if(!renamingFit||!activeFit)return;
+    const next=newFitName.trim()||activeFit.fitName;
+    if(next!==activeFit.fitName){
+      const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+      setFitsDB(prev=>({...prev,[activeFit.ship]:(prev[activeFit.ship]||[]).map(f=>f.name===activeFit.fitName?{...f,name:next,modified:now}:f)}));
+      setActiveFit(prev=>({...prev,fitName:next}));
+    }
+    setRenamingFit(false);
+  };
+
+  // Open a COPY: branch a fit without touching the original. Names are the app's identity for a
+  // fit (activeFit is {ship,fitName}), so the copy has to get a name nothing else is using.
+  const openCopyOfFit=(ship,fitName)=>{
+    const src=(fitsDB[ship]||[]).find(f=>f.name===fitName);
+    if(!src)return;
+    const taken=new Set((fitsDB[ship]||[]).map(f=>f.name));
+    let name=`${fitName} copy`, n=2;
+    while(taken.has(name))name=`${fitName} copy ${n++}`;
+    const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+    // Deep-cloned: a shallow copy would share slot arrays with the original, so editing the copy
+    // would silently edit the fit it came from.
+    const copy={...structuredClone(src),id:nextId,name,modified:now};
+    setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),copy]}));
+    setNextId(n2=>n2+1);
+    haptic();
+    // Deferred: loadFit reads fitsDB, and the setState above has not landed yet.
+    setTimeout(()=>{loadFit(ship,name);setView("active");},0);
+  };
+
   const createNewFit=ship=>{
     const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
     const emptySlots=generateEmptySlots(lookupShip(ship));
@@ -368,7 +401,7 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>setView(selectedClass?"class-ships":"browse")} style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
         <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedShip}</span>
-        <button onClick={()=>createNewFit(selectedShip)} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
+        <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:12}}>
         {fits.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>No saved fits - tap + New Fit to start</div>}
@@ -381,6 +414,7 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
             <div style={{fontSize:11,color:C.textMute,marginTop:2}}>Modified {fit.modified}</div>
           </div>
           <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}} style={{width:28,height:28,borderRadius:6,background:editingFitId===fit.id?C.accentLight:C.surfaceAlt,border:`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>&#9998;</button>
+          <button onClick={e=>{e.stopPropagation();openCopyOfFit(selectedShip,fit.name);}} title="Open a copy" aria-label={`Open a copy of ${fit.name}`} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textMid,flexShrink:0}}>&#128203;</button>
           <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`)){setFitsDB(prev=>{const next={...prev,[selectedShip]:(prev[selectedShip]||[]).filter(f=>f.id!==fit.id)};if(!next[selectedShip].length)delete next[selectedShip];return next;});if(activeFit?.fitName===fit.name&&activeFit?.ship===selectedShip)setActiveFit(null);}}} style={{width:28,height:28,borderRadius:6,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.danger,flexShrink:0,lineHeight:1}} title="Delete fit">&times;</button>
           <button onClick={()=>{loadFit(selectedShip,fit.name);setView("active");}} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.textMute,flexShrink:0}}>{">"}</button>
         </div>))}
@@ -394,7 +428,7 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
         <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>Fits</button>
         <div style={{flex:1,minWidth:0}}>
           {renamingFit
-            ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"){const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});setFitsDB(prev=>({...prev,[activeFit.ship]:(prev[activeFit.ship]||[]).map(f=>f.name===activeFit.fitName?{...f,name:newFitName.trim()||activeFit.fitName,modified:now}:f)}));setActiveFit(prev=>({...prev,fitName:newFitName.trim()||prev.fitName}));setRenamingFit(false);}if(e.key==="Escape")setRenamingFit(false);}} onBlur={()=>setRenamingFit(false)} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
+            ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingFit(false);}} onBlur={commitRename} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
             :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%"}}>
               <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||"Unnamed Fit"}</span>
               <span style={{fontSize:15,color:"#ffffffff",flexShrink:0}}>&#9998;</span>

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { BottomSheet } from "./ui.jsx";
-import { implantData } from "../lib/core.js";
+import { haptic, implantSetMembers, implantData } from "../lib/core.js";
 
-function ImplantPicker({slot,current,onSelect,onClear,onClose}){
+function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   const[search,setSearch]=useState("");
   const[drill,setDrill]=useState(null);
 
@@ -17,18 +17,27 @@ function ImplantPicker({slot,current,onSelect,onClear,onClose}){
     ? allItems.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()))
     : null;
 
-  const ItemRow=({item})=>(
-    <div onClick={()=>{onSelect({name:item.name,typeID:item.typeID,slot,bonus:""});onClose();}}
-      style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",
+  const ItemRow=({item})=>{
+    // Set implants get a second action: fit the whole set at once. Six slots for one intent.
+    const set=implantSetMembers(item.name);
+    return(
+    <div onClick={()=>{haptic();onSelect({name:item.name,typeID:item.typeID,slot,bonus:""});onClose();}}
+      style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 16px",
               borderBottom:`1px solid ${C.border}`,cursor:"pointer",
               background:current===item.name?C.accentLight:"transparent"}}>
-      <div>
+      <div style={{minWidth:0}}>
         <div style={{fontSize:13,fontWeight:600,color:current===item.name?C.accent:C.text}}>{item.name}</div>
         {item.metaGroupID>0&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>Meta {item.metaLevel??0}</div>}
       </div>
-      {current===item.name?<span style={{color:C.accent}}>✓</span>:<span style={{color:C.textMute}}>+</span>}
-    </div>
-  );
+      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+        {set&&<button onClick={e=>{e.stopPropagation();haptic();onSelectSet(set);onClose();}}
+          title={`Fit all ${set.members.length} ${set.setName} implants`}
+          style={{padding:"4px 9px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer",
+                  background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Set</button>}
+        {current===item.name?<span style={{color:C.accent}}>✓</span>:<span style={{color:C.textMute}}>+</span>}
+      </div>
+    </div>);
+  };
 
   if(drill){
     return(<BottomSheet title={`Slot ${slot} › ${drill}`} onClose={()=>setDrill(null)} height="82vh">
@@ -148,6 +157,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     </div>
     {picker&&<ImplantPicker slot={picker.slot} current={picker.name}
       onSelect={opt=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:opt.name,bonus:opt.bonus??null}:i))}
+      onSelectSet={set=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))}
       onClear={()=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:"[Empty]",bonus:null}:i))}
       onClose={()=>setPicker(null)}/>}
   </div>);

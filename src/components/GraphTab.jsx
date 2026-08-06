@@ -254,7 +254,11 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
   const handleTouchMove=e=>{e.preventDefault();const rect=e.currentTarget.getBoundingClientRect(),scaleX=W/rect.width,svgX=(e.touches[0].clientX-rect.left)*scaleX;if(svgX<PL||svgX>W-PR){setCursorX(null);onCursorChange&&onCursorChange(null);return;}const{xVal,yVal}=interpY(svgX);setCursorX(svgX);onCursorChange&&onCursorChange({xVal,yVal});};
   const handleLeave=()=>{setCursorX(null);onCursorChange&&onCursorChange(null);};
   const cursorYVal=cursorX!=null?interpY(cursorX):null;
-  return(<svg width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchMove={handleTouchMove} onTouchEnd={handleLeave}>
+  // touchAction:none + stopPropagation: dragging along the x-axis to read a datapoint was reaching
+  // the Fit/Stats/Graph swipe handler on an ancestor, so scrubbing the plot flicked you to another
+  // sub-tab instead. The graph owns horizontal drags inside its own box.
+  const swallow=e=>e.stopPropagation();
+  return(<svg width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair",touchAction:"none"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchStart={swallow} onTouchMove={e=>{e.stopPropagation();handleTouchMove(e);}} onTouchEnd={handleLeave}>
     <defs>
       <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient>
       {/* Zoomed axes shrink xMax/yMax, so the curve can run past the plot box — clip it to the grid. */}
