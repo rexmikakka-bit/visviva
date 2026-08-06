@@ -3,6 +3,13 @@ import { C } from "../theme.js";
 import { BottomSheet } from "./ui.jsx";
 import { haptic, implantSetMembers, implantData } from "../lib/core.js";
 
+// "Deadeye (Missile Bombardment)" -> "Missile Bombardment". The leading word is the hardwiring's
+// brand nickname (Deadeye, Snapshot, Squire, ...), which tells you nothing about what the implant
+// does; the skill in the parentheses is the entire point. Only rewritten when the whole group name
+// is <SingleWord> (<something>), so set names like "Amulet" and item-named groups are untouched.
+const IMPLANT_GROUP_NICKNAME=/^[A-Z][A-Za-z'-]*\s*\((.+)\)$/;
+const implantGroupLabel=n=>IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n;
+
 function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   const[search,setSearch]=useState("");
   const[drill,setDrill]=useState(null);
@@ -40,7 +47,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   };
 
   if(drill){
-    return(<BottomSheet title={`Slot ${slot} › ${drill}`} onClose={()=>setDrill(null)} height="82vh">
+    return(<BottomSheet title={`Slot ${slot} › ${implantGroupLabel(drill)}`} onClose={()=>setDrill(null)} height="82vh">
       {drillItems.map(item=><ItemRow key={item.typeID} item={item}/>)}
     </BottomSheet>);
   }
@@ -64,7 +71,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
       : groupNames.map(gn=>(
           <div key={gn} onClick={()=>setDrill(gn)}
             style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-            <div style={{fontSize:13,color:C.text}}>{gn}</div>
+            <div style={{fontSize:13,color:C.text}}>{implantGroupLabel(gn)}</div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:11,color:C.textMute}}>{groups[gn]?.length??0}</span>
               <span style={{color:C.textMute}}>›</span>

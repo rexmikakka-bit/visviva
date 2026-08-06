@@ -362,13 +362,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         return (opt>0||fal>0)?<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km</span>:null;
                       })()}
                       {(()=>{
-                        if(!row.typeID)return row.tracking>0?<span style={{fontSize:11,color:C.warning}}>Tr {row.tracking}</span>:null;
+                        if(!row.typeID)return row.tracking>0?<span style={{fontSize:11,color:C.warning}}>Tr {(+row.tracking).toFixed(1)}</span>:null;
                         const eSt=engineStatsBySlotID.get(row.id);
-                        if(eSt?.tracking>0)return <span style={{fontSize:11,color:C.warning}}>Tr {eSt.tracking}</span>;
+                        if(eSt?.tracking>0)return <span style={{fontSize:11,color:C.warning}}>Tr {(+eSt.tracking).toFixed(1)}</span>;
                         const a=TYPES[row.typeID]?.attrs??{};
                         const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
                         const trk=Math.round((a.trackingSpeed??0)*(ca.trackingSpeedMultiplier??1)*1000)/1000;
-                        return trk>0?<span style={{fontSize:11,color:C.warning}}>Tr {trk}</span>:null;
+                        return trk>0?<span style={{fontSize:11,color:C.warning}}>Tr {trk.toFixed(1)}</span>:null;
                       })()}
                       {(()=>{
                         const eAar=engineStatsBySlotID.get(row.id);
@@ -514,6 +514,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),character:sum(priceItems.character),drones:sum(priceItems.drones)};
   },[priceItems,prices]);
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
+  // The hull-and-fit cost is the number you compare against another fit; implants and boosters are
+  // a property of the PILOT and follow you from ship to ship, so a total that silently folds in a
+  // set of high-grades tells you very little about the fit itself. Both are shown, split by colour
+  // rather than by a label, since the pair reads fine without one.
+  const hullPrice=useMemo(()=>totalPrice-(groupTotals.character??0),[totalPrice,groupTotals]);
   // Per-item breakdown behind each Fit Value row. Identical typeIDs are merged (a fit with 6 of the
   // same launcher reads "6x …" on one line rather than six lines), then sorted by TOTAL value
   // descending so the expensive things are what you see first.
@@ -902,8 +907,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       {/* Fit Value */}
       <div style={card}>
         <SectionHead id="fitvalue" title="Fit Value" right={
-          <span style={{fontSize:11,fontWeight:700,color:C.rig}}>
-            {priceLoading?'…':fmtISK(totalPrice)}
+          <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
+            <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
+            {!priceLoading&&(groupTotals.character??0)>0&&
+              <span style={{color:C.accent}} title="Including implants and boosters">{fmtISK(totalPrice)}</span>}
           </span>
         }/>
         {isOpen("fitvalue")&&<>

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { C } from "../theme.js";
+import { haptic } from "../lib/core.js";
 import { TargetProfileSheet } from "./ui.jsx";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import {
@@ -300,20 +301,44 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   // and the alternative is delaying every single tap by the double-tap window just to find out.
   const reset=()=>{onChange(0);onVelocityChange&&onVelocityChange(0);};
   const lastTap=useRef(0);
-  const onClick=e=>{const rect=e.currentTarget.getBoundingClientRect();handlePt(e.clientX,e.clientY,rect);};
-  const onDoubleClick=e=>{e.preventDefault();reset();};
-  const onTouch=e=>{
-    e.preventDefault();
+  const dragging=useRef(false);
+
+  // The compass is DRAGGABLE, not just tappable. It used to handle touchstart only, so setting a
+  // heading meant repeatedly stabbing at the ring instead of sweeping to it — and because the
+  // gesture never reached pointer-move, the Fit/Stats/Graph swipe handler on an ancestor saw the
+  // horizontal movement and flicked to another sub-tab mid-adjustment.
+  //
+  // Pointer events cover mouse and touch in one path. setPointerCapture keeps the drag alive when
+  // the finger leaves the little 90px box, which it does constantly at the outer ring.
+  const onPointerDown=e=>{
+    e.stopPropagation();
+    dragging.current=true;
+    try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
+    // Double-tap to park: heading 0, speed 0.
     const now=Date.now();
-    // Consume the timestamp on a match so a third tap starts a fresh pair rather than chaining.
-    if(now-lastTap.current<300){lastTap.current=0;reset();return;}
+    if(now-lastTap.current<300){lastTap.current=0;dragging.current=false;reset();haptic();return;}
     lastTap.current=now;
-    const rect=e.currentTarget.getBoundingClientRect();handlePt(e.touches[0].clientX,e.touches[0].clientY,rect);
+    handlePt(e.clientX,e.clientY,e.currentTarget.getBoundingClientRect());
   };
+  const onPointerMove=e=>{
+    if(!dragging.current)return;
+    e.stopPropagation();
+    handlePt(e.clientX,e.clientY,e.currentTarget.getBoundingClientRect());
+  };
+  const onPointerUp=e=>{
+    if(!dragging.current)return;
+    dragging.current=false;
+    try{e.currentTarget.releasePointerCapture(e.pointerId);}catch{}
+  };
+  // Belt and braces: touchmove does not go through the pointer path on every engine, and any
+  // horizontal movement here must never reach the sub-tab swipe.
+  const swallowTouch=e=>e.stopPropagation();
 
   return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
     <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{label}</span>
-    <svg width={90} height={90} style={{cursor:"crosshair",touchAction:"none"}} onClick={onClick} onDoubleClick={onDoubleClick} onTouchStart={onTouch}>
+    <svg width={90} height={90} style={{cursor:"crosshair",touchAction:"none"}}
+         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
+         onTouchStart={swallowTouch} onTouchMove={swallowTouch}>
       <circle cx={cx} cy={cy} r={rMax+6} fill={C.surfaceAlt} stroke={C.border} strokeWidth="1"/>
       {[0.25,0.5,0.75,1.0].map(f=><circle key={f} cx={cx} cy={cy} r={rMax*f} fill="none" stroke={C.borderStrong} strokeWidth="0.5" strokeDasharray={f===1?"none":"2,4"}/>)}
       <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,2"/>

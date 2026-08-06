@@ -599,9 +599,20 @@ function buildModuleBrowser(slotType){
     if(!byMG[m.marketGroupID])byMG[m.marketGroupID]=[];
     byMG[m.marketGroupID].push(m);
   }
+  // Browser ordering, which is deliberately NOT META_ORDER. META_ORDER is the canonical tier
+  // sequence (T1 first) and still drives ammo and the meta pills; here T2 leads, because in the
+  // module browser you are choosing what to FIT, and T2 is the default choice far more often than
+  // T1 — the T1 module is usually the fallback, not the starting point.
+  const BROWSER_META_ORDER={T2:0,T1:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,T3:6,Abyssal:7,Premium:8,Limited:9};
+  // Ancillary repairers/boosters lead their category. They are a different thing from the plain
+  // module next to them — charge-fed, burst tank — and are usually what someone opening "Shield
+  // Boosters" is actually after, but sort into the middle of the alphabet.
+  const isAncillary=m=>/^Ancillary /.test(TYPES[m.typeID]?.gn??TYPES[m.typeID]?.groupName??"");
   for(const k of Object.keys(byMG)){
-    // sort by the authoritative meta group (bundle's own meta string is unreliable)
-    byMG[k].sort((a,b)=>(META_ORDER[metaOf(a.typeID,a.meta)]??99)-(META_ORDER[metaOf(b.typeID,b.meta)]??99)||a.name.localeCompare(b.name));
+    byMG[k].sort((a,b)=>
+      (isAncillary(b)?1:0)-(isAncillary(a)?1:0)
+      ||(BROWSER_META_ORDER[metaOf(a.typeID,a.meta)]??99)-(BROWSER_META_ORDER[metaOf(b.typeID,b.meta)]??99)
+      ||a.name.localeCompare(b.name));
   }
   function buildNode(mgId){
     if(MG_HIDDEN.has(mgId))return null;

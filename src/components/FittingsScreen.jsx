@@ -21,7 +21,9 @@ export function ActiveFitBar({activeFit,onReturn}){
 
 export function RecentFitsList({fitsDB, activeFit, loadFit}) {
   const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem('pyfa_recent_open') !== '0'; } catch { return true; }
+    // Closed by default: the list is a shortcut, not the primary navigation, and open by default
+    // it pushed the ship classes below the fold on a phone. The choice is remembered either way.
+    try { return localStorage.getItem('pyfa_recent_open') === '1'; } catch { return false; }
   });
   const toggle = () => {
     const next = !open;
