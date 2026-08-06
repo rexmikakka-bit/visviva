@@ -545,6 +545,13 @@ const MG_CHILDREN=buildMGChildren();
 const MG_HIDDEN=new Set([685,681,1639]);
 const SLOT_ROOT={high:9,mid:9,low:9,rigs:1111};
 
+// A representative item typeID per market group, for category icons — pyfa shows an actual item's
+// icon beside a category ("Energy Turrets" gets a beam laser), which reads far faster than a wall
+// of text. CCP nominates one in the market tree, but only for ~half the groups the module browser
+// walks, so buildNode falls back to the first item it can find beneath the node.
+const MT_GROUP_ICON={};
+for(const [gid,g] of Object.entries(marketTreeData.g)) if(g.i!=null) MT_GROUP_ICON[gid]=g.i;
+
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
   const metaOrder={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,Abyssal:6};
@@ -562,7 +569,14 @@ function buildModuleBrowser(slotType){
     const children=(MG_CHILDREN[String(mgId)]??[]).sort((a,b)=>a.name.localeCompare(b.name)).map(c=>buildNode(c.id)).filter(Boolean);
     const mods=byMG[mgId]??[];
     if(children.length===0&&mods.length===0)return null;
-    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children,mods:mods.map(m=>({name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID}))};
+    const outMods=mods.map(m=>({name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID}));
+    // CCP's nominated item first; otherwise the first real item anywhere beneath this node, which
+    // is what makes the icon meaningful for leaf groups the market tree does not nominate one for.
+    const iconTid=MT_GROUP_ICON[String(mgId)]
+      ?? outMods.find(m=>m.typeID)?.typeID
+      ?? children.map(c=>c.iconTid).find(Boolean)
+      ?? null;
+    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children,mods:outMods,iconTid};
   }
   const rootId=SLOT_ROOT[slotType]??9;
   return(MG_CHILDREN[String(rootId)]??[]).sort((a,b)=>a.name.localeCompare(b.name)).map(c=>buildNode(c.id)).filter(Boolean);
@@ -624,6 +638,70 @@ function getCompatibleCharges(mod){
   const seen=new Set();
   return out.filter(c=>seen.has(c.typeID)?false:(seen.add(c.typeID),true))
             .sort((x,y)=>x.name.localeCompare(y.name));
+}
+
+// ── Ammo grouping for the charge browser ─────────────────────────────────────
+// A flat alphabetical list is close to useless for picking ammo: "Imperial Navy Multifrequency S"
+// sorts under I, nowhere near the "Multifrequency S" it is a variant of, and nothing tells you
+// which end of the range/damage trade-off you are looking at. This groups charges into their ammo
+// FAMILY and orders the families shortest-range first, which is the axis you actually choose on.
+
+// Faction ammo is named "<Faction> <BaseName>". Rather than hardcoding a faction-prefix list (CCP
+// keeps adding to it), a charge joins the family of the shortest OTHER charge in the same list
+// whose name it ends with on a word boundary. Entirely data-driven: a new faction line groups
+// itself, and a charge with no plainer sibling is its own family.
+function chargeFamilyOf(name, allNames){
+  let best=null;
+  for(const other of allNames){
+    if(other===name)continue;
+    if(name.endsWith(" "+other)&&(!best||other.length<best.length))best=other;
+  }
+  return best??name;
+}
+
+// Ordering WITHIN a family. metaGroupID cannot tell a navy faction charge from a pirate one — both
+// are metaGroup 4 — so the navy lines are matched by name, which is the only thing that separates
+// them in the data.
+const NAVY_AMMO_PREFIXES=["Imperial Navy","Republic Fleet","Caldari Navy","Federation Navy"];
+function chargeTierRank(c){
+  const meta=metaOf(c.typeID,null);
+  if(meta==="T1")return 0;
+  if(meta==="T2")return 1;
+  if(meta==="Storyline")return 2;
+  if(meta==="Faction")return NAVY_AMMO_PREFIXES.some(p=>c.name.startsWith(p))?3:4;
+  return 5+(META_ORDER[meta]??0);
+}
+
+// weaponRangeMultiplier (attr 120): 0.5 on Multifrequency/Antimatter (short range, high damage),
+// 1.2 on Infrared, and so on. Missiles and scripts have no such attribute — those families fall
+// back to alphabetical, after everything that can be ordered by range.
+function chargeRangeMult(c){
+  const t=c.typeID!=null?TYPES[c.typeID]:null;
+  const a=t?.a??t?.attrs??{};
+  const v=a["120"]??a.weaponRangeMultiplier;
+  return typeof v==="number"?v:null;
+}
+
+function groupChargesForBrowser(charges){
+  const names=charges.map(c=>c.name);
+  const fam=new Map();
+  for(const c of charges){
+    const key=chargeFamilyOf(c.name,names);
+    if(!fam.has(key))fam.set(key,[]);
+    fam.get(key).push(c);
+  }
+  const groups=[...fam.entries()].map(([family,items])=>{
+    items.sort((a,b)=>chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name));
+    const ranges=items.map(chargeRangeMult).filter(v=>v!=null);
+    return{family,items,range:ranges.length?Math.min(...ranges):null};
+  });
+  groups.sort((a,b)=>{
+    if(a.range==null&&b.range==null)return a.family.localeCompare(b.family);
+    if(a.range==null)return 1;
+    if(b.range==null)return -1;
+    return a.range-b.range||a.family.localeCompare(b.family);
+  });
+  return groups;
 }
 
 // True if a module accepts charges (reads chargeGroup1-6 from authoritative TYPES data).
@@ -756,4 +834,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

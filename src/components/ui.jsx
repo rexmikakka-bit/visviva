@@ -9,7 +9,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
-import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
@@ -40,11 +40,33 @@ function InfoButton({onClick,title="Item info"}){
   );
 }
 
+// Tracks the VISUAL viewport — the part of the page not covered by the soft keyboard. A
+// position:fixed element is positioned against the LAYOUT viewport, which the keyboard does not
+// shrink, so a bottom sheet otherwise sits underneath the keyboard: you type in the search box and
+// cannot see what you are searching. Following visualViewport keeps the sheet in the visible strip.
+function useVisualViewport(){
+  const [vv,setVv]=useState(null);
+  useEffect(()=>{
+    const v=window.visualViewport;
+    if(!v)return;                                  // no support: fall back to the layout viewport
+    const sync=()=>setVv({height:v.height,top:v.offsetTop});
+    sync();
+    v.addEventListener("resize",sync);
+    v.addEventListener("scroll",sync);
+    return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);};
+  },[]);
+  return vv;
+}
+
 function BottomSheet({title,onClose,children,height="70vh"}){
+  const vv=useVisualViewport();
+  const frame=vv?{top:vv.top,height:vv.height,left:0,right:0}:{inset:0};
   return(
-    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
+    <div style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)"}}/>
-      <div className="vv-sheet" style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:height,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
+      {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
+          keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen. */}
+      <div className="vv-sheet" style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
         <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
@@ -260,8 +282,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
     return(
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
         <div onClick={()=>{onSelect(mod);onClose();}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
-          {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
-          <div style={{minWidth:0}}>
+          {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
+              left and rows stopped lining up with each other. */}
+          <div style={{width:28,height:28,flexShrink:0}}>
+            {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
+          </div>
+          <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
             {(mod.cpu>0||mod.pg>0)&&<div style={{fontSize:11,color:C.textMute,marginTop:1}}>{mod.cpu>0?`CPU ${mod.cpu} tf`:""}{mod.cpu>0&&mod.pg>0?" / ":""}{mod.pg>0?`PG ${mod.pg} MW`:""}</div>}
           </div>
@@ -308,12 +334,18 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
           {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
           {currentLevel.nodes.map(node=>(
-            <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
-              <div>
-                <div style={{fontSize:14,fontWeight:600,color:C.text}}>{node.name}</div>
+            <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
+              {/* Category icon, same idea as pyfa: a real item from the group reads faster than
+                  its name alone. Reserve the space even when there is no icon, so every row's
+                  text starts at the same x. */}
+              <div style={{width:28,height:28,flexShrink:0}}>
+                {node.iconTid&&<img className="eve-icon" src={eveIcon(node.iconTid,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{node.name}</div>
                 <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{countAll(node)} modules</div>
               </div>
-              <span style={{fontSize:20,color:C.textMute}}>{">"}</span>
+              <span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
             </div>
           ))}
           {currentLevel.nodes.length===0&&currentLevel.mods.length===0&&(
@@ -701,25 +733,34 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
         </div>)}
         {tab==="charge"&&(mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)&&(<div>
           <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Select charge - applies to all grouped turrets</div>
-          {getCompatibleCharges(mod).map(a=>{
-            const col=DMG_COLOR[a.dmgType]||C.textMid;
-            const total=a.em+a.th+a.kin+a.exp;
-            return(<div key={a.typeID??a.name} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:mod.ammo===a.name?C.accentLight:C.surface,border:`1px solid ${mod.ammo===a.name?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6}}>
-              <div onClick={()=>{const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];const modCap=modTd?.attrs?.capacity??0;const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});}} style={{flex:1,cursor:"pointer"}}>
-                <div style={{fontSize:13,fontWeight:600,color:mod.ammo===a.name?C.accent:C.text}}>{a.name}</div>
-                <div style={{fontSize:10,color:C.textMute,marginTop:2}}>
-                  {a.capBonus!=null&&<span style={{color:C.rig,marginRight:8}}>+{a.capBonus} GJ</span>}
-                  {a.dmgType&&<span style={{color:col,marginRight:8}}>{a.dmgType}</span>}
-                  {total>0&&<span>{Math.round(total)} dmg/shot</span>}
-                  {a.em==0&&a.th==0&&a.kin==0&&a.exp==0&&a.capBonus==null&&<span style={{color:C.textMute}}>No data</span>}
-                </div>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
-                {mod.ammo===a.name&&<span style={{color:C.accent}}>v</span>}
-                {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
-              </div>
-            </div>);
-          })}
+          {/* Grouped by ammo family, families ordered shortest-range first, and within a family
+              T1 → T2 → navy faction → pirate faction. See groupChargesForBrowser. */}
+          {groupChargesForBrowser(getCompatibleCharges(mod)).map(g=>(
+            <div key={g.family} style={{marginBottom:10}}>
+              {/* A single-item family is its own header, so skip the label and save a row. */}
+              {g.items.length>1&&(
+                <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"2px 2px 5px"}}>{g.family}</div>
+              )}
+              {g.items.map(a=>{
+                const on=mod.ammo===a.name;
+                const aMeta=metaOf(a.typeID,null);
+                return(<div key={a.typeID??a.name} style={{display:"flex",alignItems:"center",padding:"10px 12px",background:on?C.accentLight:C.surface,border:`1px solid ${on?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6}}>
+                  <div onClick={()=>{const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];const modCap=modTd?.attrs?.capacity??0;const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                    <div style={{fontSize:13,fontWeight:600,color:on?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
+                    {/* Cap boosters are the one charge whose headline number is worth a subtitle.
+                        Everything else used to read "N dmg/shot" or, for the likes of Nanite Repair
+                        Paste, the actively unhelpful "No data" — both gone. */}
+                    {a.capBonus!=null&&<div style={{fontSize:10,color:C.rig,marginTop:2}}>+{a.capBonus} GJ</div>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+                    {aMeta&&<span style={{fontSize:10,color:META_COLORS[aMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700}}>{aMeta}</span>}
+                    {on&&<span style={{color:C.accent}}>v</span>}
+                    {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
+                  </div>
+                </div>);
+              })}
+            </div>
+          ))}
         </div>)}
         {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} onSwap={v=>{
