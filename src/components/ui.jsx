@@ -77,7 +77,7 @@ function BottomSheet({title,onClose,children,height="70vh"}){
         <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
+          <button className="press" onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
         <div style={{flex:1,overflowY:"auto"}}>{children}</div>
       </div>
@@ -732,8 +732,8 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
         {tab==="state"&&(<div>
           <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Module State</div>
           <div style={{display:"flex",gap:8,marginBottom:20}}>
-            {states.map(s=>(<button key={s} onClick={()=>{if(mod.state!==s)haptic();onUpdateMod({...mod,state:s});}} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${mod.state===s?STATE_COLORS[s]:C.border}`,background:mod.state===s?`${STATE_COLORS[s]}22`:"none",cursor:"pointer"}}>
-              <div style={{width:8,height:8,borderRadius:99,background:STATE_COLORS[s],margin:"0 auto 4px"}}/>
+            {states.map(s=>(<button key={s} className="press" onClick={()=>{if(mod.state!==s)haptic("medium");onUpdateMod({...mod,state:s});}} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${mod.state===s?STATE_COLORS[s]:C.border}`,background:mod.state===s?`${STATE_COLORS[s]}22`:"none",cursor:"pointer",transition:"background-color .18s ease, border-color .18s ease"}}>
+              <div style={{width:8,height:8,borderRadius:99,background:STATE_COLORS[s],margin:"0 auto 4px",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
               <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]}</span>
             </button>))}
           </div>

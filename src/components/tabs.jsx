@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
-import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -244,7 +244,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
         <div style={{display:"flex",gap:6,padding:"8px 10px 4px"}}>
           {shipModes.map((mode)=>{
             const on=tacticalMode===mode;
-            return(<button key={mode} onClick={()=>setTacticalMode(mode)}
+            return(<button key={mode} onClick={()=>{haptic("medium");setTacticalMode(mode);}}
               style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"9px 4px",borderRadius:8,cursor:"pointer",
                 background:on?C.accentLight:C.surface,border:`1px solid ${on?C.accent:C.border}`}}>
               <span style={{fontSize:12,fontWeight:700,color:on?C.accent:C.text}}>{mode}</span>

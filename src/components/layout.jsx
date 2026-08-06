@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
-import { lookupShip, navIcons } from "../lib/core.js";
+import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
 
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
@@ -156,39 +156,45 @@ export function SkillGapSheet({missing,onClose}){
   );
 }
 
-export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps}){
+export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,collapsed}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
   const shipName=activeFit?.ship??"Visviva";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
-  // Flush to the physical top of the screen: the header's BACKGROUND starts at y=0 and only its
-  // content is inset by env(safe-area-inset-top), so the status bar sits on the header's own
-  // surface colour rather than on a strip above it. The inset is used bare (no extra padding on
-  // top of it) -- iOS already leaves clearance inside the reported inset, and adding more just
-  // spends screen on nothing. Everything below is tightened to match: this used to cost ~96px
-  // before the fit even started.
+  // Restored to its original proportions -- the condensed version saved pixels but read as cramped
+  // next to comparable apps. The space is reclaimed by COLLAPSING instead: `collapsed` is driven by
+  // scrolling in App.jsx, and shrinks the header to a single compact line rather than shortening it
+  // permanently. The background still runs to the physical top of the screen while the content is
+  // inset by env(safe-area-inset-top), so the status bar sits on the header's own surface colour.
   return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
-                      padding:"0 12px 7px",paddingTop:"calc(env(safe-area-inset-top, 0px) + 6px)"}}>
+                      padding:collapsed?"0 14px 6px":"14px 14px 12px",
+                      paddingTop:`calc(${collapsed?"6px":"14px"} + env(safe-area-inset-top, 0px))`,
+                      transition:"padding .2s cubic-bezier(.22,.61,.36,1)"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <div style={{textAlign:"left",minWidth:0}}>
-        {/* Uppercase by design -- it reads as a wordmark above the hull name, which is why it
-            looked wrong set as "Visviva" in sentence case. */}
-        <div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:1,textTransform:"uppercase",lineHeight:1.1}}>Visviva</div>
-        <div style={{fontSize:17,fontWeight:700,color:C.text,lineHeight:1.15,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{shipName}</div>
-        <div style={{fontSize:11,color:C.textMid,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{subLabel}</div>
+        {/* Uppercase by design -- it reads as a wordmark above the hull name. Hidden when collapsed:
+            it is the least useful line once you are deep in a fit. */}
+        <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",
+                     maxHeight:collapsed?0:14,opacity:collapsed?0:1,overflow:"hidden",marginBottom:collapsed?0:2,
+                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Visviva</div>
+        <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.2,whiteSpace:"nowrap",
+                     overflow:"hidden",textOverflow:"ellipsis",transition:"font-size .2s ease"}}>{shipName}</div>
+        <div style={{fontSize:12,color:C.textMid,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                     maxHeight:collapsed?0:18,opacity:collapsed?0:1,
+                     transition:"max-height .2s ease, opacity .15s ease"}}>{subLabel}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {activeFit?.ship&&skillCheck&&
           <SkillBook ok={skillCheck.ok} count={skillCheck.missing.length} onClick={onSkillGaps}/>}
-        <button onClick={onShipInfo} style={{width:42,height:42,borderRadius:9,background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
+        <button onClick={onShipInfo} style={{width:collapsed?34:52,height:collapsed?34:52,borderRadius:collapsed?8:11,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
-            ?<img src={eveRender(ship.typeID,64)} width={42} height={42} alt="" style={{borderRadius:9}} onError={e=>{e.target.style.display="none";}}/>
+            ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>
             :<svg width={24} height={24} viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <ellipse cx="13" cy="13" rx="10" ry="5.5" stroke={C.accent} strokeWidth="1.4" opacity="0.55" transform="rotate(-20 13 13)"/>
                 <circle cx="13" cy="13" r="2.6" fill={C.accent}/>
               </svg>
           }
         </button>
-        <button onClick={onHamburger} style={{width:36,height:36,borderRadius:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
+        <button onClick={onHamburger} style={{width:collapsed?32:40,height:collapsed?32:40,borderRadius:9,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
       </div>
     </div>
   </div>);
@@ -206,7 +212,7 @@ export function BottomNav({active,onChange}){
   ];
   const NAV_ICON_TYPEIDS={fit:1353,cargo:1317,drones:24395,implants:10216};
   return(<div style={{display:"flex",background:C.surface,borderTop:`1px solid ${C.border}`,paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
-    {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;return(<button key={t.key} onClick={()=>onChange(t.key)} style={{flex:1,padding:"7px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+    {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"7px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
       <img src={t.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
       <span style={{fontSize:9,fontWeight:700,color:active===t.key?C.accent:C.textMute,letterSpacing:.3}}>{t.label}</span>
       {active===t.key&&<div style={{width:20,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}

@@ -143,6 +143,19 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
    costs nothing extra here: switching tabs already unmounts one panel and mounts the other. */
 @keyframes vv-from-right{from{transform:translateX(30%);opacity:.3}to{transform:none;opacity:1}}
 @keyframes vv-from-left {from{transform:translateX(-30%);opacity:.3}to{transform:none;opacity:1}}
+/* Pressable feedback. A tap that visibly reacts feels immediate even when the work behind it is
+   not; without it, buttons on a phone read as dead until the screen repaints. */
+.press{transition:transform .11s ease, background-color .15s ease, border-color .15s ease, opacity .15s ease}
+.press:active{transform:scale(.965)}
+/* Rows and sheets entering. Short enough not to be in the way, long enough to read as motion. */
+@keyframes vv-fade-up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.vv-in{animation:vv-fade-up .18s cubic-bezier(.22,.61,.36,1)}
+@keyframes vv-sheet-up{from{transform:translateY(14px);opacity:.6}to{transform:none;opacity:1}}
+.vv-sheet{animation:vv-sheet-up .2s cubic-bezier(.22,.61,.36,1)}
+@media (prefers-reduced-motion:reduce){
+  .press:active{transform:none}
+  .vv-in,.vv-sheet{animation:none}
+}
 .vv-from-right{animation:vv-from-right .2s cubic-bezier(.22,.61,.36,1)}
 .vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}
 @media (prefers-reduced-motion:reduce){.vv-from-right,.vv-from-left{animation:none}}
@@ -216,10 +229,31 @@ const resMult=(em,th,kin,exp)=>(1/(1-(em+th+kin+exp)/400)).toFixed(2)+"x";
 // Light haptic tick. Prefers the native Capacitor Haptics plugin (real Taptic Engine on iOS,
 // where the web Vibration API is unavailable) via the runtime bridge, so there's no build-time
 // dependency on the plugin; falls back to navigator.vibrate on the web.
-const haptic=(ms=10)=>{try{
+// Haptics. `kind` picks the weight of the tap so feedback carries meaning rather than being one
+// undifferentiated buzz: 'light' for routine selection, 'medium' for committing something, 'heavy'
+// for destructive, and the notification styles for outcomes.
+//
+// The web fallback matters less than it looks: navigator.vibrate does not exist on iOS at all, so
+// on an iPhone this is entirely the Capacitor plugin's job. @capacitor/haptics must be installed
+// for ANY of it to fire natively — the bridge silently no-ops otherwise.
+const HAPTIC_MS={light:8,medium:14,heavy:22,success:[8,40,8],warning:[14,60,14],error:[22,60,22]};
+const haptic=(kind="light")=>{try{
+  // Back-compat: haptic(10) used to mean "buzz for 10ms".
+  if(typeof kind==="number"){navigator.vibrate?.(kind);
+    const H0=(typeof window!=="undefined")&&window.Capacitor?.Plugins?.Haptics;
+    H0?.impact?.({style:"LIGHT"});return;}
   const H=(typeof window!=="undefined")&&window.Capacitor?.Plugins?.Haptics;
-  if(H){H.impact({style:"LIGHT"});return;}
-  navigator.vibrate?.(ms);
+  if(H){
+    if(kind==="success"||kind==="warning"||kind==="error"){
+      H.notification?.({type:kind.toUpperCase()});
+    } else if(kind==="selection"){
+      H.selectionChanged?.();
+    } else {
+      H.impact?.({style:kind.toUpperCase()});
+    }
+    return;
+  }
+  navigator.vibrate?.(HAPTIC_MS[kind]??8);
 }catch(e){}};
 
 // ── Hull classes ───────────────────────────────────────────────────
@@ -693,6 +727,27 @@ function defaultChargeFor(typeID){
   return {name:best.name,qty:Math.floor(capacity/best.vol)};
 }
 
+// Implant SETS are named "<Grade>-grade <Set> <Greek>" — High-grade Snake Alpha ... Omega. Fitting
+// one a slot at a time means six trips through the picker for a thing that is only ever wanted as a
+// set, so given any member this returns every sibling with the slot it belongs in.
+//
+// Slots come from IMPLANT_NAME_TO_SLOT rather than from the Greek letter's position: the letters
+// happen to run Alpha..Omega = 1..6 today, but the map is built from the actual implant data and
+// cannot drift from it.
+const IMPLANT_SET_RE=/^((?:High|Mid|Low)-grade\s+.+?)\s+(Alpha|Beta|Gamma|Delta|Epsilon|Omega)$/i;
+function implantSetMembers(name){
+  const m=IMPLANT_SET_RE.exec(String(name??""));
+  if(!m)return null;
+  const prefix=m[1];
+  const out=[];
+  for(const [n,slot] of IMPLANT_NAME_TO_SLOT){
+    const mm=IMPLANT_SET_RE.exec(n);
+    if(mm&&mm[1].toLowerCase()===prefix.toLowerCase())out.push({name:n,slot});
+  }
+  out.sort((a,b)=>a.slot-b.slot);
+  return out.length>1?{setName:prefix,members:out}:null;
+}
+
 // ── Ammo grouping for the charge browser ─────────────────────────────────────
 // A flat alphabetical list is close to useless for picking ammo: "Imperial Navy Multifrequency S"
 // sorts under I, nowhere near the "Multifrequency S" it is a variant of, and nothing tells you
@@ -710,6 +765,19 @@ function chargeFamilyOf(name, allNames){
     if(name.endsWith(" "+other)&&(!best||other.length<best.length))best=other;
   }
   return best??name;
+}
+
+// MISSILES do not sort on range the way turret ammo does — you pick a missile by DAMAGE TYPE,
+// because the launcher's range is the launcher's, not the charge's. Every missile is named for its
+// type, and the T2 variants keep that word ("Scourge Fury Heavy Missile", "Scourge Precision..."),
+// so the word itself is the category. Listed in CCP's usual EM/Th/Kin/Exp order rather than
+// alphabetically, which is the order every resist readout in the app already uses.
+const MISSILE_DMG_ORDER=["Mjolnir","Inferno","Scourge","Nova"];
+const MISSILE_DMG_LABEL={Mjolnir:"Mjolnir (EM)",Inferno:"Inferno (Thermal)",
+                         Scourge:"Scourge (Kinetic)",Nova:"Nova (Explosive)"};
+function missileDamageWord(name){
+  for(const w of MISSILE_DMG_ORDER)if(name===w||name.startsWith(w+" ")||name.includes(" "+w+" "))return w;
+  return null;
 }
 
 // Ordering WITHIN a family. metaGroupID cannot tell a navy faction charge from a pirate one — both
@@ -738,17 +806,26 @@ function chargeRangeMult(c){
 function groupChargesForBrowser(charges){
   const names=charges.map(c=>c.name);
   const fam=new Map();
+  const order=new Map();     // family -> explicit sort index, for damage-type groups
   for(const c of charges){
-    const key=chargeFamilyOf(c.name,names);
+    const dmg=missileDamageWord(c.name);
+    const key=dmg?(MISSILE_DMG_LABEL[dmg]??dmg):chargeFamilyOf(c.name,names);
+    if(dmg)order.set(key,MISSILE_DMG_ORDER.indexOf(dmg));
     if(!fam.has(key))fam.set(key,[]);
     fam.get(key).push(c);
   }
   const groups=[...fam.entries()].map(([family,items])=>{
     items.sort((a,b)=>chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name));
     const ranges=items.map(chargeRangeMult).filter(v=>v!=null);
-    return{family,items,range:ranges.length?Math.min(...ranges):null};
+    return{family,items,range:ranges.length?Math.min(...ranges):null,order:order.get(family)};
   });
   groups.sort((a,b)=>{
+    // Damage-type groups (missiles) carry an explicit index and always lead, in EM/Th/Kin/Exp order.
+    if(a.order!=null||b.order!=null){
+      if(a.order==null)return 1;
+      if(b.order==null)return -1;
+      return a.order-b.order;
+    }
     if(a.range==null&&b.range==null)return a.family.localeCompare(b.family);
     if(a.range==null)return 1;
     if(b.range==null)return -1;
@@ -887,4 +964,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

@@ -29,14 +29,21 @@ export default function App(){
     _bundleListeners.push(()=>_setTick(t=>t+1));
   },[]);
   // Native shell setup (no-op on web). Uses the Capacitor runtime bridge so there is no build-time
-  // dependency on the plugins: light status-bar content over the dark theme, kept out of the webview
-  // (so the header isn't clipped), and dismiss the splash once React has mounted.
+  // dependency on the plugins: light status-bar content over the dark theme, the webview running
+  // UNDER the status bar, and dismiss the splash once React has mounted.
+  //
+  // overlay:TRUE is the whole point and was previously false "so the header isn't clipped". With it
+  // false the webview begins below the status bar, which (a) leaves a strip of bare colour above
+  // the app and (b) makes env(safe-area-inset-top) report ~0, so the header's own safe-area padding
+  // silently did nothing. This runtime call also overrides capacitor.config.json, so setting it
+  // there alone had no effect. Nothing gets clipped now because AppHeader insets its CONTENT by
+  // env(safe-area-inset-top) while its background runs to the physical top of the screen.
   useEffect(()=>{
     const Cap=(typeof window!=="undefined")&&window.Capacitor;
     if(!Cap?.isNativePlatform?.())return;
     try{
       const SB=Cap.Plugins?.StatusBar;
-      if(SB){SB.setStyle?.({style:"DARK"});SB.setOverlaysWebView?.({overlay:false});SB.setBackgroundColor?.({color:"#0e0e10"});}
+      if(SB){SB.setStyle?.({style:"DARK"});SB.setOverlaysWebView?.({overlay:true});}
       Cap.Plugins?.SplashScreen?.hide?.();
     }catch(e){}
   },[]);
@@ -274,7 +281,16 @@ export default function App(){
         const cur=list.findIndex(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName);
         if(cur>=0){const next=[...list];next[cur]=entry;return next;}
       }
-      const next=[...list,entry];
+      // Opening the FIRST new tab has to keep what you were already working on. The fit you are
+      // leaving does not always have a tab yet -- a fit made with "+ New Fit" never went through
+      // loadFit, so nothing ever registered one -- and appending alone silently dropped it, leaving
+      // the strip showing only the fit you just opened. Seed the outgoing fit as tab 1 first.
+      const base=[...list];
+      if(prevFit?.ship&&prevFit?.fitName&&!base.some(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName)){
+        const pf=fitsDB[prevFit.ship]?.find(f=>f.name===prevFit.fitName);
+        if(pf)base.push({ship:prevFit.ship,id:pf.id,name:prevFit.fitName});
+      }
+      const next=[...base,entry];
       return next.length>MAX_OPEN_TABS?next.slice(next.length-MAX_OPEN_TABS):next;
     });
     setSlots(fit?.slots??generateEmptySlots(lookupShip(ship)));
@@ -419,6 +435,10 @@ export default function App(){
   // having to know the strip exists. Document scrolls report `document` as the target, which has no
   // scrollTop -- read the scrolling element instead.
   const[tabsOpen,setTabsOpen]=useState(false);
+  // The header shrinks to a single line once you are scrolled into a screen, and comes back at
+  // the top. Driven off ABSOLUTE position rather than scroll direction: direction-based toggling
+  // flickers on the small bounces a finger makes mid-scroll.
+  const[headerCollapsed,setHeaderCollapsed]=useState(false);
   const lastScrollTop=useRef(0);
   useEffect(()=>{
     const onScroll=(e)=>{
@@ -429,13 +449,15 @@ export default function App(){
       // put the tab list back in front of someone who never asked for it, which is the whole
       // reason the strip is opt-in. The thin rail stays either way.
       if(y-prev>6)setTabsOpen(false);
+      if(y>56)setHeaderCollapsed(true);
+      else if(y<=8)setHeaderCollapsed(false);
     };
     window.addEventListener('scroll',onScroll,true);
     return()=>window.removeEventListener('scroll',onScroll,true);
   },[]);
   // Changing screen resets the scroll bookkeeping, and closes the strip so it never follows you
   // onto a screen you did not open it from.
-  useEffect(()=>{setTabsOpen(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
+  useEffect(()=>{setTabsOpen(false);setHeaderCollapsed(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
   // The + sends you to the Fits list with "next open goes in a new tab" armed. Backing out without
   // picking anything must disarm it, or a fit opened much later inherits the request -- but the
   // request has to survive DRILLING IN, which is the normal way to reach a fit: the list moves
@@ -455,7 +477,7 @@ export default function App(){
       {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
           sheet rendered on `showShipInfo && activeFit?.ship`, so tapping the header thumbnail with
           no fit open armed the flag invisibly and the next fit you created opened the sheet. */}
-      <AppHeader onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
+      <AppHeader collapsed={headerCollapsed} onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
