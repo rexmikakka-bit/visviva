@@ -429,7 +429,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     onPointerCancel={endRowDrag}
                     onClick={e=>e.stopPropagation()}
                     title="Drag to reorder"
-                    style={{touchAction:"none",cursor:"grab",flexShrink:0,padding:"6px 4px 6px 8px",marginRight:-4,color:C.textMute,fontSize:14,lineHeight:1,userSelect:"none",display:"flex",alignItems:"center"}}>
+                    className="no-select"
+                    style={{touchAction:"none",cursor:"grab",flexShrink:0,padding:"6px 4px 6px 8px",marginRight:-4,color:C.textMute,fontSize:14,lineHeight:1,display:"flex",alignItems:"center"}}>
                     &#8801;
                   </div>
                 </div>

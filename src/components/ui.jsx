@@ -745,10 +745,11 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
               T1 → T2 → navy faction → pirate faction. See groupChargesForBrowser. */}
           {groupChargesForBrowser(getCompatibleCharges(mod)).map(g=>(
             <div key={g.family} style={{marginBottom:10}}>
-              {/* A single-item family is its own header, so skip the label and save a row. */}
-              {g.items.length>1&&(
-                <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"2px 2px 5px"}}>{g.family}</div>
-              )}
+              {/* ALWAYS render the header, even for a one-item family. Skipping it to save a row
+                  made those items look like members of the section above — Civilian Blaster Charge
+                  and friends are their own families, but appeared to be filed under Ultraviolet.
+                  A header that repeats its single item is redundant; one that lies is worse. */}
+              <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"2px 2px 5px"}}>{g.family}</div>
               {g.items.map(a=>{
                 const on=mod.ammo===a.name;
                 const aMeta=metaOf(a.typeID,null);

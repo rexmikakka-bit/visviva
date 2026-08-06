@@ -40,7 +40,7 @@ export function resolveTabs(openTabs, fitsDB) {
 // and there would be nothing left to say which tab you are in.
 const STICKY = { position: "sticky", top: 0, zIndex: 20 };
 
-export function FitTabs({ tabs, activeFit, collapsed, onSelect, onClose, onExpand, onOpenLibrary }) {
+export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, onOpenLibrary }) {
   const scroller = useRef(null);
   const activeEl = useRef(null);
   const isActive = (t) => activeFit?.ship === t.ship && activeFit?.fitName === t.name;
@@ -48,63 +48,72 @@ export function FitTabs({ tabs, activeFit, collapsed, onSelect, onClose, onExpan
   // Keep the current tab visible. With the strip narrower than the tab list, switching to a fit
   // that sits off-screen would otherwise leave you looking at a strip with no highlight in it.
   useEffect(() => {
-    if (collapsed || !activeEl.current) return;
+    if (!open || !activeEl.current) return;
     activeEl.current.scrollIntoView({ inline: "nearest", block: "nearest" });
-  }, [collapsed, activeFit?.ship, activeFit?.fitName, tabs.length]);
+  }, [open, activeFit?.ship, activeFit?.fitName, tabs.length]);
 
-  if (!tabs.length) return null;
-
-  // Collapsed: one segment per tab, the current one filled. Enough to say "you are in tab 3 of 5"
-  // without spending a row on it, and tapping anywhere on it brings the strip back.
-  if (collapsed) {
-    return (
-      <div role="button" aria-label="Show fit tabs" onClick={onExpand}
-           style={{ ...STICKY, display: "flex", gap: 2, padding: "3px 8px", background: C.bg,
-                    borderBottom: `1px solid ${C.border}`, cursor: "pointer" }}>
-        {tabs.map((t) => (
-          <span key={`${t.ship}:${t.id}`}
-                style={{ flex: 1, height: 3, borderRadius: 99,
-                         background: isActive(t) ? C.accent : C.borderStrong }}/>
-        ))}
-      </div>
-    );
-  }
-
+  // The rail is ALWAYS present and the strip starts closed. Tabs are opt-in: someone who never
+  // wants them should see one thin row with a + on it, not a permanent list of fits they did not
+  // ask to keep open. The dashes double as the open/close control and as "you are in tab 3 of 5".
   return (
-    <div ref={scroller} className="hs"
-         style={{ ...STICKY, display: "flex", background: C.bg, borderBottom: `1px solid ${C.border}`,
-                  overflowX: "auto", overflowY: "hidden", WebkitOverflowScrolling: "touch",
-                  // The + is sticky at the right edge; without this, scrolling the last tab into
-                  // view parks it underneath and hides its close button.
-                  scrollPaddingRight: 38 }}>
-      {tabs.map((t) => {
-        const on = isActive(t);
-        return (
-          <div key={`${t.ship}:${t.id}`} ref={on ? activeEl : null}
-               onClick={() => !on && onSelect(t)} title={`${t.ship} — ${t.name}`}
-               style={{ flex: "0 0 auto", width: 116, padding: "6px 6px 5px 8px", cursor: "pointer",
-                        background: on ? C.surface : "transparent",
-                        borderRight: `1px solid ${C.border}`,
-                        borderBottom: `2px solid ${on ? C.accent : "transparent"}` }}>
-            <div style={{ fontSize: 9, color: C.textMute, letterSpacing: .5, textTransform: "uppercase",
-                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.ship}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 1 }}>
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: on ? 700 : 500,
-                             color: on ? C.text : C.textMid, whiteSpace: "nowrap",
-                             overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</span>
-              <span role="button" aria-label={`Close ${t.name}`}
-                    onClick={(e) => { e.stopPropagation(); onClose(t); }}
-                    style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, padding: "2px 3px",
-                             color: on ? C.textMid : C.textMute }}>&times;</span>
-            </div>
-          </div>
-        );
-      })}
-      <div role="button" aria-label="Open a fit in a new tab" onClick={onOpenLibrary}
-           style={{ flex: "0 0 auto", width: 34, display: "flex", alignItems: "center",
-                    justifyContent: "center", color: C.textMute, fontSize: 17, cursor: "pointer",
-                    position: "sticky", right: 0, background: C.bg,
-                    borderLeft: `1px solid ${C.border}` }}>+</div>
+    <div style={{ ...STICKY, background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+      <div style={{ display: "flex", alignItems: "center", height: 22 }}>
+        <div role="button" aria-label={open ? "Hide fit tabs" : "Show fit tabs"}
+             aria-expanded={open} onClick={tabs.length ? onToggle : undefined}
+             style={{ flex: 1, display: "flex", gap: 2, alignItems: "center", height: "100%",
+                      padding: "0 8px", cursor: tabs.length ? "pointer" : "default" }}>
+          {tabs.map((t) => (
+            <span key={`${t.ship}:${t.id}`}
+                  style={{ flex: 1, maxWidth: 60, height: 3, borderRadius: 99,
+                           transition: "background .18s ease",
+                           background: isActive(t) ? C.accent : C.borderStrong }}/>
+          ))}
+        </div>
+        <div role="button" aria-label="Open a fit in a new tab" onClick={onOpenLibrary}
+             style={{ flexShrink: 0, width: 34, height: "100%", display: "flex", alignItems: "center",
+                      justifyContent: "center", color: C.textMute, fontSize: 16, lineHeight: 1,
+                      cursor: "pointer", borderLeft: `1px solid ${C.border}` }}>+</div>
+      </div>
+
+      {/* Animated open/close. max-height rather than height so the strip does not need a measured
+          pixel value, and overflow:hidden so the tabs clip cleanly while it moves. */}
+      <div style={{ maxHeight: open && tabs.length ? 44 : 0, overflow: "hidden",
+                    transition: "max-height .22s cubic-bezier(.22,.61,.36,1)" }}>
+        <div ref={scroller} className="hs"
+             style={{ display: "flex", overflowX: "auto", overflowY: "hidden",
+                      WebkitOverflowScrolling: "touch", borderTop: `1px solid ${C.border}`,
+                      // The + column is sticky at the right edge; without this, scrolling the last
+                      // tab into view parks it underneath and hides its close button.
+                      scrollPaddingRight: 34 }}>
+          {tabs.map((t) => {
+            const on = isActive(t);
+            return (
+              // Condensed to a single line: ship and fit name side by side rather than stacked,
+              // which halves the height the strip costs on a phone.
+              <div key={`${t.ship}:${t.id}`} ref={on ? activeEl : null}
+                   onClick={() => !on && onSelect(t)} title={`${t.ship} — ${t.name}`}
+                   className="no-select"
+                   style={{ flex: "0 0 auto", maxWidth: 150, display: "flex", alignItems: "center",
+                            gap: 5, padding: "0 6px 0 9px", height: 43, cursor: "pointer",
+                            background: on ? C.surface : "transparent",
+                            borderRight: `1px solid ${C.border}`,
+                            boxShadow: on ? `inset 0 -2px 0 ${C.accent}` : "none" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: on ? 700 : 500, lineHeight: 1.15,
+                                color: on ? C.text : C.textMid, whiteSpace: "nowrap",
+                                overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</div>
+                  <div style={{ fontSize: 9, color: C.textMute, lineHeight: 1.2, whiteSpace: "nowrap",
+                                overflow: "hidden", textOverflow: "ellipsis" }}>{t.ship}</div>
+                </div>
+                <span role="button" aria-label={`Close ${t.name}`}
+                      onClick={(e) => { e.stopPropagation(); onClose(t); }}
+                      style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, padding: "4px 3px",
+                               color: on ? C.textMid : C.textMute }}>&times;</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -414,23 +414,24 @@ export default function App(){
   // panels scroll a div of their own, and capturing at the top catches both without any screen
   // having to know the strip exists. Document scrolls report `document` as the target, which has no
   // scrollTop -- read the scrolling element instead.
-  const[tabsCollapsed,setTabsCollapsed]=useState(false);
+  const[tabsOpen,setTabsOpen]=useState(false);
   const lastScrollTop=useRef(0);
   useEffect(()=>{
     const onScroll=(e)=>{
       const t=e.target;
       const y=(t&&typeof t.scrollTop==='number')?t.scrollTop:(document.scrollingElement?.scrollTop??0);
       const prev=lastScrollTop.current;lastScrollTop.current=y;
-      if(y<=4){setTabsCollapsed(false);return;}
-      if(y-prev>6)setTabsCollapsed(true);
-      else if(prev-y>24)setTabsCollapsed(false);
+      // Scrolling down closes the strip; scrolling back up does NOT reopen it. Re-opening would
+      // put the tab list back in front of someone who never asked for it, which is the whole
+      // reason the strip is opt-in. The thin rail stays either way.
+      if(y-prev>6)setTabsOpen(false);
     };
     window.addEventListener('scroll',onScroll,true);
     return()=>window.removeEventListener('scroll',onScroll,true);
   },[]);
-  // Changing screen swaps in a different scroller sitting at its own offset; carrying the collapsed
-  // state across would hide the strip on a screen you have not scrolled.
-  useEffect(()=>{setTabsCollapsed(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
+  // Changing screen resets the scroll bookkeeping, and closes the strip so it never follows you
+  // onto a screen you did not open it from.
+  useEffect(()=>{setTabsOpen(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
   // The + sends you to the Fits list with "next open goes in a new tab" armed. Backing out without
   // picking anything must disarm it, or a fit opened much later inherits the request -- but the
   // request has to survive DRILLING IN, which is the normal way to reach a fit: the list moves
@@ -455,9 +456,9 @@ export default function App(){
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
       {!(bottomTab==="fittings"&&fittingsView&&fittingsView!=="active")&&
-        <FitTabs tabs={openFitTabs} activeFit={activeFit} collapsed={tabsCollapsed}
+        <FitTabs tabs={openFitTabs} activeFit={activeFit} open={tabsOpen}
                  onSelect={t=>loadFit(t.ship,t.name)} onClose={closeFitTab}
-                 onExpand={()=>setTabsCollapsed(false)}
+                 onToggle={()=>setTabsOpen(o=>!o)}
                  onOpenLibrary={()=>{wantNewTab.current=true;setBottomTab("fittings");setFittingsView("browse");}}/>}
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}

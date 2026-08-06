@@ -122,6 +122,11 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
 
 const GLOBAL_CSS=`
 .hs{-ms-overflow-style:none;scrollbar-width:none}.hs::-webkit-scrollbar{display:none}
+
+/* Unselectable. React emits plain "user-select" for the style prop, which WebKit ignores — iOS
+   needs -webkit-user-select, and -webkit-touch-callout to stop the long-press magnifier/callout.
+   Applied to things you DRAG, where a text selection is never what you meant. */
+.no-select{-webkit-user-select:none;-ms-user-select:none;user-select:none;-webkit-touch-callout:none}
 input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background:#1a1a1d;}
 
 /* The app is exactly one viewport tall and never scrolls as a whole: each screen owns its own
