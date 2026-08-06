@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { C } from "../theme.js";
 import { BottomSheet } from "./ui.jsx";
 import { haptic, implantSetMembers, implantData } from "../lib/core.js";
@@ -7,6 +7,39 @@ import { haptic, implantSetMembers, implantData } from "../lib/core.js";
 // brand nickname (Deadeye, Snapshot, Squire, ...), which tells you nothing about what the implant
 // does; the skill in the parentheses is the entire point. Only rewritten when the whole group name
 // is <SingleWord> (<something>), so set names like "Amulet" and item-named groups are untouched.
+// Hardwirings arrive as one group PER SKILL — 96 of them, so "where do I find the missile implant"
+// meant scrolling a wall of near-identical names. They are rolled into the broad areas people
+// actually think in. Only the "<Nickname> (<Skill>)" groups are touched; implant SETS (Amulet,
+// Snake, ...) and the attribute boosters already have good category names and are left alone.
+const HARDWIRING_BUCKETS=[
+  ["Missiles",["Cruise Missiles","Defender Missiles","Guided Missile Precision","Heavy Assault Missiles",
+    "Heavy Missiles","Launcher CPU Efficiency","Light Missiles","Missile Bombardment","Missile Projection",
+    "Rapid Launch","Rockets","Torpedoes","Auto-Targeting Explosion Radius"]],
+  ["Turrets",["Controlled Bursts","Gunnery","Motion Prediction","Sharpshooter","Surgical Strike",
+    "Trajectory Analysis","Weapon Upgrades","Energy Pulse Weapons","Target Navigation Prediction",
+    "Small Energy Turret","Medium Energy Turret","Large Energy Turret",
+    "Small Hybrid Turret","Medium Hybrid Turret","Large Hybrid Turret",
+    "Small Projectile Turret","Medium Projectile Turret","Large Projectile Turret"]],
+  ["Shields",["Shield Emission Systems","Shield Management","Shield Operation","Shield Upgrades"]],
+  ["Armor & Hull",["Hull Upgrades","Mechanic","Remote Armor Repair Systems","Repair Proficiency","Repair Systems"]],
+  ["Capacitor & Engineering",["CPU Management","Capacitor Emission Systems","Capacitor Management",
+    "Capacitor Systems Operation","Energy Grid Upgrades","Power Grid Management","Electronics Upgrades"]],
+  ["Navigation",["Acceleration Control","Afterburner","Evasive Maneuvering","Fuel Conservation",
+    "High Speed Maneuvering","Navigation","Warp Drive Operation","Warp Drive Speed"]],
+  ["Targeting & EWAR",["Electronic Warfare","Long Range Targeting","Propulsion Jamming","Sensor Linking",
+    "Signature Analysis","Stasis Webifier","Target Painting","Weapon Disruption"]],
+  ["Drones",["Drone Durability","Drone Navigation","Drone Sharpshooting","Drone Tuner","Repair Drone Operation"]],
+  ["Scanning & Exploration",["Archaeology","Astrometric Acquisition","Astrometric Pinpointing",
+    "Astrometric Rangefinding","Hacking","Environmental Analysis","Salvaging"]],
+  ["Industry & Science",["Biology","Gas Harvesting","Ice Harvesting","Industry","Metallurgy","Mining",
+    "Mining Upgrades","Reprocessing","Research","Science","Neurotoxin Control","Neurotoxin Recovery",
+    "Implant","Entanglement Optimizer"]],
+];
+const HARDWIRING_BUCKET_OF=(()=>{const m=new Map();
+  for(const [bucket,skills] of HARDWIRING_BUCKETS)for(const sk of skills)m.set(sk,bucket);
+  return m;})();
+const HARDWIRING_BUCKET_ORDER=HARDWIRING_BUCKETS.map(([b])=>b).concat(["Other Hardwirings"]);
+
 const IMPLANT_GROUP_NICKNAME=/^[A-Z][A-Za-z'-]*\s*\((.+)\)$/;
 const implantGroupLabel=n=>IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n;
 
@@ -15,8 +48,26 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   const[drill,setDrill]=useState(null);
 
   const slotData=implantData?.[String(slot)];
-  const groups=slotData?.groups??{};
-  const groupNames=Object.keys(groups).sort();
+  const rawGroups=slotData?.groups??{};
+  // Hardwiring skill groups collapse into their bucket; everything else passes through untouched.
+  const groups=useMemo(()=>{
+    const out={};
+    for(const [name,items] of Object.entries(rawGroups)){
+      const skill=IMPLANT_GROUP_NICKNAME.exec(name)?.[1];
+      const key=skill?(HARDWIRING_BUCKET_OF.get(skill)??"Other Hardwirings"):name;
+      (out[key]??=[]).push(...items);
+    }
+    for(const list of Object.values(out))list.sort((x,y)=>x.name.localeCompare(y.name));
+    return out;
+  },[rawGroups]);
+  // Buckets first, in the order declared above; the pass-through groups stay alphabetical after.
+  const groupNames=useMemo(()=>Object.keys(groups).sort((a,b)=>{
+    const ia=HARDWIRING_BUCKET_ORDER.indexOf(a),ib=HARDWIRING_BUCKET_ORDER.indexOf(b);
+    if(ia>=0&&ib>=0)return ia-ib;
+    if(ia>=0)return -1;
+    if(ib>=0)return 1;
+    return a.localeCompare(b);
+  }),[groups]);
   const drillItems=drill?groups[drill]??[]:[];
 
   const allItems=Object.values(groups).flat();

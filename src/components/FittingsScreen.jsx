@@ -281,20 +281,29 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
     setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),copy]}));
     setNextId(n2=>n2+1);
     haptic();
-    // Deferred: loadFit reads fitsDB, and the setState above has not landed yet.
-    setTimeout(()=>{loadFit(ship,name);setView("active");},0);
+    // Handed straight to loadFit, so the pending setFitsDB does not matter.
+    loadFit(ship,name,copy);
+    setView("active");
   };
 
   const createNewFit=ship=>{
     const now=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    const emptySlots=generateEmptySlots(lookupShip(ship));
-    const nf={id:nextId,name:"New Fit",modified:now,slots:emptySlots};
+    // Names are the app's identity for a fit, so a second "New Fit" on the same hull would collide
+    // with the first and both would resolve to whichever came back from the lookup.
+    const taken=new Set((fitsDB[ship]||[]).map(f=>f.name));
+    let name="New Fit", n=2;
+    while(taken.has(name))name=`New Fit ${n++}`;
+    const nf={id:nextId,name,modified:now,slots:generateEmptySlots(lookupShip(ship))};
     setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),nf]}));
-    setNextId(n=>n+1);
-    setActiveFit({ship,fitName:"New Fit"});
-    setSlots(emptySlots);
-    setDrones([]);setFighters([]);setCargoItems([]);setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})));setBoosters([]);setProjFits([]);setCmdFits([]);
+    setNextId(x=>x+1);
     setSelectedShip(ship);
+    haptic("medium");
+    // Routed through loadFit rather than setting the state directly. Creating a fit used to bypass
+    // it entirely, which meant none of the tab logic ran: hitting + to ask for a new tab and then
+    // making a fit put it in the tab you were already in, while opening an EXISTING fit correctly
+    // opened a second one. Same path now, so both behave identically.
+    // Handed straight to loadFit, so the pending setFitsDB does not matter.
+    loadFit(ship,name,nf);
     setView("active");
   };
 

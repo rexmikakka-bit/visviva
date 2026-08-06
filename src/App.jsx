@@ -261,8 +261,13 @@ export default function App(){
     setPriceBanner({kind:"success",msg:`Fit price optimized — ${swapped} module${swapped>1?"s":""} swapped`});
     setTimeout(()=>setPriceBanner(null),3500);
   };
-  const loadFit=(ship,fitName)=>{
-    const fit=fitsDB[ship]?.find(f=>f.name===fitName);
+  // `fitOverride` is for a fit that was JUST created and is not in fitsDB yet. setFitsDB is async,
+  // so a caller that creates a fit and then loads it by name closes over the previous map and finds
+  // nothing -- which silently skipped the tab registration (the fit opened, but never as a tab)
+  // while still setting activeFit, so it looked like it half-worked. Passing the object removes the
+  // timing question entirely.
+  const loadFit=(ship,fitName,fitOverride)=>{
+    const fit=fitOverride??fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
     // Opening a fit raises its tab if it already has one; otherwise it either REPLACES the current
     // tab (the default -- see openInNewTab) or is appended. Soft cap on append: past MAX_OPEN_TABS
