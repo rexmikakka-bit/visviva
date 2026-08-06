@@ -135,7 +135,8 @@ export default function App(){
     // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
     // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
     const repEntries={shield:[],armor:[],hull:[]};
-    const webMults=[]; let neutGJs=0;
+    const webMults=[]; let neutGJs=0, capGJs=0;
+    const capEntries=[];   // projected Remote Capacitor Transmitters, kept for the Projected list
     const col={sig:[],lock:[],scan:[],trk:[],topt:[],tfall:[],mrng:[],edly:[],avel:[],acld:[]};
     const boosts={lock:[],scan:[]};   // projected Remote Sensor Boosters -> attribute pool, not the debuff stack
     // Target EWAR resistance. Overwhelmingly a COMMAND BURST effect (buff 19, Electronic Hardening)
@@ -157,6 +158,9 @@ export default function App(){
       if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});
       for(const w of eff.webs)webMults.push(1+(w.speedFactor*rz('web')*rf(w.optimal,w.falloff))/100);
       for(const n of eff.neuts)neutGJs+=n.gjPerSec*rz('neut')*rf(n.optimal,n.falloff);
+      // Remote capacitor transfer is ASSISTANCE: refused wholesale by disallowAssistance (an
+      // active HIC bubble), and NOT reduced by the target's EWAR resistance the way a neut is.
+      if(!noAssist)for(const c of (eff.caps||[])){const g=c.gjPerSec*rf(c.optimal,c.falloff);if(g>0){capGJs+=g;capEntries.push({name:c.name,ship:pf.ship,gjPerSec:g});}}
       for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rz('painter')*rf(p.optimal,p.falloff));
       for(const d of (eff.damps||[])){col.lock.push(d.lockBonus*rz('damp')*rf(d.optimal,d.falloff));col.scan.push(d.scanResBonus*rz('damp')*rf(d.optimal,d.falloff));}
       // Remote Sensor Booster: ASSISTANCE (not resisted), and a BONUS — so it must compete with the
@@ -171,7 +175,7 @@ export default function App(){
     const stackPct=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
     const debuffs={sig:stackPct(col.sig),lockRange:stackPct(col.lock),scanRes:stackPct(col.scan),tracking:stackPct(col.trk),turretOptimal:stackPct(col.topt),turretFalloff:stackPct(col.tfall),missileRange:stackPct(col.mrng),explosionDelay:stackPct(col.edly),aoeVel:stackPct(col.avel),aoeCloud:stackPct(col.acld)};
     const hasDebuff=Object.values(debuffs).some(v=>Math.abs(v)>0.05);
-    return {reps,webMult,neutGJs,debuffs:hasDebuff?debuffs:null,boosts};
+    return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts};
   },[projFits,fitsDB,skills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
   const snapshotStats=useMemo(()=>{
@@ -197,7 +201,7 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneDps?.total ?? 0;
     }catch{ return 0; }
   },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);

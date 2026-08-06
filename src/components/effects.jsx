@@ -275,15 +275,16 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const webMs=eff.webs.map(w=>1+(w.speedFactor*rf(w.optimal,w.falloff))/100);
         const webMult=webMs.length?stackingPenalty(webMs):1;
         const neutGJs=eff.neuts.reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff),0);
+        const capGJs=(eff.caps||[]).reduce((s,c)=>s+c.gjPerSec*rf(c.optimal,c.falloff),0);
         const stk=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
         const painterSig=stk((eff.painters||[]).map(p=>p.sigBonus*rf(p.optimal,p.falloff)));
         const dampLock=stk((eff.damps||[]).map(d=>d.lockBonus*rf(d.optimal,d.falloff)));
         const tdTrack=stk((eff.trackDisr||[]).map(t=>t.tracking*rf(t.optimal,t.falloff)));
         const gdRange=stk((eff.guideDisr||[]).map(g=>g.missileRange*rf(g.optimal,g.falloff)));
         const hasReps=totals.shield+totals.armor+totals.hull>0.5;
-        const hasWeb=webMs.length>0, hasNeut=neutGJs>0.05;
+        const hasWeb=webMs.length>0, hasNeut=neutGJs>0.05, hasCap=capGJs>0.05;
         const hasPaint=Math.abs(painterSig)>0.5, hasDamp=Math.abs(dampLock)>0.5, hasTD=Math.abs(tdTrack)>0.5, hasGD=Math.abs(gdRange)>0.5;
-        const hasAny=hasReps||hasWeb||hasNeut||hasPaint||hasDamp||hasTD||hasGD;
+        const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasGD;
         const setRange=(km)=>setProjFits(projFits.map((p,j)=>j===i?{...p,rangeKm:Math.max(0,km)}:p));
         return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -303,12 +304,13 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
               {totals.hull>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(totals.hull)}</div><div style={{fontSize:9,color:C.textMute}}>hull HP/s in</div></div>}
               {hasWeb&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>-{Math.round((1-webMult)*100)}%</div><div style={{fontSize:9,color:C.textMute}}>your speed (web)</div></div>}
               {hasNeut&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(neutGJs)}</div><div style={{fontSize:9,color:C.textMute}}>GJ/s neut</div></div>}
+              {hasCap&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.rig}}>+{Math.round(capGJs)}</div><div style={{fontSize:9,color:C.textMute}}>GJ/s cap in</div></div>}
               {hasPaint&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>+{Math.round(painterSig)}%</div><div style={{fontSize:9,color:C.textMute}}>your sig (paint)</div></div>}
               {hasDamp&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(dampLock)}%</div><div style={{fontSize:9,color:C.textMute}}>your lock range</div></div>}
               {hasTD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(tdTrack)}%</div><div style={{fontSize:9,color:C.textMute}}>your tracking</div></div>}
               {hasGD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(gdRange)}%</div><div style={{fontSize:9,color:C.textMute}}>your missile range</div></div>}
             </div>
-          ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>No reps, webs, or neuts on this fit (more EWAR coming soon)</div>}
+          ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>Nothing on this fit projects onto a target</div>}
         </div>);
       })}
       <button onClick={()=>setShowProjPicker(true)} style={{width:"100%",padding:"10px 0",background:C.surfaceAlt,border:`1px dashed ${C.border}`,borderRadius:8,color:C.textMid,fontSize:12,fontWeight:600,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>

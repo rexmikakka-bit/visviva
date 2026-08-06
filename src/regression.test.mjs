@@ -663,6 +663,34 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // -----------------------------------------------------------------------------
+// 11f. PROJECTED REMOTE CAPACITOR TRANSMITTERS — computeProjectedReps had no branch for the group
+//      at all, so a projected Guardian/Basilisk showed no transmitters in the Projected tab and the
+//      target received none of the capacitor they exist to deliver. Verified against eos: a Guardian
+//      with two Large Remote Capacitor Transmitter II at all-V gives 351 GJ per 5000 ms cycle each,
+//      i.e. 70.2 GJ/s per module and 140.4 GJ/s total, optimal 82,875 m with no falloff.
+// -----------------------------------------------------------------------------
+{
+  console.log('\nPROJECTED REMOTE CAPACITOR TRANSMITTERS');
+  const guardian = { typeID: tid('Guardian'), name: 'Guardian' };
+  const slots = { high: [M('Large Remote Capacitor Transmitter II', 'active'),
+                         M('Large Remote Capacitor Transmitter II', 'active')], mid: [], low: [], rigs: [] };
+  const eff = computeProjectedReps(guardian, slots, null, {});
+  check('projcap', 'two transmitters are collected', eff.caps?.length, 2, 0);
+  check('projcap', 'GJ delivered per cycle', eff.caps?.[0]?.amount, 351, 0.002);
+  check('projcap', 'cycle time (s)', eff.caps?.[0]?.cycleS, 5, 0.002);
+  check('projcap', 'GJ/s per transmitter', eff.caps?.[0]?.gjPerSec, 70.2, 0.002);
+  check('projcap', 'optimal range (m)', eff.caps?.[0]?.optimal, 82875, 0.002);
+  check('projcap', 'total GJ/s from both',
+        (eff.caps ?? []).reduce((a, c) => a + c.gjPerSec, 0), 140.4, 0.002);
+  // Incoming transfer has to reach the capacitor sim, not just the list: it is the mirror of a
+  // projected neut, so it lifts cap delta by exactly the GJ/s delivered.
+  const base = calcFitStats(guardian, slots, [], null, {});
+  const fed  = calcFitStats(guardian, slots, [], null, { projectedCapGJs: 140.4 });
+  check('projcap', 'incoming cap raises cap delta by the transfer rate',
+        fed.capDelta - base.capDelta, 140.4, 0.01);
+}
+
+// -----------------------------------------------------------------------------
 // 11e. ANCILLARY REMOTE REPS — these sit in their OWN dogma groups ('Ancillary Remote Shield
 //      Booster' / 'Ancillary Remote Armor Repairer'), not the plain ones, so matching only the plain
 //      group name dropped them from projections entirely. Verified against eos on saved fit #769: a

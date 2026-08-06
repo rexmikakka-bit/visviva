@@ -708,11 +708,12 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
   const[rahQuery,setRahQuery]=useState("");
+  const[rahOpen,setRahOpen]=useState(false);
   const _modTakesCharges=moduleTakesCharges(mod.typeID,mod.name);
   // Reactive Armor Hardener: gets a "Reactive" tab to choose its adaptation pattern.
   const _isRAH=((TYPES[mod.typeID]??TYPES[String(mod.typeID)])?.gn??(TYPES[mod.typeID]??TYPES[String(mod.typeID)])?.groupName)==="Armor Resistance Shift Hardener";
-  const tabs=[...((mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)?["state","charge","info","variations"]:["state","info","variations"]),...(_isRAH?["reactive"]:[]),...(_hasMuta?["mutate"]:[])];
-  const tabLabel={state:"State",charge:"Charge",info:"Info",variations:"Variations",mutate:"Mutate",reactive:"Reactive"};
+  const tabs=[...((mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)?["state","charge","info","variations"]:["state","info","variations"]),...(_hasMuta?["mutate"]:[])];
+  const tabLabel={state:"State",charge:"Charge",info:"Info",variations:"Variations",mutate:"Mutate"};
   // Determine valid states for this module type
   const _td=TYPES[mod.typeID];
   const _a=_td?.attrs??_td?.a??{};
@@ -736,6 +737,50 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
               <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]}</span>
             </button>))}
           </div>
+        {_isRAH&&(()=>{
+          // mod.rahPattern: undefined/'fit' → Fit Pattern (follows Resistances-tab profile);
+          // 'disable' → Do Not Adapt; {name,p} → adapt to a specific ammo/NPC damage split.
+          const cur=mod.rahPattern;
+          const isFit=cur==null||cur==="fit";
+          const isDisable=cur==="disable";
+          const curName=(cur&&cur.p)?cur.name:null;
+          const Opt=({active,onClick,title,sub})=>(
+            <div onClick={onClick} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 12px",background:active?C.accentLight:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,cursor:"pointer"}}>
+              <div><div style={{fontSize:13,fontWeight:600,color:active?C.accent:C.text}}>{title}</div>{sub&&<div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sub}</div>}</div>
+              {active&&<span style={{color:C.accent}}>v</span>}
+            </div>);
+          const Bar=({p})=>{const seg=[["em",C.em||"#6ba4ff"],["th",C.th||"#ff5b5b"],["kin",C.kin||"#b9b9b9"],["exp",C.exp||"#e0a44a"]];const v={em:p[0],th:p[1],kin:p[2],exp:p[3]};return(<div style={{display:"flex",height:5,borderRadius:3,overflow:"hidden",width:62,flexShrink:0}}>{seg.map(([k,c])=>v[k]>0?<div key={k} style={{flex:v[k],background:c}}/>:null)}</div>);};
+          const q=rahQuery.trim().toLowerCase();
+          return(<div>
+            <div style={{height:1,background:C.border,margin:"14px 0 12px"}}/>
+            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Reactive Armor Hardener adaptation</div>
+            <Opt active={isFit} onClick={()=>onUpdateMod({...mod,rahPattern:"fit"})} title="Fit Pattern" sub="Adapts to the damage profile selected in the Resistances tab"/>
+            <Opt active={isDisable} onClick={()=>onUpdateMod({...mod,rahPattern:"disable"})} title="Do Not Adapt" sub="Even 15% spread across all four armor resists"/>
+            {/* Collapsed by default. Fit Pattern and Do Not Adapt cover almost every use; the
+                full ammo/NPC list is a long scroll that used to push them off the top. */}
+            <div onClick={()=>setRahOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",margin:"14px 0 8px"}}>
+              <span style={{fontSize:11,color:C.textMute}}>Adapt to a specific damage type{curName?` — ${curName}`:""}</span>
+              <span style={{fontSize:11,color:C.textMute}}>{rahOpen?"▲":"▼"}</span>
+            </div>
+            {rahOpen&&<>
+            <input value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder="Search ammo or NPC…" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
+            {DAMAGE_PROFILES.map(cat=>{
+              const items=cat.items.filter(it=>!q||it.n.toLowerCase().includes(q)||cat.cat.toLowerCase().includes(q));
+              if(!items.length)return null;
+              return(<div key={cat.cat} style={{marginBottom:8}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:0.5,margin:"6px 2px"}}>{cat.cat}</div>
+                {items.map(it=>{
+                  const active=curName===it.n;
+                  return(<div key={it.n} onClick={()=>onUpdateMod({...mod,rahPattern:{name:it.n,p:it.p}})} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:active?C.accentLight:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:5,cursor:"pointer"}}>
+                    <span style={{fontSize:12,fontWeight:active?700:500,color:active?C.accent:C.text}}>{it.n}</span>
+                    <Bar p={it.p}/>
+                  </div>);
+                })}
+              </div>);
+            })}
+            </>}
+          </div>);
+        })()}
           {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Duplicate to Next Empty Slot</button>}
           <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>Remove Module</button>
         </div>)}
@@ -784,42 +829,6 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           }
           onUpdateMod({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc});onClose();}} />)}
         {tab==="mutate"&&(<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/></div>)}
-        {tab==="reactive"&&(()=>{
-          // mod.rahPattern: undefined/'fit' → Fit Pattern (follows Resistances-tab profile);
-          // 'disable' → Do Not Adapt; {name,p} → adapt to a specific ammo/NPC damage split.
-          const cur=mod.rahPattern;
-          const isFit=cur==null||cur==="fit";
-          const isDisable=cur==="disable";
-          const curName=(cur&&cur.p)?cur.name:null;
-          const Opt=({active,onClick,title,sub})=>(
-            <div onClick={onClick} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 12px",background:active?C.accentLight:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,cursor:"pointer"}}>
-              <div><div style={{fontSize:13,fontWeight:600,color:active?C.accent:C.text}}>{title}</div>{sub&&<div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sub}</div>}</div>
-              {active&&<span style={{color:C.accent}}>v</span>}
-            </div>);
-          const Bar=({p})=>{const seg=[["em",C.em||"#6ba4ff"],["th",C.th||"#ff5b5b"],["kin",C.kin||"#b9b9b9"],["exp",C.exp||"#e0a44a"]];const v={em:p[0],th:p[1],kin:p[2],exp:p[3]};return(<div style={{display:"flex",height:5,borderRadius:3,overflow:"hidden",width:62,flexShrink:0}}>{seg.map(([k,c])=>v[k]>0?<div key={k} style={{flex:v[k],background:c}}/>:null)}</div>);};
-          const q=rahQuery.trim().toLowerCase();
-          return(<div>
-            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Reactive Armor Hardener adaptation</div>
-            <Opt active={isFit} onClick={()=>onUpdateMod({...mod,rahPattern:"fit"})} title="Fit Pattern" sub="Adapts to the damage profile selected in the Resistances tab"/>
-            <Opt active={isDisable} onClick={()=>onUpdateMod({...mod,rahPattern:"disable"})} title="Do Not Adapt" sub="Even 15% spread across all four armor resists"/>
-            <div style={{fontSize:11,color:C.textMute,margin:"14px 0 8px"}}>Adapt to specific damage type</div>
-            <input value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder="Search ammo or NPC…" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
-            {DAMAGE_PROFILES.map(cat=>{
-              const items=cat.items.filter(it=>!q||it.n.toLowerCase().includes(q)||cat.cat.toLowerCase().includes(q));
-              if(!items.length)return null;
-              return(<div key={cat.cat} style={{marginBottom:8}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:0.5,margin:"6px 2px"}}>{cat.cat}</div>
-                {items.map(it=>{
-                  const active=curName===it.n;
-                  return(<div key={it.n} onClick={()=>onUpdateMod({...mod,rahPattern:{name:it.n,p:it.p}})} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",background:active?C.accentLight:C.surface,border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:5,cursor:"pointer"}}>
-                    <span style={{fontSize:12,fontWeight:active?700:500,color:active?C.accent:C.text}}>{it.n}</span>
-                    <Bar p={it.p}/>
-                  </div>);
-                })}
-              </div>);
-            })}
-          </div>);
-        })()}
       </div>
     </BottomSheet>
     {chargeInfo&&<ItemInfoSheet typeID={chargeInfo} onClose={()=>setChargeInfo(null)}/>}

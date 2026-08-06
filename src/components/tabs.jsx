@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
-import { DMG, STATE_COLORS, computeDisplayRows, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, fmtN, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -61,7 +61,7 @@ import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, Da
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
-  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
+  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
   // stats. A missile launcher's range comes entirely from its charge (velocity x flight time), so an
   // unloaded launcher has no range at all — keying by typeID let a loaded launcher's range bleed onto
@@ -227,7 +227,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     // Modules that cycle (weapons, active hardeners, repairers, prop mods, etc.) default to active
     const hasCycle=!!(modInfo?.duration&&modInfo.duration>0)||(modInfo?.capUse!=null&&modInfo.capUse>0);
     const defaultState=isRigMod?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
-    setSlots(prev=>({...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state:defaultState,ammo:undefined,charges:undefined,maxCharges:undefined,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)}));
+    // Ancillary boosters/repairers arrive pre-loaded — see defaultChargeFor. Anything else
+    // starts empty, as before.
+    const preload=defaultChargeFor(modData.typeID);
+    setSlots(prev=>({...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state:defaultState,ammo:preload?.name,charges:preload?.qty,maxCharges:preload?.qty,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)}));
   };
 
   const getDisplayRows=(secKey)=>computeDisplayRows(slots[secKey]??[],secKey,grouped);
@@ -540,7 +543,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;

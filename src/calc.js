@@ -1177,6 +1177,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   // other fits. Only MODULE buffs matter here — nothing reads the source ship's own HP or resists.
   applyModuleBursts(collectBursts(modItems, opts.externalBursts), modItems);
   const reps = [];
+  const caps = [];    // projected Remote Capacitor Transmitters: {gjPerSec, optimal, falloff}
   const webs = [];
   const neuts = [];
   const painters = [];   // {sigBonus, optimal, falloff}
@@ -1213,6 +1214,16 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     } else if (gn === 'Remote Hull Repairer') {
       const amt = fitItem.get('structureDamageAmount') ?? 0;
       if (amt > 0) reps.push({ kind: 'hull', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
+    } else if (gn === 'Remote Capacitor Transmitter') {
+      // Cap transfer was simply missing from this dispatch, so a projected Guardian/Basilisk showed
+      // no transmitters at all and the target received none of the capacitor they are the entire
+      // point of. `powerTransferAmount` is GJ delivered per cycle.
+      //
+      // It is ASSISTANCE, so like remote reps it is refused by disallowAssistance and is NOT reduced
+      // by the target's EWAR resistance. Unlike reps it gets no diminishing-returns curve — eos's
+      // __getAppliedRr covers hull/armor/shield only, and nothing scales incoming cap.
+      const amt = fitItem.get('powerTransferAmount') ?? 0;
+      if (amt > 0) caps.push({ name: slot.name, gjPerSec: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Stasis Web' || gn === 'Stasis Grappler') {
       const sf = fitItem.get('speedFactor') ?? 0;
       if (sf < 0) webs.push({ name: slot.name, speedFactor: sf, optimal, falloff });
@@ -1266,7 +1277,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (amt[kind] > 0) reps.push({ kind, name, rawPS: (amt[kind] / dur) * qty, optimal: 1e9, falloff: 0 });
     }
   }
-  return { reps, webs, neuts, painters, damps, sensorBoosts, trackDisr, guideDisr, ecm };
+  return { reps, caps, webs, neuts, painters, damps, sensorBoosts, trackDisr, guideDisr, ecm };
 }
 
 export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
@@ -1711,6 +1722,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   if (opts.projectedNeutGJs > 0) {
     capDrainPS += opts.projectedNeutGJs;
     capModules.push({ cycleMs: 250, capNeedGJ: opts.projectedNeutGJs * 0.25, clipSize: 0, reloadMs: 0, isInjector: false });
+  }
+  // Projected remote capacitor transmitters: the mirror image — continuous external cap FILL. A
+  // negative capNeedGJ is how the simulator already models an injector, so incoming transfer rides
+  // the same path and lands in cap delta and stability without a second mechanism.
+  if (opts.projectedCapGJs > 0) {
+    capFillPS += opts.projectedCapGJs;
+    capModules.push({ cycleMs: 250, capNeedGJ: -opts.projectedCapGJs * 0.25, clipSize: 0, reloadMs: 0, isInjector: false });
   }
   const capSim = simulateCap(capModules, capCapacity, capRechargeMs);
 
