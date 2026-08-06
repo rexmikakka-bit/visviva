@@ -408,8 +408,13 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
     <div onTouchStart={_onSwipeStart} onTouchMove={_onSwipeMove} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
       {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
           nothing here — the panels already unmount and remount on every tab change. */}
+      {/* No `will-change:transform` here, however tempting as a perf hint: it establishes a
+          containing block for position:fixed descendants, so every bottom sheet opened from this
+          tab anchored to the panel instead of the viewport and slid off the bottom of the screen.
+          The drag sets a transform on this node too, but only while a finger is down, and a sheet
+          cannot be open then. */}
       <div ref={_panel} key={fitSubTab} className={_slideDir>0?"vv-from-right":_slideDir<0?"vv-from-left":undefined}
-           style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,willChange:"transform"}}>
+           style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
       {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile}/>}

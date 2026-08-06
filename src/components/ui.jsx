@@ -1,6 +1,7 @@
 // UI primitives, module/subsystem pickers, resource strip, damage-profile sheet.
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { metaOf, META_COLORS, META_ORDER } from "../lib/meta.js";
@@ -61,7 +62,13 @@ function useVisualViewport(){
 function BottomSheet({title,onClose,children,height="70vh"}){
   const vv=useVisualViewport();
   const frame=vv?{top:vv.top,height:vv.height,left:0,right:0}:{inset:0};
-  return(
+  // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
+  // transform, filter, perspective or will-change — any one of those silently becomes the
+  // containing block instead, and the sheet anchors to a mid-page element and slides off the
+  // bottom of the screen. That is not a hazard worth re-discovering every time someone animates a
+  // parent, so the sheet escapes the tree entirely. React events still bubble through the
+  // component tree, so nothing else changes.
+  return createPortal(
     <div style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)"}}/>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
@@ -74,7 +81,8 @@ function BottomSheet({title,onClose,children,height="70vh"}){
         </div>
         <div style={{flex:1,overflowY:"auto"}}>{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 function AccordionSection({title,color,children,defaultOpen,indent}){
