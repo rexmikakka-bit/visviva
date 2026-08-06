@@ -574,6 +574,26 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
 
   const filename = `${(cardProps.fitName || cardProps.shipName || "fit").replace(/[^\w\-]+/g, "_")}.png`;
 
+  // Copy the IMAGE to the clipboard. Sharing used to be the only route, and iOS's share sheet has
+  // a "Copy" action that copies the share payload's TITLE, not the file — so copying a snapshot
+  // put the fit's name on the clipboard and nothing else. This writes the PNG itself.
+  //
+  // Safari only honours clipboard.write() when the ClipboardItem is constructed synchronously
+  // within the user gesture, so the value has to be the render PROMISE rather than an awaited blob:
+  // awaiting first breaks the gesture chain and the write is rejected.
+  const copyImage = async () => {
+    setBusy(true);
+    try {
+      if (!navigator.clipboard?.write) throw new Error("clipboard images aren't supported here");
+      const png = render().then((canvas) => new Promise((r) => canvas.toBlob(r, "image/png")));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+      setStatus({ ok: true, msg: "Image copied." });
+    } catch (e) {
+      setStatus({ ok: false, msg: `Couldn't copy: ${e.message}. Use Save image instead.` });
+    }
+    setBusy(false);
+  };
+
   const save = async () => {
     setBusy(true);
     try {
@@ -581,9 +601,13 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
       const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
       // Web Share with a file is the only thing that reliably works in a mobile webview; fall back to
       // a download link on desktop, and to long-press-the-preview if neither is available.
+      //
+      // Deliberately no `title`/`text`: with them, iOS shows a text-flavoured sheet and its Copy
+      // action grabs the title. Files alone gets you "Save Image" (straight to the camera roll)
+      // and a Copy that copies the picture.
       const file = new File([blob], filename, { type: "image/png" });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: cardProps.fitName ?? "Fit" });
+        await navigator.share({ files: [file] });
         setStatus({ ok: true, msg: "Shared." });
       } else {
         const url = URL.createObjectURL(blob);
@@ -614,12 +638,20 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, ...cardProp
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
           <button onClick={save} disabled={busy || !preview} style={{ ...btn(C.accent, C.accent, "#0e0e10"), opacity: busy || !preview ? .5 : 1 }}>
-            {busy ? "Working…" : (navigator.canShare ? "Share image" : "Save PNG")}
+            {busy ? "Working…" : (navigator.canShare ? "Save image" : "Save PNG")}
           </button>
+          {navigator.clipboard?.write && (
+            <button onClick={copyImage} disabled={busy || !preview} style={{ ...btn(C.surface, C.border, C.text), opacity: busy || !preview ? .5 : 1 }}>
+              Copy image
+            </button>
+          )}
           <button onClick={onClose} style={btn(C.surface, C.border, C.textMid)}>Close</button>
         </div>
         {status && <div style={{ fontSize: 11, color: status.ok ? C.accent : C.danger }}>{status.msg}</div>}
-        <div style={{ fontSize: 10, color: C.textMute }}>On mobile you can also long-press the image to save it.</div>
+        <div style={{ fontSize: 10, color: C.textMute, textAlign: "center", maxWidth: 320 }}>
+          Save image opens the share sheet — pick <strong>Save Image</strong> to put it in your camera roll.
+          You can also long-press the preview.
+        </div>
       </div>
 
       {/* The real card renders off-screen at full width so the export is identical on every device. */}
