@@ -93,11 +93,23 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return{...prev,[secKey]:newRows.flatMap(r=>r.groupIds.map(id=>byId.get(id)).filter(Boolean))};
     });
   };
+  // While a row drag is live, selection is disabled on the WHOLE DOCUMENT. Marking only the handle
+  // unselectable was not enough: the press lands on the handle but the drag travels across the
+  // module names either side of it, and that is what the browser starts selecting. Clearing any
+  // selection that did sneak in stops the blue highlight appearing at all.
+  const setDragSelection=(on)=>{
+    const st=document.body.style;
+    if(on){st.userSelect="none";st.webkitUserSelect="none";st.webkitTouchCallout="none";
+           try{window.getSelection?.()?.removeAllRanges?.();}catch{}}
+    else{st.userSelect="";st.webkitUserSelect="";st.webkitTouchCallout="";}
+  };
   const startRowDrag=(secKey,fromIdx)=>e=>{
     e.preventDefault();e.stopPropagation();
     try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}
+    setDragSelection(true);
     dragInfo.current={secKey,fromIdx,overIdx:fromIdx};
     setDragUI({secKey,fromIdx,overIdx:fromIdx});
+    haptic("medium");                    // "you have picked this up"
   };
   const moveRowDrag=e=>{
     const d=dragInfo.current;if(!d)return;
@@ -112,13 +124,19 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       const dist=Math.abs(y-(r.top+r.height/2));
       if(dist<bestDist){bestDist=dist;best=idx;}
     }
-    if(best!==d.overIdx){d.overIdx=best;setDragUI({...d});}
+    // A tick each time the row would land somewhere new — the thing that makes a drag feel like it
+    // is gripping positions rather than sliding over a surface.
+    if(best!==d.overIdx){d.overIdx=best;setDragUI({...d});haptic("light");}
   };
   const endRowDrag=()=>{
     const d=dragInfo.current;dragInfo.current=null;
+    setDragSelection(false);
     setDragUI(null);
-    if(d&&d.overIdx!==d.fromIdx)reorderRows(d.secKey,d.fromIdx,d.overIdx);
+    if(d&&d.overIdx!==d.fromIdx){reorderRows(d.secKey,d.fromIdx,d.overIdx);haptic("success");}
   };
+  // Belt and braces: a drag interrupted by a phone call or an app switch never reaches endRowDrag,
+  // and leaving the document unselectable forever would be a strange bug to track down later.
+  useEffect(()=>()=>setDragSelection(false),[]);
 
   const _isT3C = isT3Cruiser(ship?.name);
   const _isStructure = (TYPES[ship?.typeID]?.c ?? TYPES[ship?.typeID]?.category) === 65;
@@ -322,10 +340,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
               return(
-                <div key={row.id||row.name}
+                // no-select on the ROW, not just the handle: the press starts on the handle but the
+                // drag travels across the module names either side, and those are what the browser
+                // was selecting.
+                <div key={row.id||row.name} className="no-select"
                 ref={el=>{rowRefs.current[sec.key+":"+rowIdx]=el;}}
                 onClick={()=>sec.key==="subsystems"?setEmptySlot({secKey:"subsystems",id:row.id}):setModuleMenu({secKey:sec.key,modId:row.id})}
-                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,background:isDragOver?C.accentLight:C.surface,border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:C.border}`,borderTop:isDragOver?`2px solid ${C.accent}`:undefined}}>
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,background:isDragOver?C.accentLight:C.surface,border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:C.border}`,borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
                   <div style={{width:6,height:6,borderRadius:99,background:stateColor,flexShrink:0,boxShadow:row.state==="overheated"?`0 0 6px ${stateColor}`:"none"}}/>
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
