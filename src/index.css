@@ -60,7 +60,10 @@ body {
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  text-align: center;
+  /* Was `center`, also from the starter. Every list row inherited it, so names and their subtext
+     were centred inside their own boxes and never lined up with each other. The 59 places that
+     genuinely want centred text all set it themselves. */
+  text-align: left;
   min-height: 100svh;
   display: flex;
   flex-direction: column;
