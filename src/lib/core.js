@@ -645,6 +645,54 @@ function getCompatibleCharges(mod){
             .sort((x,y)=>x.name.localeCompare(y.name));
 }
 
+// Ancillary modules are useless empty — an Ancillary Shield Booster with no cap booster loaded is
+// just a worse shield booster, and an Ancillary Armor Repairer with no paste reps at a third rate.
+// Fitting one and forgetting the charge is a silent, easy mistake, so they arrive loaded.
+//
+// Returns {name, qty} or null.
+//
+// The size rule is the fiddly part. Cap Booster 25 and Navy Cap Booster 25 carry NO chargeSize at
+// all, so `getCompatibleCharges`'s "skip only when both sides specify a size and they differ" quite
+// correctly lets them into every module's list — they really do fit anything. Picking the smallest
+// compatible charge outright would therefore load 149 Navy Cap Booster 25 into an X-Large. So:
+// prefer charges whose chargeSize EXACTLY matches the module's, and only fall back to the sizeless
+// ones when nothing matches (which is what a Small ASB, chargeSize 0, actually wants).
+//
+// Within the pool, smallest volume wins — that is also what picks Navy over the plain variant, as
+// navy charges are physically smaller for the same capacitor. Every ASB size lands on 9 charges,
+// which is the number the module is known for.
+function defaultChargeFor(typeID){
+  const td=typeID!=null?(TYPES[typeID]??TYPES[String(typeID)]):null;
+  if(!td)return null;
+  const gn=td.gn??td.groupName??"";
+  const isASB=gn==="Ancillary Shield Booster"||gn==="Ancillary Remote Shield Booster";
+  const isAAR=gn==="Ancillary Armor Repairer"||gn==="Ancillary Remote Armor Repairer";
+  if(!isASB&&!isAAR)return null;
+  const a=td.attrs??td.a??{};
+  const capacity=a["38"]??a.capacity??0;
+  if(!(capacity>0))return null;
+
+  if(isAAR){
+    // An ancillary armor repairer takes nothing but Nanite Repair Paste.
+    const tid=tidByName("Nanite Repair Paste");
+    const vol=tid?((TYPES[tid]?.attrs??TYPES[tid]?.a??{})["161"]??(TYPES[tid]?.attrs?.volume)):null;
+    if(!tid||!(vol>0))return null;
+    return {name:"Nanite Repair Paste",qty:Math.floor(capacity/vol)};
+  }
+
+  const modSize=a["128"]??a.chargeSize??null;
+  const compatible=getCompatibleCharges({typeID,name:td.n??td.name});
+  if(!compatible.length)return null;
+  const sized=compatible.filter(c=>c.chargeSize!=null&&c.chargeSize===modSize);
+  const pool=(sized.length?sized:compatible)
+    .map(c=>({...c,vol:c.volume??((TYPES[c.typeID]?.attrs??TYPES[c.typeID]?.a??{})["161"])}))
+    .filter(c=>c.vol>0)
+    .sort((x,y)=>x.vol-y.vol||x.name.localeCompare(y.name));
+  const best=pool[0];
+  if(!best)return null;
+  return {name:best.name,qty:Math.floor(capacity/best.vol)};
+}
+
 // ── Ammo grouping for the charge browser ─────────────────────────────────────
 // A flat alphabetical list is close to useless for picking ammo: "Imperial Navy Multifrequency S"
 // sorts under I, nowhere near the "Multifrequency S" it is a variant of, and nothing tells you
@@ -839,4 +887,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, isBoosterName, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

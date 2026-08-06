@@ -160,31 +160,35 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
   const shipName=activeFit?.ship??"Visviva";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
-  // The header's background runs to the physical top of the screen while its CONTENT starts below
-  // the notch / Dynamic Island. env(safe-area-inset-top) only reports a real value because
-  // index.html sets viewport-fit=cover; without that it is 0 and this is a no-op.
+  // Flush to the physical top of the screen: the header's BACKGROUND starts at y=0 and only its
+  // content is inset by env(safe-area-inset-top), so the status bar sits on the header's own
+  // surface colour rather than on a strip above it. The inset is used bare (no extra padding on
+  // top of it) -- iOS already leaves clearance inside the reported inset, and adding more just
+  // spends screen on nothing. Everything below is tightened to match: this used to cost ~96px
+  // before the fit even started.
   return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
-                      padding:"14px 14px 12px",paddingTop:"calc(14px + env(safe-area-inset-top, 0px))"}}>
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-      <div style={{textAlign:"left"}}>
-        {/* No textTransform — it rendered the name as "VISVIVA". The app is called Visviva. */}
-        <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,marginBottom:2}}>Visviva</div>
-        <div style={{fontSize:19,fontWeight:700,color:C.text,lineHeight:1.2}}>{shipName}</div>
-        <div style={{fontSize:12,color:C.textMid,marginTop:1}}>{subLabel}</div>
+                      padding:"0 12px 7px",paddingTop:"calc(env(safe-area-inset-top, 0px) + 6px)"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+      <div style={{textAlign:"left",minWidth:0}}>
+        {/* Uppercase by design -- it reads as a wordmark above the hull name, which is why it
+            looked wrong set as "Visviva" in sentence case. */}
+        <div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:1,textTransform:"uppercase",lineHeight:1.1}}>Visviva</div>
+        <div style={{fontSize:17,fontWeight:700,color:C.text,lineHeight:1.15,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{shipName}</div>
+        <div style={{fontSize:11,color:C.textMid,lineHeight:1.2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{subLabel}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {activeFit?.ship&&skillCheck&&
           <SkillBook ok={skillCheck.ok} count={skillCheck.missing.length} onClick={onSkillGaps}/>}
-        <button onClick={onShipInfo} style={{width:52,height:52,borderRadius:11,background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
+        <button onClick={onShipInfo} style={{width:42,height:42,borderRadius:9,background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
-            ?<img src={eveRender(ship.typeID,64)} width={52} height={52} alt="" style={{borderRadius:11}} onError={e=>{e.target.style.display="none";}}/>
+            ?<img src={eveRender(ship.typeID,64)} width={42} height={42} alt="" style={{borderRadius:9}} onError={e=>{e.target.style.display="none";}}/>
             :<svg width={24} height={24} viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <ellipse cx="13" cy="13" rx="10" ry="5.5" stroke={C.accent} strokeWidth="1.4" opacity="0.55" transform="rotate(-20 13 13)"/>
                 <circle cx="13" cy="13" r="2.6" fill={C.accent}/>
               </svg>
           }
         </button>
-        <button onClick={onHamburger} style={{width:40,height:40,borderRadius:9,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
+        <button onClick={onHamburger} style={{width:36,height:36,borderRadius:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
       </div>
     </div>
   </div>);
