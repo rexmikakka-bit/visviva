@@ -203,7 +203,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
             <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d))} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:drone.active?C.accent:""}}>{drone.active?"✓":""}</button>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {drone.typeID&&<img className="eve-icon" src={eveIcon(drone.typeID,32)} width={24} height={24} alt="" onError={e=>{e.target.style.display="none";}}/>}
-              <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name})}><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
+              <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name,droneId:drone.id})}><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
             </div>
             {(()=>{
               const info=droneInfo.find(x=>x.name===drone.name)??{};
@@ -275,6 +275,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
     </div>
     {showDronePicker&&<DroneBrowserSheet existingDrones={drones} onAdd={addDrone} onClose={()=>setShowDronePicker(false)}/>}
     {showFighterPicker&&<FighterBrowserSheet onAdd={addFighter} onClose={()=>setShowFighterPicker(false)}/>}
-    {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}/>}
+    {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}
+      onSwap={v=>setDrones(ds=>ds.map(x=>x.id===infoItem.droneId?{...x,name:v.name,typeID:v.typeID}:x))}/>}
   </div>);
 }

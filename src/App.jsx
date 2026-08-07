@@ -15,7 +15,8 @@ import { SettingsOverlay } from "./components/settings.jsx";
 import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, SkillGapSheet } from "./components/layout.jsx";
 import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
-import { FitTabs, resolveTabs, MAX_OPEN_TABS } from "./components/FitTabs.jsx";
+import { FitTabs } from "./components/FitTabs.jsx";
+import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
@@ -297,7 +298,11 @@ export default function App(){
     const prevFit=activeFit;
     if(fit) setOpenTabs(prev=>{
       const list=prev??[];
-      const at=list.findIndex(t=>t.ship===ship&&(t.id!=null?t.id===fit.id:t.name===fitName));
+      // Match on id only when BOTH sides have a usable one. The old test was `t.id != null`, which
+      // is TRUE for NaN — and NaN === NaN is false, so a fit carrying a NaN id never matched its
+      // own tab and every open appended another copy. Falling back to the name is always safe here:
+      // a ship's fit names are unique by construction (createNewFit dedupes them).
+      const at=list.findIndex(t=>t.ship===ship&&sameTab(t,fit,fitName));
       if(at>=0)return list;
       const entry={ship,id:fit.id,name:fitName};
       if(!newTab&&prevFit){

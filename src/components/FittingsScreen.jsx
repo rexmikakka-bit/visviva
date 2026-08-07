@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.js";
+import { nextFitId } from "../lib/fit-tabs.js";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
@@ -271,7 +272,12 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     else _setX(0,true);   // not far enough — spring back
   };
   const[search,setSearch]=useState("");
-  const[nextId,setNextId]=useState(()=>Object.values(fitsDB).reduce((max,fits)=>fits.reduce((m,f)=>Math.max(m,f.id+1),max),20));
+  // Non-finite ids are FILTERED, not just defaulted. One fit with no `id` used to make this
+  // `Math.max(m, undefined + 1)` -> NaN, and NaN is sticky: every fit created afterwards got
+  // id NaN. That is invisible until something compares ids, because NaN === NaN is false — the
+  // tab bookkeeping then failed to recognise a fit it already had open and appended a duplicate
+  // tab on every single open.
+  const[nextId,setNextId]=useState(()=>nextFitId(fitsDB));
   const[editingFitId,setEditingFitId]=useState(null);
   const[editName,setEditName]=useState("");
   const[renamingFit,setRenamingFit]=useState(false);
