@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
-import { TargetProfileSheet } from "./ui.jsx";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
@@ -9,13 +8,53 @@ import {
   stackingPenalty, simulateCapTrace,
 } from "../calc.js";
 
+// "Ideal" is a REAL point in the parameter space, not a special case: a stationary target with an
+// effectively infinite signature. Both application terms reach their perfect limit at that input —
+// the turret tracking factor is 0.5^((angular × sigRes)/(tracking × sig))², which goes to 1, and the
+// missile factor is min(1, sig/explosionRadius, …), which pins at 1 — so every ship applies its full
+// paper damage, which is the whole point of the preset.
+//
+// A large FINITE number, not Infinity: the graph's setup is persisted with JSON.stringify, and
+// Infinity serialises to null.
+//
+// 1e15 is chosen, not guessed. It is the smallest round value at which the real math reproduces the
+// old perfect-application short-circuit EXACTLY (0 ULP) across every turret in the game, including
+// the worst case — a Dual Giga Beam, tracking 0.0021, at point-blank against a 5 km/s target. At
+// 1e9 that case still drifted 6.5e-5; the regression suite pins the exact agreement so the constant
+// cannot be lowered without the test noticing.
+const IDEAL_SIG=1e15;
+
 // Reference targets for the application curves. Only the graph uses these, so they live here.
+//
+// `mwdSig` / `mwdVel` are the same hull class with its microwarpdrive RUNNING, which is how most
+// things are actually flown in combat — and it is not a small correction: a frigate's signature goes
+// from 40 m to 200 m, which changes turret application against it more than any other single factor.
+// Note it cuts BOTH ways, which is the point of making it a toggle rather than the default: the
+// bigger signature helps turrets and missiles, while the much higher speed hurts turret tracking.
+//
+// These are DERIVED, not chosen. For each size class, every fittable hull in the ship taxonomy was
+// given the size-appropriate T2 MWD (5MN / 50MN / 500MN), run active at all skills V through this
+// app's own engine, and the resulting sig and velocity MEDIANED — median rather than mean so a
+// handful of interceptors and oddball hulls don't drag the class. 95 frigates, 79 cruisers, 40
+// battleships, none skipped. Raw medians were 201.3m / 3047 m/s, 690.0m / 1874 m/s and 2300.0m /
+// 1039 m/s; rounded here to the nearest 5m and 10 m/s. The regression suite re-derives them, so an
+// eve.db rebalance of hull signatures or speeds shows up as a failure rather than silent drift.
+//
+// The non-MWD `sig`/`vel` values are deliberately left alone: they are a "typical engagement" figure
+// rather than a hull's flat-out maximum, which is why e.g. the frigate's 350 m/s is below the 444
+// m/s median top speed. Only the MWD variants claim to be derived.
 const TARGET_PROFILES={
-  ideal:   {label:"Ideal",   sig:null,    vel:null,  dist:0,     desc:"Perfect tracking"},
-  frigate: {label:"Frigate", sig:40,      vel:350,   dist:10000, desc:"40m sig / 350 m/s"},
-  cruiser: {label:"Cruiser", sig:130,     vel:200,   dist:20000, desc:"130m sig / 200 m/s"},
-  battleship:{label:"Battleship",sig:380, vel:100,   dist:30000, desc:"380m sig / 100 m/s"},
+  ideal:   {label:"Ideal",   sig:IDEAL_SIG, vel:0,   dist:0,     desc:"Stationary, infinite sig"},
+  frigate: {label:"Frigate", sig:40,      vel:350,   dist:10000, desc:"40m sig / 350 m/s",   mwdSig:200,  mwdVel:3050},
+  cruiser: {label:"Cruiser", sig:130,     vel:200,   dist:20000, desc:"130m sig / 200 m/s",  mwdSig:690,  mwdVel:1870},
+  battleship:{label:"Battleship",sig:380, vel:100,   dist:30000, desc:"380m sig / 100 m/s",  mwdSig:2300, mwdVel:1040},
   fit:     {label:"Choose Fit", sig:null, vel:null,  dist:20000, desc:"From saved fit"},
+};
+/** The sig/speed a profile presents, with the MWD toggle applied where the profile has a variant. */
+const profileTarget=(key,mwd)=>{
+  const p=TARGET_PROFILES[key];
+  if(!p) return null;
+  return (mwd&&p.mwdSig!=null) ? {sig:p.mwdSig,vel:p.mwdVel} : {sig:p.sig,vel:p.vel};
 };
 
 const GRAPH_CONFIG=[
@@ -49,9 +88,12 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const weapons = cs?.graphWeapons ?? [];
     const baseDps = realDps || 0, baseVolley = realVolley || 0;
     const wantVolley = yKey==="volley";
-    // Editable target sig/speed (tgtSig null = ideal / perfect tracking). Range falloff still applies.
-    const ideal = params.tgtSig == null;
-    const profSig = params.tgtSig ?? cs?.sigRadius ?? 130;
+    // Editable target sig/speed. There is no "ideal" short-circuit any more — the real application
+    // math runs for every profile, with Ideal expressed as IDEAL_SIG (see above). The branch this
+    // replaces ignored its tgtSig argument entirely, so the "Target sig. radius" X axis drew a FLAT
+    // line whenever Ideal was selected: an axis whose whole job is to vary sig, plotted against a
+    // formula that had been told to ignore it.
+    const profSig = params.tgtSig ?? IDEAL_SIG;
     const profVel = params.tgtSpeed ?? 0;
     // Fixed engagement distance for the speed/sig axes (hold range constant, vary tracking inputs).
     let engDist = 0;
@@ -77,12 +119,6 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // Per-weapon applied multiplier at an engagement (tracking/range/application).
     const weaponMult = (w, distM, tgtSig, tgtSpeed) => {
         if (w.kind === "turret") {
-          if (ideal) {
-            const rf = w.falloff > 0
-              ? Math.pow(0.5, Math.pow(Math.max(0, distM - w.optimal) / w.falloff, 2))
-              : (distM <= w.optimal ? 1 : 0);
-            return calcTurretMult(rf);
-          }
           const cth = calcTurretCTH({ atkSpeed, atkAngle, atkRadius: shipRadius,
             optimal: w.optimal, falloff: w.falloff, tracking: w.tracking,
             optimalSigRadius: w.optimalSigRadius, distance: distM,
@@ -90,7 +126,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
           return calcTurretMult(cth);
         } else if (w.kind === "missile") {
           const df = distM <= w.lowerRange ? 1 : (distM <= w.higherRange ? w.higherChance : 0);
-          return ideal ? df : df * calcMissileFactor(w.explosionRadius, w.explosionVelocity, w.aoeDamageReductionFactor, tgtSpeed, tgtSig);
+          return df * calcMissileFactor(w.explosionRadius, w.explosionVelocity, w.aoeDamageReductionFactor, tgtSpeed, tgtSig);
         } else if (w.kind === "drone") {
           return distM <= (w.controlRange ?? Infinity) ? 1 : 0;
         }
@@ -339,7 +375,9 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
   // the Fit/Stats/Graph swipe handler on an ancestor, so scrubbing the plot flicked you to another
   // sub-tab instead. The graph owns horizontal drags inside its own box.
   const swallow=e=>e.stopPropagation();
-  return(<svg width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair",touchAction:"none"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchStart={swallow} onTouchMove={e=>{e.stopPropagation();handleTouchMove(e);}} onTouchEnd={handleLeave}>
+  // no-select: dragging across the chart to move the cursor was selecting the axis tick labels,
+  // which on a phone also raises the text-selection handles and the long-press callout.
+  return(<svg className="no-select" width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair",touchAction:"none"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchStart={swallow} onTouchMove={e=>{e.stopPropagation();handleTouchMove(e);}} onTouchEnd={handleLeave}>
     <defs>
       <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient>
       {/* Zoomed axes shrink xMax/yMax, so the curve can run past the plot box — clip it to the grid. */}
@@ -360,13 +398,20 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
 
 function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChange}){
   const cx=45,cy=45,rMax=34;
-  const safeMV=maxVelocity>0?maxVelocity:500;
-  const velFrac=Math.min((velocity??0)/safeMV,1);
+  // A maxVelocity of 0 means IMMOBILISED — a sieged dread, a bastioned marauder — not "unknown".
+  // This used to fall back to 500 the same way the caller did, so the Your Ship wheel happily
+  // offered a 500 m/s vector on a ship that physically cannot move, and the transversal that
+  // produced went straight into the turret tracking maths. It is now a real state: the wheel is
+  // inert and reads "immobilised" rather than inventing a speed.
+  const immobile=!(maxVelocity>0);
+  const safeMV=immobile?1:maxVelocity;   // divide-by-zero guard only; nothing can move anyway
+  const velFrac=immobile?0:Math.min((velocity??0)/safeMV,1);
   const r=velFrac<0.05?5:rMax*velFrac;
   const rad=(value-90)*Math.PI/180,nx=cx+r*Math.cos(rad),ny=cy+r*Math.sin(rad);
   const dirs=["N","NE","E","SE","S","SW","W","NW"],cardinal=dirs[Math.round(value/45)%8];
 
   function handlePt(clientX,clientY,rect){
+    if(immobile)return;
     const scale=rect.width/90;
     const dx=(clientX-rect.left)/scale-cx;
     const dy=(clientY-rect.top)/scale-cy;
@@ -379,7 +424,7 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   // Double-tap / double-click a compass to park it: heading 0 (straight at the enemy), speed 0.
   // The first tap of a double still moves the vector — harmless, since the reset lands on top of it
   // and the alternative is delaying every single tap by the double-tap window just to find out.
-  const reset=()=>{onChange(0);onVelocityChange&&onVelocityChange(0);};
+  const reset=()=>{if(immobile)return;onChange(0);onVelocityChange&&onVelocityChange(0);};
   const lastTap=useRef(0);
   const dragging=useRef(false);
 
@@ -414,9 +459,11 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   // horizontal movement here must never reach the sub-tab swipe.
   const swallowTouch=e=>e.stopPropagation();
 
-  return(<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+  return(<div className="no-select" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
     <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{label}</span>
-    <svg width={90} height={90} style={{cursor:"crosshair",touchAction:"none"}}
+    {/* Same reason as the chart: this one is dragged too, and its label/readout sit right under
+        the finger. */}
+    <svg className="no-select" width={90} height={90} style={{cursor:immobile?"not-allowed":"crosshair",touchAction:"none",opacity:immobile?0.4:1}}
          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
          onTouchStart={swallowTouch} onTouchMove={swallowTouch}>
       <circle cx={cx} cy={cy} r={rMax+6} fill={C.surfaceAlt} stroke={C.border} strokeWidth="1"/>
@@ -434,18 +481,32 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
       ))}
     </svg>
     <div style={{textAlign:"center"}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.text}}>{value}deg {cardinal}</div>
-      <div style={{fontSize:10,color:C.textMute}}>{velocity??0} m/s ({Math.round(velFrac*100)}%)</div>
+      <div style={{fontSize:11,fontWeight:700,color:immobile?C.textMute:C.text}}>{immobile?"—":`${value}deg ${cardinal}`}</div>
+      <div style={{fontSize:10,color:C.textMute}}>{immobile?"immobilised":`${velocity??0} m/s (${Math.round(velFrac*100)}%)`}</div>
     </div>
   </div>);
 }
 
-function TargetControls({tgtProfile,onPickResists,targetProfile,setTargetProfile,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
+function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
+  // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
+  const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
-  const pickProfile=(key)=>{const p=TARGET_PROFILES[key];setTargetProfile(key);setTgtSig(p.sig);if(p.vel!=null){setTargetVel(p.vel);setTargetVelMax(Math.max(p.vel,100));}};
+  const applyTarget=(key,mwd)=>{
+    const t=profileTarget(key,mwd); if(!t) return;
+    setTgtSig(t.sig);
+    if(t.vel!=null){setTargetVel(t.vel);setTargetVelMax(Math.max(t.vel,100));}
+  };
+  const pickProfile=(key)=>{setTargetProfile(key);applyTarget(key,targetMwd);};
+  // Toggling MWD re-applies the CURRENT profile immediately, so the sig/speed fields below always
+  // agree with the buttons above. On Ideal (or a hand-edited custom target) there is no MWD variant
+  // to apply, so the flag is just remembered for the next profile picked.
+  const toggleMwd=()=>{const next=!targetMwd;setTargetMwd(next);applyTarget(targetProfile,next);};
+  const mwdApplies=TARGET_PROFILES[targetProfile]?.mwdSig!=null;
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
   const setSpeed=(v)=>{const n=Math.max(0,Number(v)||0);setTargetVel(n);if(n>0)setTargetVelMax(n);setTargetProfile("custom");};
-  const sigVal = tgtSig==null ? "" : Math.round(tgtSig);
+  // An infinite sig shows as an empty field with an "∞" placeholder rather than "1000000000",
+  // which is the number but not the meaning. Clearing the field puts it back to infinite.
+  const sigVal = (tgtSig==null||tgtSig>=IDEAL_SIG) ? "" : Math.round(tgtSig);
   const trans = Math.round(transversalSpeed);
   const transColor = trans<50?C.success:trans>400?C.danger:C.warning;
   const inputStyle={width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${C.border}`,color:C.text};
@@ -456,18 +517,40 @@ function TargetControls({tgtProfile,onPickResists,targetProfile,setTargetProfile
         <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label}</button>
       ))}
       {targetProfile==="custom"&&<span style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>Custom</span>}
+      {/* A TOGGLE, not another profile — hence the separator and the check, so it doesn't read as a
+          fifth mutually-exclusive option. Dimmed (not disabled) where the current profile has no MWD
+          variant: the setting still holds for the next profile picked, and disabling it would make
+          the control look broken on the Ideal profile. */}
+      <span style={{width:1,alignSelf:"stretch",background:C.border,margin:"0 2px"}}/>
+      <button onClick={toggleMwd} aria-pressed={targetMwd}
+        title={mwdApplies
+          ? "Target has its microwarpdrive running: much larger signature (easier to hit and to apply full missile damage) but much faster (harder for turrets to track)"
+          : "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship"}
+        style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
+                opacity:mwdApplies?1:0.45,
+                background:targetMwd?C.accentLight:C.surface,border:`1px solid ${targetMwd?C.accentBorder:C.border}`,
+                color:targetMwd?C.accent:C.textMid}}>
+        {targetMwd&&<span style={{fontSize:9}}>✓</span>}MWD
+      </button>
     </div>
-    {/* Target RESISTS — how much of your damage actually lands. Separate from the sig/speed
-        presets above, which govern application (tracking), not mitigation. */}
-    <div onClick={onPickResists} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,cursor:"pointer"}}>
+    {/* Target RESISTS — how much of your damage actually lands — are chosen ONCE, in Stats >
+        Firepower, and only read here. This used to be a second picker writing the same shared
+        state, which is two places to set one number with nothing to say which had won.
+        Read-only, and shown only when it is actually biting: a DPS curve quietly cut by 40% with
+        nothing on screen explaining why is exactly the graph nobody should trust.
+        Distinct from the sig/speed presets above, which govern APPLICATION (tracking), not
+        mitigation — those stay local to the graph. */}
+    {resistsOn&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
       <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
-      <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??"None (0%)"}</span>
-    </div>
+      <span style={{fontSize:11,fontWeight:700,color:C.textMid}}>{tgtProfile?.n}
+        <span style={{fontSize:10,fontWeight:400,color:C.textMute}}> · set in Stats › Firepower</span>
+      </span>
+    </div>}
     {/* Editable sig + speed */}
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
         Sig radius
-        <input type="number" inputMode="numeric" value={sigVal} placeholder="ideal" onChange={e=>{const v=e.target.value;setTgtSig(v===""?null:Math.max(0,Number(v)));setTargetProfile("custom");}} style={inputStyle}/>
+        <input type="number" inputMode="numeric" value={sigVal} placeholder="∞" onChange={e=>{const v=e.target.value;setTgtSig(v===""?IDEAL_SIG:Math.max(0,Number(v)));setTargetProfile("custom");}} style={inputStyle}/>
         <span style={{fontSize:10,color:C.textMute}}>m</span>
       </label>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
@@ -479,7 +562,10 @@ function TargetControls({tgtProfile,onPickResists,targetProfile,setTargetProfile
     <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>Flight Vectors</div>
     <div style={{fontSize:10,color:C.textMute,marginBottom:8}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
-      <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel||500} onChange={setSelfAngle} onVelocityChange={setSelfVel}/>
+      {/* NOT `selfMaxVel||500` — 0 is falsy, and 0 is exactly the value a sieged or bastioned hull
+          reports. The caller already ends its own fallback chain with 500 for the genuinely-unknown
+          case, so passing the number straight through is what lets 0 mean immobilised. */}
+      <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel}/>
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
         <div style={{width:1,height:18,background:C.border}}/>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center"}}>
@@ -505,17 +591,24 @@ function loadGraphPrefs(){
 const GP=loadGraphPrefs();
 const gp=(k,dflt)=>(GP[k]===undefined?dflt:GP[k]);
 
-function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,setTgtProfile}){
+// tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
+// set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
+// two views from disagreeing about which resist profile is in force.
+function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile}){
   const[catKey,setCatKey]=useState(()=>gp('catKey',"damage")),[yKey,setYKey]=useState(()=>gp('yKey',"dps")),[xKey,setXKey]=useState(()=>gp('xKey',"dist"));
-  const[showTgtResists,setShowTgtResists]=useState(()=>gp('showTgtResists',false));
   const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',0)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',0));
+  // Off by default: the hull profiles have always meant the bare hull, and silently switching them
+  // to MWD-on values would move every existing user's curves with no visible cause.
+  const[targetMwd,setTargetMwd]=useState(()=>gp('targetMwd',false));
   // Flight vectors start at rest: a graph should open showing the fit's own numbers, not a
   // pre-set engagement the reader did not choose and may not notice.
   const[targetVel,setTargetVel]=useState(()=>gp('targetVel',0)),[selfVel,setSelfVel]=useState(()=>gp('selfVel',0));
   // Stable 100%-reference for the target speed wheel (set by profile/field, NOT by dragging the wheel).
   const[targetVelMax,setTargetVelMax]=useState(()=>gp('targetVelMax',1000));
   // Target sig radius (null = ideal/perfect tracking). Set by profile, editable by tapping.
-  const[tgtSig,setTgtSig]=useState(()=>gp('tgtSig',null));
+  // `?? IDEAL_SIG` also migrates a setup persisted before Ideal became an explicit number, where
+  // infinite sig was stored as null.
+  const[tgtSig,setTgtSig]=useState(()=>gp('tgtSig',IDEAL_SIG)??IDEAL_SIG);
   const[cursor,setCursor]=useState(null);
   // Axis scale (zoom). 1 = auto-fit range from generateCurve; >1 zooms in (smaller max),
   // <1 zooms out (larger max). Applied to the auto max, so it survives fit/axis changes.
@@ -524,26 +617,32 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,showTgtResists,targetProfile,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
-  },[catKey,yKey,xKey,showTgtResists,targetProfile,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
+      {catKey,yKey,xKey,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
+  },[catKey,yKey,xKey,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
   const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
   const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
     const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};
-  // Real transversal: component of relative velocity perpendicular to the line of sight (m/s).
-  // North (up) on the compass = toward/away from the target (radial); E/W = across (transversal).
-  const transversalSpeed=Math.abs(selfVel*Math.sin(selfAngle*Math.PI/180)-targetVel*Math.sin(targetAngle*Math.PI/180));
   const cat=GRAPH_CONFIG.find(c=>c.key===catKey);
   const handleCatChange=key=>{const nc=GRAPH_CONFIG.find(c=>c.key===key);setCatKey(key);setYKey(nc.yAxes[0].key);setXKey(nc.xAxes[0].key);setCursor(null);setXZoom(1);setYZoom(1);};
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
+  // The fit's own top speed, and the speed actually used by the maths. A sieged/bastioned hull
+  // reports 0 here, so the wheel's stored heading and speed must NOT be allowed to contribute a
+  // transversal the ship cannot physically generate — clamp rather than trust the persisted value,
+  // which may predate the siege module being fitted.
+  const selfMaxVel=cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500;
+  const selfVelEff=Math.max(0,Math.min(selfVel,selfMaxVel));
+  // Real transversal: component of relative velocity perpendicular to the line of sight (m/s).
+  // North (up) on the compass = toward/away from the target (radial); E/W = across (transversal).
+  const transversalSpeed=Math.abs(selfVelEff*Math.sin(selfAngle*Math.PI/180)-targetVel*Math.sin(targetAngle*Math.PI/180));
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
     try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters,drones}); }catch{ return null; }
   },[ship,slots,skills,implants,boosters,drones]);
-  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVel/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,xZoom});
+  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,xZoom});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
@@ -595,8 +694,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       </div>
     </div>}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} onCursorChange={setCursor}/></div>
-    {showTgtResists&&<TargetProfileSheet current={tgtProfile} onSelect={setTgtProfile} onClose={()=>setShowTgtResists(false)}/>}
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} onPickResists={()=>setShowTgtResists(true)} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVel} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500} ship={ship}/></div>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship}/></div>}
   </div>);
 }
 

@@ -9,9 +9,10 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
-import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, subsystemsForHull , isTurret, isLauncher, attrHighIsGood } from "../calc.js";
 import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
+import { fmtResource } from "../lib/fmt.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -124,31 +125,48 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
   const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();
+  // Powergrid first, matching the order the game and pyfa put them in.
   const resources=[
-    {key:"cpu",label:"CPU",   used:cs.cpuUsed??0,  total:cs.cpuTotal??0,  unit:"tf",  warn:95},
     {key:"pg", label:"PG",    used:cs.pgUsed??0,   total:cs.pgTotal??0,   unit:"MW",  warn:95},
+    {key:"cpu",label:"CPU",   used:cs.cpuUsed??0,  total:cs.cpuTotal??0,  unit:"tf",  warn:95},
     {key:"cal",label:"Cal",   used:cs.calUsed??0,  total:cs.calTotal??400, unit:"pts", warn:95},
   ];
   // Hardpoint usage
-  const turretsUsed=[...(slots?.high??[])].filter(s=>s.type!=="empty"&&Object.values(modulesData).find(m=>m.name===s.name)?.groupName==="Hybrid Weapon"||Object.values(modulesData).find(m=>m.name===s.name)?.groupName==="Energy Weapon"||Object.values(modulesData).find(m=>m.name===s.name)?.groupName==="Projectile Weapon").length;
-  const launchUsed=[...(slots?.high??[])].filter(s=>s.type!=="empty"&&(Object.values(modulesData).find(m=>m.name===s.name)?.groupName??'').includes("Missile Launcher")).length;
+  // Counted through the ENGINE's own predicates, against TYPES rather than a name scan of
+  // modulesData. The previous version listed three turret groups by hand and so never counted a
+  // Precursor Weapon — an entropic disintegrator used no turret hardpoint on a Vedmak — and matched
+  // launchers on a "Missile Launcher" name prefix, which CCP breaks for structures (those groups
+  // read "Structure <kind> Missile Launcher"). It also rescanned every module in the game per slot.
+  const {turretsUsed,launchUsed}=(slots?.high??[]).reduce((acc,s)=>{
+    if(!s||s.type==="empty")return acc;
+    const t=TYPES[s.typeID]??TYPES[String(s.typeID)];
+    const gn=t?.gn??t?.groupName;
+    if(!gn)return acc;
+    if(isTurret(gn))acc.turretsUsed++;
+    else if(isLauncher(gn,t?.e))acc.launchUsed++;
+    return acc;
+  },{turretsUsed:0,launchUsed:0});
   const turretsTotal=ship?.turrets??0, launchTotal=ship?.launchers??0;
 
+  // Compact numbers, because this is a single row three columns wide: a battleship's 100,000 MW of
+  // structure powergrid cannot sit next to two other readouts at full length. `fmtResource` keeps a
+  // constant FOUR significant digits rather than a fixed decimal count, so a value gains precision
+  // exactly as it gains room — see src/lib/fmt.js.
+  const fmtShort=v=>fmtResource(v);
+
   return(
-    <div style={{background:C.surfaceAlt,borderRadius:10,border:`1px solid ${C.border}`,padding:"10px 12px",margin:"10px 10px 4px"}}>
-      {/* Hardpoints */}
-      {(turretsTotal>0||launchTotal>0)&&<div style={{display:"flex",gap:12,marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
-        {turretsTotal>0&&<div style={{display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontSize:10,color:C.high,fontWeight:700}}>T</span>
-          <div style={{display:"flex",gap:2}}>{Array.from({length:turretsTotal},(_,i)=><div key={i} style={{width:8,height:8,borderRadius:2,background:(turretsUsed>i)?C.high:`${C.high}30`}}/>)}</div>
-          <span style={{fontSize:10,color:C.textMute}}>{turretsUsed}/{turretsTotal}</span>
-        </div>}
-        {launchTotal>0&&<div style={{display:"flex",alignItems:"center",gap:4}}>
-          <span style={{fontSize:10,color:C.mid,fontWeight:700}}>L</span>
-          <div style={{display:"flex",gap:2}}>{Array.from({length:launchTotal},(_,i)=><div key={i} style={{width:8,height:8,borderRadius:2,background:(launchUsed>i)?C.mid:`${C.mid}30`}}/>)}</div>
-          <span style={{fontSize:10,color:C.textMute}}>{launchUsed}/{launchTotal}</span>
-        </div>}
-      </div>}
+    // STICKY, and full-bleed rather than a floating rounded card. The three meters were stacked
+    // vertically at ~150px tall, which is most of a phone's fit list — far too much to pin. Laid out
+    // as three columns it costs about 40px, which is cheap enough to keep on screen permanently.
+    //
+    // Anchored because the number you need is usually the one you cannot see: you are at the bottom
+    // of the list dropping rigs in, and calibration is off the top of the screen.
+    //
+    // top:0 attaches to FitTab's own scroller (this is its first child), NOT the page — so it does
+    // not fight the fit-tab strip, which is sticky in a different container.
+    <div style={{position:"sticky",top:0,zIndex:15,background:C.surfaceAlt,
+                 borderBottom:`1px solid ${C.border}`,padding:"7px 10px 6px"}}>
+      <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
       {resources.map((res,i)=>{
         const rawPct=res.total>0?(res.used/res.total)*100:0;
         const isOver=rawPct>100;
@@ -160,24 +178,40 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
           : '#4ade80';  // green while under max
         const pct=Math.min(rawPct,100);
         const crit=isOver;
+        const rem=(res.total??0)-(res.used??0), over=rem<0;
         return(
-          <div key={res.key} onClick={()=>setShowRemaining(v=>!v)} title={showRemaining?"Tap for used / total":"Tap for remaining"}
-               style={{marginBottom:(resources.length-1>i)?8:0,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
-            <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-              <span style={{fontSize:11,fontWeight:600,color:C.textMid}}>{res.label}</span>
+          <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
+               title={`${res.label}: ${fmtRes(res.used)} / ${fmtRes(res.total)} ${res.unit} — tap to switch readout`}
+               style={{flex:1,minWidth:0,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:3,whiteSpace:"nowrap",lineHeight:1.1}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.4,textTransform:"uppercase",flexShrink:0}}>{res.label}</span>
               {showRemaining
-                ? (()=>{ const rem=(res.total??0)-(res.used??0); const over=rem<0;
-                    return(<span style={{fontSize:10}}>
-                      <span style={{fontWeight:700,color:over?C.danger:C.textMid}}>{fmtRes(Math.abs(rem))}</span>
-                      <span style={{color:over?C.danger:C.textMute}}> {res.unit} {over?"over":"left"}</span>
-                    </span>);
-                  })()
-                : <span style={{fontSize:10}}><span style={{fontWeight:700,color:crit?C.danger:C.textMid}}>{res.used.toLocaleString()}</span><span style={{color:C.textMute}}> / {res.total.toLocaleString()} {res.unit}</span>{crit&&<span style={{color:C.danger,marginLeft:4}}>!</span>}</span>}
+                ? <span style={{fontSize:10,minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>
+                    <span style={{fontWeight:700,color:over?C.danger:C.textMid}}>{fmtShort(Math.abs(rem))}</span>
+                    <span style={{color:over?C.danger:C.textMute}}> {over?"over":"left"}</span>
+                  </span>
+                : <span style={{fontSize:10,minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>
+                    <span style={{fontWeight:700,color:crit?C.danger:C.textMid}}>{fmtShort(res.used)}</span>
+                    <span style={{color:C.textMute}}>/{fmtShort(res.total)}</span>
+                  </span>}
             </div>
-            <div style={{height:5,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
+            <div style={{height:3,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
           </div>
         );
       })}
+      </div>
+      {/* Hardpoints keep their dots — at a glance "two launcher slots free" is faster to read than
+          a fraction — but they only cost a row on hulls that actually have them. */}
+      {(turretsTotal>0||launchTotal>0)&&<div style={{display:"flex",gap:10,marginTop:5,alignItems:"center",lineHeight:1}}>
+        {turretsTotal>0&&<div style={{display:"flex",alignItems:"center",gap:3}}>
+          <span style={{fontSize:9,color:C.high,fontWeight:700}}>T</span>
+          <div style={{display:"flex",gap:2}}>{Array.from({length:turretsTotal},(_,i)=><div key={i} style={{width:6,height:6,borderRadius:2,background:(turretsUsed>i)?C.high:`${C.high}30`}}/>)}</div>
+        </div>}
+        {launchTotal>0&&<div style={{display:"flex",alignItems:"center",gap:3}}>
+          <span style={{fontSize:9,color:C.mid,fontWeight:700}}>L</span>
+          <div style={{display:"flex",gap:2}}>{Array.from({length:launchTotal},(_,i)=><div key={i} style={{width:6,height:6,borderRadius:2,background:(launchUsed>i)?C.mid:`${C.mid}30`}}/>)}</div>
+        </div>}
+      </div>}
     </div>
   );
 }
@@ -297,7 +331,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
           </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
-            {(mod.cpu>0||mod.pg>0)&&<div style={{fontSize:11,color:C.textMute,marginTop:1}}>{mod.cpu>0?`CPU ${mod.cpu} tf`:""}{mod.cpu>0&&mod.pg>0?" / ":""}{mod.pg>0?`PG ${mod.pg} MW`:""}</div>}
+            <FitCost item={mod}/>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
@@ -557,6 +591,87 @@ function ModuleInfoTab({typeID, mod}) {
   return <ItemInfoPanel typeID={typeID ?? mod?.typeID}/>;
 }
 
+// Shared by the module browser, the structure module browser and the Variations tab, so the three
+// never drift apart.
+function fitCostParts(item) {
+  const a = TYPES[item?.typeID]?.attrs ?? TYPES[item?.typeID]?.a ?? {};
+  return {
+    cpu:   item?.cpu   ?? a.cpu   ?? a['50'] ?? 0,
+    pg:    item?.pg    ?? a.power ?? a['30'] ?? 0,
+    calib: item?.calib ?? a.upgradeCost ?? a['1153'] ?? null,
+  };
+}
+
+// CPU and powergrid glyphs, drawn inline rather than pulled from an icon sheet. Two reasons: the app
+// has to render with no network (see lib/icons.js), and CCP's attribute icons aren't in the bundle at
+// all — only TYPE icons are. At 10px beside a module name a bitmap would be mush anyway, whereas
+// these stay crisp and take the surrounding text colour. Shapes follow the game's own iconography
+// closely enough to be read at a glance: a chip for CPU, a bolt for grid.
+const CpuGlyph = ({size=10,color="currentColor"}) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true" style={{flexShrink:0}}>
+    <rect x="4.6" y="4.6" width="6.8" height="6.8" rx="1" stroke={color} strokeWidth="1.5"/>
+    <path d="M6.6 1.4v3M9.4 1.4v3M6.6 11.6v3M9.4 11.6v3M1.4 6.6h3M1.4 9.4h3M11.6 6.6h3M11.6 9.4h3"
+          stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+const PgGlyph = ({size=10,color="currentColor"}) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill={color} aria-hidden="true" style={{flexShrink:0}}>
+    <path d="M9.5 1 3.5 9H7l-.5 6L12.5 7H9l.5-6Z"/>
+  </svg>
+);
+// Calibration. An OPEN-END wrench rather than a closed ring or a socket: at 10px the jaws are the
+// only part that still reads as a tool, so the gap has to be the biggest feature. The head is a 280°
+// arc (opening up-left) and the handle a single thick diagonal — same 16px box and same stroke
+// weight as the chip, so the three sit together.
+const CalGlyph = ({size=10,color="currentColor"}) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={color} aria-hidden="true" style={{flexShrink:0}}>
+    <path d="M5.14 2.41A3 3 0 1 1 2.41 5.14" strokeWidth="2.2"/>
+    <path d="M7.5 7.5 13.2 13.2" strokeWidth="2.6" strokeLinecap="round"/>
+  </svg>
+);
+
+// Fitting cost subtext under a module name.
+//
+// BASE attributes, matching the item's own show-info in game — which is the number EVE players read
+// fitting costs from. Character skills reduce what a fit is actually charged (up to -25%, and which
+// of CPU/powergrid moves depends on the module), so a module already in a slot can cost the resource
+// strip less than the figure shown here.
+//
+// Rigs carry no CPU or powergrid at all — they cost calibration instead, so that is shown in its
+// place rather than a meaningless "CPU 0".
+//
+// Powergrid leads, matching the resource strip and the game's own ordering.
+// Glyph hues. Each resource gets its own so PG and CPU separate at a glance without reading the
+// shape — at 10px, colour is doing more of the work than the drawing is. Deliberately NOT C.accent
+// (that means "tappable" everywhere else in the app) and NOT raw C.warning (an amber bolt on every
+// single row would read as a per-module alert); calibration takes rig green because rigs are already
+// green throughout the UI, so it is a real association rather than decoration.
+const RES_INK = { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig };
+
+function FitCost({item, size=11}) {
+  const {cpu,pg,calib} = fitCostParts(item);
+  const g = Math.round(size * 0.95);
+  // The cell carries the hue, the glyphs are currentColor, and the number overrides back to a
+  // neutral — so tinted icon against bright neutral digits, which is what makes the pair legible
+  // rather than one small blur. Numbers sit at textMid, not textMute: the old #55555f was ~2.4:1
+  // against the row background, which is under any reasonable floor for 10-11px text.
+  const cell  = (key) => ({display:"inline-flex",alignItems:"center",gap:3.5,color:RES_INK[key]});
+  const num   = {color:C.textMid,fontWeight:600};
+  const row   = {fontSize:size,marginTop:1,display:"flex",alignItems:"center",gap:10,lineHeight:1.3};
+  if (calib > 0) return (
+    <div style={row}>
+      <span style={cell('cal')} title={`${calib} calibration points`}><CalGlyph size={g}/><span style={num}>{fmtResource(calib)}</span></span>
+    </div>
+  );
+  if (!(pg > 0) && !(cpu > 0)) return null;
+  return (
+    <div style={row}>
+      {pg  > 0 && <span style={cell('pg')}  title={`${pg} MW powergrid`}><PgGlyph  size={g}/><span style={num}>{fmtResource(pg)}</span></span>}
+      {cpu > 0 && <span style={cell('cpu')} title={`${cpu} tf CPU`}><CpuGlyph size={g}/><span style={num}>{fmtResource(cpu)}</span></span>}
+    </div>
+  );
+}
+
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
   const raw = typeID ? variantsOf(typeID) : [];
   // Resolve meta from CCP's metaGroupID rather than the bundle's (wrong) label, then re-sort:
@@ -573,7 +688,12 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
         <div key={v.typeID} onClick={()=>{if(!readOnly&&v.name!==currentName)onSwap(v);}}
           style={{display:'flex',alignItems:'center',gap:9,padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:(readOnly||v.name===currentName)?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
           {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
-          <span style={{fontSize:12,color:v.name===currentName?C.accent:C.text,flex:1,minWidth:0}}>{v.name}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,color:v.name===currentName?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v.name}</div>
+            {/* Fitting cost matters most here: comparing variants is usually "can I afford the T2
+                one", and the difference between tiers is often exactly the CPU. */}
+            <FitCost item={v} size={10}/>
+          </div>
           <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
         </div>
       ))}
@@ -705,6 +825,42 @@ function parseAbyssal(text){
 
 function MutaplasmidEditor({mod,onUpdateMod}){
   const[copied,setCopied]=useState(false);
+  // Local undo, because a roll here is easy to lose by accident: "Random" replaces every attribute
+  // at once, "Remove" throws the whole roll away, and a slider can be nudged off a hand-tuned value
+  // with no way back. The fit-wide undo in the header can't serve this — it snapshots per committed
+  // module update, so a drag would either flood it or, once coalesced, bury the rest of the fit's
+  // history under 400 abyssal steps. Scoped to this editor, it's exactly the granularity wanted.
+  const[history,setHistory]=useState([]);
+  const lastPush=useRef({key:null,t:0});
+  const snapshot=()=>({mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
+  // A slider drag fires on every pixel of travel, so contiguous edits to the SAME slider coalesce
+  // into one step — Undo steps back a whole drag, not one four-hundredth of one. Button presses
+  // (`apply`/`remove`/`random`) are discrete and never coalesce, so a re-roll spree can be walked
+  // back one roll at a time.
+  const pushHistory=(key)=>{
+    const now=Date.now();
+    if(key.startsWith('v:')&&lastPush.current.key===key&&now-lastPush.current.t<900){lastPush.current.t=now;return;}
+    lastPush.current={key,t:now};
+    setHistory(h=>[...h.slice(-49),snapshot()]);
+  };
+  const undo=()=>{
+    if(!history.length)return;
+    const prev=history[history.length-1];
+    setHistory(h=>h.slice(0,-1));
+    lastPush.current={key:null,t:0};
+    haptic("light");
+    onUpdateMod({...mod,mutaplasmid:prev.mutaplasmid,mutations:prev.mutations});
+  };
+  const UndoBtn=({style})=>(
+    <button onClick={undo} disabled={!history.length}
+      title={history.length?`Undo last change (${history.length})`:"Nothing to undo"}
+      style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"8px 0",borderRadius:7,
+              background:C.surfaceAlt,border:`1px solid ${history.length?C.border:"transparent"}`,
+              color:history.length?C.textMid:C.textMute,opacity:history.length?1:.4,fontSize:11,fontWeight:700,
+              cursor:history.length?"pointer":"default",...style}}>
+      <span style={{fontSize:13,lineHeight:1}}>↶</span>Undo
+    </button>
+  );
   const applicable=MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[];
   const active=mod.mutaplasmid;
   if(!active){
@@ -712,19 +868,22 @@ function MutaplasmidEditor({mod,onUpdateMod}){
     return(<div style={{padding:"10px 12px"}}>
       <div style={{fontSize:11,color:C.textMid,marginBottom:8}}>Apply a mutaplasmid to mutate this module's stats:</div>
       {applicable.map(mid=>{const m=mutaplasmidData[mid];return(
-        <button key={mid} onClick={()=>{const ranges=mutaAttrRanges(mid,mod.typeID);const mutations={};for(const r of ranges)mutations[r.name]=r.base;onUpdateMod({...mod,mutaplasmid:mid,mutations});}}
+        <button key={mid} onClick={()=>{pushHistory('apply');const ranges=mutaAttrRanges(mid,mod.typeID);const mutations={};for(const r of ranges)mutations[r.name]=r.base;onUpdateMod({...mod,mutaplasmid:mid,mutations});}}
           style={{display:"block",width:"100%",textAlign:"left",padding:"9px 11px",marginBottom:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,fontWeight:600,cursor:"pointer"}}>
           {m.n}<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{Object.keys(m.a||{}).length} attrs</span>
         </button>);})}
+      {/* Reachable from here too: Remove drops you back to this list, and losing a tuned roll to a
+          mis-tap is exactly the case undo exists for. */}
+      {history.length>0&&<UndoBtn style={{width:"100%",marginTop:4}}/>}
     </div>);
   }
   const m=mutaplasmidData[active];
   const ranges=mutaAttrRanges(active,mod.typeID);
-  const setVal=(name,v)=>onUpdateMod({...mod,mutations:{...mod.mutations,[name]:v}});
+  const setVal=(name,v)=>{pushHistory('v:'+name);onUpdateMod({...mod,mutations:{...mod.mutations,[name]:v}});};
   return(<div style={{padding:"10px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{m.n}</span>
-      <button onClick={()=>onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined})} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Remove</button>
+      <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Remove</button>
     </div>
     {ranges.map(r=>{
       const cur=mod.mutations?.[r.name]??r.base;
@@ -732,29 +891,59 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // Delta vs the unmutated base. For a percentage-displayed attribute the raw ratio has the
       // wrong SIGN (a lower speedMultiplier is a better roll), so compare in display space, where
       // "up is better" holds for everything.
-      const pct=MUTA_RATE_PCT.has(r.name)
+      const inverted=MUTA_RATE_PCT.has(r.name);   // lower raw = better roll; see the slider below
+      const pct=inverted
         ? mutaToDisplay(r.name,cur)-mutaToDisplay(r.name,r.base)
         : (cur/r.base-1)*100;
+      // Green means BETTER, not BIGGER. The two are opposite for 19 of the 49 attributes a
+      // mutaplasmid can roll — CPU, powergrid, activation cost, the MWD's signature penalty, mass,
+      // reload, cycle time, the hull resonances — so a plain `pct>0` painted a +25% CPU cost green.
+      // The direction is CCP's `highIsGood`, not a list of ours; see attrHighIsGood in calc.js.
+      //
+      // `inverted` wins where it applies: for rate of fire, `pct` is already computed in DISPLAY
+      // space (where up = more shots/sec), so it is pre-corrected and must NOT be flipped again —
+      // CCP quite correctly marks the raw speedMultiplier as lower-is-better, which would
+      // double-invert it back to wrong.
+      const higherIsBetter=inverted?true:attrHighIsGood(r.attrID);
+      const deltaColor=Math.abs(pct)<0.1?C.textMute:((higherIsBetter?pct>0:pct<0)?C.rig:C.warning);
       return(<div key={r.name} style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
           <span style={{fontSize:11,fontWeight:600,color:C.text}}>{mutaLabel(r.name)}</span>
           <span style={{display:"inline-flex",alignItems:"baseline",gap:5}}>
             <MutaValueInput name={r.name} value={cur} min={r.min} max={r.max} onCommit={v=>setVal(r.name,v)}/>
-            <span style={{fontSize:9,color:Math.abs(pct)<0.1?C.textMute:(pct>0?C.rig:C.warning)}}>({pct>=0?"+":""}{pct.toFixed(0)}%)</span>
+            {/* The NUMBER keeps its literal sign — "+25%" on a CPU roll is a true statement about
+                the attribute, and flipping it would misreport the module. Only the colour carries
+                the good/bad judgement. */}
+            <span style={{fontSize:9,color:deltaColor}}>({pct>=0?"+":""}{pct.toFixed(0)}%)</span>
           </span>
         </div>
-        <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01} value={cur} onChange={e=>setVal(r.name,Number(e.target.value))} style={{width:"100%",accentColor:C.accent}}/>
-        {/* The slider runs low->high in RAW space, and each end label is formatted from the raw
-            value at that end — so for an inverted attribute the left label simply reads as the
-            LARGER percentage. That is correct as displayed: sliding left really does give more
-            rate of fire. No swap needed. */}
+        {/* Rate of fire is stored INVERTED: speedMultiplier is a cycle-time multiplier, so a LOWER
+            raw value is a faster gun. Running the slider straight through raw space therefore put
+            "more DPS" on the left, against the near-universal convention that right is more — and
+            against this same panel's own percentage readout, which counts up as you go left.
+            So the slider is mirrored for those attributes: the knob position is (min + max - raw),
+            and the end labels swap with it. Only the DISPLAY is mirrored; `cur` and everything
+            stored on the fit stay in raw space, which is what the engine reads. */}
+        <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
+               value={inverted?(r.min+r.max-cur):cur}
+               onChange={e=>{const v=Number(e.target.value);setVal(r.name,inverted?(r.min+r.max-v):v);}}
+               style={{width:"100%",accentColor:C.accent}}/>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
-          <span>{fmtMutaVal(r.name,r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,r.max)}</span>
+          <span>{fmtMutaVal(r.name,inverted?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,inverted?r.min:r.max)}</span>
         </div>
       </div>);
     })}
     <div style={{display:"flex",gap:8,marginTop:6}}>
-      <button onClick={()=>{const ms={};for(const r of ranges)ms[r.name]=r.min+Math.random()*(r.max-r.min);onUpdateMod({...mod,mutations:ms});}} style={{flex:1,padding:"8px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>Random</button>
+      <UndoBtn style={{flex:1}}/>
+      {/* Revert puts every mutated attribute back to the module's unrolled base — the same state
+          applying the mutaplasmid starts you in, and the state every "(+0%)" delta is measured
+          against. Scoped to THIS module only: `ranges` and `mod` are the one item under edit, so
+          nothing else on the fit is touched. The mutaplasmid stays applied (Remove takes it off).
+          Replaces a "Random" button, which rolled a fresh set of values — fine as a toy, but it
+          could not put back a roll you had entered by hand off a real abyssal module. */}
+      <button onClick={()=>{pushHistory('revert');const ms={};for(const r of ranges)ms[r.name]=r.base;onUpdateMod({...mod,mutations:ms});}}
+        title="Set every attribute on this module back to its base value"
+        style={{flex:1,padding:"8px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>Revert</button>
       <button onClick={()=>{const txt=abyssalToText(mod);try{navigator.clipboard?.writeText(txt);}catch{} setCopied(true);setTimeout(()=>setCopied(false),1500);}} style={{flex:1,padding:"8px 0",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{copied?"Copied!":"Copy"}</button>
     </div>
   </div>);

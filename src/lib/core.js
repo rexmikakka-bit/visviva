@@ -661,7 +661,18 @@ function buildModuleBrowser(slotType){
     const children=(MG_CHILDREN[String(mgId)]??[]).sort((a,b)=>a.name.localeCompare(b.name)).map(c=>buildNode(c.id)).filter(Boolean);
     const mods=byMG[mgId]??[];
     if(children.length===0&&mods.length===0)return null;
-    const outMods=mods.map(m=>({name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID}));
+    // `calib` is the rig calibration cost (upgradeCost, attr 1153) — read from TYPES because
+    // modules.json has no such field and reports rigs as cpu 0 / pg 0. Rigs carry no CPU or
+    // powergrid at all, so the browser shows calibration in their place.
+    //
+    // These are BASE attributes, matching the item's own "show info" in game. Character skills
+    // reduce what a fit is actually charged (up to -25%, and which of CPU/PG moves varies by module
+    // type), so the resource strip on a fitted module can read lower than the figure here.
+    const outMods=mods.map(m=>{
+      const a=TYPES[m.typeID]?.attrs??TYPES[m.typeID]?.a??{};
+      return {name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID,
+              calib:a.upgradeCost??a['1153']??null};
+    });
     // CCP's nominated item first; otherwise the first real item anywhere beneath this node, which
     // is what makes the icon meaningful for leaf groups the market tree does not nominate one for.
     const iconTid=MT_GROUP_ICON[String(mgId)]
@@ -967,7 +978,11 @@ function buildStructureModuleBrowser(slotType){
   for(const[tid,t] of Object.entries(TYPES)){
     if((t.c??t.category)!==66 || !t.n || !t.gn) continue;
     if(guessSlotFromDogma(Number(tid))!==slotType) continue;
-    (byGroup[t.gn]??=[]).push({name:t.n,typeID:Number(tid),meta:metaOf(Number(tid))});
+    // Same fitting-cost subtext as the ship module browser. These rows are built straight from
+    // TYPES (structures are not in modules.json at all), so the attributes are read here.
+    const a=t.attrs??t.a??{};
+    (byGroup[t.gn]??=[]).push({name:t.n,typeID:Number(tid),meta:metaOf(Number(tid)),
+      cpu:a.cpu??a['50']??0, pg:a.power??a['30']??0, calib:a.upgradeCost??a['1153']??null});
   }
   return Object.entries(byGroup).sort(([a],[b])=>a.localeCompare(b)).map(([gn,mods])=>({
     id:gn,name:gn,children:[],

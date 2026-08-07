@@ -18,12 +18,13 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, isTurret, isLauncher, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
+import { fmtResource } from './lib/fmt.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1216,6 +1217,210 @@ function check(group, label, actual, expected, tol = 0.005) {
     }
   }
   check('hulls', 'hulls computing cleanly', total - crashed, total, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13h. MWD TARGET PROFILES — the graph's "MWD" toggle
+//      TARGET_PROFILES in GraphTab.jsx carries mwdSig/mwdVel for Frigate/Cruiser/Battleship. Those
+//      are DERIVED: every fittable hull in the class, given the size-appropriate T2 MWD, run active
+//      at all skills V, and MEDIANED. Re-derived here so a CCP rebalance of hull signatures or
+//      speeds surfaces as a failure instead of quietly making the profiles unrepresentative.
+//      Tolerance is 3% — the shipped constants are rounded to the nearest 5 m / 10 m/s.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMWD TARGET PROFILES');
+  // Must match TARGET_PROFILES in src/components/GraphTab.jsx.
+  const EXPECTED = {
+    Frigates:    { mwd: '5MN Microwarpdrive II',   sig: 200,  vel: 3050 },
+    Cruisers:    { mwd: '50MN Microwarpdrive II',  sig: 690,  vel: 1870 },
+    Battleships: { mwd: '500MN Microwarpdrive II', sig: 2300, vel: 1040 },
+  };
+  const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1;
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  const tax = buildShipTaxonomy();
+  for (const [top, exp] of Object.entries(EXPECTED)) {
+    const hulls = shipsUnder(nodeAtPath(tax, [top]));
+    const mwdID = tid(exp.mwd);
+    const sigs = [], vels = [];
+    for (const h of hulls) {
+      const cs = calcFitStats({ typeID: h.typeID, name: h.name },
+        { high: [], mid: [{ typeID: mwdID, state: 'active' }], low: [], rigs: [] }, [], null, {});
+      // A hull that cannot run the MWD would report its bare speed and drag the median; there are
+      // currently none, so a shift here is itself the signal worth investigating.
+      const v = cs?.maxVelocityAB ?? cs?.maxVelocity ?? 0;
+      if (!cs?.sigRadius || !(v > 0)) continue;
+      sigs.push(cs.sigRadius); vels.push(v);
+    }
+    check('mwdprof', `${top}: hull count is sane`, hulls.length === sigs.length ? 1 : 0, 1, 0);
+    check('mwdprof', `${top}: median sig with MWD`, median(sigs), exp.sig, 0.03);
+    check('mwdprof', `${top}: median velocity with MWD`, median(vels), exp.vel, 0.03);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13g. MIXED CAP-FREE / CAP-USING SHIELD BOOSTERS — sustained tank
+//      A Phoenix Navy Issue carrying a Capital Ancillary Shield Booster on cap booster charges
+//      (cap-FREE) alongside a CONCORD Capital Shield Booster (cap-HUNGRY), on a fit that is not cap
+//      stable. The sustained EHP/s used to be forced equal to peak whenever ANY ancillary booster
+//      ran on charges, which declared the cap-hungry booster sustainable too — and because the UI
+//      only shows the sustained row when it is BELOW peak, the row disappeared on exactly the fits
+//      that need it. Baseline read from pyfa v2.68.0, all skills V.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMIXED SHIELD BOOSTERS (sustained tank)');
+  const pni = { typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' };
+  const slots = {
+    low: [M('Caldari Navy Ballistic Control System', 'online'), M('Caldari Navy Ballistic Control System', 'online'),
+          M('Caldari Navy Ballistic Control System', 'online'), M('Damage Control II', 'online'),
+          M('Dread Guristas Co-Processor', 'online')],
+    mid: [M('CONCORD Capital Shield Booster', 'active'),
+          M('Dread Guristas Multispectrum Shield Hardener', 'active'), M('Dread Guristas Multispectrum Shield Hardener', 'active'),
+          M('Gist X-Type Shield Boost Amplifier', 'online'), M('Republic Fleet Target Painter', 'active'),
+          M('Capital Ancillary Shield Booster', 'active', 'Navy Cap Booster 3200'),
+          M('Capital Capacitor Booster II', 'active', 'Navy Cap Booster 3200'),
+          M('Missile Guidance Computer II', 'active', 'Missile Range Script')],
+    high: [M("'YF-12a' Compact Large Plasma Smartbomb", 'active'), M('Siege Module II', 'active'),
+           M('Rapid Torpedo Launcher II', 'active', 'Inferno Javelin Torpedo'),
+           M('Rapid Torpedo Launcher II', 'active', 'Mjolnir Javelin Torpedo'),
+           M('Rapid Torpedo Launcher II', 'active', 'Nova Javelin Torpedo')],
+    rigs: [M('Capital EM Shield Reinforcer I', 'online'), M('Capital Warhead Flare Catalyst I', 'online'),
+           M('Capital Warhead Rigor Catalyst I', 'online')],
+  };
+  const cs = calcFitStats(pni, slots, [], null, {});
+  // NB: check()'s tolerance is RELATIVE, so 1e-5 here is ±0.001%, not ±1e-5 absolute. Loose enough
+  // to absorb the 1-decimal rounding these baselines were read at, tight enough to actually pin them.
+  const TOL = 1e-5;
+  check('pni', 'not cap stable (precondition)', cs.capStable ? 1 : 0, 0, 0);
+  check('pni', 'peak shield boost EHP/s', cs.shieldRepEhpS, 63773.5, TOL);
+  check('pni', 'SUSTAINED shield boost EHP/s (pyfa 53136.1)', cs.shieldRepSustainedEhpS, 53136.1, TOL);
+  // Sustained must be strictly below peak, or the UI hides the row — the actual reported symptom.
+  check('pni', 'sustained is below peak, so the row renders', cs.shieldRepSustainedEhpS < cs.shieldRepEhpS - 0.05 ? 1 : 0, 1, 0);
+  // The cap-FREE ancillary booster keeps its full rep; only the cap-using CONCORD booster is
+  // throttled. Asserting the split, not just the total, is what distinguishes a correct model from
+  // a ratio that happens to land on the right number.
+  check('pni', 'raw peak shield rep HP/s', cs.shieldRepPS, 12830.6, TOL);
+  check('pni', 'raw sustained shield rep HP/s', cs.sustainedShieldRepPS, 10690.4, TOL);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13f. ATTRIBUTE DIRECTION — which way is "better", for the abyssal editor's delta colouring
+//      Green in the mutaplasmid editor means BETTER, not BIGGER, and the direction comes from CCP's
+//      own `highIsGood` (dgmattribs -> `h`) rather than a list of ours. These pin the cases where
+//      bigger is WORSE, because those are the ones a hand-written list would miss and because an
+//      eve.db upgrade could silently flip one.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nATTRIBUTE DIRECTION');
+  const AID_OF = { capacitorNeed: 6, cpu: 50, power: 30, duration: 73, reloadTime: 1795,
+                   signatureRadiusBonus: 554, signatureRadiusAdd: 983, massAddition: 796,
+                   hullEmDamageResonance: 974, siegeLocalLogisticsDurationBonus: 2346,
+                   speedMultiplier: 204,
+                   damageMultiplier: 64, armorHP: 265, maxVelocity: 37, maxRange: 54,
+                   trackingSpeed: 160, shieldBonus: 68, falloff: 158 };
+  const lower = ['capacitorNeed', 'cpu', 'power', 'duration', 'reloadTime', 'signatureRadiusBonus',
+                 'signatureRadiusAdd', 'massAddition', 'hullEmDamageResonance',
+                 'siegeLocalLogisticsDurationBonus', 'speedMultiplier'];
+  const higher = ['damageMultiplier', 'armorHP', 'maxVelocity', 'maxRange', 'trackingSpeed',
+                  'shieldBonus', 'falloff'];
+  for (const n of lower)  check('attrdir', `${n}: lower is better`,  attrHighIsGood(AID_OF[n]) ? 1 : 0, 0, 0);
+  for (const n of higher) check('attrdir', `${n}: higher is better`, attrHighIsGood(AID_OF[n]) ? 1 : 0, 1, 0);
+  // An attribute the bundle has never heard of must not crash the readout, and defaults to the
+  // majority case (bigger is better) — which is what the editor assumed before the flag was used.
+  check('attrdir', 'unknown attribute defaults to higher-is-better', attrHighIsGood(999999) ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13e. IDEAL TARGET PROFILE — perfect damage application
+//      The graph's "Ideal" preset is a stationary target with an effectively infinite signature
+//      (IDEAL_SIG in GraphTab.jsx), rather than a short-circuit branch that skipped the application
+//      math. That branch ignored its tgtSig argument, so the "Target sig. radius" X axis drew a flat
+//      line whenever Ideal was selected. These checks pin the two things that make the replacement
+//      safe: every ship applies FULL damage at IDEAL_SIG regardless of either ship's speed, and the
+//      result is bit-identical to the branch that was removed.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nIDEAL TARGET PROFILE');
+  const IDEAL_SIG = 1e15;   // must match GraphTab.jsx
+  // The deleted branch, verbatim: range falloff only, no tracking term.
+  const perfect = (w, d) => calcTurretMult(w.falloff > 0
+    ? Math.pow(0.5, Math.pow(Math.max(0, d - w.optimal) / w.falloff, 2))
+    : (d <= w.optimal ? 1 : 0));
+  const real = (w, d, atkSpeed, tgtSpeed) => calcTurretMult(calcTurretCTH({
+    atkSpeed, atkAngle: 90, atkRadius: 120, optimal: w.optimal, falloff: w.falloff,
+    tracking: w.tracking, optimalSigRadius: w.optimalSigRadius, distance: d,
+    tgtSpeed, tgtAngle: 90, tgtRadius: 0, tgtSig: IDEAL_SIG }));
+  // Worst tracking in the game (beam) and a short-range brawler, at every interesting distance,
+  // with both ships stationary and both at speed.
+  const guns = [
+    { optimal: 78000, falloff: 24000, tracking: 0.0021, optimalSigRadius: 400 },  // Dual Giga Beam II
+    { optimal:  9000, falloff: 12500, tracking: 0.0189, optimalSigRadius: 400 },  // Neutron Blaster II
+    { optimal:   900, falloff:  5000, tracking: 0.396,  optimalSigRadius:  40 },  // 125mm Gatling II
+    { optimal: 20000, falloff:     0, tracking: 0.02,   optimalSigRadius: 400 },  // no-falloff case
+  ];
+  let worstDelta = 0;
+  for (const w of guns)
+    for (const d of [0, 1, 1000, 9000, 20000, 80000, 150000])
+      for (const [a, t] of [[0, 0], [500, 0], [0, 5000], [900, 1400]])
+        worstDelta = Math.max(worstDelta, Math.abs(perfect(w, d) - real(w, d, a, t)));
+  check('ideal', 'IDEAL_SIG reproduces perfect application exactly', worstDelta, 0, 0);
+  // Inside optimal a turret applies slightly MORE than paper DPS — wrecking shots. Not a bug.
+  check('ideal', 'in-optimal turret multiplier (wrecking shots)', calcTurretMult(1), 1.01505, 1e-9);
+  // Missiles: the explosion-radius and explosion-velocity terms both pin at 1, at any target speed.
+  let worstMissile = 0;
+  for (const m of [[100, 69, 5.3], [450, 71, 5.55], [40, 170, 4.6]])
+    for (const v of [0, 100, 500, 1400, 5000])
+      worstMissile = Math.max(worstMissile, Math.abs(1 - calcMissileFactor(m[0], m[1], m[2], v, IDEAL_SIG)));
+  check('ideal', 'missiles apply fully at IDEAL_SIG, any target speed', worstMissile, 0, 0);
+  // And the sig axis is not degenerate: a small target must still be mitigated, or the axis is
+  // decorative. This is what the removed branch got wrong.
+  check('ideal', 'a 40m frigate still mitigates a torpedo', calcMissileFactor(450, 71, 5.55, 0, 40) < 0.1 ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13d. RESOURCE NUMBER FORMATTING — the resource strip's CPU/PG/Cal readouts
+//      The first four rows are pyfa's own renderings, read off its fitting panel; the point of
+//      four SIGNIFICANT digits rather than a fixed decimal count is that 19678 and 20843 stay
+//      distinguishable, which a blanket .toFixed(1) ("19.7k"/"20.8k") loses.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nRESOURCE FORMATTING');
+  const f = (v, e) => check('fmt', `${v} -> ${e}`, fmtResource(v) === e ? 1 : 0, 1, 0, fmtResource(v));
+  f(1362.0, '1.362k');
+  f(1363.8, '1.364k');
+  f(19678.0, '19.68k');
+  f(20843.8, '20.84k');
+  f(595.25, '595.3');       // still four digits when there is room for the decimal
+  f(400, '400');            // a round total drops its trailing zeros
+  f(0, '0');
+  f(5000, '5k');
+  f(1.5, '1.5');
+  f(999960, '1M');          // rounding must promote the unit, not render "1000k"
+  f(2_500_000, '2.5M');
+  f(NaN, '0');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13c. HARDPOINT CLASSIFICATION — the resource strip's turret/launcher dots
+//      These counters used to carry their own list of three turret groups, which silently omitted
+//      Precursor Weapons (an entropic disintegrator used no turret hardpoint on a Vedmak), Mining
+//      Lasers and Vorton Projectors. They now go through the engine's own predicates, so this pins
+//      that the two stay in agreement.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nHARDPOINTS');
+  const grp = (n) => { const t = TYPES[tid(n)]; return { gn: t?.gn, e: t?.e }; };
+  const turret = (n) => { const g = grp(n); return isTurret(g.gn) ? 1 : 0; };
+  const launcher = (n) => { const g = grp(n); return isLauncher(g.gn, g.e) ? 1 : 0; };
+  check('hardpt', 'entropic disintegrator is a turret', turret('Heavy Entropic Disintegrator II'), 1, 0);
+  check('hardpt', 'mining laser is a turret', turret('Miner II'), 1, 0);
+  check('hardpt', 'hybrid is a turret', turret('Neutron Blaster Cannon II'), 1, 0);
+  check('hardpt', 'energy is a turret', turret('Dual Giga Beam Laser II'), 1, 0);
+  check('hardpt', 'projectile is a turret', turret('800mm Repeating Cannon II'), 1, 0);
+  check('hardpt', 'a launcher is NOT a turret', turret('Heavy Missile Launcher II'), 0, 0);
+  check('hardpt', 'ship launcher counts as a launcher', launcher('Heavy Missile Launcher II'), 1, 0);
+  // CCP names structure launcher groups "Structure <kind> Missile Launcher", so a "Missile Launcher"
+  // prefix test misses them; the engine keys on effect 101 instead.
+  check('hardpt', 'structure launcher counts as a launcher', launcher('Standup Multirole Missile Launcher I'), 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

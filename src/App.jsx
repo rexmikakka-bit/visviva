@@ -112,12 +112,16 @@ export default function App(){
   // loadFit. A ref rather than state so setting it cannot race the load it is meant to modify.
   const wantNewTab=useRef(false);
   // The fit restored at launch comes straight out of localStorage rather than through loadFit, so
-  // nothing would have registered its tab and the strip would start empty with a fit already open.
-  // Seed it once on mount.
+  // nothing registered its tab. Seed it once on mount -- but ONLY if the strip already has tabs.
+  //
+  // An empty strip is a legitimate state, not a gap to be filled: it means the user is not using
+  // tabs. Seeding unconditionally meant closing every tab was undone by the next launch, which is
+  // the same "don't drag me into the tab system" problem as a plain open creating one.
   useEffect(()=>{
     if(!activeFit?.ship||!activeFit?.fitName)return;
     setOpenTabs(prev=>{
       const list=prev??[];
+      if(!list.length)return list;
       if(list.some(t=>t.ship===activeFit.ship&&t.name===activeFit.fitName))return list;
       const fit=fitsDB[activeFit.ship]?.find(f=>f.name===activeFit.fitName);
       if(!fit)return list;
@@ -305,11 +309,22 @@ export default function App(){
       const at=list.findIndex(t=>t.ship===ship&&sameTab(t,fit,fitName));
       if(at>=0)return list;
       const entry={ship,id:fit.id,name:fitName};
-      if(!newTab&&prevFit){
-        const cur=list.findIndex(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName);
+      // A PLAIN open must never drag someone into the tab system who is not using it. With the
+      // strip empty, opening a fit just swaps what is on screen and the strip stays empty.
+      //
+      // This branch used to fall through to the seeding below, which pushed the fit you were
+      // leaving AND the one you opened -- so a plain open with no tabs at all produced TWO tabs
+      // out of nothing. That seeding is only correct when a new tab was explicitly asked for.
+      if(!newTab){
+        if(!list.length)return list;
+        const cur=prevFit?list.findIndex(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName):-1;
+        // Replace the tab you were in; if the current fit somehow has no tab, append rather than
+        // silently dropping the fit being opened.
         if(cur>=0){const next=[...list];next[cur]=entry;return next;}
+        const appended=[...list,entry];
+        return appended.length>MAX_OPEN_TABS?appended.slice(appended.length-MAX_OPEN_TABS):appended;
       }
-      // Opening the FIRST new tab has to keep what you were already working on. The fit you are
+      // Explicitly asking for a new tab: keep what you were already working on. The fit you are
       // leaving does not always have a tab yet -- a fit made with "+ New Fit" never went through
       // loadFit, so nothing ever registered one -- and appending alone silently dropped it, leaving
       // the strip showing only the fit you just opened. Seed the outgoing fit as tab 1 first.

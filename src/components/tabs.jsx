@@ -309,7 +309,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>
         </div>
       )}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"0 10px 4px"}}>
+      {/* 8px top so this row doesn't sit flush against the sticky resource strip's border on a fit
+          with no tactical mode / pilot-sec / system-security block above it. The optional blocks all
+          carry the same 8px, so the gap under the strip is the same whichever of them is showing. */}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px 4px"}}>
         {/* Undo covers every edit to the fit (modules, charges, drones, cargo, implants, boosters,
             projected/command fits) because the history snapshots the same state App.jsx persists.
             Disabled rather than hidden so the control doesn't shift position as you edit. */}
