@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.js";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
@@ -7,6 +7,11 @@ import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, ha
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
+
+// Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
+// BEFORE a const declared later in the component body exists — the temporal dead zone would throw
+// on first render, and no-undef cannot see it.
+const _SUBTABS=["Fit","Stats","Graph"];
 
 export function ActiveFitBar({activeFit,onReturn}){
   if(!activeFit)return null;
@@ -20,7 +25,7 @@ export function ActiveFitBar({activeFit,onReturn}){
   </div>);
 }
 
-export function RecentFitsList({fitsDB, activeFit, loadFit}) {
+export function RecentFitsList({fitsDB, activeFit, loadFit, recents}) {
   const [open, setOpen] = useState(() => {
     // Closed by default: the list is a shortcut, not the primary navigation, and open by default
     // it pushed the ship classes below the fold on a phone. The choice is remembered either way.
@@ -31,9 +36,15 @@ export function RecentFitsList({fitsDB, activeFit, loadFit}) {
     setOpen(next);
     try { localStorage.setItem('pyfa_recent_open', next ? '1' : '0'); } catch {}
   };
-  const recentFits = Object.entries(fitsDB)
-    .flatMap(([ship, fits]) => fits.map(f => ({ship, fit:f})))
-    .sort((a,b) => (b.fit.modified||0) - (a.fit.modified||0))
+  // Driven by an explicit most-recently-OPENED list maintained in App.jsx, not by `modified`.
+  // The old sort was `(b.fit.modified||0) - (a.fit.modified||0)`, but `modified` is a display
+  // STRING ("Aug 6, 2026") — subtracting two of them is NaN, so the comparator never reordered
+  // anything and the list was simply the first 8 fits in object order. Even parsed it would have
+  // been wrong twice over: it is day-granular (everything edited today ties) and "modified" is not
+  // "opened" anyway.
+  const recentFits = (recents ?? [])
+    .map(r => { const fit = fitsDB[r.ship]?.find(f => (r.id != null ? f.id === r.id : f.name === r.name)); return fit ? {ship: r.ship, fit} : null; })
+    .filter(Boolean)          // drops fits deleted or renamed since they were opened
     .slice(0, 8);
   if (!recentFits.length) return null;
   return (
@@ -186,7 +197,7 @@ export function ShipInfoSheet({ship, onClose}) {
   );
 }
 
-export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -196,8 +207,13 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
   // render time because shipsByClass rows are only {name,typeID} — ShipInfoSheet's Attributes tab
   // needs the full record (cpu/pg/slots/hardpoints).
   const[infoShip,setInfoShip]=useState(null);
-  const[fitSubTab,setFitSubTab]=useState("Fit");
-  const _SUBTABS=["Fit","Stats","Graph"];
+  // Persisted: leaving the fittings tab unmounts this screen, so a plain useState reset you to
+  // "Fit" every time you checked Drones or Effects and came back.
+  const[fitSubTab,setFitSubTab]=useState(()=>{
+    try{const s=localStorage.getItem('visviva_fit_subtab');if(s&&_SUBTABS.includes(s))return s;}catch{}
+    return "Fit";
+  });
+  useEffect(()=>{try{localStorage.setItem('visviva_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
   // Sub-tab swipe. The panel follows your finger during the drag and slides in from the correct
   // side on commit, instead of cutting from one tab to the next.
   //
@@ -353,12 +369,12 @@ export function FittingsScreen({undo,undoDepth,activeFit,setActiveFit,loadFit,vi
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ships or fit names..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ships or fit names..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
         {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:16,padding:0}}>x</button>}
       </div>
     </div>
     <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
-      {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit}/>}
+      {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit} recents={recents}/>}
       {!search&&browsePath.length===0&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>

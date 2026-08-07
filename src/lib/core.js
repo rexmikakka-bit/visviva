@@ -371,11 +371,19 @@ function parseEFT(text){
   // make one render as a block there. Strip it — leading and trailing fences, with an optional
   // language tag — so the fit imports as pasted instead of failing on "```" as a ship name. The
   // third replace catches a lone fence on its own line, which is what a clipped selection leaves.
-  const fenced = String(text ?? "")
-    .replace(/^\s*```[^\n]*\n?/, "")
-    .replace(/\n?[ \t]*```[ \t]*$/, "")
-    .replace(/^[ \t]*```[ \t]*$/gm, "");
-  const rawLines=fenced.replace(/\r/g,"").split("\n").map(l=>l.trim());
+  //
+  // Line endings are normalized FIRST (a native clipboard can hand back CRLF or bare CR), and the
+  // fences are then removed by FILTERING WHOLE LINES rather than by anchoring to the start and end
+  // of the string. The anchored version only stripped a fence that began the text or ended it, so
+  // any leading blank line, trailing newline, surrounding prose or stray carriage return left the
+  // fence in place and "```" got parsed as the ship name. Matching "a line that is nothing but
+  // backticks, optionally with a language tag" is both simpler and position-independent.
+  //   is in the class because a mobile copy can carry non-breaking spaces.
+  const norm = String(text ?? "").replace(/\r\n?/g, "\n");
+  const fenced = norm.split("\n")
+    .filter(l => !/^[\s ]*`{3,}[\s ]*\w*[\s ]*$/.test(l))
+    .join("\n");
+  const rawLines=fenced.split("\n").map(l=>l.replace(/ /g," ").trim());
   if(!rawLines.length)return{error:"Empty text"};
   const hm=rawLines[0].match(/^\[(.+?),\s*(.+)\]$/);
   if(!hm)return{error:"Invalid EFT header — expected [Ship Name, Fit Name]"};
@@ -684,11 +692,23 @@ function getCompatibleCharges(mod){
   const chargeGroups=CG_KEYS.map(([id,nm])=>a[id]??a[nm]).filter(v=>v&&v>0).map(Number);
   if(chargeGroups.length===0)return [];
   const chargeSize=a['128']??a.chargeSize??null;
+  // A charge that does not physically FIT in the module's hold cannot be loaded. This is not a
+  // nicety — it is the only thing in CCP's data that stops a Core Probe Launcher taking combat
+  // probes. Core and Expanded launchers are indistinguishable by chargeGroup (both 479), effects,
+  // or anything else; what separates them is capacity 0.8 vs 8 against a Core Scanner Probe's
+  // volume of 0.1 and a Combat Scanner Probe's volume of 1. floor(0.8 / 1) = 0 combat probes.
+  // Same capacity-vs-volume mechanism as clipSizeOf() in calc.js.
+  //
+  // NOTE: pyfa does NOT model this — eos's getValidCharges() filters on chargeGroup alone, so it
+  // will happily load combat probes into a core launcher. This is one of the rare places we are
+  // deliberately stricter than the reference, because the game itself is.
+  const capacity=a['38']??a.capacity??null;
   const out=[];
   for(const gid of chargeGroups){
     for(const c of (CHARGES_BY_GROUP.get(gid)??[])){
       // chargeSize filter: skip only if both sides specify a size and they differ
       if(chargeSize!=null && c.chargeSize!=null && c.chargeSize!==chargeSize)continue;
+      if(capacity>0 && c.volume>0 && c.volume>capacity)continue;
       out.push(c);
     }
   }

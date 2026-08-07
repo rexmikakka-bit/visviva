@@ -314,7 +314,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
       <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
           <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search all modules..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
+          <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search all modules..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
           {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,padding:0}}>x</button>}
         </div>
         <button onClick={()=>{setPasteOpen(o=>!o);setPasteErr(null);}} style={{marginTop:8,width:"100%",padding:"7px 0",background:pasteOpen?C.high+"22":C.surfaceAlt,border:`1px solid ${pasteOpen?C.high:C.border}`,borderRadius:8,color:pasteOpen?C.high:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>⎘ Paste Abyssal Module</button>
@@ -581,23 +581,33 @@ function ModuleVariationsTab({typeID, currentName, onSwap}) {
 
 
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
-const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"RoF Multiplier",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
+const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
 const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??name.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
 // Display scaling for a mutated attribute. Both the read-only rendering and the TYPED input go
 // through this, so the units a value is shown in are exactly the units you type it back in — if the
 // unit for an attribute is ever corrected, both follow automatically.
 const mutaUnit=(name)=>{
+  if(MUTA_RATE_PCT.has(name)) return {scale:1,unit:"%",dp:2};
   if(/Range|maxRange|falloff/i.test(name)) return {scale:1000,unit:"km",dp:2};
   if(/duration|reloadTime|explosionDelay/i.test(name)) return {scale:1000,unit:"s",dp:2};
   if(/mass/i.test(name)) return {scale:1,unit:"kg",dp:0};
   return {scale:1,unit:"",dp:null};   // dp null → magnitude-dependent precision
 };
+
+// Attributes whose raw value is a multiplier the cycle time is DIVIDED by, so the bare number tells
+// you nothing: a Gyrostabilizer II's speedMultiplier of 0.895 actually means "+11.7% rate of fire".
+// Shown — and edited — as that percentage instead. The mapping is monotonically DECREASING, so a
+// smaller raw value is a bigger percentage and the min/max ends of the range swap when displayed.
+const MUTA_RATE_PCT=new Set(["speedMultiplier"]);
+const mutaToDisplay=(name,v)=>MUTA_RATE_PCT.has(name)?(1/v-1)*100:v;
+const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):d;
+
 // Plain (no thousands separators) rendering in display units — what goes INTO the text box, so it
 // stays parseable when the user edits it.
 const mutaValStr=(name,v)=>{
-  const u=mutaUnit(name);
-  if(u.dp!=null) return (v/u.scale).toFixed(u.dp);
-  const a=Math.abs(v); return a>=100?v.toFixed(1):a>=1?v.toFixed(2):v.toFixed(4);
+  const u=mutaUnit(name), d=mutaToDisplay(name,v);
+  if(u.dp!=null) return (d/u.scale).toFixed(u.dp);
+  const a=Math.abs(d); return a>=100?d.toFixed(1):a>=1?d.toFixed(2):d.toFixed(4);
 };
 const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(v).toLocaleString()} kg`; return u.unit?`${mutaValStr(name,v)} ${u.unit}`:mutaValStr(name,v); };
 
@@ -614,7 +624,10 @@ function MutaValueInput({name,value,min,max,onCommit}){
     const n=Number(txt.replace(/,/g,"").trim());
     if(!Number.isFinite(n)){ setTxt(mutaValStr(name,value)); return; }   // gibberish → revert
     // A mutaplasmid cannot roll outside its own range, so a typed value must not escape it either.
-    const raw=Math.min(max,Math.max(min,n*u.scale));
+    // Clamp in RAW space, after converting back out of display units — for a percentage-displayed
+    // attribute the display mapping is inverted, so clamping the typed number against the raw
+    // min/max would compare a percentage to a multiplier.
+    const raw=Math.min(max,Math.max(min,mutaFromDisplay(name,n*u.scale)));
     onCommit(raw);
     setTxt(mutaValStr(name,raw));
   };
@@ -683,7 +696,12 @@ function MutaplasmidEditor({mod,onUpdateMod}){
     {ranges.map(r=>{
       const cur=mod.mutations?.[r.name]??r.base;
       const frac=r.max>r.min?(cur-r.min)/(r.max-r.min):0.5;
-      const worse=cur<r.base, pct=((cur/r.base-1)*100);
+      // Delta vs the unmutated base. For a percentage-displayed attribute the raw ratio has the
+      // wrong SIGN (a lower speedMultiplier is a better roll), so compare in display space, where
+      // "up is better" holds for everything.
+      const pct=MUTA_RATE_PCT.has(r.name)
+        ? mutaToDisplay(r.name,cur)-mutaToDisplay(r.name,r.base)
+        : (cur/r.base-1)*100;
       return(<div key={r.name} style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
           <span style={{fontSize:11,fontWeight:600,color:C.text}}>{mutaLabel(r.name)}</span>
@@ -693,7 +711,13 @@ function MutaplasmidEditor({mod,onUpdateMod}){
           </span>
         </div>
         <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01} value={cur} onChange={e=>setVal(r.name,Number(e.target.value))} style={{width:"100%",accentColor:C.accent}}/>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}><span>{fmtMutaVal(r.name,r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,r.max)}</span></div>
+        {/* The slider runs low->high in RAW space, and each end label is formatted from the raw
+            value at that end — so for an inverted attribute the left label simply reads as the
+            LARGER percentage. That is correct as displayed: sliding left really does give more
+            rate of fire. No swap needed. */}
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
+          <span>{fmtMutaVal(r.name,r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,r.max)}</span>
+        </div>
       </div>);
     })}
     <div style={{display:"flex",gap:8,marginTop:6}}>
@@ -763,7 +787,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
               <span style={{fontSize:11,color:C.textMute}}>{rahOpen?"▲":"▼"}</span>
             </div>
             {rahOpen&&<>
-            <input value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder="Search ammo or NPC…" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
+            <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder="Search ammo or NPC…" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
             {DAMAGE_PROFILES.map(cat=>{
               const items=cat.items.filter(it=>!q||it.n.toLowerCase().includes(q)||cat.cat.toLowerCase().includes(q));
               if(!items.length)return null;
@@ -902,7 +926,7 @@ function TargetProfileSheet({current,onSelect,onClose}){
       <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search targets..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search targets..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
       </div>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
@@ -933,7 +957,7 @@ function DamageProfileSheet({current,onSelect,onClose}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search profiles..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search profiles..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
       </div>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
