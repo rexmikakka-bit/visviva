@@ -3,6 +3,9 @@ import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
+// The one copy of the app mark. Kept byte-identical to public/favicon.svg so the header, the
+// browser tab and the installed app icon can never show three different drawings.
+import appMark from "../assets/app-mark.svg";
 
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
 
@@ -172,10 +175,14 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <div style={{textAlign:"left",minWidth:0}}>
         {/* Uppercase by design -- it reads as a wordmark above the hull name. Hidden when collapsed:
-            it is the least useful line once you are deep in a fit. */}
+            it is the least useful line once you are deep in a fit.
+            Also hidden when NO fit is open, because the line below it falls back to "Visviva" too —
+            the eyebrow exists to label the hull name underneath it, and with no hull there is
+            nothing to label, just the name printed twice. */}
+        {activeFit?.ship&&
         <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",
                      maxHeight:collapsed?0:20,opacity:collapsed?0:1,lineHeight:1.6,overflow:"hidden",marginBottom:collapsed?0:2,
-                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Visviva</div>
+                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Visviva</div>}
         {/* lineHeight 1.2 left the line box 1px shorter than the glyphs need, and `overflow:hidden`
             (there for the ellipsis) then shaved the descenders off names like Apocalypse. */}
         <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
@@ -196,16 +203,21 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
           {ship.typeID
             ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>
             /* The app's own mark, standing in for a hull render that has not loaded (or a fit with
-               no ship yet). Simplified from assets/icon-only.svg: at 26px the tapered orbit ribbon
-               and its opacity gradient are sub-pixel, so a plain stroked ellipse reads the same
-               while staying a handful of path commands. */
-            :<svg width={26} height={26} viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="512" cy="512" rx="372" ry="228" transform="rotate(-24 512 512)"
-                         stroke="#4f8ef7" strokeWidth="54" opacity="0.5"/>
-                <circle cx="836" cy="333" r="34" fill="#4f8ef7"/>
-                <path d="M 278 356 L 450 668 L 622 356" stroke="#4f8ef7" strokeWidth="92" strokeLinecap="round" strokeLinejoin="round"/>
-                <path d="M 402 356 L 574 668 L 746 356" stroke="#a8c8ff" strokeWidth="92" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+               no ship yet) — and it is THE SHIPPED ICON FILE, byte-identical to public/favicon.svg,
+               not a redrawing of it.
+               It used to be a hand-simplified inline copy: a plain stroked ellipse at flat 50%
+               opacity, on the reasoning that at 26px the tapered orbit ribbon and its opacity
+               gradient were sub-pixel. That reasoning expired when the mark was enlarged to 34/52px,
+               and the copy was left behind showing the old SYMMETRIC orbit while the real icon had
+               moved on to the tapered one. Rendering the file removes the second copy that could
+               drift; imported through Vite's asset pipeline (like lib/icons.js) so it is bundled and
+               works offline. */
+            /* Sized to the BUTTON, not to an arbitrary 26px. A hull render fills the whole square,
+               so a half-size glyph beside it read as a placeholder that had failed to load. The
+               artwork occupies ~76% of its own viewBox, so filling the button still leaves the mark
+               visually inset rather than crowding the edges. */
+            :<img src={appMark} width={collapsed?34:52} height={collapsed?34:52} alt=""
+                  style={{borderRadius:collapsed?8:11,display:"block"}}/>
           }
         </button>
         <button onClick={onHamburger} style={{width:collapsed?32:40,height:collapsed?32:40,borderRadius:9,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>

@@ -721,8 +721,28 @@ function isMissileLauncherGroup(g, effectIDs) {
   return typeof g === 'string' && g.startsWith('Missile Launcher');
 }
 
-function isTurret(groupName)   { return TURRET_GROUPS.has(groupName); }
-function isLauncher(groupName, effectIDs) { return isMissileLauncherGroup(groupName, effectIDs); }
+// Exported: the hardpoint counters in the UI need the SAME answer the engine uses. They used to
+// carry their own list of three group names ('Hybrid Weapon', 'Energy Weapon', 'Projectile Weapon'),
+// which silently omitted Precursor Weapons — an entropic disintegrator occupied no turret hardpoint
+// on a Vedmak — along with Mining Lasers and Vorton Projectors.
+export function isTurret(groupName)   { return TURRET_GROUPS.has(groupName); }
+export function isLauncher(groupName, effectIDs) { return isMissileLauncherGroup(groupName, effectIDs); }
+
+/**
+ * Is a BIGGER value of this attribute better for the pilot?
+ *
+ * This is CCP's own `highIsGood` flag, read straight out of `dgmattribs` by build-bundle.py and
+ * shipped as `h` on every attribute — so it refreshes with the bundle and needs no hand-maintained
+ * list. That matters: of the 49 attributes a mutaplasmid can roll, 19 are lower-is-better, and the
+ * non-obvious ones (the four hull damage resonances, `siegeLocalLogisticsDurationBonus`,
+ * `energyWarfareResistanceBonus`) are exactly the ones a hand-written list would get wrong.
+ *
+ * Defaults to TRUE for an unknown attribute — the majority case, and what the UI assumed before.
+ */
+export function attrHighIsGood(attrID) {
+  const meta = ATTR_META[attrID] ?? ATTR_META[String(attrID)];
+  return meta?.h !== 0;
+}
 function isShieldBooster(g)    { return g === 'Shield Booster' || g === 'Capital Shield Booster' || g === 'Ancillary Shield Booster'; }
 function isArmorRepairer(g)    { return g === 'Armor Repair Unit' || g === 'Capital Armor Repair Unit' || g === 'Ancillary Armor Repairer'; }
 
@@ -3037,27 +3057,34 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     armorRepSustainedEhpS = layerEHP(sustainedArmorRepPS, effectiveResists.armor);
   }
 
-  // Shield boost sustained EHP/s — mirror the armor path, pyfa default (factorReload OFF): no reload
-  // duty-cycle. Cap-charged ASBs run off their charges (no ship-cap limit) → sustained = peak.
-  let shieldRepEhpS = 0, shieldRepIsASB = false, asbCapCharged = false;
+  // Shield boost sustained EHP/s — mirrors the armor path above, pyfa default (factorReload OFF):
+  // no reload duty-cycle, sustained = peak throttled only by capacitor availability.
+  let shieldRepEhpS = 0, shieldRepIsASB = false;
   if (slotEngineStats) {
     for (const [, stats] of slotEngineStats) {
-      if (stats.isASB && (stats.ehpS ?? 0) > 0) {
-        // Track ASB presence for sustained calc; peak EHP/s uses total shieldRepPS below so that
-        // a mix of ASB + regular booster (e.g. PNI: CONCORD CSB + Capital ASB) is summed correctly.
-        shieldRepIsASB = true;
-        asbCapCharged = asbCapCharged || !!stats.hasCharges;
-      }
+      // Peak EHP/s uses total shieldRepPS below, so a mix of ASB + regular booster (e.g. the PNI:
+      // CONCORD Capital Shield Booster + Capital ASB) is summed correctly.
+      if (stats.isASB && (stats.ehpS ?? 0) > 0) shieldRepIsASB = true;
     }
   }
   if (shieldRepPS > 0) shieldRepEhpS = layerEHP(shieldRepPS, effectiveResists.shield);
 
   let shieldRepSustainedEhpS;
   if (shieldRepIsASB) {
-    // Cap-charged ASBs aren't ship-cap limited → sustained = peak. Non-charged ASBs are cap-throttled.
-    const capFactor = asbCapCharged
-      ? 1
-      : (shieldRepPS > 0 ? Math.max(0, Math.min(1, sustainedShieldRepPS / shieldRepPS)) : 1);
+    // The cap factor is the ratio of cap-throttled to un-throttled base rep, exactly as the AAR
+    // path does it — NOT a fit-wide "is any ASB cap-charged" flag.
+    //
+    // That flag was the bug: it forced the factor to 1 whenever ANY ancillary booster ran on cap
+    // booster charges, which declared the WHOLE shield layer sustainable — including a CONCORD
+    // Capital Shield Booster sitting next to it, drawing ship cap the fit cannot pay for. Sustained
+    // then equalled peak, and since the UI only shows the sustained row when it is BELOW peak, the
+    // row vanished entirely on exactly the fits that need it most.
+    //
+    // Nothing is lost by dropping the flag, because `sustainedShieldRepPS` already models this
+    // correctly per repairer: `calculateSustainableTank` above gives cap-FREE reps their full rep
+    // and throttles only the cap-using ones. An all-cap-charged fit therefore still comes out at
+    // ratio 1 and sustained == peak, which is what the flag was reaching for.
+    const capFactor = shieldRepPS > 0 ? Math.max(0, Math.min(1, sustainedShieldRepPS / shieldRepPS)) : 1;
     shieldRepSustainedEhpS = shieldRepEhpS * capFactor;
   } else {
     shieldRepSustainedEhpS = layerEHP(sustainedShieldRepPS, effectiveResists.shield);
