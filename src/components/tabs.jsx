@@ -57,7 +57,7 @@ function checkFitRestriction(modTypeID, ship) {
   if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
   return `Cannot be fit to ${ship.hullClass || ship.name || 'this ship'}`;
 }
-import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet } from "./ui.jsx";
+import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
@@ -73,6 +73,9 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   const dragInfo=useRef(null);             // live drag data (avoids re-render churn during move)
   const rowRefs=useRef({});                // `${secKey}:${rowIdx}` → row element (for hit-testing)
   const[expanded,setExpanded]=useState(["subsystems","high","mid","low","rigs","services"]);
+  // Subsystems have no ModuleMenu (tapping one opens the swap picker), so their description
+  // and sibling list needed their own way in — an info button on the row.
+  const[subInfo,setSubInfo]=useState(null);
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
   const[fitError,setFitError]=useState(null);
@@ -360,6 +363,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       {row.count>1&&<span style={{fontSize:9,fontWeight:800,color:sec.color,background:`${sec.color}20`,borderRadius:4,padding:"1px 5px"}}>{row.count}x</span>}
                       {row.mutaplasmid&&<span title="Abyssal (mutated) module" style={{fontSize:9,lineHeight:1,fontWeight:800,color:C.danger,background:`${C.danger}22`,border:`1px solid ${C.danger}`,borderRadius:4,padding:"2px 4px",flexShrink:0,display:"inline-flex",alignItems:"center"}}>▲</span>}
                       <span style={{fontSize:12,fontWeight:600,color:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
+                      {/* Tapping a subsystem row opens the swap picker, so its description and the
+                          rest of its family had no route in. Modules reach both through ModuleMenu. */}
+                      {sec.key==="subsystems"&&row.typeID&&
+                        <InfoButton title={`${row.name} info`} onClick={e=>{e.stopPropagation();setSubInfo({typeID:row.typeID,name:row.name});}}/>}
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:2}}>
                       {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
@@ -468,6 +475,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
         })}
       </div>
       {menuMod&&<ModuleMenu mod={menuMod} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null}/>}
+      {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name} onClose={()=>setSubInfo(null)}/>}
       {emptySlot&&emptySlot.secKey==="subsystems"&&(
         <SubsystemPickerSheet ship={ship} slotId={emptySlot.id}
           current={(slots.subsystems??[]).find(s=>s.id===emptySlot.id)}
@@ -773,7 +781,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:showSustained?`1px solid ${C.border}`:"none"}}>
                 {peak.map((rr,i,arr)=>(
                   <div key={rr.label} style={{padding:"8px 8px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none"}}>
-                    <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>{rr.label}</div>
+                    {/* lineHeight pinned: "Shield Boost" wraps to two lines in this column, and
+                        without it the label inherits the body's 1.93 and the two lines sit ~17px
+                        apart. Same inherited-line-height trap as the app header. */}
+                    <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{rr.label}</div>
                     <div style={{fontSize:12,fontWeight:700,color:rr.val.startsWith("0")?C.textMute:rr.color}}>{rr.val}</div>
                   </div>
                 ))}

@@ -428,8 +428,10 @@ const gp=(k,dflt)=>(GP[k]===undefined?dflt:GP[k]);
 function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,setTgtProfile}){
   const[catKey,setCatKey]=useState(()=>gp('catKey',"damage")),[yKey,setYKey]=useState(()=>gp('yKey',"dps")),[xKey,setXKey]=useState(()=>gp('xKey',"dist"));
   const[showTgtResists,setShowTgtResists]=useState(()=>gp('showTgtResists',false));
-  const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',45)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',270));
-  const[targetVel,setTargetVel]=useState(()=>gp('targetVel',200)),[selfVel,setSelfVel]=useState(()=>gp('selfVel',0));
+  const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',0)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',0));
+  // Flight vectors start at rest: a graph should open showing the fit's own numbers, not a
+  // pre-set engagement the reader did not choose and may not notice.
+  const[targetVel,setTargetVel]=useState(()=>gp('targetVel',0)),[selfVel,setSelfVel]=useState(()=>gp('selfVel',0));
   // Stable 100%-reference for the target speed wheel (set by profile/field, NOT by dragging the wheel).
   const[targetVelMax,setTargetVelMax]=useState(()=>gp('targetVelMax',1000));
   // Target sig radius (null = ideal/perfect tracking). Set by profile, editable by tapping.

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { C } from "../theme.js";
-import { BottomSheet } from "./ui.jsx";
+import { BottomSheet, ItemDetailSheet } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
@@ -273,21 +273,23 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
   </BottomSheet>);
 }
 
-// A fit is worth offering on the PROJECTED tab only if something on it actually reaches another
-// ship. Computed from the same computeProjectedReps the tab itself uses, so the list can never
-// offer a fit that would then render "Nothing on this fit projects onto a target".
-function projectsSomething(ship,fit){
+// A fit is only worth offering on the COMMAND tab if it actually runs a command burst — otherwise
+// the card it creates just reads "No active command bursts on this fit". Computed from the same
+// computeCommandBursts the tab itself uses, so the list and the card can never disagree.
+//
+// The PROJECTED picker is deliberately UNFILTERED: anything can be projected, and hiding fits there
+// would take choices away rather than remove noise.
+function hasCommandBursts(ship,fit){
   try{
-    const e=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
-      {implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
-    return ["reps","webs","neuts","caps","painters","damps","trackDisr","guideDisr","sensorBoosts"]
-      .some(k=>(e[k]?.length??0)>0);
+    return computeCommandBursts({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
+      {implants:fit.implants,boosters:fit.boosters}).length>0;
   }catch{ return true; }   // never hide a fit because its calc threw
 }
 
 export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
+  const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
   const[showProjPicker,setShowProjPicker]=useState(false);
   const[showCmdPicker,setShowCmdPicker]=useState(false);
   const[showEnvPicker,setShowEnvPicker]=useState(false);
@@ -314,7 +316,9 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       {boosters.map(b=>(<div key={b.id} style={{background:C.surface,border:`1px solid ${b.active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px"}}>
           <button onClick={()=>setBoosters(boosters.map(x=>x.id===b.id?{...x,active:!x.active}:x))} style={{width:24,height:24,borderRadius:5,background:b.active?C.accentLight:"none",border:`1px solid ${b.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:b.active?C.accent:C.textMute}}>{b.active?"✓":""}</button>
-          <div style={{flex:1}}>
+          {/* The name is the tap target: boosters have real descriptions, and a grade family
+              (Synth / Standard / Improved / Strong) worth comparing before committing. */}
+          <div style={{flex:1,cursor:"pointer"}} onClick={()=>setInfoItem({typeID:tidByName(b.name),name:b.name})}>
             <div style={{fontSize:12,fontWeight:600,color:b.active?C.text:C.textMid}}>{b.name}</div>
             <div style={{fontSize:10,color:C.rig,marginTop:1}}>{b.effect}</div>
           </div>
@@ -324,6 +328,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       </div>))}
       <button className="press" onClick={()=>{haptic();setShowBoosterPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Booster</button>
       {showBoosterPicker&&<BoosterPickerSheet onAdd={b=>setBoosters(prev=>[...prev,b])} onClose={()=>setShowBoosterPicker(false)}/>}
+      {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}/>}
     </div>)}
     {section==="projected"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
       <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>Project another fit's effects onto this ship. Remote reps and EWAR scale with range. Modules use the source fit's active/overheated state.</div>
@@ -388,7 +393,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>);
       })}
       <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
-      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} filterFn={projectsSomething} onSelect={(ship,fit)=>{
+      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>{
         const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
         const rangeKm=optims.length?Math.round(Math.min(...optims)/1000):30;
@@ -415,7 +420,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>);
       })}
       <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
-      {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
+      {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} filterFn={hasCommandBursts} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
     </div>)}
   </div>);
 }

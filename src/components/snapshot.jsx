@@ -504,7 +504,6 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             <KV k="Capacity" v={fmtK(s.capCapacity)} unit="GJ" />
             <KV k="Delta" v={`${capD >= 0 ? "+" : ""}${fmt(capD, 2)}`} color={capD >= 0 ? T.good : T.bad} />
             <KV k="Stable" v={s.capStable ? `${((s.capLevel ?? 1) * 100).toFixed(0)}%` : mmss(s.capTime)} color={s.capStable ? T.good : T.warn} />
-            <KV k="Drone rng" v={fmt((s.droneControlRange ?? 0) / 1000)} unit="km" />
           </Block>
         </div>
 

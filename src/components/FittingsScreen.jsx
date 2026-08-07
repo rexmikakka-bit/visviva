@@ -228,8 +228,24 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     el.style.transition=animate?"transform .18s cubic-bezier(.22,.61,.36,1)":"none";
     el.style.transform=px?`translateX(${px}px)`:"";};
   const _goTo=(i,dir)=>{_setSlideDir(dir);setFitSubTab(_SUBTABS[i]);haptic();};
-  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY,axis:null};};
+  // A touch that begins inside a horizontally scrollable strip belongs to that strip, not to the
+  // tab swipe. Without this the graph-type selector could not be scrolled at all: its touchmove
+  // bubbled up here, the axis locked to "x", and the whole Graph panel slid sideways instead.
+  // Detected structurally (overflow-x + actual overflow) rather than by tagging the graph, so every
+  // horizontal scroller in the app is covered by the same rule.
+  const _inHScroller=(node)=>{
+    for(let el=node; el instanceof Element; el=el.parentElement){
+      if(el===_panel.current?.parentElement) break;
+      if(el.scrollWidth>el.clientWidth+2){
+        const ox=getComputedStyle(el).overflowX;
+        if(ox==="auto"||ox==="scroll") return true;
+      }
+    }
+    return false;
+  };
+  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY,axis:null,skip:_inHScroller(e.target)};};
   const _onSwipeMove=e=>{
+    if(_swipe.current.skip)return;
     const t=e.touches[0];if(!t)return;
     const dx=t.clientX-_swipe.current.x,dy=t.clientY-_swipe.current.y;
     // Lock the axis once, so a vertical scroll never turns into a horizontal drag halfway down.
@@ -245,8 +261,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   };
   const _onSwipeEnd=e=>{
     const t=e.changedTouches[0];
-    const wasX=_swipe.current.axis==="x";
-    _swipe.current.axis=null;
+    const wasX=_swipe.current.axis==="x"&&!_swipe.current.skip;
+    _swipe.current.axis=null; _swipe.current.skip=false;
     if(!t||!wasX){_setX(0,true);return;}
     const dx=t.clientX-_swipe.current.x;
     const i=_SUBTABS.indexOf(fitSubTab);

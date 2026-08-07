@@ -71,26 +71,39 @@ class ErrorBoundary extends Component {
     }
   }
 
-  saveFits() {
-    try {
-      const blob = new Blob([buildBackup()], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // Same three-way path as BackupPanel.download, and for the same reason: a WKWebView ignores
+  // <a download>, so the anchor click silently produced nothing while this reported saved:true.
+  // This is the post-crash recovery button, so a false "Fits saved" is the worst possible lie —
+  // it is exactly when someone decides it is safe to clear site data.
+  async saveFits() {
+    const json = buildBackup();
+    const name = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const done = () => {
       this.setState({ saved: true });
       setTimeout(() => this.setState({ saved: false }), 2500);
+    };
+    try {
+      const file = new File([json], name, { type: "application/json" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Visviva backup" });
+        done();
+        return;
+      }
     } catch (e) {
-      // Blob download can fail inside a webview — fall back to the clipboard.
-      navigator.clipboard?.writeText(buildBackup()).then(
-        () => this.setState({ saved: true }),
-        () => {},
-      );
+      if (e?.name === "AbortError") return;   // user dismissed the sheet
     }
+    const a = document.createElement("a");
+    if (typeof a.download === "string" && !window.Capacitor?.isNativePlatform?.()) {
+      try {
+        const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        done();
+        return;
+      } catch (e) { /* fall through to the clipboard */ }
+    }
+    navigator.clipboard?.writeText(json).then(done, () => {});
   }
 
   render() {

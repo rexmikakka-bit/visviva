@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull } from "../calc.js";
-import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
@@ -558,7 +558,7 @@ function ModuleInfoTab({typeID, mod}) {
 }
 
 function ModuleVariationsTab({typeID, currentName, onSwap}) {
-  const raw = typeID ? ((moduleVariations??{})[String(typeID)] ?? []) : [];
+  const raw = typeID ? variantsOf(typeID) : [];
   // Resolve meta from CCP's metaGroupID rather than the bundle's (wrong) label, then re-sort:
   // the bundle had faction/storyline/deadspace/officer all coming through as "T2".
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}))
@@ -579,6 +579,35 @@ function ModuleVariationsTab({typeID, currentName, onSwap}) {
   );
 }
 
+
+// Info + Variations for the things you can tap in a fit that are NOT slot modules: boosters,
+// drones, fighters and subsystems. Modules go through ModuleMenu, which stacks State / Charges /
+// Mutations on top of these same two tabs — this is the same content without the parts that only
+// make sense for something sitting in a slot.
+//
+// `onSwap` is optional: with no handler the Variations tab still lists the family (useful just to
+// see what else exists), it simply does not act on a tap.
+export function ItemDetailSheet({typeID, name, onClose, onSwap}) {
+  const [tab, setTab] = useState("info");
+  const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
+  const TABS = [["info", "Info"], ["vars", "Variations"]];
+  return (
+    <BottomSheet title={title} onClose={onClose} height="82vh">
+      <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
+        {TABS.map(([k, label]) => (
+          <button key={k} onClick={()=>setTab(k)}
+            style={{flex:1,padding:"9px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",
+                    color:tab===k?C.accent:C.textMute,borderBottom:tab===k?`2px solid ${C.accent}`:"2px solid transparent"}}>{label}</button>
+        ))}
+      </div>
+      <div style={{padding:"4px 14px 16px"}}>
+        {tab==="info" && <ItemInfoPanel typeID={typeID}/>}
+        {tab==="vars" && <ModuleVariationsTab typeID={typeID} currentName={title}
+                            onSwap={v=>{ onSwap?.(v); if(onSwap) onClose(); }}/>}
+      </div>
+    </BottomSheet>
+  );
+}
 
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
 const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};

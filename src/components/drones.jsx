@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, AccordionSection } from "./ui.jsx";
+import { BottomSheet, AccordionSection, ItemDetailSheet } from "./ui.jsx";
 import { REAL_DRONE_BROWSER, FIGHTER_CATALOG } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 
@@ -107,6 +107,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
 export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
   const[showDronePicker,setShowDronePicker]=useState(false);
   const[showFighterPicker,setShowFighterPicker]=useState(false);
+  const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
   const _droneTypeRec=(d)=>{
     const tid = d.typeID ?? (d.name ? tidByName(d.name) : null);
     if(tid==null) return null;
@@ -202,7 +203,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
             <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d))} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:drone.active?C.accent:""}}>{drone.active?"✓":""}</button>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {drone.typeID&&<img className="eve-icon" src={eveIcon(drone.typeID,32)} width={24} height={24} alt="" onError={e=>{e.target.style.display="none";}}/>}
-              <div><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
+              <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name})}><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
             </div>
             {(()=>{
               const info=droneInfo.find(x=>x.name===drone.name)??{};
@@ -274,5 +275,6 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
     </div>
     {showDronePicker&&<DroneBrowserSheet existingDrones={drones} onAdd={addDrone} onClose={()=>setShowDronePicker(false)}/>}
     {showFighterPicker&&<FighterBrowserSheet onAdd={addFighter} onClose={()=>setShowFighterPicker(false)}/>}
+    {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}/>}
   </div>);
 }
