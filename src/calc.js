@@ -1210,7 +1210,18 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       const isAncillary = gn === 'Ancillary Remote Armor Repairer';
       const pasteMult = (isAncillary && slot.ammo) ? (fitItem.get('chargedArmorDamageMultiplier') || 3) : 1;
       const amt = (fitItem.get('armorDamageAmount') ?? 0) * pasteMult;
-      if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
+      // Mutadaptive reppers (Rodiva/Zarmazd) ramp their rep amount cycle by cycle, exactly like an
+      // entropic disintegrator ramps damage. Carried on the record so the reps-over-time graph can
+      // draw the ramp; `amount` stays the UNSPOOLED per-cycle figure.
+      //
+      // Read from the engine, not from the MUTADAPTIVE_SPOOL table above: attributes 2797/2796 are
+      // in the bundle after all (that table's comment says they are not — it predates a bundle
+      // regen), and going through the engine means hull/skill modifiers apply and a new mutadaptive
+      // module works without being added to a list.
+      const rSpoolMax = fitItem.get('repairMultiplierBonusMax') ?? 0;
+      const rSpoolPer = fitItem.get('repairMultiplierBonusPerCycle') ?? 0;
+      if (amt > 0) reps.push({ kind: 'armor', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff,
+                               spoolMax: rSpoolMax, spoolPerCycle: rSpoolPer });
     } else if (gn === 'Remote Hull Repairer') {
       const amt = fitItem.get('structureDamageAmount') ?? 0;
       if (amt > 0) reps.push({ kind: 'hull', name: slot.name, rawPS: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
@@ -1757,6 +1768,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   let effectiveDmgMultBonus = 0;
   let weaponSpoolFactor = 1;    // max-spool damage multiplier vs unspooled (1 = no spool weapon)
   let weaponSpoolTimeS  = 0;    // seconds to reach full spool (entropic disintegrators)
+  let _spoolCycles      = 0;    // ceil(max/step); turned into a time once cycleMs is final
   // Only the spooling weapon's OWN damage ramps — smartbombs/other guns on the same hull do not.
   // Track the spooling contribution separately so weapon*Max spools only this portion, not the total.
   let spoolBaseVolley   = 0;
@@ -1828,10 +1840,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       if (spoolMax > 0 && spoolPerCycle > 0) {
         weaponSpoolFactor = Math.max(weaponSpoolFactor, 1 + spoolMax);
         const spoolCycles = spoolCyclesToMax(spoolMax, spoolPerCycle);
-        const cyc = (fitItem.get('speed') ?? 0) / 1000;
-        // Entropic disintegrators fire at the START of the cycle: the first volley (T=0) is at the
-        // lowest spool, so reaching full spool takes (cycles-1) cycle-durations.
-        weaponSpoolTimeS = Math.max(weaponSpoolTimeS, Math.max(0, spoolCycles - 1) * cyc);
+        // NOTE: the spool TIME is deliberately not computed here. `fitItem.get('speed')` at this
+        // point is the pre-charge cycle time, and charge modifiers are applied to `cycleMs` further
+        // down — using the raw value put a Vedmak's spool-up at 122.8s against a true 122.76s.
+        // Spool advances once per REAL cycle, so the time is computed where cycleMs is final.
+        _spoolCycles = Math.max(_spoolCycles, spoolCycles);
       }
 
       effectiveDmgMultBonus = Math.max(effectiveDmgMultBonus, totalDmgMult);
@@ -1898,6 +1911,9 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       // Per-weapon graph data (turret hit math). Base volley = full damage per cycle, no hit mult.
       const _charge = chargeProfile(slot.ammo);
       if (_charge && _charge.total > 0) {
+        // cycleMs is final here (charge modifiers applied), so this is the cycle the weapon
+        // actually fires at — the one spool advances on.
+        if (_spoolCycles > 0) weaponSpoolTimeS = Math.max(weaponSpoolTimeS, _spoolCycles * (cycleMs / 1000));
         graphWeapons.push({
           kind: 'turret',
           volley: { em:_charge.em*totalDmgMult, th:_charge.th*totalDmgMult,

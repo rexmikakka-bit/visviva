@@ -26,7 +26,7 @@ const GRAPH_CONFIG=[
   {key:"reps",label:"Reps",icon:"heart",color:C.rig,yAxes:[{key:"repSpeed",label:"Repair speed, HP/s"},{key:"repTotal",label:"Total repaired, HP"}],xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"}]},
   {key:"shieldRegen",label:"Shield",icon:"shield",color:C.mid,yAxes:[{key:"shieldAmt",label:"Shield, EHP"},{key:"shieldRegen",label:"Shield regen, EHP/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"shieldPct",label:"Shield, %"}]},
   {key:"cap",label:"Capacitor",icon:"bolt",color:C.warning,yAxes:[{key:"capAmt",label:"Cap, GJ"},{key:"capRegen",label:"Cap regen, GJ/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"capPct",label:"Cap, %"}]},
-  {key:"mobility",label:"Mobility",icon:"rocket",color:C.low,yAxes:[{key:"speed",label:"Speed, m/s"},{key:"distance",label:"Distance, km"},{key:"bumpSpeed",label:"Bump speed, m/s"}],xAxes:[{key:"time",label:"Time, s"}]},
+  {key:"mobility",label:"Mobility",icon:"rocket",color:C.low,yAxes:[{key:"speed",label:"Speed, m/s"},{key:"distance",label:"Distance, km"}],xAxes:[{key:"time",label:"Time, s"}]},
   {key:"warp",label:"Warp",icon:"warp",color:C.high,yAxes:[{key:"warpTime",label:"Warp time, s"}],xAxes:[{key:"distAU",label:"Distance, AU"},{key:"distKm",label:"Distance, km"}]},
   {key:"lock",label:"Lock",icon:"target",color:C.danger,yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
 ];
@@ -107,30 +107,53 @@ function generateCurve(catKey,yKey,xKey,params={}){
       }
       return total;
     };
+    // Every volley landed within `TMAX` seconds at one engagement distance, as [t, damage] pairs.
+    // Both the time axis (which draws them as a staircase) and the distance axis (which sums them)
+    // go through this, so the two can never disagree about what "damage inflicted" means.
+    const damageEvents=(TMAX,distM,sig,vel)=>{
+      const evts=[];
+      for (const w of weapons){
+        const v=w.volleyEff??w.volley;
+        const base=(v.em+v.th+v.kin+v.exp)*weaponMult(w,distM,sig,vel);
+        if(!(base>0)||!(w.cycleS>0))continue;
+        // Entropic disintegrators ramp. eos's calculateSpoolup (SpoolType.CYCLES) is the authority:
+        // after `cycles` COMPLETED cycles the bonus is min(max, cycles * step), so the FIRST shot
+        // lands with none of it and the cap arrives on shot ceil(max/step). A Heavy Entropic
+        // Disintegrator is max 2.125 / step 0.07 → 31 cycles to a 3.125x multiplier, which is why
+        // this curve has to bend: the last volley in a two-minute window is worth three of the first.
+        const spools=w.spoolMax>0&&w.spoolPerCycle>0;
+        let t=0, shots=0, cycles=0, guard=0;
+        while (t<=TMAX+1e-9 && guard++<100000){
+          evts.push([t, base*(spools?1+Math.min(w.spoolMax,cycles*w.spoolPerCycle):1)]);
+          shots++; cycles++;
+          if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + w.reloadS; }
+          else t += w.cycleS;
+        }
+      }
+      evts.sort((a,b)=>a[0]-b[0]);
+      return evts;
+    };
     if (baseDps === 0 && baseVolley === 0) { pts=[[0,0],[40,0]]; xMax=40; yMax=100; }
     else if (xKey === "dist") {
       const step = distMaxKm/80;
-      for (let km=0; km<=distMaxKm+1e-9; km+=step) pts.push([km, yKey==="inflicted" ? 0 : applied(km*1000, profSig, profVel)]);
-      xMax=distMaxKm; yMax=(wantVolley?baseVolley:baseDps)*1.15;
+      // "Damage inflicted" against distance used to plot a CONSTANT ZERO — the axis pair rendered a
+      // flat line on the floor. It now sums the same volleys the time axis draws, over the same
+      // window, at each range: "how much do I actually land in two minutes at X km".
+      const TMAX=dom(120);
+      for (let km=0; km<=distMaxKm+1e-9; km+=step){
+        pts.push([km, yKey==="inflicted"
+          ? damageEvents(TMAX, km*1000, profSig, profVel).reduce((s,e)=>s+e[1],0)
+          : applied(km*1000, profSig, profVel)]);
+      }
+      xMax=distMaxKm;
+      yMax=yKey==="inflicted" ? (Math.max(...pts.map(p=>p[1]))||100)*1.1 : (wantVolley?baseVolley:baseDps)*1.15;
     }
     else if (xKey === "time") {
       if (yKey === "inflicted") {
         // Stepped cumulative damage: each weapon lands a discrete volley at t=0, then every cycle,
         // pausing for reload after each clip of numShots (so the staircase flattens during reload).
         const TMAX=dom(120);
-        const wv = weapons.map(w=>({ vol:(()=>{const v=w.volleyEff??w.volley;return v.em+v.th+v.kin+v.exp;})()*weaponMult(w,0,profSig,profVel),
-                                     cycleS:w.cycleS, numShots:w.numShots||0, reloadS:w.reloadS||0 }))
-                          .filter(x=>x.vol>0 && x.cycleS>0);
-        const evts=[];
-        for (const w of wv){
-          let t=0, shots=0, guard=0;
-          while (t<=TMAX+1e-9 && guard++<100000){
-            evts.push([t,w.vol]); shots++;
-            if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + w.reloadS; }
-            else t += w.cycleS;
-          }
-        }
-        evts.sort((a,b)=>a[0]-b[0]);
+        const evts = damageEvents(TMAX, 0, profSig, profVel);
         let acc=0; pts.push([0,0]);
         for (const [t,d] of evts){ pts.push([t,acc]); acc+=d; pts.push([t,acc]); }   // step then jump
         pts.push([TMAX,acc]);
@@ -176,8 +199,60 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const reps=P.reps||[];
     let reachM=0; for(const r of reps) reachM=Math.max(reachM,(r.optimal||0)+(r.falloff||0)*2);
     const rateAt=(dM)=>reps.reduce((s,r)=>s+r.rawPS*rf(r.optimal,r.falloff,dM),0);
-    if(xKey==="time"){const rate=rateAt(0);const tEnd=dom(120),dt=tEnd/240;let acc=0;for(let t=0;t<=tEnd+1e-9;t+=dt){acc+=rate*dt;pts.push([t,yKey==="repTotal"?acc:rate]);}xMax=tEnd;yMax=(yKey==="repTotal"?acc:rate)*1.15||1;}
-    else{let dmax=reachM>0?reachM/1000*1.05:30;dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;dmax=dom(dmax);const step=dmax/80;for(let km=0;km<=dmax+1e-9;km+=step){const rate=rateAt(km*1000);pts.push([km,yKey==="repTotal"?rate*10:rate]);}xMax=dmax;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):1)*1.2||1;}
+    if(xKey==="time"){
+      // Reps land in DISCRETE CYCLES, and a Mutadaptive repper (Rodiva/Zarmazd) ramps its amount
+      // each cycle. This used to integrate a constant HP/s (`acc += rate*dt`), which drew a
+      // perfectly straight total-repaired line and a flat repair-speed line — no cycles, no ramp,
+      // for every logi in the game.
+      //
+      // Spool follows eos's calculateSpoolup (SpoolType.CYCLES): after `cycles` COMPLETED cycles
+      // the bonus is min(max, cycles * step), so the first cycle lands unspooled.
+      const tEnd=dom(120);
+      const src=reps.map(r=>({amt:(r.amount??r.rawPS*(r.cycleS||1))*rf(r.optimal,r.falloff,0),
+                              cycleS:r.cycleS||1, spoolMax:r.spoolMax||0, spoolPerCycle:r.spoolPerCycle||0}))
+                    .filter(r=>r.amt>0&&r.cycleS>0);
+      const evts=[];
+      for(const r of src){
+        const spools=r.spoolMax>0&&r.spoolPerCycle>0;
+        let t=r.cycleS, cycles=0, guard=0;   // a repairer delivers at the END of its cycle
+        while(t<=tEnd+1e-9&&guard++<100000){
+          evts.push([t, r.amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1), r.cycleS]);
+          cycles++; t+=r.cycleS;
+        }
+      }
+      evts.sort((a,b)=>a[0]-b[0]);
+      if(yKey==="repTotal"){
+        let acc=0; pts.push([0,0]);
+        for(const [t,hp] of evts){ pts.push([t,acc]); acc+=hp; pts.push([t,acc]); }   // step then jump
+        pts.push([tEnd,acc]);
+        xMax=tEnd; yMax=acc*1.05||1;
+      }else{
+        // Repair speed: the rate that cycle delivered (hp / cycleS), held until the next landing.
+        let cur=0; pts.push([0,0]); let peak=0;
+        for(const [t,hp,cyc] of evts){ pts.push([t,cur]); cur=hp/cyc; peak=Math.max(peak,cur); pts.push([t,cur]); }
+        pts.push([tEnd,cur]);
+        xMax=tEnd; yMax=(peak||1)*1.15;
+      }
+    }
+    else{
+      let dmax=reachM>0?reachM/1000*1.05:30;dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;dmax=dom(dmax);
+      const step=dmax/80;
+      // "Total repaired" against distance was `rate * 10` — an arbitrary ten seconds with nothing
+      // behind it, and no cycles or spool. It now runs the same cycle simulation the time axis uses
+      // over the same window, so the two axes report the same quantity.
+      const tEnd=dom(120);
+      const totalAt=(dM)=>reps.reduce((sum,r)=>{
+        const amt=(r.amount??r.rawPS*(r.cycleS||1))*rf(r.optimal,r.falloff,dM);
+        const cyc=r.cycleS||1;
+        if(!(amt>0)||!(cyc>0))return sum;
+        const spools=r.spoolMax>0&&r.spoolPerCycle>0;
+        let t=cyc,cycles=0,acc=0,guard=0;
+        while(t<=tEnd+1e-9&&guard++<100000){ acc+=amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1); cycles++; t+=cyc; }
+        return sum+acc;
+      },0);
+      for(let km=0;km<=dmax+1e-9;km+=step){pts.push([km,yKey==="repTotal"?totalAt(km*1000):rateAt(km*1000)]);}
+      xMax=dmax;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):1)*1.2||1;
+    }
   }
   else if(catKey==="shieldRegen"){
     const maxHP=cs?.shieldHP??ship.shieldHP??6200, maxEHP=cs?.shieldEHP??maxHP;
@@ -220,8 +295,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const mass=cs?.mass??ship.mass??1e7, ag=cs?.agility??ship.agility??0.5;
     const tau=ag*mass/1e6; let dist=0;
     const tEnd=dom(Math.max(30,tau*3)), dt=Math.max(.05,tEnd/400);
-    for(let t=0;t<=tEnd+1e-9;t+=dt){const v=vmax*(1-Math.exp(-t/tau));dist+=v*dt/1000;pts.push([t,yKey==="speed"?v:yKey==="distance"?dist:vmax*Math.exp(-t/3)]);}
-    xMax=tEnd;yMax=yKey==="speed"?vmax*1.1:yKey==="distance"?dist*1.15:vmax*1.1;
+    for(let t=0;t<=tEnd+1e-9;t+=dt){const v=vmax*(1-Math.exp(-t/tau));dist+=v*dt/1000;pts.push([t,yKey==="speed"?v:dist]);}
+    xMax=tEnd;yMax=yKey==="speed"?vmax*1.1:dist*1.15;
   }
   else if(catKey==="warp"){
     const AU=1.496e11, ws=cs?.warpSpeed??ship.warpSpeed??3, subwarp=cs?.maxVelocity??ship.maxVelocity??200;

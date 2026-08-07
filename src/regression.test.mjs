@@ -1218,6 +1218,55 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 13b. SPOOL-UP (entropic disintegrators, Mutadaptive remote reps)
+//      The damage/reps-over-time graphs draw a RAMP, so the spool numbers feeding them have to be
+//      right or the curve is decoration. eos's calculateSpoolup (SpoolType.CYCLES) is the rule:
+//      after N COMPLETED cycles the bonus is min(max, N * step) — so the first shot lands unspooled
+//      and the cap is first reached on the shot fired after ceil(max/step) cycles.
+//
+//      weaponSpoolTimeS used to subtract one cycle, which both disagreed with eos AND with this
+//      file's own Mutadaptive rep path. Pinned here so the two stay consistent.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSPOOL-UP');
+  const ved = { typeID: tid('Vedmak'), name: 'Vedmak' };
+  const fit = { high: [M('Heavy Entropic Disintegrator II', 'active', 'Baryon Exotic Plasma M')], mid: [], low: [], rigs: [] };
+  const cs = calcFitStats(ved, fit, [], null, {});
+  // Heavy Entropic Disintegrator: damageMultiplierBonusMax 2.125, perCycle 0.07.
+  check('spool', 'full-spool damage multiplier', cs.weaponSpoolFactor, 3.125, 0.0001);
+  check('spool', 'max-spool DPS is base x factor', cs.weaponDpsMax, cs.weaponDps.total * 3.125, 0.0001);
+  const w = (cs.graphWeapons ?? []).find((x) => (x.spoolMax ?? 0) > 0);
+  check('spool', 'graph weapon carries spoolMax', w?.spoolMax ?? 0, 2.125, 0.0001);
+  check('spool', 'graph weapon carries spoolPerCycle', w?.spoolPerCycle ?? 0, 0.07, 0.0001);
+  // ceil(2.125 / 0.07) = 31 cycles; eos reports cycles * cycleTime, NOT (cycles-1) * cycleTime.
+  const cycles = Math.ceil(2.125 / 0.07);
+  check('spool', 'cycles to full spool', cycles, 31, 0);
+  // calcFitStats rounds this to 1 dp on the way out, so compare like for like: 31 x 3.96 = 122.76
+  // is reported as 122.8. The pre-fix value was (31-1) x 3.96 = 118.8, a full cycle short.
+  check('spool', 'spool time is cycles x cycle', cs.weaponSpoolTimeS,
+        Math.round(cycles * (w?.cycleS ?? 0) * 10) / 10, 0.0001);
+
+  // The cumulative-damage curve the graph draws, recomputed here independently. A Vedmak firing for
+  // 120 s lands 31 volleys whose multipliers sum to 31 + 0.07*(0+1+...+30) = 63.55 — so total damage
+  // is 63.55 volleys, not the 31 a flat line would show.
+  const volley = (() => { const v = w.volley; return v.em + v.th + v.kin + v.exp; })();
+  let multSum = 0, t = 0, n = 0;
+  while (t <= 120 + 1e-9 && n < 10000) { multSum += 1 + Math.min(w.spoolMax, n * w.spoolPerCycle); n++; t += w.cycleS; }
+  check('spool', 'volleys in a 120s window', n, 31, 0);
+  check('spool', 'summed spool multiplier over 120s', multSum, 63.55, 0.0001);
+  check('spool', 'cumulative damage is ~2x the flat line', multSum / n, 2.0500, 0.001);
+
+  // Mutadaptive remote reps ramp the same way, and the projected rep record must carry it or the
+  // reps-over-time graph flattens back out.
+  const rod = { typeID: tid('Rodiva'), name: 'Rodiva' };
+  const rfit = { high: [M('Heavy Mutadaptive Remote Armor Repairer II', 'active')], mid: [], low: [], rigs: [] };
+  const rr = computeProjectedReps(rod, rfit, null, {}).reps[0];
+  check('spool', 'projected rep carries spoolMax', rr?.spoolMax ?? 0, 1.5, 0.0001);
+  check('spool', 'projected rep carries spoolPerCycle', rr?.spoolPerCycle ?? 0, 0.1, 0.0001);
+  check('spool', 'rep cycles to full spool', Math.ceil(1.5 / 0.1), 15, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 14. SHIP BROWSER TAXONOMY — the nested browse menu is derived, not hand-listed, so the failure
 //     mode is a hull that quietly falls out of the tree and becomes unreachable in the UI (which
 //     is exactly what data-bundle.js's stale `shipsByClass` did to Command Carriers and Lancer
