@@ -121,6 +121,11 @@ function generateCurve(catKey,yKey,xKey,params={}){
         // lands with none of it and the cap arrives on shot ceil(max/step). A Heavy Entropic
         // Disintegrator is max 2.125 / step 0.07 → 31 cycles to a 3.125x multiplier, which is why
         // this curve has to bend: the last volley in a two-minute window is worth three of the first.
+        //
+        // RELOAD RESETS THE SPOOL in game (confirmed 2026-08-07). This loop does NOT model that,
+        // and the omission is currently invisible: disintegrator clips are enormous (a Vedmak's is
+        // 500 rounds, ~33 minutes of firing) so no reload occurs inside the graph's window. If a
+        // short-clip spooling weapon is ever added, reset `cycles` to 0 in the reload branch below.
         const spools=w.spoolMax>0&&w.spoolPerCycle>0;
         let t=0, shots=0, cycles=0, guard=0;
         while (t<=TMAX+1e-9 && guard++<100000){
