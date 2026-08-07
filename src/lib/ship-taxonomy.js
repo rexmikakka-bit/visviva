@@ -186,7 +186,16 @@ export function classifyHull(t, typeID) {
     ?? (precursor ? "Triglavian" : edencom ? "EDENCOM" : ore ? "ORE" : upwell ? "Upwell" : null);
   const rec = SHIP_FACTIONS[String(typeID)];
   const factionBucket = FACTION_BUCKET[rec?.f] ?? null;
-  const race = factionBucket ?? skillRace;
+  // A NON-EMPIRE racial skill beats the faction, because those skills are themselves the
+  // "who built this" signal and are more specific than CCP's factionID. The Upwell haulers are the
+  // case that proves it: the Squall, Deluge, Torrent and Avalanche all require "Upwell Hauler" but
+  // are tagged factionID 500027 (EDENCOM), so a faction-first rule files them next to the
+  // Thunderchild. The EDENCOM combat hulls require "EDENCOM <class>" skills, so the skill separates
+  // the two families cleanly where the faction cannot.
+  // Empire skills stay subordinate to the faction — that is the whole point of the faction lookup
+  // (the Vendetta requires "Gallente Carrier" and is Serpentis).
+  const nonEmpireSkillRace = races.length === 0 && (precursor || edencom || ore || upwell) ? skillRace : null;
+  const race = nonEmpireSkillRace ?? factionBucket ?? skillRace;
   const special = rec?.s === 1;
   // metaGroupID 4 = Faction. Absent on plain T1 hulls (the Rokh and the Abaddon carry no `mg` at
   // all), so "not 4" is the test, never "is 1".

@@ -21,6 +21,7 @@ import * as esi from "./lib/esi.js";
 const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
 const OPEN_TABS_KEY = 'visviva_open_tabs';
 const NEW_TAB_PREF_KEY = 'visviva_open_in_new_tab';
+const RECENT_FITS_KEY = 'visviva_recent_fits';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -92,6 +93,11 @@ export default function App(){
   // rename/delete handlers.
   const[openTabs,setOpenTabs]=useState(()=>{try{const s=localStorage.getItem(OPEN_TABS_KEY);if(s)return JSON.parse(s);}catch{}return [];});
   useEffect(()=>{try{localStorage.setItem(OPEN_TABS_KEY,JSON.stringify(openTabs));}catch{}},[openTabs]);
+  // Most-recently-OPENED fits, newest first. Separate from openTabs: a tab can be closed while the
+  // fit stays recent, and the strip is capped at MAX_OPEN_TABS for layout reasons rather than
+  // history. Stored as {ship,id,name} like the tabs, so a rename still resolves by id.
+  const[recentFits,setRecentFits]=useState(()=>{try{const s=localStorage.getItem(RECENT_FITS_KEY);if(s)return JSON.parse(s);}catch{}return [];});
+  useEffect(()=>{try{localStorage.setItem(RECENT_FITS_KEY,JSON.stringify(recentFits));}catch{}},[recentFits]);
   // Off by default: opening every fit in its own tab fills the strip within a session, and most
   // opens are "show me this fit", not "keep the last one to hand". So a plain open REPLACES the
   // current tab, and you ask for a new one explicitly (the + in the strip, or Open in New Tab in
@@ -131,6 +137,9 @@ export default function App(){
   const externalBursts=useMemo(()=>{
     const out=[];
     for(const cf of cmdFits){
+      // `active` is opt-OUT (undefined counts as on), so fits saved before the toggle existed keep
+      // applying and no storage migration is needed.
+      if(cf.active===false)continue;
       const fit=fitsDB[cf.ship]?.find(f=>f.name===cf.fitName);
       if(!fit)continue;
       const bursts=computeCommandBursts({name:cf.ship,typeID:tidByName(cf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters});
@@ -157,6 +166,7 @@ export default function App(){
     // assistance - reps and remote sensor boosters - while still taking EWAR normally.
     const noAssist=!!R?.disallowAssistance;
     for(const pf of projFits){
+      if(pf.active===false)continue;   // see the cmdFits loop — opt-out, so old saves stay active
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
       const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
@@ -269,6 +279,11 @@ export default function App(){
   const loadFit=(ship,fitName,fitOverride)=>{
     const fit=fitOverride??fitsDB[ship]?.find(f=>f.name===fitName);
     setActiveFit({ship,fitName});
+    // Every route into a fit goes through here, so this is the one place that sees an "open".
+    if(fit) setRecentFits(prev=>{
+      const rest=(prev??[]).filter(r=>!(r.ship===ship&&(r.id!=null&&fit.id!=null?r.id===fit.id:r.name===fitName)));
+      return [{ship,id:fit.id,name:fitName},...rest].slice(0,8);
+    });
     // Opening a fit raises its tab if it already has one; otherwise it either REPLACES the current
     // tab (the default -- see openInNewTab) or is appended. Soft cap on append: past MAX_OPEN_TABS
     // the oldest tab is dropped, so the strip stays scannable on a phone. Nothing is lost -- the
@@ -339,20 +354,24 @@ export default function App(){
     const newImplants=emptyImplants();
     for(const ip of implantNames){const idx=newImplants.findIndex(i=>i.slot===ip.slot);if(idx>=0)newImplants[idx]={slot:ip.slot,name:ip.name,bonus:null};}
     const newBoosters=boosterNames.map(buildBoosterFromName);
+    // Built OUTSIDE the updater so it can be handed straight to loadFit — the setFitsDB below is
+    // still pending when loadFit runs, so a lookup by name would miss it.
+    const existing=fitsDB[shipName]||[];
+    const exIdx=existing.findIndex(f=>f.name===fitName);
+    const entry={id:exIdx>=0?existing[exIdx].id:Date.now(),name:fitName,modified,slots:newSlots,
+      drones:newDrones,fighters:newFighters,cargo:newCargo,implants:newImplants,boosters:newBoosters};
     setFitsDB(db=>{
-      const existing=db[shipName]||[];
-      const idx=existing.findIndex(f=>f.name===fitName);
-      const entry={id:idx>=0?existing[idx].id:Date.now(),name:fitName,modified,slots:newSlots,
-        drones:newDrones,fighters:newFighters,cargo:newCargo,implants:newImplants,boosters:newBoosters};
-      if(idx>=0){const u=[...existing];u[idx]=entry;return{...db,[shipName]:u};}
-      return{...db,[shipName]:[...existing,entry]};
+      const ex=db[shipName]||[];
+      const idx=ex.findIndex(f=>f.name===fitName);
+      if(idx>=0){const u=[...ex];u[idx]=entry;return{...db,[shipName]:u};}
+      return{...db,[shipName]:[...ex,entry]};
     });
-    setActiveFit({ship:shipName,fitName});
-    setSlots(newSlots);setDrones(newDrones);setFighters(newFighters);setCargoItems(newCargo);
-    setImplants(newImplants);setBoosters(newBoosters);
-    setProjFits([]);setCmdFits([]);
-    setBottomTab("fittings");
-    setFittingsView("active");
+    // Importing used to set every piece of state by hand, which meant it never went through the
+    // tab bookkeeping and an imported fit simply did not appear in the strip. Same bug shape as
+    // createNewFit had. Route it through loadFit instead, which owns that logic — and when the
+    // user already has more than one tab open, don't clobber one of them.
+    if((openTabs?.length??0)>=2) wantNewTab.current=true;
+    loadFit(shipName,fitName,entry);
   };
   useEffect(()=>{if(!activeFit?.ship||!activeFit?.fitName)return;setFitsDB(db=>{const sf=db[activeFit.ship];if(!sf)return db;const idx=sf.findIndex(f=>f.name===activeFit.fitName);if(idx<0)return db;const u=[...sf];u[idx]={...u[idx],slots,drones,fighters,cargo:cargoItems,implants,boosters,projFits,cmdFits};return{...db,[activeFit.ship]:u};});},[slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits,activeFit]);
   useEffect(()=>{try{localStorage.setItem("pyfa-fitsdb",JSON.stringify(fitsDB));}catch{}},[fitsDB]);
@@ -494,11 +513,11 @@ export default function App(){
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource}/>}
+        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
-        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))}/>}
+        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
       </div>
       <BottomNav active={bottomTab} onChange={setBottomTab}/>
     </div>

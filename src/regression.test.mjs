@@ -1311,6 +1311,15 @@ function check(group, label, actual, expected, tol = 0.005) {
   // Flagged special edition by CCP, but it is a mining hull first — the mining rule runs before.
   check('taxo', 'Perseverance stays with the mining hulls', at('Perseverance'), 'Mining Barges > Mining Destroyers', 0);
 
+  // A non-empire racial SKILL beats the factionID. CCP tags the Upwell haulers factionID 500027
+  // (EDENCOM) even though they require "Upwell Hauler", so a faction-first rule filed them next to
+  // the Thunderchild. The EDENCOM combat hulls require "EDENCOM <class>", which is what separates
+  // the two families.
+  check('taxo', 'Deluge is Upwell, not EDENCOM', at('Deluge'), 'Haulers and Industrial Ships > Advanced Haulers > Blockade Runners > Upwell', 0);
+  check('taxo', 'Torrent is Upwell, not EDENCOM', at('Torrent'), 'Haulers and Industrial Ships > Advanced Haulers > Deep Space Transports > Upwell', 0);
+  check('taxo', 'Avalanche is Upwell, not EDENCOM', at('Avalanche'), 'Capital Ships > Freighters > Standard Freighters > Upwell', 0);
+  check('taxo', 'Thunderchild is still EDENCOM', at('Thunderchild'), 'Battleships > Faction Battleships > EDENCOM', 0);
+
   // The empire hulls must NOT move.
   check('taxo', 'Thanatos still Gallente', at('Thanatos'), 'Capital Ships > Carriers > Standard Carriers > Gallente', 0);
   check('taxo', 'Rokh still standard Caldari', at('Rokh'), 'Battleships > Standard Battleships > Caldari', 0);

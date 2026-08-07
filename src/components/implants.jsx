@@ -114,7 +114,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
       </div>
     )}
     <div style={{padding:"10px 14px 4px"}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search implants..."
+      <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search implants..."
         style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13,boxSizing:"border-box"}}/>
     </div>
     {results

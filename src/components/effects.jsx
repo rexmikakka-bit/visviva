@@ -127,7 +127,7 @@ function EnvironmentPickerSheet({current,onSelect,onClose}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search systems..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search systems..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
       </div>
     </div>
     <div onClick={()=>onSelect(null)} style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:!current?C.accentLight:"transparent"}}>
@@ -191,7 +191,7 @@ function BoosterPickerSheet({onAdd,onClose}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
         <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search boosters..."
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search boosters..."
           style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
         {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:16}}>x</button>}
       </div>
@@ -260,7 +260,7 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search fits..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search fits..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
       </div>
     </div>
     {filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
@@ -273,7 +273,19 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
   </BottomSheet>);
 }
 
-export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment}){
+// A fit is worth offering on the PROJECTED tab only if something on it actually reaches another
+// ship. Computed from the same computeProjectedReps the tab itself uses, so the list can never
+// offer a fit that would then render "Nothing on this fit projects onto a target".
+function projectsSomething(ship,fit){
+  try{
+    const e=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
+      {implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
+    return ["reps","webs","neuts","caps","painters","damps","trackDisr","guideDisr","sensorBoosts"]
+      .some(k=>(e[k]?.length??0)>0);
+  }catch{ return true; }   // never hide a fit because its calc threw
+}
+
+export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
   const[showProjPicker,setShowProjPicker]=useState(false);
@@ -341,10 +353,16 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const hasPaint=Math.abs(painterSig)>0.5, hasDamp=Math.abs(dampLock)>0.5, hasTD=Math.abs(tdTrack)>0.5, hasTDrng=Math.abs(tdOpt)>0.5||Math.abs(tdFall)>0.5, hasGD=Math.abs(gdRange)>0.5;
         const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasTDrng||hasGD;
         const setRange=(km)=>setProjFits(projFits.map((p,j)=>j===i?{...p,rangeKm:Math.max(0,km)}:p));
-        return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <div><div style={{fontSize:12,fontWeight:700,color:C.text}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div>
-            <button onClick={()=>setProjFits(projFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>
+        // Opt-out, matching App.jsx's guard: a fit saved before the toggle existed has no `active`
+        // and must keep applying.
+        const on=f.active!==false;
+        return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,opacity:on?1:0.55}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
+            <button title={on?"Applied to this fit":"Ignored"} onClick={()=>setProjFits(projFits.map((p,j)=>j===i?{...p,active:!on}:p))}
+              style={{width:24,height:24,borderRadius:5,flexShrink:0,background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:on?C.accent:""}}>{on?"✓":""}</button>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:on?C.text:C.textMid}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div>
+            {onOpenFit&&<button title="Open this fit in a new tab" onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>Open</button>}
+            <button onClick={()=>setProjFits(projFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,flexShrink:0}}>x</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
             <span style={{fontSize:11,color:C.textMid,minWidth:42}}>Range</span>
@@ -370,7 +388,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>);
       })}
       <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
-      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>{
+      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} filterFn={projectsSomething} onSelect={(ship,fit)=>{
         const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
         const rangeKm=optims.length?Math.round(Math.min(...optims)/1000):30;
@@ -383,8 +401,15 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       {cmdFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
         const bursts=srcFit?computeCommandBursts({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,SKILL_DEFAULTS,{implants:srcFit.implants,boosters:srcFit.boosters}):[];
-        return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><div><div style={{fontSize:12,fontWeight:700,color:C.text}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div><button onClick={()=>setCmdFits(cmdFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button></div>
+        const on=f.active!==false;   // opt-out, see the projected tab
+        return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,opacity:on?1:0.55}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:8}}>
+            <button title={on?"Applied to this fit":"Ignored"} onClick={()=>setCmdFits(cmdFits.map((p,j)=>j===i?{...p,active:!on}:p))}
+              style={{width:24,height:24,borderRadius:5,flexShrink:0,background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:on?C.accent:""}}>{on?"✓":""}</button>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:on?C.text:C.textMid}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div>
+            {onOpenFit&&<button title="Open this fit in a new tab" onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>Open</button>}
+            <button onClick={()=>setCmdFits(cmdFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,flexShrink:0}}>x</button>
+          </div>
           {bursts.length===0&&<div style={{fontSize:11,color:C.textMute,paddingLeft:8}}>No active command bursts on this fit</div>}
           {bursts.map((b,j)=><div key={j} style={{fontSize:11,color:C.rig,paddingLeft:8,marginBottom:3}}>- {b.label}: {b.value>0?"+":""}{Math.round(b.value*10)/10}{WARFARE_BUFF_UNIT[b.buffID]||"%"}</div>)}
         </div>);
