@@ -49,6 +49,32 @@ for (const arr of Object.values(MT_ITEMS)) arr.sort((a, b) => a.name.localeCompa
 const MT_ROOTS = Object.keys(marketTreeData.g).filter(g => marketTreeData.g[g].p == null).map(Number)
   .sort((a, b) => marketTreeData.g[a].n.localeCompare(marketTreeData.g[b].n));
 const MT_ALL_ITEMS = Object.entries(marketTreeData.t).map(([tid, [mgid, name, vol]]) => ({ typeID: Number(tid), name, vol, mgid }));
+
+/**
+ * Sibling items for the Variations tab.
+ *
+ * `moduleVariations` (from data-bundle.js) is MODULE-only: all 311 boosters have an empty entry, so
+ * a booster's Variations tab was permanently "No variation data available" — which is what made the
+ * Exile and Overclocker boosters look broken. CCP has no `variationParentTypeID` on any booster
+ * either, so there is nothing to key off in the dogma data.
+ *
+ * The MARKET tree does group them, correctly and by CCP's own hand: the four Exile grades all sit in
+ * market group 2492 ("Exile"), the Agency Overclocker doses in 2504 ("Overclocker"). So fall back to
+ * market-group siblings whenever the module map has nothing. This also gives drones, implants and
+ * subsystems a sensible family list for free.
+ *
+ * Items CCP does not sell (AIR/Serenity event boosters) are absent from the market tree and honestly
+ * report no siblings, rather than being lumped in with a family they are not part of.
+ */
+function variantsOf(typeID) {
+  const direct = (moduleVariations ?? {})[String(typeID)] ?? [];
+  if (direct.length) return direct;
+  const row = marketTreeData.t[String(typeID)];
+  if (!row) return [];
+  // meta is left undefined on purpose — the Variations tab resolves it from CCP's metaGroupID,
+  // which is more reliable than anything stored alongside the name.
+  return (MT_ITEMS[row[0]] ?? []).map(s => ({ typeID: s.typeID, name: s.name }));
+}
 import { DRONE_TYPES } from "../dogma-engine-init.js";
 
 // Supplemental data — loaded at runtime, no build-time dependency
@@ -1003,4 +1029,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

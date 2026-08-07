@@ -195,9 +195,16 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
         <button onClick={onShipInfo} style={{width:collapsed?34:52,height:collapsed?34:52,borderRadius:collapsed?8:11,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
             ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>
-            :<svg width={24} height={24} viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <ellipse cx="13" cy="13" rx="10" ry="5.5" stroke={C.accent} strokeWidth="1.4" opacity="0.55" transform="rotate(-20 13 13)"/>
-                <circle cx="13" cy="13" r="2.6" fill={C.accent}/>
+            /* The app's own mark, standing in for a hull render that has not loaded (or a fit with
+               no ship yet). Simplified from assets/icon-only.svg: at 26px the tapered orbit ribbon
+               and its opacity gradient are sub-pixel, so a plain stroked ellipse reads the same
+               while staying a handful of path commands. */
+            :<svg width={26} height={26} viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="512" cy="512" rx="372" ry="228" transform="rotate(-24 512 512)"
+                         stroke="#4f8ef7" strokeWidth="54" opacity="0.5"/>
+                <circle cx="836" cy="333" r="34" fill="#4f8ef7"/>
+                <path d="M 278 356 L 450 668 L 622 356" stroke="#4f8ef7" strokeWidth="92" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M 402 356 L 574 668 L 746 356" stroke="#a8c8ff" strokeWidth="92" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
           }
         </button>

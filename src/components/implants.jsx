@@ -133,12 +133,49 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   </BottomSheet>);
 }
 
+// Searchable loadout list. Replaces a horizontal chip strip that grew a scroll bar the moment you
+// had more than a few — and put rename and (mislabelled) delete buttons beside every single one.
+function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
+  const[q,setQ]=useState("");
+  const[editing,setEditing]=useState(null);
+  const[draft,setDraft]=useState("");
+  const term=q.trim().toLowerCase();
+  const shown=term?loadouts.filter(l=>l.name.toLowerCase().includes(term)):loadouts;
+  return(<BottomSheet title="Implant Loadouts" onClose={onClose} height="70vh">
+    {loadouts.length>6&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
+        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+          value={q} onChange={e=>setQ(e.target.value)} placeholder="Search loadouts..."
+          style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
+      </div>
+    </div>}
+    {!shown.length&&<div style={{textAlign:"center",color:C.textMute,padding:"28px 0",fontSize:13}}>No loadouts match "{q}"</div>}
+    {shown.map(l=>(
+      <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
+        {editing===l.id
+          ?<input autoFocus value={draft} onChange={e=>setDraft(e.target.value)}
+             onKeyDown={e=>{if(e.key==="Enter"){onRename(l.id,draft);setEditing(null);}if(e.key==="Escape")setEditing(null);}}
+             onBlur={()=>{onRename(l.id,draft);setEditing(null);}}
+             style={{flex:1,padding:"5px 9px",background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.text,fontSize:12}}/>
+          :<div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{onLoad(l);onClose();}}>
+             <div style={{fontSize:13,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name}</div>
+             <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{l.implants?.filter(i=>i.name!=="[Empty]").length??0} implants</div>
+           </div>}
+        <button title="Rename" onClick={()=>{setEditing(l.id);setDraft(l.name);}}
+          style={{width:26,height:26,borderRadius:5,background:"none",border:`1px solid ${C.border}`,cursor:"pointer",fontSize:11,color:C.textMute,flexShrink:0}}>&#9998;</button>
+        <button title="Delete this loadout" onClick={()=>onDelete(l.id)}
+          style={{width:26,height:26,borderRadius:5,background:"none",border:`1px solid ${C.border}`,cursor:"pointer",fontSize:12,color:C.danger,flexShrink:0}}>x</button>
+      </div>
+    ))}
+  </BottomSheet>);
+}
+
 export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   const[picker,setPicker]=useState(null);
   const[savingName,setSavingName]=useState(false);
   const[newLoadoutName,setNewLoadoutName]=useState("");
-  const[editingLoadout,setEditingLoadout]=useState(null);
-  const[editLoadoutName,setEditLoadoutName]=useState("");
+  const[showLoadouts,setShowLoadouts]=useState(false);
   const filled=implants.filter(i=>i.name!=="[Empty]").length;
 
   function saveLoadout(){
@@ -150,10 +187,11 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     if(!lo.implants?.length){alert(`"${lo.name}" has no implants saved.`);return;}
     setImplants(lo.implants.map(i=>({...i})));
   }
-  function renameLoadout(id){
-    setLoadouts(prev=>prev.map(l=>l.id===id?{...l,name:editLoadoutName.trim()||l.name}:l));
-    setEditingLoadout(null);setEditLoadoutName("");
+  function renameLoadout(id,name){
+    const n=(name??"").trim();
+    setLoadouts(prev=>prev.map(l=>l.id===id?{...l,name:n||l.name}:l));
   }
+  function deleteLoadout(id){ setLoadouts(prev=>prev.filter(l=>l.id!==id)); }
 
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{padding:"10px 12px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
@@ -170,24 +208,20 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
           :<button onClick={()=>setSavingName(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Save Loadout</button>
         }
       </div>
-      {loadouts.length>0&&<div className="hs" style={{overflowX:"auto",display:"flex",gap:6}}>
-        {loadouts.map(l=>(
-          <div key={l.id} style={{display:"flex",alignItems:"center",gap:3,flexShrink:0}}>
-            {editingLoadout===l.id
-              ?<input autoFocus value={editLoadoutName} onChange={e=>setEditLoadoutName(e.target.value)}
-                 onKeyDown={e=>{if(e.key==="Enter")renameLoadout(l.id);if(e.key==="Escape")setEditingLoadout(null);}}
-                 onBlur={()=>renameLoadout(l.id)}
-                 style={{width:120,padding:"3px 7px",background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.text,fontSize:11}}/>
-              :<button onClick={()=>loadLoadout(l)}
-                 style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>
-                {l.name} <span style={{color:C.textMute,fontSize:9}}>({l.implants?.filter(i=>i.name!=="[Empty]").length??0})</span>
-              </button>
-            }
-            <button onClick={()=>{setEditingLoadout(l.id);setEditLoadoutName(l.name);}} style={{width:20,height:20,borderRadius:4,background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.textMute,flexShrink:0}}>&#9998;</button>
-            <button onClick={()=>setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})))} title="Clear implants from current fit" style={{width:20,height:20,borderRadius:4,background:"none",border:"none",cursor:"pointer",fontSize:11,color:C.danger,flexShrink:0}}>x</button>
-          </div>
-        ))}
-      </div>}
+      {/* Was a horizontal chip strip: three buttons per loadout, scrolling sideways forever once you
+          had more than a handful, and its red "x" cleared the CURRENT FIT rather than deleting the
+          loadout it sat next to — which reads exactly backwards. Now one button opening a
+          searchable list, which is how every other long list in the app works. */}
+      <div style={{display:"flex",gap:6}}>
+        <button className="press" onClick={()=>setShowLoadouts(true)} disabled={!loadouts.length}
+          style={{flex:1,padding:"7px 0",borderRadius:7,fontSize:11,fontWeight:700,cursor:loadouts.length?"pointer":"default",
+                  background:loadouts.length?C.surface:"transparent",border:`1px solid ${C.border}`,color:loadouts.length?C.textMid:C.textMute}}>
+          {loadouts.length?`Load a loadout (${loadouts.length})`:"No saved loadouts"}
+        </button>
+        {filled>0&&<button onClick={()=>setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})))}
+          title="Clear every implant from this fit"
+          style={{padding:"7px 12px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",background:"none",border:`1px solid ${C.border}`,color:C.danger}}>Clear</button>}
+      </div>
     </div>
     <div style={{flex:1,overflowY:"auto",padding:12}}>
       {[{label:"Attribute Enhancers",slots:[1,2,3,4,5],color:C.accent},{label:"Hardwirings",slots:[6,7,8,9,10],color:C.high}].map(grp=>(
@@ -218,6 +252,8 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
       onSelectSet={set=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))}
       onClear={()=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:"[Empty]",bonus:null}:i))}
       onClose={()=>setPicker(null)}/>}
+    {showLoadouts&&<ImplantLoadoutSheet loadouts={loadouts} onLoad={loadLoadout}
+      onRename={renameLoadout} onDelete={deleteLoadout} onClose={()=>setShowLoadouts(false)}/>}
   </div>);
 }
 

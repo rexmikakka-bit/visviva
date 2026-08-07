@@ -18,21 +18,49 @@ function BackupPanel() {
 
   const mine = countFits(localStorage.getItem("pyfa-fitsdb"));
 
-  const download = () => {
+  // iOS is the case this has to get right. A WKWebView ignores <a download>, so `a.click()` on a
+  // blob: URL silently does nothing — and this used to report ok:true straight afterwards, so the
+  // app claimed "Exported N fits" while producing no file at all. That false success is what made
+  // it look like backup was broken rather than merely unavailable.
+  //
+  // The share sheet is the route that actually works inside a webview, and it is a plain web API
+  // (navigator.share with a File), so it needs no extra Capacitor plugin and no native rebuild.
+  // Order: share sheet -> anchor download (desktop web) -> tell the truth and point at Copy.
+  const download = async () => {
+    const json = buildBackup();
+    const name = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const okMsg = `Exported ${mine.fits} fit${mine.fits === 1 ? "" : "s"}.`;
+
     try {
-      const blob = new Blob([buildBackup()], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setStatus({ ok: true, msg: `Exported ${mine.fits} fit${mine.fits === 1 ? "" : "s"}.` });
+      const file = new File([json], name, { type: "application/json" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Visviva backup" });
+        setStatus({ ok: true, msg: okMsg });
+        return;
+      }
     } catch (e) {
-      setStatus({ ok: false, msg: `Export failed: ${e.message}` });
+      // A user dismissing the share sheet throws AbortError — that is a cancel, not a failure,
+      // and must not fall through to a second attempt.
+      if (e?.name === "AbortError") { setStatus(null); return; }
     }
+
+    // `download` is only honoured where the attribute is actually supported; checking for it is
+    // what stops the silent no-op above.
+    const a = document.createElement("a");
+    if (typeof a.download === "string" && !window.Capacitor?.isNativePlatform?.()) {
+      try {
+        const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+        a.href = url; a.download = name;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setStatus({ ok: true, msg: okMsg });
+        return;
+      } catch (e) {
+        setStatus({ ok: false, msg: `Export failed: ${e.message}` });
+        return;
+      }
+    }
+    setStatus({ ok: false, msg: "This device can't save files from the app — use Copy JSON instead." });
   };
 
   // Blob downloads are unreliable inside a native webview, so always offer the clipboard too.
