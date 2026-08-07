@@ -557,7 +557,7 @@ function ModuleInfoTab({typeID, mod}) {
   return <ItemInfoPanel typeID={typeID ?? mod?.typeID}/>;
 }
 
-function ModuleVariationsTab({typeID, currentName, onSwap}) {
+function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
   const raw = typeID ? variantsOf(typeID) : [];
   // Resolve meta from CCP's metaGroupID rather than the bundle's (wrong) label, then re-sort:
   // the bundle had faction/storyline/deadspace/officer all coming through as "T2".
@@ -566,10 +566,12 @@ function ModuleVariationsTab({typeID, currentName, onSwap}) {
   if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No variation data available.</div>;
   return (
     <div>
-      <div style={{fontSize:10,color:C.textMute,padding:'6px 0 8px'}}>Tap a variation to swap — {vars.length} variants</div>
+      <div style={{fontSize:10,color:C.textMute,padding:'6px 0 8px'}}>
+        {readOnly?`${vars.length} variants`:`Tap a variation to swap — ${vars.length} variants`}
+      </div>
       {vars.map(v => (
-        <div key={v.typeID} onClick={()=>v.name!==currentName&&onSwap(v)}
-          style={{display:'flex',alignItems:'center',gap:9,padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:v.name===currentName?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
+        <div key={v.typeID} onClick={()=>{if(!readOnly&&v.name!==currentName)onSwap(v);}}
+          style={{display:'flex',alignItems:'center',gap:9,padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:(readOnly||v.name===currentName)?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
           {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
           <span style={{fontSize:12,color:v.name===currentName?C.accent:C.text,flex:1,minWidth:0}}>{v.name}</span>
           <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
@@ -602,8 +604,10 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap}) {
       </div>
       <div style={{padding:"4px 14px 16px"}}>
         {tab==="info" && <ItemInfoPanel typeID={typeID}/>}
-        {tab==="vars" && <ModuleVariationsTab typeID={typeID} currentName={title}
-                            onSwap={v=>{ onSwap?.(v); if(onSwap) onClose(); }}/>}
+        {/* readOnly when the caller gave no handler, so the list stops advertising "tap to swap"
+            on rows that cannot do anything — which is how this shipped for boosters. */}
+        {tab==="vars" && <ModuleVariationsTab typeID={typeID} currentName={title} readOnly={!onSwap}
+                            onSwap={v=>{ onSwap(v); onClose(); }}/>}
       </div>
     </BottomSheet>
   );

@@ -1,4 +1,7 @@
 // Fit tabs — a browser-style strip of the fits you currently have open.
+// Pure tab identity lives in a React-free leaf so the regression suite can test it; re-exported
+// here so existing importers of FitTabs.jsx are unchanged.
+export { resolveTabs, MAX_OPEN_TABS, sameTab, nextFitId } from "../lib/fit-tabs.js";
 //
 // Switching between whole fits, rather than diffing stats between them: in EVE a DPS number lifted
 // out of its fit says very little (a HAM boat at 94 km and rapid lights at 48 km are not comparable
@@ -19,22 +22,10 @@
 import { useEffect, useRef } from "react";
 import { C } from "../theme.js";
 
-export const MAX_OPEN_TABS = 8;
+
 
 // Resolve stored tab pointers against the live fitsDB. Returns only tabs that still exist, each
 // carrying its CURRENT name. Falls back to matching by name for any fit that predates fit IDs.
-export function resolveTabs(openTabs, fitsDB) {
-  const out = [];
-  for (const t of (openTabs ?? [])) {
-    const list = fitsDB?.[t.ship];
-    if (!list) continue;
-    const fit = (t.id != null && list.find(f => f.id === t.id)) || list.find(f => f.name === t.name);
-    if (!fit) continue;
-    out.push({ ship: t.ship, id: fit.id, name: fit.name });
-  }
-  return out;
-}
-
 // Sticky so the strip survives the page scrolling out from under it -- the whole app column is one
 // document-level scroller, so without this the "collapsed" line would scroll away with the header
 // and there would be nothing left to say which tab you are in.

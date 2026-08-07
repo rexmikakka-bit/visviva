@@ -318,7 +318,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
           <button onClick={()=>setBoosters(boosters.map(x=>x.id===b.id?{...x,active:!x.active}:x))} style={{width:24,height:24,borderRadius:5,background:b.active?C.accentLight:"none",border:`1px solid ${b.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:b.active?C.accent:C.textMute}}>{b.active?"✓":""}</button>
           {/* The name is the tap target: boosters have real descriptions, and a grade family
               (Synth / Standard / Improved / Strong) worth comparing before committing. */}
-          <div style={{flex:1,cursor:"pointer"}} onClick={()=>setInfoItem({typeID:tidByName(b.name),name:b.name})}>
+          <div style={{flex:1,cursor:"pointer"}} onClick={()=>setInfoItem({typeID:tidByName(b.name),name:b.name,boosterId:b.id})}>
             <div style={{fontSize:12,fontWeight:600,color:b.active?C.text:C.textMid}}>{b.name}</div>
             <div style={{fontSize:10,color:C.rig,marginTop:1}}>{b.effect}</div>
           </div>
@@ -328,7 +328,10 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       </div>))}
       <button className="press" onClick={()=>{haptic();setShowBoosterPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Booster</button>
       {showBoosterPicker&&<BoosterPickerSheet onAdd={b=>setBoosters(prev=>[...prev,b])} onClose={()=>setShowBoosterPicker(false)}/>}
-      {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}/>}
+      {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}
+        onSwap={v=>setBoosters(bs=>bs.map(x=>x.id===infoItem.boosterId
+          ? {...buildBoosterFromName(v.name), id:x.id, active:x.active}   // keep slot identity + on/off
+          : x))}/>}
     </div>)}
     {section==="projected"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
       <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>Project another fit's effects onto this ship. Remote reps and EWAR scale with range. Modules use the source fit's active/overheated state.</div>

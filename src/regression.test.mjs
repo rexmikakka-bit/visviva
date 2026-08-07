@@ -23,6 +23,7 @@ import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
+import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1215,6 +1216,44 @@ function check(group, label, actual, expected, tol = 0.005) {
     }
   }
   check('hulls', 'hulls computing cleanly', total - crashed, total, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13a. FIT TAB IDENTITY — duplicate tabs / several tabs highlighted at once
+//      One fit with no `id` poisoned the nextId reducer to NaN (Math.max(m, undefined + 1)), and
+//      NaN is sticky, so every fit created afterwards carried id NaN. The tab dedupe then used
+//      `t.id != null`, which is TRUE for NaN, and NaN === NaN is FALSE — so a fit never matched its
+//      own tab and every open appended another copy. All the copies share a name, and the strip
+//      marks a tab active by ship+name, so they all lit up together.
+//
+//      Pure logic, so it is checked directly rather than through the React tree.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFIT TAB IDENTITY');
+  // The nextId reducer, as FittingsScreen computes it.
+  const nextId = (db) => Object.values(db).flat().map((f) => f?.id)
+    .filter((id) => Number.isFinite(id)).reduce((m, id) => Math.max(m, id + 1), 20);
+  check('tabs', 'a fit with no id cannot poison nextId', nextId({ A: [{ id: 3 }, { name: 'no id' }] }), 20, 0);
+  check('tabs', 'nextId still advances past the highest id', nextId({ A: [{ id: 41 }, { id: 7 }] }), 42, 0);
+
+  // The dedupe predicate from loadFit.
+  const sameTab = (t, fit, fitName) =>
+    Number.isFinite(t.id) && Number.isFinite(fit.id) ? t.id === fit.id : t.name === fitName;
+  const nanFit = { id: NaN, name: 'My Fit' };
+  let tabs = [];
+  for (let i = 0; i < 5; i++) if (!tabs.some((t) => sameTab(t, nanFit, 'My Fit'))) tabs.push({ id: nanFit.id, name: 'My Fit' });
+  check('tabs', 'opening a NaN-id fit 5x makes ONE tab', tabs.length, 1, 0);
+  // A finite id must still win over the name, so renaming a fit keeps its single tab.
+  check('tabs', 'a renamed fit still matches by id',
+        sameTab({ id: 7, name: 'Old Name' }, { id: 7, name: 'New Name' }, 'New Name') ? 1 : 0, 1, 0);
+  // ...and two different fits must never collapse into one tab.
+  check('tabs', 'different fits stay distinct',
+        sameTab({ id: 7, name: 'A' }, { id: 8, name: 'B' }, 'B') ? 1 : 0, 0, 0);
+
+  // resolveTabs heals a strip that was already corrupted and persisted.
+  const db = { Rifter: [{ id: NaN, name: 'My Fit' }] };
+  const stored = Array.from({ length: 6 }, () => ({ ship: 'Rifter', id: NaN, name: 'My Fit' }));
+  check('tabs', 'a saved duplicate strip collapses on load', resolveTabs(stored, db).length, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
