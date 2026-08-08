@@ -37,21 +37,23 @@ function CharacterPicker({ characters, activeId, onSwitch }) {
 function useEsiCharacters() {
   const [characters, setCharacters] = useState(() => esi.listCharacters());
   const [activeId, setActiveId] = useState(() => esi.getActiveCharacterId());
+  const [loginError, setLoginError] = useState(() => esi.getLastLoginError());
   const refresh = useCallback(() => {
     setCharacters(esi.listCharacters());
     setActiveId(esi.getActiveCharacterId());
+    setLoginError(esi.getLastLoginError());
   }, []);
   // Native login completes via an appUrlOpen deep link (App.jsx), not a page load, so this
   // component won't otherwise learn about it if it was already mounted when that happened.
   useEffect(() => esi.onCharactersChanged(refresh), [refresh]);
   const switchActive = useCallback((id) => { esi.setActiveCharacterId(id); refresh(); }, [refresh]);
   const remove = useCallback((id) => { esi.removeCharacter(id); refresh(); }, [refresh]);
-  return { characters, activeId, refresh, switchActive, remove };
+  return { characters, activeId, loginError, refresh, switchActive, remove };
 }
 
 // ─── Settings > ESI panel: connect/manage characters, sync skills ─────────────────────────────
 export function EsiSettingsPanel({ setSkills }) {
-  const { characters, activeId, refresh, switchActive, remove } = useEsiCharacters();
+  const { characters, activeId, loginError, refresh, switchActive, remove } = useEsiCharacters();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [syncedMsg, setSyncedMsg] = useState(null);
@@ -125,7 +127,7 @@ export function EsiSettingsPanel({ setSkills }) {
             {syncedMsg && <div style={{ fontSize: 11, color: C.success, marginTop: 6 }}>✓ {syncedMsg}</div>}
           </>
         )}
-        {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 8, lineHeight: 1.5 }}>{error}</div>}
+        {(error || loginError) && <div style={{ fontSize: 11, color: C.danger, marginTop: 8, lineHeight: 1.5, wordBreak: "break-word" }}>{error || loginError}</div>}
       </div>
     </div>
   );

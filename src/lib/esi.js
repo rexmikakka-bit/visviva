@@ -40,6 +40,16 @@ export function onCharactersChanged(cb) {
   return () => window.removeEventListener(CHANGE_EVENT, cb);
 }
 
+// The native login leg finishes in a deep-link listener (App.jsx), not in a component, so a
+// failure there has nowhere to render — it used to go to console.error only, which on a phone is
+// no error at all. Parked here and broadcast on the same change event the UI already listens to.
+let _lastLoginError = null;
+export function getLastLoginError() { return _lastLoginError; }
+export function setLastLoginError(e) {
+  _lastLoginError = e ? (e.message || String(e)) : null;
+  notifyChange();
+}
+
 function loadChars() { try { return JSON.parse(localStorage.getItem(CHARS_KEY)) ?? []; } catch { return []; } }
 function saveChars(list) { try { localStorage.setItem(CHARS_KEY, JSON.stringify(list)); } catch {} }
 
@@ -90,6 +100,17 @@ function decodeJwtPayload(jwt) {
 // ─── Login flow ─────────────────────────────────────────────────────────────────
 function isNative() {
   return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
+}
+
+// Is this deep-link URL our SSO callback? Lives here, next to the redirect_uri it has to agree
+// with, because the native listener in App.jsx used to hardcode the prefix separately — and when
+// the scheme gained its mandatory `eveauth-` prefix, that copy was missed. The listener then
+// rejected every real callback, so Browser.close() never ran and login hung on a spinner forever
+// with the token exchange never attempted. One source of truth: ESI_NATIVE_CALLBACK_URL.
+// Case-insensitive because a scheme is case-insensitive per RFC 3986 and the OS may normalise it.
+export function isEsiCallbackUrl(url) {
+  if (typeof url !== 'string' || !ESI_NATIVE_CALLBACK_URL) return false;
+  return url.toLowerCase().startsWith(ESI_NATIVE_CALLBACK_URL.toLowerCase());
 }
 
 // Kicks off SSO login: opens the system browser (native) or redirects the current tab (web).
@@ -161,6 +182,7 @@ export async function completeLoginFromCallback(callbackUrl) {
     expiresAt: Date.now() + tok.expires_in * 1000,
   };
   saveChars([...loadChars().filter(c => c.characterId !== characterId), rec]);
+  _lastLoginError = null;
   setActiveCharacterId(characterId);
   return { characterId, characterName, scopes };
 }

@@ -840,7 +840,7 @@ round-trip precision ESI itself doesn't support.
   fit, "ESI isn't configured yet") renders correctly with a fake character record injected directly
   into `localStorage` (same technique as the Optimize Fit Price verification below) — confirmed live
   in the dev server, no crashes, no console errors.
-- The Android manifest's deep-link intent-filter (`visviva://auth-callback`) and the `CapacitorHttp`
+- The Android manifest's deep-link intent-filter (`eveauth-visviva://auth-callback`) and the `CapacitorHttp`
   config both compile in and show up correctly in a built debug APK (checked with `aapt2 dump
   xmltree` and by reading the synced `android/app/src/main/assets/capacitor.config.json`).
 
@@ -848,7 +848,7 @@ round-trip precision ESI itself doesn't support.
 
 1. Register an application at developers.eveonline.com — Application Type "Authentication & API
    Access", connection type public/PKCE. Register **both** callback URLs (the web origin and
-   `visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
+   `eveauth-visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
 2. Paste the resulting Client ID into `ESI_CLIENT_ID` in `src/esi-config.js`. That's the only
    required edit — everything else reads from that file.
 3. Live-test the actual login button once, on a debug build (emulator or device — `npm run

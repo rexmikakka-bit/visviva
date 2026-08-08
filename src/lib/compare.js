@@ -39,7 +39,41 @@ const IGNORED = new Set([
   'requiredSkill1', 'requiredSkill2', 'requiredSkill3',
   'requiredSkill1Level', 'requiredSkill2Level', 'requiredSkill3Level',
   'skillPoints', 'skillTimeConstant',
+  // Heat absorption rate only means anything while overheating, and it differs on nearly every
+  // meta variant — so it reliably outranked the attributes the module is actually chosen for.
+  'heatAbsorbtionRateModifier',   // CCP's spelling
+  // CCP's own placeholder for the command-burst strength readout — the trailing FAKE is theirs.
+  // Present on T2/faction bursts and absent on T1, which scored it a perfect 1.0 spread and put a
+  // non-attribute at the top of every command-burst comparison.
+  'commandBurstDbuffEffectStrengthFAKE',
 ]);
+
+/**
+ * Attributes whose VALUE is an ID reference, not a quantity.
+ *
+ * `canFitShipType2 = 89808` is a typeID in a fitting whitelist; subtracting one from another is
+ * meaningless, and because the whitelists are numbered inconsistently across variants (a T1 burst
+ * fills canFitShipType1 where its T2 fills canFitShipType2) they read as PRESENT-vs-ABSENT — the
+ * maximum possible spread. That is how three rows of a six-row comparison went to fitting
+ * bookkeeping and pushed a Shield Command Burst's actual range difference off the end of the list.
+ */
+const ID_VALUED_RE = /^(canFitShipType\d+|canFitShipGroup\d+|chargeGroup\d+|fitsToShipType)$/;
+
+/**
+ * Attributes that describe an NPC rather than the fit.
+ *
+ * `entityCapacitorLevelModifierSmall/Medium/Large` (1895–1897, alongside `entityCapacitorLevel`) is
+ * the fraction of an NPC's capacitor left standing after a neutraliser hits it, bucketed by the
+ * NPC's size class — a coarse hint for CCP's NPC AI. Provably inert here: NO effect in the bundle
+ * references 1894–1897, and eos never reads them either (pyfa's only mention is a raw attribute
+ * dump in service/port/efs.py), which is why the attribute cannot be found anywhere in pyfa's UI.
+ *
+ * It cost TWO of the six rows on an energy neutraliser, because the three siblings hold different
+ * values so the numbered-sibling collapse cannot merge them — and their index is a word, not a
+ * digit, so it would not have matched in the first place. Falloff, the stat that actually separates
+ * the meta variants, was displaced to make room for it.
+ */
+const NPC_FACING_RE = /^entityCapacitorLevel/;
 
 /** The runtime attribute map for a type, keyed by attribute NAME. */
 function attrsOf(typeID) {
@@ -63,7 +97,7 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
   const maps = ids.map(attrsOf);
   const keys = new Set();
   for (const m of maps) for (const k of Object.keys(m)) {
-    if (IGNORED.has(k) || /^(meta|tech)Level/i.test(k)) continue;
+    if (IGNORED.has(k) || ID_VALUED_RE.test(k) || NPC_FACING_RE.test(k) || /^(meta|tech)Level/i.test(k)) continue;
     if (typeof m[k] === 'number' && Number.isFinite(m[k])) keys.add(k);
   }
   const scored = [];
@@ -83,13 +117,19 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
   // all five spends the whole row on one fact. Keeping the first is enough — the others say nothing
   // it does not. Only collapsed when the value vectors match exactly; genuinely differing numbered
   // attributes (missile damage per type, say) stay separate.
+  //
+  // The index is not always a SUFFIX: a command burst's four buff slots are `warfareBuff1Value` …
+  // `warfareBuff4Value`, all carrying the same number. Matching trailing digits only, this family
+  // never collapsed and spent four of the six rows restating one value. The stem therefore keeps
+  // whatever follows the digits (`warfareBuff#Value`), so siblings group but `emDamage` and
+  // `kineticDamage` — different text after the digits — still cannot be confused for each other.
   const vecOf = k => maps.map(m => (typeof m[k] === 'number' ? m[k] : 0)).join(',');
   const keptStems = new Map();
   const out = [];
   for (const { key } of scored) {
-    const m = /^(.*?)(\d+)$/.exec(key);
+    const m = /^(.*?)(\d+)(.*)$/.exec(key);
     if (m) {
-      const stem = m[1], vec = vecOf(key);
+      const stem = `${m[1]}#${m[3]}`, vec = vecOf(key);
       const prev = keptStems.get(stem);
       if (prev === vec) continue;            // same family, same numbers — already represented
       if (prev === undefined) keptStems.set(stem, vec);
@@ -109,13 +149,27 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
  * while `boosterMissileAOECloudPenalty` is +20, both meaning "20% worse". So sign is useless there
  * and MAGNITUDE is the real signal — a stronger penalty is a worse one, whichever way it points.
  *
- * The same magnitude rule, inverted, covers signed BONUSES like `aoeCloudSizeBonus`, which is
- * negative when it helps (a smaller explosion radius applies better) — a bigger magnitude is a
- * stronger bonus, so better.
+ * The same magnitude rule, inverted, covers the signed EWAR/assist BONUS family. On these, the SIGN
+ * says which way the module pushes the attribute and the MAGNITUDE says how hard — so the sign is a
+ * property of the module CLASS, not of whether one variant beats another. A Guidance Disruptor II
+ * carries `aoeVelocityBonus = -12` against a Guidance Disruptor I's -10: more negative means it
+ * cripples the target's missiles harder, i.e. it is the better disruptor. CCP flags every one of
+ * them highIsGood=1, which reads -12 as the worse number and coloured the stronger module red.
+ *
+ * Each attribute here was checked to be sign-consistent within every fittable module group in the
+ * bundle (a disruptor's whole variant set is negative, its guidance-computer counterpart's whole set
+ * is positive), which is what makes comparing magnitudes safe — a comparison never mixes the two.
+ * The only mixed-sign carriers are Effect Beacons, which are system effects and never comparable
+ * module variants.
  */
 const PENALTY_RE = /Penalty$/;
 const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
-const SIGNED_BONUS_RE = /^aoeCloudSizeBonus$/;
+// `speedFactor` is the clearest case in the family and the one most easily missed: a Stasis
+// Webifier II carries −60 against a Stasis Webifier I's −50, and the −60 is the better web. The
+// SAME attribute is +60…+520 on propulsion modules, where bigger is also better — which is exactly
+// why magnitude, not sign, is the rule. It also covers Stasis Grapplers (−80…−88), Structure Stasis
+// Webifiers and webifying drones, all of which had the identical reversed colouring.
+const SIGNED_BONUS_RE = /^(aoeCloudSizeBonus|aoeVelocityBonus|missileVelocityBonus|explosionDelayBonus|trackingSpeedBonus|maxRangeBonus|falloffBonus|maxTargetRangeBonus|scanResolutionBonus|speedFactor)$/;
 function directionOf(k, v, b) {
   if (v == null || b == null) return null;
   if (PENALTY_RE.test(k))       return Math.abs(v) < Math.abs(b);   // weaker penalty wins

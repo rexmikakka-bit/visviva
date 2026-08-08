@@ -2,14 +2,14 @@
 // Leaf module (imports only data + calc + theme). Layering: core <- ui <- tabs <- App.
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import shipsData        from "../data/ships.json";
-import modulesData      from "../data/modules.json";
-import chargesData      from "../data/charges.json";
-import dronesData       from "../data/drones.json";
-import marketGroupsData from "../data/marketGroups.json";
-import marketTreeData   from "../data/market-tree.json";
-import mutaplasmidData  from "../data/mutaplasmids.json";
-import TYPE_ICONS       from "../data/type-icons.json";
+import shipsData        from "../data/ships.json" with { type: "json" };
+import modulesData      from "../data/modules.json" with { type: "json" };
+import chargesData      from "../data/charges.json" with { type: "json" };
+import dronesData       from "../data/drones.json" with { type: "json" };
+import marketGroupsData from "../data/marketGroups.json" with { type: "json" };
+import marketTreeData   from "../data/market-tree.json" with { type: "json" };
+import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
+import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 
@@ -796,12 +796,25 @@ function getCompatibleCharges(mod){
   // will happily load combat probes into a core launcher. This is one of the rare places we are
   // deliberately stricter than the reference, because the game itself is.
   const capacity=a['38']??a.capacity??null;
+  // CIVILIAN ammo is filed under the wrong group by CCP. All four turret variants — Civilian Pulse
+  // Crystal, Civilian Autocannon Ammo, Civilian Railgun Charge, Civilian Blaster Charge — sit in
+  // group 86 "Frequency Crystal" at chargeSize 1, whatever weapon they actually belong to. So every
+  // small energy turret in the game offered autocannon, blaster and railgun ammo as loadable
+  // charges. (Civilian Scourge Light Missile does the same to light missile launchers.)
+  //
+  // Nothing in the data separates them, and the group is not fixable from our side, so they are
+  // matched by name — CCP has never shipped a civilian charge not named "Civilian ...". They stay
+  // available to the civilian WEAPONS, which are named the same way, since those are the only
+  // modules the ammo is for.
+  const isCivilian=n=>/^civilian\b/i.test(String(n??''));
+  const modIsCivilian=isCivilian(td.n??td.name??mod.name);
   const out=[];
   for(const gid of chargeGroups){
     for(const c of (CHARGES_BY_GROUP.get(gid)??[])){
       // chargeSize filter: skip only if both sides specify a size and they differ
       if(chargeSize!=null && c.chargeSize!=null && c.chargeSize!==chargeSize)continue;
       if(capacity>0 && c.volume>0 && c.volume>capacity)continue;
+      if(!modIsCivilian && isCivilian(c.name))continue;
       out.push(c);
     }
   }
@@ -960,15 +973,33 @@ function groupChargesForBrowser(charges){
       return chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name);
     });
     const ranges=items.map(chargeRangeMult).filter(v=>v!=null);
-    return{family,items,range:ranges.length?Math.min(...ranges):null,order:order.get(family)};
+    // The size sort above only ever ordered charges WITHIN a family, and each cap booster size is
+    // its own family ("Cap Booster 400" holds the plain and the Navy one) — so the families
+    // themselves still fell through to localeCompare and the picker read 100, 150, 200, 3200, 25,
+    // 400, 50, 75, 800. Carried up to the group so the sizes line up numerically.
+    const caps=items.map(capBonusOf).filter(v=>v>0);
+    // T2 turret ammo leads its list. Two per weapon family (Hail/Barrage, Void/Null,
+    // Conflagration/Scorch), and they are the two you are actually choosing between most of the
+    // time, but being one short-range and one long-range they sat at opposite ENDS of a
+    // range-ordered list. Gated on `range` so this only touches turret ammo: missiles carry no
+    // weaponRangeMultiplier and are ordered by damage type instead, which is left alone.
+    const t2Turret=ranges.length>0&&items.every(i=>metaOf(i.typeID,null)==="T2");
+    return{family,items,range:ranges.length?Math.min(...ranges):null,order:order.get(family),
+           capSize:caps.length?Math.max(...caps):null,t2Turret};
   });
   groups.sort((a,b)=>{
     // Damage-type groups (missiles) carry an explicit index and always lead, in EM/Th/Kin/Exp order.
+    // Checked FIRST, so nothing below can reorder a missile list.
     if(a.order!=null||b.order!=null){
       if(a.order==null)return 1;
       if(b.order==null)return -1;
       return a.order-b.order;
     }
+    // T2 turret ammo first; the pair then orders by range between themselves, as everything does.
+    if(a.t2Turret!==b.t2Turret)return a.t2Turret?-1:1;
+    // Cap boosters: biggest first, matching the within-family rule — the largest charge that fits
+    // is almost always the one you want, and what fits is already decided by getCompatibleCharges.
+    if(a.capSize!=null&&b.capSize!=null&&a.capSize!==b.capSize)return b.capSize-a.capSize;
     if(a.range==null&&b.range==null)return a.family.localeCompare(b.family);
     if(a.range==null)return 1;
     if(b.range==null)return -1;

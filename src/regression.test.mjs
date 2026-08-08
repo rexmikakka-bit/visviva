@@ -26,6 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows } from './lib/compare.js';
+import { getCompatibleCharges, groupChargesForBrowser } from './lib/core.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1270,6 +1271,112 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('cmp', 'cheapest first when ascending', order('price', 'asc')[1] === ext[1] ? 1 : 0, 1, 0);
   check('cmp', 'dearest first when descending', order('price', 'desc')[1] === ext[2] ? 1 : 0, 1, 0);
   check('cmp', 'meta sort keeps baseline pinned', order('meta', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
+
+  // ── Signed EWAR bonuses: sign is the module CLASS, magnitude is the strength ──────────────
+  // A Guidance Disruptor II's aoeVelocityBonus is −12 against a Guidance Disruptor I's −10 — more
+  // negative because it cripples the target's missiles harder. CCP flags all of these highIsGood=1,
+  // which read −12 as worse and coloured the STRONGER disruptor red.
+  const gd = ['Guidance Disruptor I', 'Guidance Disruptor II'].map(tid);
+  const gd2 = compareRows(gd, gd[0]).find(r => r.typeID === gd[1]);
+  const gstat = k => gd2.stats.find(s => s.key === k);
+  check('cmp', 'gd II explosion velocity delta is negative', gstat('aoeVelocityBonus').delta, -2, 1e-9);
+  check('cmp', 'stronger explosion VELOCITY bonus reads better', gstat('aoeVelocityBonus').better ? 1 : 0, 1, 0);
+  // Same family, opposite sign on the very same module — proof the rule is magnitude, not sign.
+  check('cmp', 'gd II explosion radius delta is positive', gstat('aoeCloudSizeBonus').delta, 2, 1e-9);
+  check('cmp', 'stronger explosion RADIUS bonus reads better', gstat('aoeCloudSizeBonus').better ? 1 : 0, 1, 0);
+  // Stasis webs are the same rule again: −60 cripples harder than −50, so it is the better web.
+  const web = ['Stasis Webifier I', 'Stasis Webifier II'].map(tid);
+  const web2 = compareRows(web, web[0]).find(r => r.typeID === web[1]);
+  const wstat = web2.stats.find(s => s.key === 'speedFactor');
+  check('cmp', 'web II velocity delta is negative', wstat.delta, -10, 1e-9);
+  check('cmp', 'stronger web reads better', wstat.better ? 1 : 0, 1, 0);
+  // The SAME attribute is positive on prop mods, where bigger is also better — the magnitude rule
+  // has to keep that right, not just flip the sign convention.
+  const prop = ['5MN Microwarpdrive I', '5MN Microwarpdrive II'].map(tid);
+  const prop2 = compareRows(prop, prop[0]).find(r => r.typeID === prop[1]);
+  const pstat = prop2.stats.find(s => s.key === 'speedFactor');
+  check('cmp', 'faster MWD still reads better', (pstat && pstat.delta > 0 && pstat.better) ? 1 : 0, 1, 0);
+  // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
+  // outranked the attributes a disruptor is actually chosen for. Excluded by name.
+  const gdAll = Object.keys(TYPES).filter(id => /Guidance Disruptor/i.test(TYPES[id].n ?? '')).map(Number);
+  check('cmp', 'heat absorption never shown', differingAttributes(gdAll).includes('heatAbsorbtionRateModifier') ? 1 : 0, 0, 0);
+
+  // ── NPC-facing attributes never belong in a fit comparison ───────────────────────────────
+  // entityCapacitorLevelModifier{Small,Medium,Large} is how much capacitor an NPC is left with
+  // after this neutraliser hits it — NPC AI data. No effect in the bundle references 1894–1897 and
+  // eos never reads them, so it is inert; it still took TWO of six rows on every energy
+  // neutraliser, displacing falloff — the one stat that separates the meta variants.
+  const neuts = Object.keys(TYPES).filter(id => TYPES[id].gn === 'Energy Neutralizer' && /^Small /.test(TYPES[id].n ?? '')).map(Number);
+  const nd = differingAttributes(neuts);
+  check('cmp', 'NPC capacitor attrs never shown', nd.some(k => /^entityCapacitorLevel/.test(k)) ? 1 : 0, 0, 0);
+  check('cmp', 'neut falloff is shown instead', nd.includes('falloffEffectiveness') ? 1 : 0, 1, 0);
+  // Every stat a neutraliser is actually chosen on now leads the list.
+  check('cmp', 'neut drain amount still leads', nd.includes('energyNeutralizerAmount') ? 1 : 0, 1, 0);
+
+  // ── Command bursts: range is the faction hulls' whole selling point ───────────────────────
+  // 'Vigilant' reaches 18 km against a T1/T2 burst's 15 km, and that row went missing because
+  // canFitShipType1/2 (raw typeIDs, present on one variant and absent on the other → a perfect 1.0
+  // spread) and warfareBuff2..4Value (identical siblings that never collapsed, since their index is
+  // INFIX not suffix) took five of the six slots between them.
+  const burst = ['Shield Command Burst I', 'Shield Command Burst II', '‘Vigilant’ Shield Command Burst'].map(tid);
+  const bd = differingAttributes(burst);
+  check('cmp', 'burst range is shown', bd.includes('maxRange') ? 1 : 0, 1, 0);
+  check('cmp', 'no typeID whitelists leak in', bd.some(k => /^canFitShip/.test(k)) ? 1 : 0, 0, 0);
+  check('cmp', "CCP's FAKE placeholder is excluded", bd.includes('commandBurstDbuffEffectStrengthFAKE') ? 1 : 0, 0, 0);
+  check('cmp', 'infix-numbered buff siblings collapse to one', bd.filter(k => /^warfareBuff\d+Value$/.test(k)).length, 1, 0);
+  const vig = compareRows(burst, burst[0]).find(r => r.typeID === burst[2]);
+  check('cmp', 'Vigilant burst reaches 3 km further', vig.stats.find(s => s.key === 'maxRange').delta, 3000, 1e-9);
+  check('cmp', 'longer burst range reads better', vig.stats.find(s => s.key === 'maxRange').better ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13j. CHARGE BROWSER — which charges a module offers, and in what order
+//      All three of these are corrections to CCP's own filing, so nothing in the data will keep
+//      them right on its own: civilian ammo sits in a group it does not belong to, cap boosters
+//      are graded by a number in their name, and T2 turret ammo comes in a short/long pair that a
+//      pure range sort pushes to opposite ends of the list.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCHARGE BROWSER');
+  const chargesFor = (name) => getCompatibleCharges({ typeID: tid(name), name });
+  const familiesFor = (name) => groupChargesForBrowser(chargesFor(name)).map(g => g.family);
+  const civ = (name) => chargesFor(name).filter(c => /^civilian\b/i.test(c.name)).length;
+
+  // CCP files all four civilian turret ammos in group 86 "Frequency Crystal" at chargeSize 1,
+  // whatever weapon they are for — so every small energy turret offered autocannon, blaster and
+  // railgun ammo. Civilian Scourge Light Missile does the same to launchers.
+  check('chg', 'no civilian ammo on a beam laser', civ('Small Focused Beam Laser I'), 0, 0);
+  check('chg', 'no civilian ammo on a pulse laser', civ('Small Focused Pulse Laser I'), 0, 0);
+  check('chg', 'no civilian ammo on a launcher', civ('Light Missile Launcher II'), 0, 0);
+  // ...but a civilian MODULE keeps it. This is the difference between a rule and a blanket delete,
+  // and the only module in the game that can actually load one (the four civilian turrets carry no
+  // chargeGroup at all — they take no ammo).
+  check('chg', 'civilian launcher keeps its civilian missile', civ('Civilian Light Missile Launcher'), 1, 0);
+
+  // T2 turret ammo leads. One is the shortest-ranged charge in the list and the other the longest,
+  // so a pure range sort put the pair at opposite ends — Gleam first, Aurora dead last.
+  const beam2 = familiesFor('Small Focused Beam Laser II');
+  check('chg', 'beam laser T2 crystals lead', beam2.slice(0, 2).join(',') === 'Gleam S,Aurora S' ? 1 : 0, 1, 0);
+  const ac2 = familiesFor('200mm AutoCannon II');
+  check('chg', 'autocannon T2 ammo leads', ac2.slice(0, 2).join(',') === 'Hail S,Barrage S' ? 1 : 0, 1, 0);
+  // The range rule still governs everything after the T2 pair.
+  const t1Ranges = groupChargesForBrowser(chargesFor('200mm AutoCannon II')).filter(g => !g.t2Turret).map(g => g.range);
+  check('chg', 'non-T2 turret ammo still sorts by range',
+        t1Ranges.every((v, i) => i === 0 || v >= t1Ranges[i - 1]) ? 1 : 0, 1, 0);
+
+  // Missiles are ordered by DAMAGE TYPE, not range, and the T2-first rule must not reach them —
+  // Fury/Precision live inside their damage family, not as families of their own.
+  check('chg', 'missile damage-type order untouched',
+        familiesFor('Heavy Missile Launcher II').join(',') === 'Mjolnir (EM),Inferno (Thermal),Scourge (Kinetic),Nova (Explosive)' ? 1 : 0, 1, 0);
+
+  // Cap booster sizes are a number in the NAME, so the families sorted as strings: 100, 150, 200,
+  // 3200, 25, 400, 50, 75, 800.
+  const caps = groupChargesForBrowser(chargesFor('Heavy Capacitor Booster II'));
+  check('chg', 'cap boosters run largest first', caps[0].family === 'Cap Booster 3200' ? 1 : 0, 1, 0);
+  check('chg', 'cap boosters run smallest last', caps[caps.length - 1].family === 'Cap Booster 25' ? 1 : 0, 1, 0);
+  const capSizes = caps.map(g => g.capSize);
+  check('chg', 'cap booster sizes strictly descending',
+        capSizes.every((v, i) => i === 0 || v < capSizes[i - 1]) ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

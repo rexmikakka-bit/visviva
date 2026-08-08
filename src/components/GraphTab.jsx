@@ -356,28 +356,35 @@ function generateCurve(catKey,yKey,xKey,params={}){
   return{pts,xMax:xMax??100,yMax:yMax??100};
 }
 
-function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
+// CONTROLLED cursor: the selected x lives in GraphTab (persisted, shared across fits), not in local
+// pixel state here. Two consequences worth knowing:
+//   * it STICKS. Touch-end and mouse-leave used to clear it, so on a phone the reading vanished the
+//     instant you lifted your finger — there was no "selected point" to navigate away from at all.
+//     Drag off either edge of the plot to clear, or reset a zoom / change an axis.
+//   * it is an x VALUE, so it re-reads correctly after a zoom or a switch to another fit's curve.
+function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
   const W=280,H=140,PL=36,PB=20,PT=6,PR=8,gW=W-PL-PR,gH=H-PB-PT;
   const toX=x=>PL+(x/xMax)*gW,toY=y=>PT+gH-(y/yMax)*gH;
-  const[cursorX,setCursorX]=useState(null);
   if(!pts||!pts.length)return null;
   const fmt=v=>v>=10000?`${(v/1000).toFixed(0)}k`:v>=1000?`${(v/1000).toFixed(1)}k`:parseFloat(v.toPrecision(3)).toString();
   const yT=[0,.25,.5,.75,1].map(f=>yMax*f),xT=[0,.25,.5,.75,1].map(f=>xMax*f);
   const lp=pts.map(([x,y],i)=>`${i===0?"M":"L"}${toX(x).toFixed(1)},${toY(Math.max(0,y)).toFixed(1)}`).join(" ");
   const ap=lp+` L${toX(pts[pts.length-1][0])},${toY(0)} L${toX(pts[0][0])},${toY(0)} Z`;
   const gId="g"+color.replace(/[^a-zA-Z0-9]/g,"");
-  const interpY=svgX=>{const xVal=Math.max(0,Math.min(xMax,(svgX-PL)/gW*xMax));for(let i=1;i<pts.length;i++){if(pts[i][0]>=xVal){const[x0,y0]=pts[i-1],[x1,y1]=pts[i],t=x1===x0?0:(xVal-x0)/(x1-x0);return{xVal,yVal:y0+(y1-y0)*t};}}return{xVal,yVal:pts[pts.length-1][1]};};
-  const handleMouseMove=e=>{const rect=e.currentTarget.getBoundingClientRect(),scaleX=W/rect.width,svgX=(e.clientX-rect.left)*scaleX;if(svgX<PL||svgX>W-PR){setCursorX(null);onCursorChange&&onCursorChange(null);return;}const{xVal,yVal}=interpY(svgX);setCursorX(svgX);onCursorChange&&onCursorChange({xVal,yVal});};
-  const handleTouchMove=e=>{e.preventDefault();const rect=e.currentTarget.getBoundingClientRect(),scaleX=W/rect.width,svgX=(e.touches[0].clientX-rect.left)*scaleX;if(svgX<PL||svgX>W-PR){setCursorX(null);onCursorChange&&onCursorChange(null);return;}const{xVal,yVal}=interpY(svgX);setCursorX(svgX);onCursorChange&&onCursorChange({xVal,yVal});};
-  const handleLeave=()=>{setCursorX(null);onCursorChange&&onCursorChange(null);};
-  const cursorYVal=cursorX!=null?interpY(cursorX):null;
+  // Pointer x -> curve x, or null when the drag leaves the plot box (which is how you clear it).
+  const xFromClient=(clientX,rect)=>{const scaleX=W/rect.width,svgX=(clientX-rect.left)*scaleX;
+    return(svgX<PL||svgX>W-PR)?null:Math.max(0,Math.min(xMax,(svgX-PL)/gW*xMax));};
+  const handleMouseMove=e=>{onCursorXChange&&onCursorXChange(xFromClient(e.clientX,e.currentTarget.getBoundingClientRect()));};
+  const handleTouchMove=e=>{e.preventDefault();onCursorXChange&&onCursorXChange(xFromClient(e.touches[0].clientX,e.currentTarget.getBoundingClientRect()));};
+  const cursorPx=(cursorX!=null&&cursorX<=xMax)?toX(cursorX):null;
+  const cursorYVal=cursorPx!=null?interpCurveAt(pts,cursorX):null;
   // touchAction:none + stopPropagation: dragging along the x-axis to read a datapoint was reaching
   // the Fit/Stats/Graph swipe handler on an ancestor, so scrubbing the plot flicked you to another
   // sub-tab instead. The graph owns horizontal drags inside its own box.
   const swallow=e=>e.stopPropagation();
   // no-select: dragging across the chart to move the cursor was selecting the axis tick labels,
   // which on a phone also raises the text-selection handles and the long-press callout.
-  return(<svg className="no-select" width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair",touchAction:"none"}} onMouseMove={handleMouseMove} onMouseLeave={handleLeave} onTouchStart={swallow} onTouchMove={e=>{e.stopPropagation();handleTouchMove(e);}} onTouchEnd={handleLeave}>
+  return(<svg className="no-select" width="100%" height={H+18} viewBox={`0 0 ${W} ${H+18}`} style={{overflow:"visible",cursor:"crosshair",touchAction:"none"}} onMouseMove={handleMouseMove} onTouchStart={swallow} onTouchMove={e=>{e.stopPropagation();handleTouchMove(e);}} onTouchEnd={swallow}>
     <defs>
       <linearGradient id={gId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={color} stopOpacity=".22"/><stop offset="100%" stopColor={color} stopOpacity="0"/></linearGradient>
       {/* Zoomed axes shrink xMax/yMax, so the curve can run past the plot box — clip it to the grid. */}
@@ -388,7 +395,7 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,onCursorChange}){
     <g clipPath={`url(#${gId}clip)`}>
       <path d={ap} fill={`url(#${gId})`}/><path d={lp} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
     </g>
-    {cursorX!=null&&cursorYVal!=null&&(<g><line x1={cursorX} y1={PT} x2={cursorX} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorX} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal.yVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
+    {cursorPx!=null&&cursorYVal!=null&&(<g><line x1={cursorPx} y1={PT} x2={cursorPx} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorPx} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
     {yT.map((v,i)=><text key={i} x={PL-3} y={toY(v)+3} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
     {xT.map((v,i)=><text key={i} x={toX(v)} y={H+4} textAnchor="middle" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
     <text x={PL+gW/2} y={H+16} textAnchor="middle" fill={C.textMute} fontSize="9" fontFamily="sans-serif">{xLabel}</text>
@@ -584,17 +591,44 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
 // to the Fit tab to change a module. Everything you had dialled in was gone when you came back.
 // Persisted to localStorage instead, and restored on mount. Deliberately NOT part of the fit: it
 // describes the engagement you are imagining, not the ship, so it is one setup shared by all fits.
+// ⚠ Read PER MOUNT, never once at module load. `const GP=loadGraphPrefs()` at module scope reads
+// localStorage exactly once, when this file is first imported — so every later mount restored the
+// snapshot taken at app START, not what you actually left the graph in. The writes below were
+// landing correctly the whole time; nothing read them back until a full page reload, which is why
+// the workbench appeared not to persist at all. The panel is keyed on the sub-tab in
+// FittingsScreen, so it remounts every time you swipe away and back — this runs on each of those.
 const GRAPH_PREFS_KEY='visviva_graph_prefs';
 function loadGraphPrefs(){
   try{return JSON.parse(localStorage.getItem(GRAPH_PREFS_KEY)||'{}')??{};}catch{return {};}
 }
-const GP=loadGraphPrefs();
-const gp=(k,dflt)=>(GP[k]===undefined?dflt:GP[k]);
+
+// Linear interpolation of the plotted curve at an x VALUE.
+//
+// The cursor is stored as a value (a range in metres, a time in seconds) rather than as a pixel,
+// and that is what makes the cross-fit comparison work: switching fit tabs keeps GraphTab mounted
+// and swaps the curve underneath, so the same stored x re-reads at the new fit's DPS. A pixel would
+// have meant the same thing only by accident, and would have moved under a zoom change.
+function interpCurveAt(pts,xVal){
+  if(!pts?.length||xVal==null)return null;
+  if(xVal<=pts[0][0])return pts[0][1];
+  for(let i=1;i<pts.length;i++){
+    if(pts[i][0]>=xVal){
+      const[x0,y0]=pts[i-1],[x1,y1]=pts[i],t=x1===x0?0:(xVal-x0)/(x1-x0);
+      return y0+(y1-y0)*t;
+    }
+  }
+  return pts[pts.length-1][1];
+}
 
 // tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
 // set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
 // two views from disagreeing about which resist profile is in force.
 function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile}){
+  // Lazy, once per mount — see loadGraphPrefs. A ref rather than useMemo because these feed useState
+  // initialisers, and a discarded memo would silently hand back defaults.
+  const _prefs=useRef(undefined);
+  if(_prefs.current===undefined)_prefs.current=loadGraphPrefs();
+  const gp=(k,dflt)=>{const v=_prefs.current[k];return v===undefined?dflt:v;};
   const[catKey,setCatKey]=useState(()=>gp('catKey',"damage")),[yKey,setYKey]=useState(()=>gp('yKey',"dps")),[xKey,setXKey]=useState(()=>gp('xKey',"dist"));
   // Per-category axis memory; see handleCatChange. Damage's defaults above (DPS vs Distance) are
   // what a fresh install opens on.
@@ -612,7 +646,9 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // `?? IDEAL_SIG` also migrates a setup persisted before Ideal became an explicit number, where
   // infinite sig was stored as null.
   const[tgtSig,setTgtSig]=useState(()=>gp('tgtSig',IDEAL_SIG)??IDEAL_SIG);
-  const[cursor,setCursor]=useState(null);
+  // The selected point, stored as its x VALUE so it survives the remount, follows a zoom, and
+  // re-reads against another fit's curve when you switch fit tabs.
+  const[cursorX,setCursorX]=useState(()=>gp('cursorX',null));
   // Axis scale (zoom). 1 = auto-fit range from generateCurve; >1 zooms in (smaller max),
   // <1 zooms out (larger max). Applied to the auto max, so it survives fit/axis changes.
   const[xZoom,setXZoom]=useState(()=>gp('xZoom',1)),[yZoom,setYZoom]=useState(()=>gp('yZoom',1));
@@ -620,8 +656,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX]);
   const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
   const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
     const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};
@@ -640,7 +676,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     setCatKey(key);
     setYKey(saved&&nc.yAxes.some(a=>a.key===saved.y)?saved.y:nc.yAxes[0].key);
     setXKey(saved&&nc.xAxes.some(a=>a.key===saved.x)?saved.x:nc.xAxes[0].key);
-    setCursor(null);setXZoom(1);setYZoom(1);
+    setCursorX(null);setXZoom(1);setYZoom(1);
   };
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
@@ -665,8 +701,13 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
   const baseHeadline=pts.length?pts[Math.floor(pts.length*.05)][1]:null;
-  const displayVal=cursor!=null?cursor.yVal:baseHeadline;
-  const displayX=cursor!=null?cursor.xVal:null;
+  // A stored x can fall outside the current domain (a zoom in, or an axis that runs shorter on this
+  // fit). Treat that as "no selection" rather than pinning the readout to the edge — but keep the
+  // value, so zooming back out or switching to a longer-ranged fit restores the same point.
+  const cursorLive=cursorX!=null&&cursorX<=xMax;
+  const cursorY=cursorLive?interpCurveAt(pts,cursorX):null;
+  const displayVal=cursorY!=null?cursorY:baseHeadline;
+  const displayX=cursorY!=null?cursorX:null;
   const fmt=v=>v==null?"--":v>=10000?`${(v/1000).toFixed(1)}k`:v>=100?v.toFixed(0):v.toFixed(1);
   return(<div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
@@ -675,21 +716,21 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setCursor(null);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursor(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
       {/* Axis scale (zoom): − widens the visible range, + zooms in. Tap the readout to reset to auto-fit. */}
       {[{ax:"Y",zoom:yZoom,setZoom:setYZoom,max:yMax},{ax:"X",zoom:xZoom,setZoom:setXZoom,max:xMax}].map(z=>{
         const atMin=z.zoom<=ZOOM_STEPS[0]+1e-9, atMax=z.zoom>=ZOOM_STEPS[ZOOM_STEPS.length-1]-1e-9;
         const btn=(dis)=>({flex:"0 0 26px",padding:"4px 0",borderRadius:6,fontSize:13,fontWeight:700,lineHeight:1,
           cursor:dis?"default":"pointer",background:C.surface,border:`1px solid ${C.border}`,color:dis?C.textMute:C.textMid,opacity:dis?.4:1});
         return(<div key={z.ax} style={{display:"flex",alignItems:"center",gap:4}}>
-          <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));setCursor(null);}} disabled={atMin} style={btn(atMin)}>−</button>
-          <button onClick={()=>{z.setZoom(1);setCursor(null);}} title="Reset to auto-fit"
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>−</button>
+          <button onClick={()=>{z.setZoom(1);}} title="Reset to auto-fit"
             style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:z.zoom===1?C.surface:`${cat.color}22`,
               border:`1px solid ${z.zoom===1?C.border:cat.color}`,color:z.zoom===1?C.textMute:cat.color,whiteSpace:"nowrap",overflow:"hidden"}}>
             {z.ax} {fmt(z.max)}{z.zoom!==1?` · ${z.zoom}×`:""}
           </button>
-          <button onClick={()=>{z.setZoom(v=>stepZoom(v,1));setCursor(null);}} disabled={atMax} style={btn(atMax)}>+</button>
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,1));}} disabled={atMax} style={btn(atMax)}>+</button>
         </div>);
       })}
     </div>
@@ -711,7 +752,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         })()}
       </div>
     </div>}
-    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} onCursorChange={setCursor}/></div>
+    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}/></div>
     {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship}/></div>}
   </div>);
 }

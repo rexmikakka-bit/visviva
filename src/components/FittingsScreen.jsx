@@ -487,7 +487,14 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"6px 12px 0",gap:8}}>
-        <button onClick={()=>{setSelectedShip(activeFit?.ship??null);setView("fits");}} style={{background:"none",border:"none",color:C.accent,fontSize:14,cursor:"pointer",fontWeight:600,padding:"3px 0",flexShrink:0,width:70,textAlign:"left"}}>Fits</button>
+        {/* A filled button, not bare accent-coloured text. This is the way BACK out of a fit and it
+            was reading as a label rather than a control — the chevron and the solid background say
+            "tap me" without needing the width of a longer word. */}
+        <button onClick={()=>{haptic();setSelectedShip(activeFit?.ship??null);setView("fits");}} className="press"
+          style={{background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,
+                  cursor:"pointer",padding:"5px 11px",flexShrink:0,display:"flex",alignItems:"center",gap:4,lineHeight:1}}>
+          <span style={{fontSize:13,lineHeight:1}}>&#8249;</span>Fits
+        </button>
         <div style={{flex:1,minWidth:0}}>
           {renamingFit
             ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingFit(false);}} onBlur={commitRename} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>

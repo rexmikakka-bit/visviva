@@ -879,7 +879,11 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
 }
 
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
-const MUTA_ATTR_LABELS={boosterEffectChance1:"Side Effect Chance",armorDamageAmountBonus:"Armor Repair Bonus",aoeCloudSizeBonus:"Explosion Radius Bonus",boosterMissileAOECloudPenalty:"Explosion Radius Penalty",capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
+const MUTA_ATTR_LABELS={boosterEffectChance1:"Side Effect Chance",armorDamageAmountBonus:"Armor Repair Bonus",aoeCloudSizeBonus:"Explosion Radius Bonus",boosterMissileAOECloudPenalty:"Explosion Radius Penalty",capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time",
+// A command burst's four buff slots all carry the same strength, and the compare view keeps
+// whichever one ranks first — so all four need the label, not just slot 1. Without it the row read
+// "Warfare Buff 1 Value 1.25", which names an internal attribute rather than the thing it decides.
+warfareBuff1Value:"Burst Strength",warfareBuff2Value:"Burst Strength",warfareBuff3Value:"Burst Strength",warfareBuff4Value:"Burst Strength",buffDuration:"Burst Duration"};
 // camelCase -> words, keeping ACRONYMS intact: a naive /([A-Z])/ split turned
 // `boosterArmorHPPenalty` into "Booster Armor H P Penalty". The leading "Booster " is then dropped
 // as redundant — you are already looking at a booster.
@@ -1256,18 +1260,32 @@ function ImportFitSheet({onClose,onImport}){
   // navigator.clipboard.readText() is not permitted inside the native WebView, which is why this
   // button did nothing in the installed app and the fit had to be pasted by hand. Capacitor's
   // Clipboard plugin reads through the OS instead; the web API stays as the browser fallback.
+  //
+  // Every failure here used to collapse into one generic sentence, which made a device report
+  // ("the button is broken") impossible to act on. Three things were wrong with that:
+  //   * the native error was caught and DISCARDED, so whatever Android actually said was lost;
+  //   * the web fallback then ran ON NATIVE too, where it cannot work — so the message you got
+  //     described the fallback failing, not the real cause;
+  //   * an empty clipboard came back as "" which is not == null, so it counted as a success and
+  //     the sheet reported an EFT parse error instead of "there's nothing to paste".
+  // Android asks for no clipboard permission at all (it is not a runtime permission — API 29+ just
+  // requires the app to be focused, and 13+ shows its own paste toast), so a prompt never appearing
+  // is expected and is not the fault. The error text now names the cause.
   const readClip=async()=>{
     setErr(null);
-    let t=null;
-    try{
-      const Cap=(typeof window!=="undefined")&&window.Capacitor;
-      if(Cap?.isNativePlatform?.()){
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    const native=!!Cap?.isNativePlatform?.();
+    let t=null,why=null;
+    if(native){
+      try{
         const {Clipboard}=await import('@capacitor/clipboard');
         t=(await Clipboard.read())?.value ?? null;
-      }
-    }catch{}
-    if(t==null){try{t=await navigator.clipboard.readText();}catch{}}
-    if(t==null){setErr("Couldn't read the clipboard — paste manually below.");return;}
+      }catch(e){ why=e?.message||String(e); }
+    }else{
+      try{ t=await navigator.clipboard.readText(); }catch(e){ why=e?.message||String(e); }
+    }
+    if(t==null){setErr(`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`);return;}
+    if(!t.trim()){setErr("The clipboard is empty — copy a fit first, then tap this again.");return;}
     haptic();setText(t);process(t);
   };
   return(
