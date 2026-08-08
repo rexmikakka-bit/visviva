@@ -27,7 +27,10 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="visviva" android:host="auth-callback" />
+                <!-- Must stay in lockstep with ESI_NATIVE_CALLBACK_URL in src/esi-config.js. The
+                     `eveauth-` prefix is required by developers.eveonline.com, which accepts no
+                     other custom-scheme shape. -->
+                <data android:scheme="eveauth-visviva" android:host="auth-callback" />
             </intent-filter>
         </activity>
 

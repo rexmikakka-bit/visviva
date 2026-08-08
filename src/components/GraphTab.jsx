@@ -596,6 +596,9 @@ const gp=(k,dflt)=>(GP[k]===undefined?dflt:GP[k]);
 // two views from disagreeing about which resist profile is in force.
 function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile}){
   const[catKey,setCatKey]=useState(()=>gp('catKey',"damage")),[yKey,setYKey]=useState(()=>gp('yKey',"dps")),[xKey,setXKey]=useState(()=>gp('xKey',"dist"));
+  // Per-category axis memory; see handleCatChange. Damage's defaults above (DPS vs Distance) are
+  // what a fresh install opens on.
+  const[axisByCat,setAxisByCat]=useState(()=>gp('axisByCat',{}));
   const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',0)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',0));
   // Off by default: the hull profiles have always meant the bare hull, and silently switching them
   // to MWD-on values would move every existing user's curves with no visible cause.
@@ -617,13 +620,28 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
-  },[catKey,yKey,xKey,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom]);
   const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
   const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
     const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};
   const cat=GRAPH_CONFIG.find(c=>c.key===catKey);
-  const handleCatChange=key=>{const nc=GRAPH_CONFIG.find(c=>c.key===key);setCatKey(key);setYKey(nc.yAxes[0].key);setXKey(nc.xAxes[0].key);setCursor(null);setXZoom(1);setYZoom(1);};
+  // Axis choice is remembered PER CATEGORY. This used to reset both axes to the category's first
+  // entry on every switch, so Damage/Time silently became Damage/Distance the moment you looked at
+  // Reps and came back — the top-level xKey persisted fine across navigation, but a category round
+  // trip threw it away. A category with no remembered pair falls back to its first axes, which is
+  // what makes Damage open on DPS vs Distance.
+  const handleCatChange=key=>{
+    const nc=GRAPH_CONFIG.find(c=>c.key===key);
+    setAxisByCat(prev=>({...prev,[catKey]:{y:yKey,x:xKey}}));
+    const saved=axisByCat[key];
+    // Validate against the category's own axes: a remembered key from an older build (or a renamed
+    // axis) must not leave the graph pointing at an axis this category does not have.
+    setCatKey(key);
+    setYKey(saved&&nc.yAxes.some(a=>a.key===saved.y)?saved.y:nc.yAxes[0].key);
+    setXKey(saved&&nc.xAxes.some(a=>a.key===saved.x)?saved.x:nc.xAxes[0].key);
+    setCursor(null);setXZoom(1);setYZoom(1);
+  };
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);

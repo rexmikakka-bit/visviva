@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme.js";
-import { BottomSheet, ItemDetailSheet } from "./ui.jsx";
+import { eveIcon } from "../lib/icons.js";
+import { BottomSheet, ItemDetailSheet, mutaLabel } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
@@ -206,7 +207,8 @@ function BoosterPickerSheet({onAdd,onClose}){
       {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No boosters found</div>}
       {searchResults.map(n=>(
         <div key={n} onClick={()=>addDrug(n)}
-          style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left"}}>
+          style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
+          <BoosterIcon name={n}/>
           <div style={{fontSize:13,fontWeight:600,color:C.text}}>{n}</div>
         </div>
       ))}
@@ -234,8 +236,9 @@ function BoosterPickerSheet({onAdd,onClose}){
     ))}
     {!searchResults&&catDrill&&drugs.map(drugName=>(
       <div key={drugName} onClick={()=>addDrug(drugName)}
-        style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",textAlign:"left"}}>
-        <div>
+        style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",gap:10,justifyContent:"space-between",textAlign:"left"}}>
+        <BoosterIcon name={drugName}/>
+        <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:600,color:C.text}}>{drugName}</div>
           {(()=>{
             const grade=["Synth","Improved","Standard","Strong"].find(g=>drugName.startsWith(g))||"Standard";
@@ -286,6 +289,40 @@ function hasCommandBursts(ship,fit){
   }catch{ return true; }   // never hide a fit because its calc threw
 }
 
+// Item art for the booster rows, matching the module browser. 301 of 311 boosters and 837 of 838
+// implants have BUNDLED icons (src/assets/icons), so this works offline; the handful without fall
+// back to the image server and are hidden by onError rather than showing a broken-image box.
+const BoosterIcon=({name,size=28})=>{
+  const tid=tidByName(name);
+  if(!tid)return null;
+  return <img className="eve-icon" src={eveIcon(tid,32)} width={size} height={size} alt=""
+    style={{borderRadius:5,flexShrink:0}} onError={e=>{e.target.style.visibility="hidden";}}/>;
+};
+
+// Physical/bookkeeping attributes every type carries, plus the `booster*` family (side-effect
+// penalties and their chances, shown separately below). Whatever survives IS the booster's bonus.
+//
+// Deliberately a DENYLIST. The obvious filter — attributes ending in "Bonus" — silently drops Blue
+// Pill, whose entire effect is `shieldBoostMultiplier`, with no such suffix. Naming conventions are
+// not a reliable way to find the point of an item.
+const BOOSTER_NOISE=/^(mass|volume|radius|capacity|metaLevel.*|techLevel|requiredSkill\d(Level)?|typeColorScheme)$/i;
+function boosterBonuses(b){
+  const t=TYPES[tidByName(b?.name)];
+  const a=t?.attrs??t?.a??{};
+  return Object.entries(a)
+    .filter(([k,v])=>typeof v==="number"&&v!==0&&!BOOSTER_NOISE.test(k)&&!/^booster/i.test(k))
+    .map(([k,v])=>`${mutaLabel(k)} ${v>0?"+":"−"}${Math.abs(v)}%`);
+}
+
+// A booster's slot is CCP's `boosterness` (attr 1087). Read from the type rather than the saved
+// booster record, because a record restored from an older fit may predate the field entirely.
+function boosterSlotOf(b){
+  const t=TYPES[tidByName(b?.name)];
+  const a=t?.attrs??t?.a??{};
+  const n=Number(a.boosterness??a['1087']);
+  return Number.isFinite(n)?n:99;
+}
+
 export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
@@ -313,14 +350,25 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
     {section==="boosters"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
       <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Toggle boosters to simulate their stat effects on this fit.</div>
       {boosters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No boosters added</div>}
-      {boosters.map(b=>(<div key={b.id} style={{background:C.surface,border:`1px solid ${b.active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
+      {/* Slot order, not the order they happened to be ADDED — a pilot reads a booster rack the way
+          the game numbers it, and adding a slot-14 booster first used to park it above slot 1.
+          Sorted for DISPLAY only: every setBoosters call below still writes the underlying array by
+          id, so nothing is persisted reordered and no saved fit changes shape. A booster whose slot
+          cannot be resolved sorts last rather than jumping to the top. */}
+      {[...boosters].sort((x,y)=>boosterSlotOf(x)-boosterSlotOf(y)).map(b=>(<div key={b.id} style={{background:C.surface,border:`1px solid ${b.active?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px"}}>
           <button onClick={()=>setBoosters(boosters.map(x=>x.id===b.id?{...x,active:!x.active}:x))} style={{width:24,height:24,borderRadius:5,background:b.active?C.accentLight:"none",border:`1px solid ${b.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:b.active?C.accent:C.textMute}}>{b.active?"✓":""}</button>
           {/* The name is the tap target: boosters have real descriptions, and a grade family
               (Synth / Standard / Improved / Strong) worth comparing before committing. */}
-          <div style={{flex:1,cursor:"pointer"}} onClick={()=>setInfoItem({typeID:tidByName(b.name),name:b.name,boosterId:b.id})}>
+          <BoosterIcon name={b.name} size={26}/>
+          <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>setInfoItem({typeID:tidByName(b.name),name:b.name,boosterId:b.id})}>
             <div style={{fontSize:12,fontWeight:600,color:b.active?C.text:C.textMid}}>{b.name}</div>
-            <div style={{fontSize:10,color:C.rig,marginTop:1}}>{b.effect}</div>
+            {/* `b.effect` was the drug name with its grade word stripped — "Exile" printed under
+                "Standard Exile Booster", the same word twice. Slot and actual bonuses instead. */}
+            <div style={{fontSize:10,color:C.rig,marginTop:1}}>
+              <span style={{color:C.textMute}}>Slot {boosterSlotOf(b)}</span>
+              {(()=>{const bo=boosterBonuses(b);return bo.length?` · ${bo.join(" · ")}`:"";})()}
+            </div>
           </div>
           <button onClick={()=>setBoosters(boosters.filter(x=>x.id!==b.id))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>
         </div>

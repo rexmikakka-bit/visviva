@@ -25,6 +25,7 @@ import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
+import { differingAttributes, compareRows, sortCompareRows } from './lib/compare.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1217,6 +1218,58 @@ function check(group, label, actual, expected, tol = 0.005) {
     }
   }
   check('hulls', 'hulls computing cleanly', total - crashed, total, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13i. MODULE COMPARISON — the Variations tab's compare view (src/lib/compare.js)
+//      All derived logic, and all of it silently wrong-able by a CCP rename or renumber: which
+//      attributes differ, which numbered siblings collapse, and which direction counts as better.
+//      The direction overrides are the sharpest edge — they deliberately CONTRADICT CCP's
+//      highIsGood for the booster side-effect family, so nothing but a test pins them.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMODULE COMPARISON');
+  const ext = ['Large Shield Extender II', 'Large Shield Extender I', 'Large F-S9 Regolith Compact Shield Extender'].map(tid);
+  const diff = differingAttributes(ext);
+  // Only attributes that actually vary. Meta/tech level differ on every comparison by construction
+  // and would crowd out the real ones, so they are excluded by name AND by pattern.
+  check('cmp', 'shield extenders differ in exactly 3 attrs', diff.length, 3, 0);
+  check('cmp', 'capacityBonus is one of them', diff.includes('capacityBonus') ? 1 : 0, 1, 0);
+  check('cmp', 'no meta/tech level leaks in', diff.some(k => /^(meta|tech)Level/i.test(k)) ? 1 : 0, 0, 0);
+
+  const exile = ['Standard Exile Booster', 'Improved Exile Booster', 'Strong Exile Booster'].map(tid);
+  const ed = differingAttributes(exile);
+  // A booster ships boosterEffectChance1..5 all holding the same number; five rows for one fact.
+  check('cmp', 'booster side-effect chances collapse to one', ed.filter(k => /^boosterEffectChance/.test(k)).length, 1, 0);
+  // Six, not five: four side effects + bonus + chance is exactly six, and at five one fell off.
+  check('cmp', 'all six Exile attributes fit', ed.length, 6, 0);
+
+  const rows = compareRows(exile, exile[0]);
+  const strong = rows.find(r => r.typeID === exile[2]);
+  const stat = k => strong.stats.find(s => s.key === k);
+  check('cmp', 'baseline row is flagged', rows.filter(r => r.isBaseline).length, 1, 0);
+  // CCP flags every booster*Penalty highIsGood=1. They are also signed inconsistently — ArmorHP is
+  // negative, MissileAOECloud positive, both meaning "worse" — so MAGNITUDE decides, not sign.
+  check('cmp', 'stronger armor HP penalty reads worse', stat('boosterArmorHPPenalty').better ? 1 : 0, 0, 0);
+  check('cmp', 'stronger explosion radius penalty reads worse', stat('boosterMissileAOECloudPenalty').better ? 1 : 0, 0, 0);
+  check('cmp', 'higher side-effect chance reads worse', stat('boosterEffectChance1').better ? 1 : 0, 0, 0);
+  check('cmp', 'bigger armor repair bonus reads better', stat('armorDamageAmountBonus').better ? 1 : 0, 1, 0);
+  // aoeCloudSizeBonus is NEGATIVE when it helps, so a bigger magnitude is a stronger bonus.
+  const crash = ['Standard Crash Booster', 'Strong Crash Booster'].map(tid);
+  const cs2 = compareRows(crash, crash[0]).find(r => r.typeID === crash[1]);
+  check('cmp', 'stronger explosion radius BONUS reads better',
+        cs2.stats.find(s => s.key === 'aoeCloudSizeBonus').better ? 1 : 0, 1, 0);
+
+  // Sorting: the fitted module is the thing every delta is measured from, so it stays pinned in
+  // BOTH directions; unpriced rows sort as Infinity and must not float to the top when reversed.
+  const prices = new Map([[ext[1], 1.2e6], [ext[2], 4.5e6]]);
+  const er = compareRows(ext, ext[0]);
+  const order = (by, dir) => sortCompareRows(er, { by, dir, prices }).map(r => r.typeID);
+  check('cmp', 'baseline pinned first, price asc', order('price', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
+  check('cmp', 'baseline pinned first, price desc', order('price', 'desc')[0] === ext[0] ? 1 : 0, 1, 0);
+  check('cmp', 'cheapest first when ascending', order('price', 'asc')[1] === ext[1] ? 1 : 0, 1, 0);
+  check('cmp', 'dearest first when descending', order('price', 'desc')[1] === ext[2] ? 1 : 0, 1, 0);
+  check('cmp', 'meta sort keeps baseline pinned', order('meta', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
