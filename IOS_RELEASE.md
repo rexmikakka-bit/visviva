@@ -158,6 +158,28 @@ App Store Connect → your app → **TestFlight**.
 
 Testers install via the TestFlight app on iOS.
 
+### If a build processes but never reaches a device
+
+Seen on 1.4.0 (build 21), 2026-08-09: `UPLOAD SUCCEEDED`, App Store Connect showed the version
+green, and it still did not appear in the TestFlight app after ~8 hours — no tester email either.
+**Opening the build in App Store Connect released it immediately.**
+
+Nothing was wrong with the binary, and nothing is wrong with the workflow, but note that the
+workflow **stops at `altool --upload-app`**: it never assigns the build to a tester group. So
+"processed" and "distributed" are two different things, and only the second produces an email or a
+TestFlight entry. When a build seems to be missing:
+
+1. Check your Apple ID mail for a processing-failure notice (arrives within ~20 min if the binary
+   was rejected — that is a different failure and names its own cause).
+2. Open App Store Connect → TestFlight → the build. If it is listed and green, poke it; that alone
+   has been enough.
+3. Check the internal group's **Automatically distribute builds** setting.
+
+If this recurs, the durable fix is a post-upload step that assigns the build to the internal group
+through the App Store Connect API — the workflow's existing key has the rights for it. It is not
+there today, deliberately: it needs the group's exact name, and it is worth a dry run rather than
+being discovered mid-release.
+
 ---
 
 ## What the workflow does, and where it can fail
