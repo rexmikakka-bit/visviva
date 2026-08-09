@@ -1,7 +1,11 @@
 // Shared constants, lookup tables, EFT parsing and the market/browser builders.
 // Leaf module (imports only data + calc + theme). Layering: core <- ui <- tabs <- App.
 
-import { useState, useEffect, useRef, useMemo } from "react";
+// NOTE: no React import here, and there must not be one. The hooks were imported and never used,
+// which cost nothing until the regression suite started importing this file for the charge-browser
+// checks — the CI `test` job runs `node src/regression.test.mjs` with NO npm install (it needs only
+// Node built-ins and the committed data bundles), so a bare `react` specifier fails to resolve and
+// the whole suite dies before its first check. Same constraint as compare.js: React-free on purpose.
 import shipsData        from "../data/ships.json" with { type: "json" };
 import modulesData      from "../data/modules.json" with { type: "json" };
 import chargesData      from "../data/charges.json" with { type: "json" };

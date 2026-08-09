@@ -23,6 +23,11 @@ jobs:
         with:
           node-version: '22'
       # No install needed: the suite uses only Node built-ins + the committed data bundles.
+      # Guarded, because that constraint is invisible locally (node_modules always exists there):
+      # an unused `import ... from "react"` in lib/core.js took this job down the moment the suite
+      # started importing that file, while every local run stayed green.
+      - name: Suite runs without npm install
+        run: node scripts/check-suite-deps.mjs
       - run: node src/regression.test.mjs
 
       # Silent no-op detector: fails if a data regen (new EVE patch) introduces an empty-modifier
