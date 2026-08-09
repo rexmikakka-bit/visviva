@@ -25,8 +25,9 @@ import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
-import { differingAttributes, compareRows, sortCompareRows } from './lib/compare.js';
+import { differingAttributes, compareRows, sortCompareRows, derivedDirection } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser } from './lib/core.js';
+import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1272,6 +1273,48 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('cmp', 'dearest first when descending', order('price', 'desc')[1] === ext[2] ? 1 : 0, 1, 0);
   check('cmp', 'meta sort keeps baseline pinned', order('meta', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
 
+  // ── Direction DERIVED from the module's own effects ───────────────────────────────────────
+  // The hand-kept lists could only ever be extended one reported bug at a time. This asks the
+  // dogma data instead: the effect says which attribute the modifier changes, how, and on whom,
+  // and the TARGET attribute's highIsGood then says whether that is an improvement.
+  const egress = ['Large Egress Port Maximizer I', 'Large Egress Port Maximizer II'].map(tid);
+  const eg2 = compareRows(egress, egress[0]).find(r => r.typeID === egress[1]);
+  const estat = eg2.stats.find(s => s.key === 'capNeedBonus');
+  // -15 -> -20: capNeedBonus drives capacitorNeed DOWN, and lower cap need is better.
+  check('cmp', 'egress II cap need delta is negative', estat.delta, -5, 1e-9);
+  check('cmp', 'deeper cap need reduction reads better', estat.better ? 1 : 0, 1, 0);
+
+  // The counterexample that rules out a blanket "negative means magnitude" shortcut. A Capacitor
+  // Power Relay's shieldBoostMultiplier is ALSO negative and also gets larger on better modules,
+  // but it lowers shieldBonus — which is higher-is-better — so it is a DRAWBACK: -5 beats -11.
+  const cpr = ['Capacitor Power Relay I', 'Capacitor Power Relay II'].map(tid);
+  const cpr2 = compareRows(cpr, cpr[0]).find(r => r.typeID === cpr[1]);
+  const cstat = cpr2.stats.find(s => s.key === 'shieldBoostMultiplier');
+  check('cmp', 'cap relay II shield penalty is deeper', cstat.delta, -1, 1e-9);
+  check('cmp', 'a deeper DRAWBACK reads worse', cstat.better ? 1 : 0, 0, 0);
+
+  // CCP mis-flags the whole industry multiplier family highIsGood=1, which would have made every
+  // structure rig's -20% manufacturing time read as a downgrade.
+  const engRig = ['Standup M-Set Advanced Component Manufacturing Time Efficiency I',
+                  'Standup M-Set Advanced Component Manufacturing Time Efficiency II'].map(tid);
+  const er2 = compareRows(engRig, engRig[0]).find(r => r.typeID === engRig[1]);
+  const erStat = er2.stats.find(s => s.key === 'attributeEngRigTimeBonus');
+  check('cmp', 'eng rig II cuts more manufacturing time', erStat.delta < 0 ? 1 : 0, 1, 0);
+  check('cmp', 'deeper manufacturing time cut reads better', erStat.better ? 1 : 0, 1, 0);
+
+  // Hostile modifiers are deliberately NOT derived, and this is the case that forces it: a warp
+  // scrambler's target attribute (warpScrambleStatus) is the ATTACKER's win condition, not the
+  // victim's stat, so the "bad for them is good for me" inversion would call a strength-1
+  // scrambler better than a strength-2. Asserted against derivedDirection directly — the attribute
+  // is constant across the Warp Scrambler group, so it never reaches a comparison row to be seen.
+  check('cmp', 'hostile modifiers are never derived',
+        derivedDirection(tid('Warp Scrambler II'), 'warpScrambleStrength') === null ? 1 : 0, 1, 0);
+  // ...while a self modifier on the very same module still resolves.
+  check('cmp', 'self modifiers on the same module still derive',
+        derivedDirection(tid('Warp Scrambler II'), 'capacitorNeed') === null ? 0 : 1, 0, 0);
+  check('cmp', 'cap need reduction derives to smaller-is-better',
+        derivedDirection(tid('Large Egress Port Maximizer II'), 'capNeedBonus') === false ? 1 : 0, 1, 0);
+
   // ── Signed EWAR bonuses: sign is the module CLASS, magnitude is the strength ──────────────
   // A Guidance Disruptor II's aoeVelocityBonus is −12 against a Guidance Disruptor I's −10 — more
   // negative because it cripples the target's missiles harder. CCP flags all of these highIsGood=1,
@@ -1327,6 +1370,36 @@ function check(group, label, actual, expected, tol = 0.005) {
   const vig = compareRows(burst, burst[0]).find(r => r.typeID === burst[2]);
   check('cmp', 'Vigilant burst reaches 3 km further', vig.stats.find(s => s.key === 'maxRange').delta, 3000, 1e-9);
   check('cmp', 'longer burst range reads better', vig.stats.find(s => s.key === 'maxRange').better ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13k. ESI SKILL SYNC — a character's sheet must be AUTHORITATIVE
+//      ESI's /skills/ lists only what is TRAINED; an untrained skill is absent. In this app an
+//      absent skill key means level V (calcFitStats' default, so a fresh install isn't all-red).
+//      Merging the partial map over existing state therefore left every untrained skill at V —
+//      a real synced character came back with Ice Harvesting Drone Specialization V.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nESI SKILL SYNC');
+  // A deliberately sparse character: two trained skills, nothing else.
+  const resp = { skills: [
+    { skill_id: tid('Gunnery'), trained_skill_level: 5 },
+    { skill_id: tid('Drones'),  trained_skill_level: 3 },
+  ] };
+  const partial = esiSkillsToAppSkills(resp);
+  const full = esiSkillsToFullSkillMap(resp);
+  check('esi', 'partial map holds only what is trained', Object.keys(partial).length, 2, 0);
+  check('esi', 'full map covers the whole catalog', Object.keys(full).length, SKILL_CATALOG.length, 0);
+  check('esi', 'trained levels survive', full.gunnery, 5, 0);
+  check('esi', 'partial levels survive', full.drones, 3, 0);
+  // The exact skill from the report. Absent from ESI => must read 0, not fall through to V.
+  check('esi', 'untrained skill reads 0, not V', full.iceHarvestingDroneSpecialization, 0, 0);
+  check('esi', 'nothing is left unset', Object.values(full).some(v => v == null) ? 1 : 0, 0, 0);
+  check('esi', 'only the trained ones are non-zero', Object.values(full).filter(v => v > 0).length, 2, 0);
+  // skill_id -> key now resolves through SKILL_CATALOG's own typeIDs, so every catalog skill is
+  // reachable from an ESI response. The old name-based path missed four to name typos.
+  const unreachable = SKILL_CATALOG.filter(e => !e.typeID).length;
+  check('esi', 'every catalog skill has a typeID to match on', unreachable, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

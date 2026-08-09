@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, mutaLabel } from "./ui.jsx";
@@ -323,8 +324,13 @@ function boosterSlotOf(b){
   return Number.isFinite(n)?n:99;
 }
 
+// Order is the SWIPE order as well as the tab order, so the two cannot drift apart.
+const _SECTIONS=[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"},{tabId:"environment",label:"System"}];
+const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
+
 export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment,onOpenFit}){
   const[section,setSection]=useState("boosters");
+  const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SECTION_IDS,section,setSection);
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
   const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
   const[showProjPicker,setShowProjPicker]=useState(false);
@@ -333,8 +339,14 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
 
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
-      {[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"},{tabId:"environment",label:"System"}].map(t=>(<button key={t.tabId} onClick={()=>setSection(t.tabId)} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent"}}>{t.label}</button>))}
+      {/* Tapping a tab animates in the same direction a swipe to it would, so the two ways of
+          moving between sections never disagree about which way the content lives. */}
+      {_SECTIONS.map(t=>(<button key={t.tabId} onClick={()=>{const to=_SECTION_IDS.indexOf(t.tabId),from=_SECTION_IDS.indexOf(section);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent"}}>{t.label}</button>))}
     </div>
+    {/* Panel wrapper for the swipe. Keyed on the section so the incoming panel remounts and replays
+        the slide-in — these panels already unmounted on every tab change, so it costs nothing. */}
+    <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
+    <div ref={_panel} key={section} className={slideClass(_slideDir)} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
     {section==="environment"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
       <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>The system this fit is sitting in. Wormhole class effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.</div>
       <div style={{background:C.surface,border:`1px solid ${environment?C.accentBorder:C.border}`,borderRadius:8,padding:"11px 12px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
@@ -473,5 +485,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
       {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} filterFn={hasCommandBursts} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
     </div>)}
+    </div>
+    </div>
   </div>);
 }

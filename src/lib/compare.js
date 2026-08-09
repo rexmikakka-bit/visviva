@@ -19,6 +19,7 @@
 //
 // React-free on purpose: `regression.test.mjs` runs under Node and cannot import .jsx.
 import { TYPES, ATTR_ID_TO_NAME, attrHighIsGood } from '../calc.js';
+import { EFFECTS_DATA } from '../dogma-engine-init.js';
 import { metaOf, META_ORDER } from './meta.js';
 
 // name -> attributeID, so a runtime attrs map keyed by NAME can still reach CCP's highIsGood flag.
@@ -162,6 +163,104 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
  * The only mixed-sign carriers are Effect Beacons, which are system effects and never comparable
  * module variants.
  */
+// ── Derived direction: ask the module's OWN effects what the attribute does ────────────────────
+//
+// The hand-maintained lists below were losing a race. Every few weeks another attribute turned up
+// coloured backwards (explosion velocity, stasis webs, cap need), each needing its own entry, and
+// there was no way to know what the NEXT one would be. The reason is that CCP's highIsGood
+// describes the ATTRIBUTE IN ISOLATION, while the question the compare view is asking is "does a
+// bigger number here make this module better for me" — and that depends on two things highIsGood
+// cannot see: what the attribute is applied TO, and WHO it is applied to.
+//
+// Both are in the dogma data. Each module carries its effect ids, and an effect's modifier says
+// which attribute it reads (modifyingAttributeID), which it changes (modifiedAttributeID), how
+// (operation), and on whom (domain). So:
+//
+//   larger modifier  --operation-->  larger or smaller target attribute
+//   larger target attribute  --target's own highIsGood-->  better or worse
+//   ...and if the domain is a hostile TARGET, invert: hurting them helps you.
+//
+// Worked through, that is `better = (increases === targetHighIsGood) !== hostile`. It gets the
+// reported case right (capNeedBonus lowers capacitorNeed, which is lower-is-better, so -20 beats
+// -15) and — the reason a blanket "negative means magnitude" rule was rejected — it also gets the
+// DRAWBACK case right: a Capacitor Power Relay's shieldBoostMultiplier is likewise negative, but it
+// lowers shieldBonus, which is higher-is-better, so -5 genuinely beats -11.
+//
+// It resolves nothing for effects CCP ships EMPTY, which is most EWAR (webs, tracking and guidance
+// disruptors, prop mods). Those keep the explicit list below as a fallback — see SIGNED_BONUS_RE.
+//
+// eos operation numbering: -1 PreAssign, 0 PreMul, 1 PreDiv, 2 ModAdd, 3 ModSub, 4 PostMul,
+// 5 PostDiv, 6 PostPercent, 7 PostAssign. Divide and subtract invert the direction; an operation
+// in neither set is left UNRESOLVED rather than guessed at.
+const OP_INCREASES = new Set([-1, 0, 2, 4, 6, 7]);
+const OP_DECREASES = new Set([1, 3, 5]);
+
+/**
+ * HOSTILE domains are deliberately NOT derived — the data cannot answer them.
+ *
+ * "Bad for the target is good for me" sounds like it should just be an inversion, and for a stasis
+ * webifier it is: the target attribute is maxVelocity, the victim's own stat, and slowing them
+ * helps. But a warp scrambler's target attribute is `warpScrambleStatus`, which is not the victim's
+ * stat at all — it is the attacker's win condition, already written from our side, and inverting it
+ * says a strength-1 scrambler beats a strength-2. Nothing in the data distinguishes the two, so
+ * deriving a hostile modifier is a coin flip. These fall through to SIGNED_BONUS_RE, which already
+ * covers the EWAR families correctly and is pinned by tests.
+ */
+const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
+
+/**
+ * Target attributes whose highIsGood CCP has simply got wrong.
+ *
+ * The derived rule is only ever as good as the flag on the attribute it lands on, and the industry
+ * multipliers are a systematic error: `attributeAdvCompManufactureTimeMultiplier` and its ~50
+ * siblings (manufacture/research/invention/reaction time, material and cost) are all flagged
+ * highIsGood=1, when the whole point of the rig applying a -20% is to drive the multiplier DOWN.
+ * `mass` is the same shape on a ship — flagged high-is-good, but an armor plate's added tonnage is
+ * a cost, not a benefit.
+ *
+ * Kept as patterns rather than a list of 50 names because the family is open-ended: CCP adds a new
+ * manufacturing category and its multiplier arrives mis-flagged exactly like the others.
+ */
+const LOWER_IS_BETTER_TARGET_RE = /(Time|Material|Mat|Cost)Multiplier$/;
+const LOWER_IS_BETTER_TARGETS = new Set(['mass', 'strEngMatBonus']);
+function targetHighIsGood(attrID) {
+  const name = ATTR_ID_TO_NAME[attrID];
+  if (name && (LOWER_IS_BETTER_TARGET_RE.test(name) || LOWER_IS_BETTER_TARGETS.has(name))) return false;
+  return attrHighIsGood(attrID);
+}
+
+const _derivedCache = new Map();
+/**
+ * true = bigger is better, false = smaller is better, null = the data does not say.
+ * Exported for the regression suite: "the rule declines to answer for hostile modifiers" is the
+ * load-bearing half of this design, and the only fixture that would show it through compareRows
+ * (warpScrambleStrength) is constant across the Warp Scrambler group and so never displayed.
+ */
+export function derivedDirection(typeID, key) {
+  const ck = `${typeID}|${key}`;
+  if (_derivedCache.has(ck)) return _derivedCache.get(ck);
+  const td = TYPES[typeID] ?? TYPES[String(typeID)];
+  const attrID = ATTR_NAME_TO_ID[key];
+  let verdict = null;
+  outer:
+  for (const eid of (td?.e ?? [])) {
+    for (const m of (EFFECTS_DATA?.[eid]?.m ?? [])) {
+      if (m.modifyingAttributeID !== attrID) continue;
+      if (HOSTILE_DOMAINS.has(m.domain)) { verdict = null; break outer; }   // see HOSTILE_DOMAINS
+      const increases = OP_INCREASES.has(m.operation) ? true
+                      : OP_DECREASES.has(m.operation) ? false : null;
+      if (increases === null) { verdict = null; break outer; }   // unknown operation — say nothing
+      const better = increases === targetHighIsGood(m.modifiedAttributeID);
+      // Two effects on the same module disagreeing about the same attribute means we cannot
+      // honestly pick a direction — fall through to the rules below rather than take the first.
+      if (verdict !== null && verdict !== better) { verdict = null; break outer; }
+      verdict = better;
+    }
+  }
+  _derivedCache.set(ck, verdict);
+  return verdict;
+}
+
 const PENALTY_RE = /Penalty$/;
 const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
 // `speedFactor` is the clearest case in the family and the one most easily missed: a Stasis
@@ -170,11 +269,16 @@ const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
 // why magnitude, not sign, is the rule. It also covers Stasis Grapplers (−80…−88), Structure Stasis
 // Webifiers and webifying drones, all of which had the identical reversed colouring.
 const SIGNED_BONUS_RE = /^(aoeCloudSizeBonus|aoeVelocityBonus|missileVelocityBonus|explosionDelayBonus|trackingSpeedBonus|maxRangeBonus|falloffBonus|maxTargetRangeBonus|scanResolutionBonus|speedFactor)$/;
-function directionOf(k, v, b) {
+function directionOf(k, v, b, typeID) {
   if (v == null || b == null) return null;
+  // The booster side-effect family first: CCP flags every one highIsGood=1 AND signs them
+  // inconsistently, so neither the derived rule nor the raw flag can be trusted for them.
   if (PENALTY_RE.test(k))       return Math.abs(v) < Math.abs(b);   // weaker penalty wins
-  if (SIGNED_BONUS_RE.test(k))  return Math.abs(v) > Math.abs(b);   // stronger bonus wins
   if (SIDE_EFFECT_CHANCE_RE.test(k)) return v < b;                  // less chance of a side effect
+  // What the module's own effects say it does. Authoritative where it resolves.
+  const derived = derivedDirection(typeID, k);
+  if (derived !== null)         return derived ? v > b : v < b;
+  if (SIGNED_BONUS_RE.test(k))  return Math.abs(v) > Math.abs(b);   // stronger bonus wins
   return attrHighIsGood(ATTR_NAME_TO_ID[k]) ? v > b : v < b;
 }
 
@@ -197,7 +301,7 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6 } = {}) {
       // Percent is undefined against a zero baseline — an attribute the fitted module simply does
       // not have. The absolute delta still reads fine there, so leave pct null rather than Infinity.
       const pct = (delta != null && b) ? (delta / Math.abs(b)) * 100 : null;
-      const better = (delta == null || delta === 0) ? null : directionOf(k, v, b);
+      const better = (delta == null || delta === 0) ? null : directionOf(k, v, b, typeID);
       return { key: k, value: v, delta, pct, better };
     });
     return { typeID, isBaseline: String(typeID) === String(baselineTypeID), stats };

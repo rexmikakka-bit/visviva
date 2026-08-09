@@ -1,6 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.js";
 import { nextFitId } from "../lib/fit-tabs.js";
+import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
@@ -215,62 +216,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     return "Fit";
   });
   useEffect(()=>{try{localStorage.setItem('visviva_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
-  // Sub-tab swipe. The panel follows your finger during the drag and slides in from the correct
-  // side on commit, instead of cutting from one tab to the next.
-  //
-  // Only ONE panel is ever mounted — Stats and Graph both run a full calcFitStats, so keeping all
-  // three alive to slide a track would triple that work on every render. During the drag the
-  // transform is written straight to the node through a ref rather than through state, so dragging
-  // never re-renders the panel underneath it.
-  const _swipe=useRef({x:0,y:0,axis:null});
-  const _panel=useRef(null);
-  const[_slideDir,_setSlideDir]=useState(0);   // -1 = came from the left, +1 = from the right
-  const _setX=(px,animate)=>{const el=_panel.current;if(!el)return;
-    el.style.transition=animate?"transform .18s cubic-bezier(.22,.61,.36,1)":"none";
-    el.style.transform=px?`translateX(${px}px)`:"";};
-  const _goTo=(i,dir)=>{_setSlideDir(dir);setFitSubTab(_SUBTABS[i]);haptic();};
-  // A touch that begins inside a horizontally scrollable strip belongs to that strip, not to the
-  // tab swipe. Without this the graph-type selector could not be scrolled at all: its touchmove
-  // bubbled up here, the axis locked to "x", and the whole Graph panel slid sideways instead.
-  // Detected structurally (overflow-x + actual overflow) rather than by tagging the graph, so every
-  // horizontal scroller in the app is covered by the same rule.
-  const _inHScroller=(node)=>{
-    for(let el=node; el instanceof Element; el=el.parentElement){
-      if(el===_panel.current?.parentElement) break;
-      if(el.scrollWidth>el.clientWidth+2){
-        const ox=getComputedStyle(el).overflowX;
-        if(ox==="auto"||ox==="scroll") return true;
-      }
-    }
-    return false;
-  };
-  const _onSwipeStart=e=>{const t=e.touches[0];if(t)_swipe.current={x:t.clientX,y:t.clientY,axis:null,skip:_inHScroller(e.target)};};
-  const _onSwipeMove=e=>{
-    if(_swipe.current.skip)return;
-    const t=e.touches[0];if(!t)return;
-    const dx=t.clientX-_swipe.current.x,dy=t.clientY-_swipe.current.y;
-    // Lock the axis once, so a vertical scroll never turns into a horizontal drag halfway down.
-    if(!_swipe.current.axis){
-      if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
-      _swipe.current.axis=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y";
-    }
-    if(_swipe.current.axis!=="x")return;
-    const i=_SUBTABS.indexOf(fitSubTab);
-    // Rubber-band at the ends: there is nothing to swipe to, so resist rather than lie.
-    const atEdge=(dx>0&&i===0)||(dx<0&&i===_SUBTABS.length-1);
-    _setX(dx*(atEdge?0.18:0.55),false);
-  };
-  const _onSwipeEnd=e=>{
-    const t=e.changedTouches[0];
-    const wasX=_swipe.current.axis==="x"&&!_swipe.current.skip;
-    _swipe.current.axis=null; _swipe.current.skip=false;
-    if(!t||!wasX){_setX(0,true);return;}
-    const dx=t.clientX-_swipe.current.x;
-    const i=_SUBTABS.indexOf(fitSubTab);
-    if(dx<-60&&i<_SUBTABS.length-1){_setX(0,false);_goTo(i+1,1);}
-    else if(dx>60&&i>0){_setX(0,false);_goTo(i-1,-1);}
-    else _setX(0,true);   // not far enough — spring back
-  };
+  // Sub-tab swipe — see lib/use-tab-swipe.js. Shared with the Effects screen's four sections rather
+  // than duplicated, so the horizontal-scroller escape and the axis lock only exist once.
+  const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SUBTABS,fitSubTab,setFitSubTab);
   const[search,setSearch]=useState("");
   // Non-finite ids are FILTERED, not just defaulted. One fit with no `id` used to make this
   // `Math.max(m, undefined + 1)` -> NaN, and NaN is sticky: every fit created afterwards got
@@ -508,7 +456,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       </div>
       <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
     </div>
-    <div onTouchStart={_onSwipeStart} onTouchMove={_onSwipeMove} onTouchEnd={_onSwipeEnd} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
+    <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
       {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
           nothing here — the panels already unmount and remount on every tab change. */}
       {/* No `will-change:transform` here, however tempting as a perf hint: it establishes a
@@ -516,7 +464,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           tab anchored to the panel instead of the viewport and slid off the bottom of the screen.
           The drag sets a transform on this node too, but only while a finger is down, and a sheet
           cannot be open then. */}
-      <div ref={_panel} key={fitSubTab} className={_slideDir>0?"vv-from-right":_slideDir<0?"vv-from-left":undefined}
+      <div ref={_panel} key={fitSubTab} className={slideClass(_slideDir)}
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}

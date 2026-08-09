@@ -76,9 +76,11 @@ export function EsiSettingsPanel({ setSkills }) {
     setBusy(true); setError(null); setSyncedMsg(null);
     try {
       const resp = await esi.getCharacterSkills(activeId);
-      const mapped = esi.esiSkillsToAppSkills(resp);
-      setSkills(s => ({ ...s, ...mapped }));
-      setSyncedMsg(`Synced ${Object.keys(mapped).length} skills.`);
+      // Full map, not a merge: an untrained skill is ABSENT from ESI's response, and an absent
+      // skill key means level V in this app — so merging left every untrained skill at V.
+      const full = esi.esiSkillsToFullSkillMap(resp);
+      setSkills(full);
+      setSyncedMsg(`Synced ${Object.values(full).filter(v => v > 0).length} trained skills.`);
     } catch (e) { setError(friendlyError(e)); }
     finally { setBusy(false); }
   };
@@ -129,6 +131,59 @@ export function EsiSettingsPanel({ setSkills }) {
         )}
         {(error || loginError) && <div style={{ fontSize: 11, color: C.danger, marginTop: 8, lineHeight: 1.5, wordBreak: "break-word" }}>{error || loginError}</div>}
       </div>
+    </div>
+  );
+}
+
+// ─── Settings > Skills: align the whole sheet to one of your characters ───────────────────────
+// Lives in the SKILLS tab rather than the ESI tab because that is where you are when you notice
+// your levels are wrong. Every linked character gets its own button: EVE players routinely fly
+// several, and which one the ESI tab happens to have marked "active" is not the question being
+// asked here — "match THIS pilot" is.
+export function EsiSkillAlignPanel({ setSkills }) {
+  const { characters } = useEsiCharacters();
+  const [busy, setBusy] = useState(null);      // characterId currently syncing
+  const [done, setDone] = useState(null);      // {name, trained, total}
+  const [error, setError] = useState(null);
+
+  const align = async (c) => {
+    setBusy(c.characterId); setError(null); setDone(null);
+    try {
+      const resp = await esi.getCharacterSkills(c.characterId);
+      // The FULL map, not a merge — see esiSkillsToFullSkillMap. A merge leaves untrained skills
+      // unset, and unset means V.
+      const full = esi.esiSkillsToFullSkillMap(resp);
+      setSkills(full);
+      const trained = Object.values(full).filter(v => v > 0).length;
+      setDone({ name: c.characterName, trained, total: Object.keys(full).length });
+    } catch (e) { setError(friendlyError(e)); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div style={{ marginBottom: 14, background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 2 }}>Match a character</div>
+      <div style={{ fontSize: 10, color: C.textMute, marginBottom: characters.length ? 9 : 0, lineHeight: 1.5 }}>
+        {characters.length
+          ? "Sets every skill to that pilot's trained level. Anything they haven't trained is set to 0, not left at the level-V default."
+          : "Connect a character in the ESI tab to copy their trained skills here."}
+      </div>
+      {characters.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {characters.map(c => (
+            <button key={c.characterId} onClick={() => align(c)} disabled={busy != null} className="press"
+              style={{ padding: "7px 12px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+                cursor: busy != null ? "default" : "pointer", opacity: busy != null && busy !== c.characterId ? 0.5 : 1,
+                background: C.accentLight, border: `1px solid ${C.accentBorder}`, color: C.accent }}>
+              {busy === c.characterId ? "Syncing…" : c.characterName}
+            </button>
+          ))}
+        </div>
+      )}
+      {done && <div style={{ fontSize: 10, color: C.success, marginTop: 8 }}>
+        ✓ Matched {done.name} — {done.trained} of {done.total} skills trained, the rest set to 0.
+      </div>}
+      {error && <div style={{ fontSize: 10, color: C.danger, marginTop: 8, lineHeight: 1.5 }}>{error}</div>}
     </div>
   );
 }
