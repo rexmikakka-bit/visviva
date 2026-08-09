@@ -152,11 +152,18 @@ export default function App(){
       if(cf.active===false)continue;
       const fit=fitsDB[cf.ship]?.find(f=>f.name===cf.fitName);
       if(!fit)continue;
-      const bursts=computeCommandBursts({name:cf.ship,typeID:tidByName(cf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters});
+      // SKILL_DEFAULTS (all V), NOT the local pilot's skills. A command fit is by definition
+      // SOMEONE ELSE's ship — you are flying the fit being boosted, not the booster — so applying
+      // your own sheet to it is wrong on its face, and it silently disagreed with the Effects tab,
+      // which has always displayed this list at all V. The two only matched while every skill was
+      // unset (and so defaulted to V); the moment a real character was synced from ESI they
+      // diverged, and a Vargur under Sleipnir links read 141.9k EHP against pyfa's 146k because
+      // the burst applied at 19.5% while the card next to it said 22.5%.
+      const bursts=computeCommandBursts({name:cf.ship,typeID:tidByName(cf.ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters});
       for(const b of bursts)out.push(b);
     }
     return out;
-  },[cmdFits,fitsDB,skills]);
+  },[cmdFits,fitsDB]);   // NOT `skills` — command fits are flown at all V, see above
   const projectedEffects=useMemo(()=>{
     // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
     // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
@@ -179,7 +186,9 @@ export default function App(){
       if(pf.active===false)continue;   // see the cmdFits loop — opt-out, so old saves stay active
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
-      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,skills,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
+      // All V for the same reason as externalBursts above: a PROJECTED fit is another pilot's
+      // ship, so the local skill sheet has no business scaling its logi reps, webs or neuts.
+      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
       if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});

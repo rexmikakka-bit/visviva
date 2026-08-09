@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, isTurret, isLauncher, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, isTurret, isLauncher, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
@@ -1370,6 +1370,100 @@ function check(group, label, actual, expected, tol = 0.005) {
   const vig = compareRows(burst, burst[0]).find(r => r.typeID === burst[2]);
   check('cmp', 'Vigilant burst reaches 3 km further', vig.stats.find(s => s.key === 'maxRange').delta, 3000, 1e-9);
   check('cmp', 'longer burst range reads better', vig.stats.find(s => s.key === 'maxRange').better ? 1 : 0, 1, 0);
+}
+
+// 13l. COMMAND BURSTS FROM A LINK FIT - whose skills fly the booster?
+//      A Vargur under a Sleipnir's shield links, validated against pyfa by hand:
+//      146,000 EHP / 84.3-85.4-87.5-89.6 shield resists / 12,163.6 EHP/s shield boost.
+//
+//      The bug this pins: externalBursts was computed with the LOCAL pilot's skills, while the
+//      Effects tab has always DISPLAYED the same list at all V. The two agreed only while every
+//      skill was unset (and so defaulted to V) - the moment a real character was synced from ESI
+//      they diverged, and this fit read 141.9k EHP with the card beside it still saying 22.5%.
+//      A command fit is someone else's ship; the local sheet has no business scaling it.
+{
+  console.log('\nCOMMAND BURSTS FROM A LINK FIT');
+  const VARGUR = `[Vargur, strong]
+Domination Gyrostabilizer
+Domination Gyrostabilizer
+Domination Gyrostabilizer
+Domination Gyrostabilizer
+Domination Tracking Enhancer
+Damage Control II
+
+Pithum C-Type Multispectrum Shield Hardener
+Shadow Serpentis 500MN Microwarpdrive
+Pithum C-Type Multispectrum Shield Hardener
+True Sansha Heavy Capacitor Booster, Navy Cap Booster 3200
+Caldari Navy Warp Scrambler
+Gist X-Type X-Large Shield Booster
+
+800mm Repeating Cannon II, Hail L
+800mm Repeating Cannon II, Hail L
+True Sansha Heavy Energy Neutralizer
+Bastion Module I
+Corpus C-Type Heavy Energy Neutralizer
+800mm Repeating Cannon II, Hail L
+800mm Repeating Cannon II, Hail L
+
+Large Core Defense Operational Solidifier II
+Large Core Defense Operational Solidifier II
+
+
+Mid-grade Crystal Alpha
+Mid-grade Crystal Beta
+Mid-grade Crystal Gamma
+Mid-grade Crystal Delta
+Mid-grade Crystal Epsilon
+Mid-grade Crystal Omega
+Eifyr and Co. 'Gunslinger' Motion Prediction MR-705
+Inherent Implants 'Squire' Capacitor Management EM-805
+Eifyr and Co. 'Gunslinger' Surgical Strike SS-905
+Eifyr and Co. 'Gunslinger' Large Projectile Turret LP-1005
+
+Strong Blue Pill Booster
+Agency 'Pyrolancea' DB9 Dose IV`;
+  const SLEIPNIR = `[Sleipnir, shield links]
+50MN Quad LiF Restrained Microwarpdrive
+
+Skirmish Command Burst II, Evasive Maneuvers Charge /offline
+Skirmish Command Burst II, Interdiction Maneuvers Charge /offline
+Skirmish Command Burst II, Rapid Deployment Charge /offline
+Shield Command Burst II, Active Shielding Charge
+Shield Command Burst II, Shield Extension Charge
+Shield Command Burst II, Shield Harmonizing Charge
+
+Medium Command Processor I
+
+
+Republic Fleet Command Mindlink`;
+  const buildFit = (eft) => {
+    const p = parseEFT(eft);
+    const ship = lookupShip(p.shipName);
+    return { p, ship, slots: buildSlotsFromEFT(ship, p.mods, p.subsystems) };
+  };
+  const V = buildFit(VARGUR), S = buildFit(SLEIPNIR);
+  const bursts = computeCommandBursts(S.ship, S.slots, SKILLS_ALL_V, { implants: S.p.implantNames ?? [] });
+  const buff = (id) => bursts.find(b => b.buffID === id)?.value ?? 0;
+  // Shield Harmonizing (10), Active Shielding (11) and Shield Extension (12), all 22.5% with a
+  // Republic Fleet Command Mindlink. This is the number the Effects tab prints on the card.
+  check('burst', 'shield harmonizing burst strength', buff(10), -22.5, 1e-9);
+  check('burst', 'active shielding burst strength',   buff(11), -22.5, 1e-9);
+  check('burst', 'shield extension burst strength',   buff(12),  22.5, 1e-9);
+
+  const stats = (eb) => calcFitStats(V.ship, V.slots, [], SKILLS_ALL_V,
+    { implants: V.p.implantNames ?? [], boosters: (V.p.boosterNames ?? []).map(n => ({ name: n })), externalBursts: eb });
+  const linked = stats(bursts);
+  // pyfa, read by hand. Tolerances are that readout's precision, not slack.
+  check('burst', 'Vargur EHP under shield links', linked.totalEHP, 146000, 0.005);
+  check('burst', 'shield EM resist under links',  linked.resists.shield.em,  84.3, 0.002);
+  check('burst', 'shield TH resist under links',  linked.resists.shield.th,  85.4, 0.002);
+  check('burst', 'shield KIN resist under links', linked.resists.shield.kin, 87.5, 0.002);
+  check('burst', 'shield EXP resist under links', linked.resists.shield.exp, 89.6, 0.002);
+  check('burst', 'shield boost EHP/s under links', linked.shieldRepEhpS, 12163.6, 1e-4);
+  // ...and the links must actually be doing something, or everything above passes trivially.
+  const bare = stats(null);
+  check('burst', 'links raise EHP materially', linked.totalEHP > bare.totalEHP * 1.15 ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
