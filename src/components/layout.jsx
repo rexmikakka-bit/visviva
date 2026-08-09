@@ -88,10 +88,18 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
   );
 }
 
-export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice}){
+// "New Fit" leads, and is the only entry that starts something rather than acting on what is
+// already open — so it gets the accent treatment instead of blending into the list. It routes to
+// the ship browser rather than creating a fit outright: a fit needs a hull, and the menu is
+// reachable from tabs where no hull is selected.
+export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice,onNewFit}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
       <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Visviva</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <button onClick={()=>{if(onNewFit)onNewFit();onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
+        <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:"&#10133;"}}/>
+        <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Pick a hull and start fresh</div></div>
+      </button>
       {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImport();onClose();}else if(item.action==="export"){if(onExport)onExport();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else if(item.action==="feedback"){if(onFeedback)onFeedback();onClose();}else if(item.action==="optimizePrice"){if(onOptimizePrice)onOptimizePrice();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);

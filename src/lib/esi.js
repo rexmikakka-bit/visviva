@@ -18,7 +18,7 @@
 // still a meaningfully different risk class from the rest of what's stored here.
 
 import { ESI_CLIENT_ID, ESI_CALLBACK_URL, ESI_NATIVE_CALLBACK_URL, ESI_SCOPES } from '../esi-config.js';
-import { SKILL_CAMEL_TO_PYFA, tidByName } from '../calc.js';
+import { SKILL_CAMEL_TO_PYFA, SKILL_CATALOG, tidByName } from '../calc.js';
 
 const ESI_BASE = 'https://esi.evetech.net/latest';
 const SSO_AUTHORIZE_URL = 'https://login.eveonline.com/v2/oauth/authorize/';
@@ -38,6 +38,16 @@ function notifyChange() { try { window.dispatchEvent(new Event(CHANGE_EVENT)); }
 export function onCharactersChanged(cb) {
   window.addEventListener(CHANGE_EVENT, cb);
   return () => window.removeEventListener(CHANGE_EVENT, cb);
+}
+
+// The native login leg finishes in a deep-link listener (App.jsx), not in a component, so a
+// failure there has nowhere to render — it used to go to console.error only, which on a phone is
+// no error at all. Parked here and broadcast on the same change event the UI already listens to.
+let _lastLoginError = null;
+export function getLastLoginError() { return _lastLoginError; }
+export function setLastLoginError(e) {
+  _lastLoginError = e ? (e.message || String(e)) : null;
+  notifyChange();
 }
 
 function loadChars() { try { return JSON.parse(localStorage.getItem(CHARS_KEY)) ?? []; } catch { return []; } }
@@ -90,6 +100,17 @@ function decodeJwtPayload(jwt) {
 // ─── Login flow ─────────────────────────────────────────────────────────────────
 function isNative() {
   return typeof window !== 'undefined' && !!window.Capacitor?.isNativePlatform?.();
+}
+
+// Is this deep-link URL our SSO callback? Lives here, next to the redirect_uri it has to agree
+// with, because the native listener in App.jsx used to hardcode the prefix separately — and when
+// the scheme gained its mandatory `eveauth-` prefix, that copy was missed. The listener then
+// rejected every real callback, so Browser.close() never ran and login hung on a spinner forever
+// with the token exchange never attempted. One source of truth: ESI_NATIVE_CALLBACK_URL.
+// Case-insensitive because a scheme is case-insensitive per RFC 3986 and the OS may normalise it.
+export function isEsiCallbackUrl(url) {
+  if (typeof url !== 'string' || !ESI_NATIVE_CALLBACK_URL) return false;
+  return url.toLowerCase().startsWith(ESI_NATIVE_CALLBACK_URL.toLowerCase());
 }
 
 // Kicks off SSO login: opens the system browser (native) or redirects the current tab (web).
@@ -161,6 +182,7 @@ export async function completeLoginFromCallback(callbackUrl) {
     expiresAt: Date.now() + tok.expires_in * 1000,
   };
   saveChars([...loadChars().filter(c => c.characterId !== characterId), rec]);
+  _lastLoginError = null;
   setActiveCharacterId(characterId);
   return { characterId, characterName, scopes };
 }
@@ -232,16 +254,20 @@ export function createCharacterFitting(characterId, fitting) {
 }
 
 // ─── Skill sync ─────────────────────────────────────────────────────────────────
-// SKILL_CAMEL_TO_PYFA maps our camelCase skill keys to EVE's real skill names; skills are
-// ordinary types, so tidByName() resolves each name to the skill_id ESI reports. Built lazily
-// (not at module load) since TYPES/tidByName need the dogma bundle initialised first.
+// ESI reports each skill by its typeID, and SKILL_CATALOG already carries the typeID of all 357
+// skills — so that is a direct match and the primary path. It also picks up the handful of skills
+// whose name in SKILL_CAMEL_TO_PYFA is misspelled and therefore never resolved through tidByName
+// (a pre-existing gap, 159 of 163 keys). The name lookup stays as a fallback for anything the
+// catalog somehow has no typeID for. Built lazily (not at module load) since TYPES/tidByName need
+// the dogma bundle initialised first.
 let _skillIdToCamel = null;
 function skillIdToCamel() {
   if (_skillIdToCamel) return _skillIdToCamel;
   _skillIdToCamel = {};
+  for (const e of SKILL_CATALOG) if (e.typeID) _skillIdToCamel[e.typeID] = e.key;
   for (const [camel, pyfaName] of Object.entries(SKILL_CAMEL_TO_PYFA)) {
     const tid = tidByName(pyfaName);
-    if (tid) _skillIdToCamel[tid] = camel;
+    if (tid && !_skillIdToCamel[tid]) _skillIdToCamel[tid] = camel;
   }
   return _skillIdToCamel;
 }
@@ -253,6 +279,31 @@ function skillIdToCamel() {
 export function esiSkillsToAppSkills(esiSkillsResponse) {
   const idToCamel = skillIdToCamel();
   const out = {};
+  for (const s of esiSkillsResponse?.skills ?? []) {
+    const camel = idToCamel[s.skill_id];
+    if (camel) out[camel] = s.trained_skill_level;
+  }
+  return out;
+}
+
+/**
+ * The same response as a COMPLETE skill map: every catalog skill present, untrained ones at 0.
+ *
+ * This is what "align to this character" must use, and the distinction is not cosmetic. ESI's
+ * /skills/ endpoint lists only what the character has actually trained — an untrained skill is
+ * simply absent from the response. In this app an ABSENT skill key means level **V**, not zero
+ * (calcFitStats defaults every unset skill to V so a fresh install doesn't show every fit as
+ * unflyable). Merging the partial map over existing state therefore left every skill the character
+ * has never touched reading V: syncing Rex Mikakka produced a pilot with Ice Harvesting Drone
+ * Specialization V, which is exactly backwards from what a sync is for.
+ *
+ * Starting from the full catalog at 0 makes the character authoritative — nothing is left "unset",
+ * so nothing falls through to the V default.
+ */
+export function esiSkillsToFullSkillMap(esiSkillsResponse) {
+  const idToCamel = skillIdToCamel();
+  const out = {};
+  for (const e of SKILL_CATALOG) out[e.key] = 0;
   for (const s of esiSkillsResponse?.skills ?? []) {
     const camel = idToCamel[s.skill_id];
     if (camel) out[camel] = s.trained_skill_level;

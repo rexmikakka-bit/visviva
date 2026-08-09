@@ -13,6 +13,8 @@ import { TYPES, tidByName, calcFitStats, subsystemsForHull , isTurret, isLaunche
 import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
+import { fetchPrices } from "../prices.js";
+import { compareRows, sortCompareRows } from "../lib/compare.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -183,16 +185,21 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
           <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
                title={`${res.label}: ${fmtRes(res.used)} / ${fmtRes(res.total)} ${res.unit} — tap to switch readout`}
                style={{flex:1,minWidth:0,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
-            <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:3,whiteSpace:"nowrap",lineHeight:1.1}}>
+            <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:4,whiteSpace:"nowrap",lineHeight:1.15}}>
               <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.4,textTransform:"uppercase",flexShrink:0}}>{res.label}</span>
+              {/* Readability: the numbers were 10px with the TOTAL at textMute, which is ~2.4:1
+                  against this surface — below any sensible floor for small text, and these are the
+                  figures you glance at most while fitting. The used value now carries full text
+                  colour at 12px, the total sits one step back at textMid rather than disappearing,
+                  and tabular-nums stops the digits jittering as they change under a drag. */}
               {showRemaining
-                ? <span style={{fontSize:10,minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{fontWeight:700,color:over?C.danger:C.textMid}}>{fmtShort(Math.abs(rem))}</span>
-                    <span style={{color:over?C.danger:C.textMute}}> {over?"over":"left"}</span>
+                ? <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
+                    <span style={{fontWeight:700,color:over?C.danger:C.text}}>{fmtShort(Math.abs(rem))}</span>
+                    <span style={{fontSize:10,color:over?C.danger:C.textMid}}> {over?"over":"left"}</span>
                   </span>
-                : <span style={{fontSize:10,minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{fontWeight:700,color:crit?C.danger:C.textMid}}>{fmtShort(res.used)}</span>
-                    <span style={{color:C.textMute}}>/{fmtShort(res.total)}</span>
+                : <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
+                    <span style={{fontWeight:700,color:crit?C.danger:C.text}}>{fmtShort(res.used)}</span>
+                    <span style={{fontSize:10,color:C.textMid}}>/{fmtShort(res.total)}</span>
                   </span>}
             </div>
             <div style={{height:3,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
@@ -498,6 +505,44 @@ function getItemSkills(typeID) {
   return skills;
 }
 
+// Market price for a single item, shown under the description in the info panel.
+//
+// Reads the hub and source straight from the persisted settings rather than taking them as props:
+// this panel is reached from six different places (module browser, variations, fitted modules,
+// implants, drones, subsystems) and threading two more props through all of them to display one
+// line is a lot of plumbing for no gain. The keys are the ones App.jsx initialises from.
+//
+// fetchPrices serves anything already cached without a network round trip, so re-opening an item —
+// or opening one that was priced as part of the fit total — is instant and works offline.
+const PRICE_HUB_KEY='visviva_pricehub', PRICE_SOURCE_KEY='visviva_pricesource';
+function ItemPrice({typeID}) {
+  const[state,setState]=useState({status:'loading',value:null,hub:'Jita'});
+  useEffect(()=>{
+    if(!typeID){setState({status:'none',value:null,hub:'Jita'});return;}
+    let cancelled=false;
+    let hub='Jita',source='fuzzwork';
+    try{hub=localStorage.getItem(PRICE_HUB_KEY)||hub;source=localStorage.getItem(PRICE_SOURCE_KEY)||source;}catch{}
+    setState({status:'loading',value:null,hub});
+    fetchPrices([Number(typeID)],hub,source)
+      .then(m=>{if(cancelled)return;
+        const v=m.get(Number(typeID));
+        setState({status:v!=null?'ok':'none',value:v??null,hub});})
+      // Offline, or a hub with no order for this item. Neither is an error worth shouting about.
+      .catch(()=>{if(!cancelled)setState({status:'none',value:null,hub});});
+    return()=>{cancelled=true;};
+  },[typeID]);
+  if(state.status==='none')return null;
+  return (
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,
+                 marginBottom:14,padding:'8px 12px',background:C.surfaceAlt,borderRadius:8,border:`1px solid ${C.border}`}}>
+      <span style={{fontSize:11,color:C.textMute}}>Price <span style={{color:C.textMute,opacity:.7}}>· {state.hub}</span></span>
+      <span style={{fontSize:13,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>
+        {state.status==='loading'?'…':`${fmtResource(state.value)} ISK`}
+      </span>
+    </div>
+  );
+}
+
 // Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab
 function ItemInfoPanel({typeID}) {
   const typeDescriptions = useTypeDescriptions();
@@ -547,6 +592,8 @@ function ItemInfoPanel({typeID}) {
           {desc}
         </div>
       )}
+      {/* Under the description, above the skills — it is a fact about the item, not a stat. */}
+      <ItemPrice typeID={typeID}/>
       {/* Required skills */}
       {skills.length > 0 && (
         <div style={{marginBottom:12}}>
@@ -674,32 +721,113 @@ function FitCost({item, size=11}) {
 
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
   const raw = typeID ? variantsOf(typeID) : [];
-  // Resolve meta from CCP's metaGroupID rather than the bundle's (wrong) label, then re-sort:
-  // the bundle had faction/storyline/deadspace/officer all coming through as "T2".
-  const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}))
-                  .sort((a,b)=>(META_ORDER[a.meta]??99)-(META_ORDER[b.meta]??99)||a.name.localeCompare(b.name));
+  const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
+  const [sortBy, setSortBy] = useState('price');
+  // Tapping the ACTIVE sort flips direction; tapping the other one switches to it at its natural
+  // default (cheapest first, lowest meta first) rather than inheriting the previous direction,
+  // which would otherwise silently hand you a reversed list you did not ask for.
+  const [sortDir, setSortDir] = useState('asc');
+  const [prices, setPrices] = useState(null);
+
+  // One batched request for the whole variant set — fetchPrices dedupes and serves from cache, so
+  // reopening the tab (or an item already priced as part of the fit total) costs nothing.
+  const ids = vars.map(v=>v.typeID).filter(Boolean);
+  const idKey = ids.slice().sort((a,b)=>a-b).join(',');
+  useEffect(()=>{
+    if(!ids.length){setPrices(null);return;}
+    let cancelled=false;
+    let hub='Jita',source='fuzzwork';
+    try{hub=localStorage.getItem(PRICE_HUB_KEY)||hub;source=localStorage.getItem(PRICE_SOURCE_KEY)||source;}catch{}
+    fetchPrices(ids,hub,source).then(m=>{if(!cancelled)setPrices(m);}).catch(()=>{if(!cancelled)setPrices(new Map());});
+    return()=>{cancelled=true;};
+  },[idKey]);// eslint-disable-line react-hooks/exhaustive-deps
+
   if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No variation data available.</div>;
+
+  // Deltas are measured against the module ACTUALLY FITTED, so every number answers "what do I gain
+  // or give up by switching to this" rather than "what is this in the abstract".
+  const rows = sortCompareRows(compareRows(vars.map(v=>v.typeID), typeID), {by:sortBy, dir:sortDir, prices});
+  const byID = new Map(vars.map(v=>[String(v.typeID), v]));
+  const basePrice = prices?.get(Number(typeID));
+
+  const Sort = ({k,label}) => {
+    const on=sortBy===k;
+    return(
+    <button onClick={()=>{haptic();if(on)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(k);setSortDir('asc');}}}
+      title={on?`${label}, ${sortDir==='asc'?'lowest':'highest'} first — tap to reverse`:`Sort by ${label.toLowerCase()}`}
+      style={{display:"flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
+      background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.border}`,
+      color:on?C.accent:C.textMute}}>{label}
+      {/* The arrow only shows on the ACTIVE control: a direction on an inactive sort would imply
+          it is doing something. */}
+      {on&&<span style={{fontSize:9}}>{sortDir==='asc'?'↑':'↓'}</span>}
+    </button>);
+  };
+
   return (
     <div>
-      <div style={{fontSize:10,color:C.textMute,padding:'6px 0 8px'}}>
-        {readOnly?`${vars.length} variants`:`Tap a variation to swap — ${vars.length} variants`}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:'6px 0 9px'}}>
+        <span style={{fontSize:10,color:C.textMute}}>{vars.length} variants · vs fitted</span>
+        <div style={{display:"flex",gap:5}}><Sort k="price" label="Price"/><Sort k="meta" label="Meta Level"/></div>
       </div>
-      {vars.map(v => (
-        <div key={v.typeID} onClick={()=>{if(!readOnly&&v.name!==currentName)onSwap(v);}}
-          style={{display:'flex',alignItems:'center',gap:9,padding:'9px 4px',borderBottom:`1px solid ${C.border}`,cursor:(readOnly||v.name===currentName)?'default':'pointer',background:v.name===currentName?C.accentLight:'transparent'}}>
-          {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>}
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,color:v.name===currentName?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v.name}</div>
-            {/* Fitting cost matters most here: comparing variants is usually "can I afford the T2
-                one", and the difference between tiers is often exactly the CPU. */}
-            <FitCost item={v} size={10}/>
+      {rows.map(r => {
+        const v = byID.get(String(r.typeID)); if(!v) return null;
+        const price = prices?.get(Number(r.typeID));
+        const dPrice = (price!=null&&basePrice!=null)?price-basePrice:null;
+        return (
+          <div key={r.typeID} onClick={()=>{if(!readOnly&&!r.isBaseline)onSwap(v);}}
+            style={{padding:'9px 4px',borderBottom:`1px solid ${C.border}`,
+                    cursor:(readOnly||r.isBaseline)?'default':'pointer',
+                    background:r.isBaseline?C.accentLight:'transparent'}}>
+            <div style={{display:'flex',alignItems:'center',gap:9}}>
+              {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.display="none";}}/>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,color:r.isBaseline?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>FITTED</span>}
+                </div>
+                {/* Price and its delta lead, because that is the axis this view exists to serve. */}
+                <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
+                  <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:'no price'}</span>
+                  {dPrice!=null&&dPrice!==0&&
+                    <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
+                </div>
+              </div>
+              <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
+            </div>
+            {/* Only the attributes that DIFFER across this variant set, as deltas. `better` is null
+                for an unchanged value, and those stay neutral — no change is not an improvement. */}
+            {!r.isBaseline&&(
+              <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,marginLeft:35,fontSize:10}}>
+                {r.stats.filter(st=>st.delta!=null&&st.delta!==0).map(st=>{
+                  // Rate of fire is stored as a cycle-time MULTIPLIER, so its raw delta is
+                  // meaningless — the difference has to be taken in display space, where the
+                  // attribute is already expressed as a percentage of rate of fire.
+                  const rate=MUTA_RATE_PCT.has(st.key);
+                  const val=fmtMutaVal(st.key,st.value);
+                  const dRaw=rate
+                    ? mutaToDisplay(st.key,st.value)-mutaToDisplay(st.key,st.value-st.delta)
+                    : st.delta;
+                  const dTxt=rate
+                    ? `${Math.abs(dRaw).toFixed(2)} %`
+                    : fmtMutaVal(st.key,Math.abs(st.delta));
+                  const up=dRaw>0;
+                  return(
+                  <span key={st.key} style={{color:C.textMid}}>
+                    {mutaLabel(st.key)} <span style={{fontWeight:700,color:C.text}}>{val}</span>
+                    <span style={{marginLeft:3,color:st.better===null?C.textMute:(st.better?C.rig:C.warning)}}>
+                      ({up?'+':'−'}{dTxt})
+                    </span>
+                  </span>);
+                })}
+              </div>
+            )}
           </div>
-          <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
+
 
 
 // Info + Variations for the things you can tap in a fit that are NOT slot modules: boosters,
@@ -709,12 +837,29 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
 //
 // `onSwap` is optional: with no handler the Variations tab still lists the family (useful just to
 // see what else exists), it simply does not act on a tap.
-export function ItemDetailSheet({typeID, name, onClose, onSwap}) {
+/**
+ * `actions` are caller-supplied buttons shown above the tabs — used by implants for "Fit the whole
+ * set" and "Change implant", so those are reachable from the same sheet that tells you what the
+ * implant does, without this component needing to know what an implant is.
+ */
+export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
   const [tab, setTab] = useState("info");
   const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
   const TABS = [["info", "Info"], ["vars", "Variations"]];
   return (
     <BottomSheet title={title} onClose={onClose} height="82vh">
+      {actions?.length>0&&(
+        <div style={{display:"flex",gap:8,padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
+          {actions.map(a=>(
+            <button key={a.label} onClick={()=>{haptic();a.onClick();if(a.closes!==false)onClose();}}
+              title={a.title}
+              style={{flex:1,padding:"8px 0",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
+                      background:a.primary?C.accentLight:C.surfaceAlt,
+                      border:`1px solid ${a.primary?C.accentBorder:C.border}`,
+                      color:a.primary?C.accent:C.textMid}}>{a.label}</button>
+          ))}
+        </div>
+      )}
       <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
         {TABS.map(([k, label]) => (
           <button key={k} onClick={()=>setTab(k)}
@@ -734,13 +879,33 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap}) {
 }
 
 // ── Abyssal (mutaplasmid) module support ─────────────────────────────────────
-const MUTA_ATTR_LABELS={capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time"};
-const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??name.replace(/([A-Z])/g," $1").replace(/^./,c=>c.toUpperCase());
+const MUTA_ATTR_LABELS={boosterEffectChance1:"Side Effect Chance",armorDamageAmountBonus:"Armor Repair Bonus",aoeCloudSizeBonus:"Explosion Radius Bonus",boosterMissileAOECloudPenalty:"Explosion Radius Penalty",capacitorNeed:"Activation Cost",cpu:"CPU",power:"Powergrid",maxRange:"Optimal Range",falloff:"Falloff",duration:"Cycle Time",energyNeutralizerAmount:"Neut Amount",speedFactor:"Velocity Bonus",maxVelocityBonus:"Max Velocity Bonus",signatureRadiusBonus:"Sig Radius Penalty",signatureRadiusBonusPercent:"Sig Radius Bonus",armorDamageAmount:"Armor Repaired",shieldBonus:"Shield Repaired",reloadTime:"Reload Time",mass:"Mass",armorHpBonus:"Armor HP",shieldCapacityBonus:"Shield HP",massAddition:"Mass Addition",scanResolutionBonus:"Scan Res. Bonus",maxTargetRangeBonus:"Lock Range Bonus",trackingSpeedBonus:"Tracking Bonus",aoeCloudSizeBonus:"Expl. Radius Bonus",aoeVelocityBonus:"Expl. Velocity Bonus",explosionDelayBonus:"Flight Time Bonus",missileVelocityBonus:"Missile Velocity Bonus",warpScrambleRange:"Warp Disrupt Range",thermalDamage:"Thermal Dmg",kineticDamage:"Kinetic Dmg",emDamage:"EM Dmg",explosiveDamage:"Explosive Dmg",damageMultiplier:"Damage Multiplier",speedMultiplier:"Rate of Fire",speed:"Rate of Fire",armorRepairPerCapacitor:"Rep / Cap",armorRepairPerTime:"Rep / Time",
+// A command burst's four buff slots all carry the same strength, and the compare view keeps
+// whichever one ranks first — so all four need the label, not just slot 1. Without it the row read
+// "Warfare Buff 1 Value 1.25", which names an internal attribute rather than the thing it decides.
+warfareBuff1Value:"Burst Strength",warfareBuff2Value:"Burst Strength",warfareBuff3Value:"Burst Strength",warfareBuff4Value:"Burst Strength",buffDuration:"Burst Duration"};
+// camelCase -> words, keeping ACRONYMS intact: a naive /([A-Z])/ split turned
+// `boosterArmorHPPenalty` into "Booster Armor H P Penalty". The leading "Booster " is then dropped
+// as redundant — you are already looking at a booster.
+const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??String(name)
+  .replace(/([a-z\d])([A-Z])/g,'$1 $2')      // armorHP -> armor HP
+  .replace(/([A-Z]+)([A-Z][a-z])/g,'$1 $2')  // HPPenalty -> HP Penalty
+  .replace(/^booster\s+/i,'')
+  .replace(/^./,c=>c.toUpperCase());
 // Display scaling for a mutated attribute. Both the read-only rendering and the TYPED input go
 // through this, so the units a value is shown in are exactly the units you type it back in — if the
 // unit for an attribute is ever corrected, both follow automatically.
+const PERCENT_ATTRS=new Set(["aoeCloudSizeBonus","armorDamageAmountBonus","trackingSpeedBonus",
+  "capacitorCapacityBonus","shieldBoostMultiplier","shieldCapacityBonus","maxVelocityBonus",
+  "armorHpBonus","signatureRadiusBonus","falloffBonus","maxRangeBonus","durationBonus"]);
 const mutaUnit=(name)=>{
   if(MUTA_RATE_PCT.has(name)) return {scale:1,unit:"%",dp:2};
+  // A "chance" is stored as a 0..1 fraction; 0.2000 tells you nothing at a glance, 20% does.
+  if(/chance/i.test(name)) return {scale:0.01,unit:"%",dp:0};
+  // Booster bonuses and penalties are all expressed as PERCENTAGES. Listed rather than matched on a
+  // /Bonus$/ pattern, because that would also catch `capacityBonus` — a shield extender's flat
+  // +2600 HP, which is emphatically not a percentage.
+  if(PERCENT_ATTRS.has(name)||/Penalty$/.test(name)) return {scale:1,unit:"%",dp:2};
   if(/Range|maxRange|falloff/i.test(name)) return {scale:1000,unit:"km",dp:2};
   if(/duration|reloadTime|explosionDelay/i.test(name)) return {scale:1000,unit:"s",dp:2};
   if(/mass/i.test(name)) return {scale:1,unit:"kg",dp:0};
@@ -757,15 +922,21 @@ const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):d;
 
 // Plain (no thousands separators) rendering in display units — what goes INTO the text box, so it
 // stays parseable when the user edits it.
+// Trailing zeros carry no information and cost width on a phone: a booster penalty of exactly 20
+// reads "20", not "20.00". The decimals are still produced first, so a value that genuinely has
+// them (1.25, 11.73) keeps every digit it needs.
+const trimZeros=(t)=>t.includes('.')?t.replace(/\.?0+$/,''):t;
 const mutaValStr=(name,v)=>{
   const u=mutaUnit(name), d=mutaToDisplay(name,v);
-  if(u.dp!=null) return (d/u.scale).toFixed(u.dp);
-  const a=Math.abs(d); return a>=100?d.toFixed(1):a>=1?d.toFixed(2):d.toFixed(4);
+  if(u.dp!=null) return trimZeros((d/u.scale).toFixed(u.dp));
+  const a=Math.abs(d); return trimZeros(a>=100?d.toFixed(1):a>=1?d.toFixed(2):d.toFixed(4));
 };
-const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(v).toLocaleString()} kg`; return u.unit?`${mutaValStr(name,v)} ${u.unit}`:mutaValStr(name,v); };
+const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(v).toLocaleString()} kg`; // No space before a percent sign — "20%", not "20 %". Every other unit keeps its space ("17 km").
+  return u.unit?`${mutaValStr(name,v)}${u.unit==="%"?"":" "}${u.unit}`:mutaValStr(name,v); };
 
 // Typed entry for a mutated attribute, alongside the slider. Commits on blur/Enter rather than per
 // keystroke so a half-typed "1." or "-" doesn't churn the fit through a recalculation.
+
 function MutaValueInput({name,value,min,max,onCommit}){
   const u=mutaUnit(name);
   const[txt,setTxt]=useState(()=>mutaValStr(name,value));
@@ -1089,18 +1260,32 @@ function ImportFitSheet({onClose,onImport}){
   // navigator.clipboard.readText() is not permitted inside the native WebView, which is why this
   // button did nothing in the installed app and the fit had to be pasted by hand. Capacitor's
   // Clipboard plugin reads through the OS instead; the web API stays as the browser fallback.
+  //
+  // Every failure here used to collapse into one generic sentence, which made a device report
+  // ("the button is broken") impossible to act on. Three things were wrong with that:
+  //   * the native error was caught and DISCARDED, so whatever Android actually said was lost;
+  //   * the web fallback then ran ON NATIVE too, where it cannot work — so the message you got
+  //     described the fallback failing, not the real cause;
+  //   * an empty clipboard came back as "" which is not == null, so it counted as a success and
+  //     the sheet reported an EFT parse error instead of "there's nothing to paste".
+  // Android asks for no clipboard permission at all (it is not a runtime permission — API 29+ just
+  // requires the app to be focused, and 13+ shows its own paste toast), so a prompt never appearing
+  // is expected and is not the fault. The error text now names the cause.
   const readClip=async()=>{
     setErr(null);
-    let t=null;
-    try{
-      const Cap=(typeof window!=="undefined")&&window.Capacitor;
-      if(Cap?.isNativePlatform?.()){
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    const native=!!Cap?.isNativePlatform?.();
+    let t=null,why=null;
+    if(native){
+      try{
         const {Clipboard}=await import('@capacitor/clipboard');
         t=(await Clipboard.read())?.value ?? null;
-      }
-    }catch{}
-    if(t==null){try{t=await navigator.clipboard.readText();}catch{}}
-    if(t==null){setErr("Couldn't read the clipboard — paste manually below.");return;}
+      }catch(e){ why=e?.message||String(e); }
+    }else{
+      try{ t=await navigator.clipboard.readText(); }catch(e){ why=e?.message||String(e); }
+    }
+    if(t==null){setErr(`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`);return;}
+    if(!t.trim()){setErr("The clipboard is empty — copy a fit first, then tap this again.");return;}
     haptic();setText(t);process(t);
   };
   return(

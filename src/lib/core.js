@@ -2,14 +2,14 @@
 // Leaf module (imports only data + calc + theme). Layering: core <- ui <- tabs <- App.
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import shipsData        from "../data/ships.json";
-import modulesData      from "../data/modules.json";
-import chargesData      from "../data/charges.json";
-import dronesData       from "../data/drones.json";
-import marketGroupsData from "../data/marketGroups.json";
-import marketTreeData   from "../data/market-tree.json";
-import mutaplasmidData  from "../data/mutaplasmids.json";
-import TYPE_ICONS       from "../data/type-icons.json";
+import shipsData        from "../data/ships.json" with { type: "json" };
+import modulesData      from "../data/modules.json" with { type: "json" };
+import chargesData      from "../data/charges.json" with { type: "json" };
+import dronesData       from "../data/drones.json" with { type: "json" };
+import marketGroupsData from "../data/marketGroups.json" with { type: "json" };
+import marketTreeData   from "../data/market-tree.json" with { type: "json" };
+import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
+import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 
@@ -66,11 +66,67 @@ const MT_ALL_ITEMS = Object.entries(marketTreeData.t).map(([tid, [mgid, name, vo
  * Items CCP does not sell (AIR/Serenity event boosters) are absent from the market tree and honestly
  * report no siblings, rather than being lumped in with a family they are not part of.
  */
+// Implants and hardwirings carry NO moduleVariations data, so they fall through to the market-group
+// fallback below — which for a slot-1 implant is every slot-1 implant in the game. That is not a
+// variation list, it is a catalogue, and it buries the three entries you actually wanted.
+//
+// Their real "variations" are encoded in the NAME, in two shapes:
+//   grade sets   "Mid-Grade Asklepian Alpha"  -> siblings are the other GRADES of Asklepian Alpha
+//   hardwirings  "... Surgical Strike SS-905" -> siblings are the other CODES of Surgical Strike
+// Stripping whichever marker applies leaves a family key the siblings share.
+const IMPLANT_GRADE_RE = /^(?:Low|Mid|High)-Grade\s+/i;
+const HARDWIRING_CODE_RE = /\s+[A-Z]{1,3}-\d{3,4}$/;
+// Boosters are graded either by a leading word ("Standard/Improved/Strong Exile Booster") or by a
+// trailing tier numeral ("Federation Hardpoint Booster I/II"). Both are the same idea as an implant
+// grade: the same item at a different strength.
+const BOOSTER_GRADE_RE = /^(?:Standard|Improved|Strong)\s+/i;
+const BOOSTER_TIER_RE = /\s+(?:I{1,3}|IV|V|VI{0,3})$/;
+function implantFamilyKey(name) {
+  return String(name ?? '')
+    .replace(IMPLANT_GRADE_RE, '')
+    .replace(BOOSTER_GRADE_RE, '')
+    .replace(HARDWIRING_CODE_RE, '')
+    .replace(BOOSTER_TIER_RE, '')
+    .trim().toLowerCase();
+}
+/** Category 20 is Implant — which covers hardwirings and boosters too. */
+function isImplantLike(typeID) {
+  const t = TYPES[typeID] ?? TYPES[String(typeID)];
+  return (t?.c ?? t?.category) === 20;
+}
+// Family -> members, built once over every category-20 type.
+//
+// Deliberately NOT scoped to the market group. CCP files these by SLOT ("Booster Slot 17"), which
+// is the wrong axis twice over: it lumps Federation Hardpoint in with every unrelated slot-17
+// booster, and it strands Republic Defense II in a group of one so the tab showed nothing at all.
+// The family lives in the name, so that is what we index.
+let _implantFamilies = null;
+function implantFamilyIndex() {
+  if (_implantFamilies) return _implantFamilies;
+  _implantFamilies = new Map();
+  for (const [tid, t] of Object.entries(TYPES)) {
+    if ((t?.c ?? t?.category) !== 20 || !t?.n) continue;
+    const k = implantFamilyKey(t.n);
+    if (!k) continue;
+    if (!_implantFamilies.has(k)) _implantFamilies.set(k, []);
+    _implantFamilies.get(k).push({ typeID: Number(tid), name: t.n });
+  }
+  return _implantFamilies;
+}
+
 function variantsOf(typeID) {
   const direct = (moduleVariations ?? {})[String(typeID)] ?? [];
   if (direct.length) return direct;
+  if (isImplantLike(typeID)) {
+    const self = TYPES[typeID] ?? TYPES[String(typeID)];
+    const kin = implantFamilyIndex().get(implantFamilyKey(self?.n)) ?? [];
+    // Only narrow when the key found relatives; a name matching none of the shapes keeps whatever
+    // the market-group fallback gives it rather than collapsing to a single entry.
+    if (kin.length > 1) return kin.map(k => ({ ...k }));
+  }
   const row = marketTreeData.t[String(typeID)];
   if (!row) return [];
+
   // meta is left undefined on purpose — the Variations tab resolves it from CCP's metaGroupID,
   // which is more reliable than anything stored alongside the name.
   return (MT_ITEMS[row[0]] ?? []).map(s => ({ typeID: s.typeID, name: s.name }));
@@ -740,12 +796,25 @@ function getCompatibleCharges(mod){
   // will happily load combat probes into a core launcher. This is one of the rare places we are
   // deliberately stricter than the reference, because the game itself is.
   const capacity=a['38']??a.capacity??null;
+  // CIVILIAN ammo is filed under the wrong group by CCP. All four turret variants — Civilian Pulse
+  // Crystal, Civilian Autocannon Ammo, Civilian Railgun Charge, Civilian Blaster Charge — sit in
+  // group 86 "Frequency Crystal" at chargeSize 1, whatever weapon they actually belong to. So every
+  // small energy turret in the game offered autocannon, blaster and railgun ammo as loadable
+  // charges. (Civilian Scourge Light Missile does the same to light missile launchers.)
+  //
+  // Nothing in the data separates them, and the group is not fixable from our side, so they are
+  // matched by name — CCP has never shipped a civilian charge not named "Civilian ...". They stay
+  // available to the civilian WEAPONS, which are named the same way, since those are the only
+  // modules the ammo is for.
+  const isCivilian=n=>/^civilian\b/i.test(String(n??''));
+  const modIsCivilian=isCivilian(td.n??td.name??mod.name);
   const out=[];
   for(const gid of chargeGroups){
     for(const c of (CHARGES_BY_GROUP.get(gid)??[])){
       // chargeSize filter: skip only if both sides specify a size and they differ
       if(chargeSize!=null && c.chargeSize!=null && c.chargeSize!==chargeSize)continue;
       if(capacity>0 && c.volume>0 && c.volume>capacity)continue;
+      if(!modIsCivilian && isCivilian(c.name))continue;
       out.push(c);
     }
   }
@@ -890,18 +959,47 @@ function groupChargesForBrowser(charges){
     if(!fam.has(key))fam.set(key,[]);
     fam.get(key).push(c);
   }
+  // Capacitor booster charges are graded by SIZE, not by tech tier — a Cap Booster 3200 and a Cap
+  // Booster 25 are different magnitudes of the same thing, and which ones even fit is decided by
+  // the module's capacity (handled by getCompatibleCharges). Falling through to localeCompare
+  // sorted them as STRINGS, so the list read 100, 150, 200, 3200, 25, 400, 50, 75, 800. Largest
+  // first, because the biggest charge that fits is almost always the one you want; equal sizes
+  // still fall through to tier, so a Navy 400 outranks a plain 400.
+  const capBonusOf=c=>{const a=TYPES[c.typeID]?.a??TYPES[String(c.typeID)]?.a??{};return Number(a['67']??a.capacitorBonus??0);};
   const groups=[...fam.entries()].map(([family,items])=>{
-    items.sort((a,b)=>chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name));
+    items.sort((a,b)=>{
+      const ca=capBonusOf(a),cb=capBonusOf(b);
+      if(ca>0&&cb>0&&ca!==cb)return cb-ca;
+      return chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name);
+    });
     const ranges=items.map(chargeRangeMult).filter(v=>v!=null);
-    return{family,items,range:ranges.length?Math.min(...ranges):null,order:order.get(family)};
+    // The size sort above only ever ordered charges WITHIN a family, and each cap booster size is
+    // its own family ("Cap Booster 400" holds the plain and the Navy one) — so the families
+    // themselves still fell through to localeCompare and the picker read 100, 150, 200, 3200, 25,
+    // 400, 50, 75, 800. Carried up to the group so the sizes line up numerically.
+    const caps=items.map(capBonusOf).filter(v=>v>0);
+    // T2 turret ammo leads its list. Two per weapon family (Hail/Barrage, Void/Null,
+    // Conflagration/Scorch), and they are the two you are actually choosing between most of the
+    // time, but being one short-range and one long-range they sat at opposite ENDS of a
+    // range-ordered list. Gated on `range` so this only touches turret ammo: missiles carry no
+    // weaponRangeMultiplier and are ordered by damage type instead, which is left alone.
+    const t2Turret=ranges.length>0&&items.every(i=>metaOf(i.typeID,null)==="T2");
+    return{family,items,range:ranges.length?Math.min(...ranges):null,order:order.get(family),
+           capSize:caps.length?Math.max(...caps):null,t2Turret};
   });
   groups.sort((a,b)=>{
     // Damage-type groups (missiles) carry an explicit index and always lead, in EM/Th/Kin/Exp order.
+    // Checked FIRST, so nothing below can reorder a missile list.
     if(a.order!=null||b.order!=null){
       if(a.order==null)return 1;
       if(b.order==null)return -1;
       return a.order-b.order;
     }
+    // T2 turret ammo first; the pair then orders by range between themselves, as everything does.
+    if(a.t2Turret!==b.t2Turret)return a.t2Turret?-1:1;
+    // Cap boosters: biggest first, matching the within-family rule — the largest charge that fits
+    // is almost always the one you want, and what fits is already decided by getCompatibleCharges.
+    if(a.capSize!=null&&b.capSize!=null&&a.capSize!==b.capSize)return b.capSize-a.capSize;
     if(a.range==null&&b.range==null)return a.family.localeCompare(b.family);
     if(a.range==null)return 1;
     if(b.range==null)return -1;

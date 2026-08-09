@@ -3,7 +3,7 @@ import { C } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
 import { SKILL_CATALOG } from "../calc.js";
 import { ImplantLoadoutsManager } from "./implants.jsx";
-import { EsiSettingsPanel } from "./esi-ui.jsx";
+import { EsiSettingsPanel, EsiSkillAlignPanel } from "./esi-ui.jsx";
 
 // Skill groups are DERIVED from SKILL_CATALOG rather than hand-listed. The old hardcoded table
 // covered 28 skills; the catalog has 357 — every skill the engine reads PLUS every skill any
@@ -40,11 +40,14 @@ function SkillsPanel({skills,setSkills}){
   const allAt=lv=>SKILL_CATALOG.every(e=>lvlOf(e.key)===lv);
   return(
     <div>
+      <EsiSkillAlignPanel setSkills={setSkills}/>
       <div style={{display:"flex",gap:8,marginBottom:14}}>
         {/* Highlight reflects the ACTUAL state, not the last click: a preset is lit only while every
             skill still sits at that level, so it goes dark again the moment you adjust one. "All V"
-            used to be styled lit unconditionally, which made the other two look inert by comparison. */}
-        {[[5,"All V (Max)",C.accent],[4,"All IV",C.accent],[0,"Clear All",C.danger]].map(([lv,label,col])=>{
+            used to be styled lit unconditionally, which made the other two look inert by comparison.
+            "All IV" was dropped: it is not a state any real pilot is in, and next to a character
+            sync it is a worse answer to the same question. */}
+        {[[5,"All V (Max)",C.accent],[0,"Clear All",C.danger]].map(([lv,label,col])=>{
           const active=allAt(lv);
           return(<button key={lv} onClick={()=>setAll(lv)} aria-pressed={active}
             style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",

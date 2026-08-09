@@ -25,6 +25,9 @@ import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
+import { differingAttributes, compareRows, sortCompareRows, derivedDirection } from './lib/compare.js';
+import { getCompatibleCharges, groupChargesForBrowser } from './lib/core.js';
+import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -1217,6 +1220,236 @@ function check(group, label, actual, expected, tol = 0.005) {
     }
   }
   check('hulls', 'hulls computing cleanly', total - crashed, total, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13i. MODULE COMPARISON — the Variations tab's compare view (src/lib/compare.js)
+//      All derived logic, and all of it silently wrong-able by a CCP rename or renumber: which
+//      attributes differ, which numbered siblings collapse, and which direction counts as better.
+//      The direction overrides are the sharpest edge — they deliberately CONTRADICT CCP's
+//      highIsGood for the booster side-effect family, so nothing but a test pins them.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMODULE COMPARISON');
+  const ext = ['Large Shield Extender II', 'Large Shield Extender I', 'Large F-S9 Regolith Compact Shield Extender'].map(tid);
+  const diff = differingAttributes(ext);
+  // Only attributes that actually vary. Meta/tech level differ on every comparison by construction
+  // and would crowd out the real ones, so they are excluded by name AND by pattern.
+  check('cmp', 'shield extenders differ in exactly 3 attrs', diff.length, 3, 0);
+  check('cmp', 'capacityBonus is one of them', diff.includes('capacityBonus') ? 1 : 0, 1, 0);
+  check('cmp', 'no meta/tech level leaks in', diff.some(k => /^(meta|tech)Level/i.test(k)) ? 1 : 0, 0, 0);
+
+  const exile = ['Standard Exile Booster', 'Improved Exile Booster', 'Strong Exile Booster'].map(tid);
+  const ed = differingAttributes(exile);
+  // A booster ships boosterEffectChance1..5 all holding the same number; five rows for one fact.
+  check('cmp', 'booster side-effect chances collapse to one', ed.filter(k => /^boosterEffectChance/.test(k)).length, 1, 0);
+  // Six, not five: four side effects + bonus + chance is exactly six, and at five one fell off.
+  check('cmp', 'all six Exile attributes fit', ed.length, 6, 0);
+
+  const rows = compareRows(exile, exile[0]);
+  const strong = rows.find(r => r.typeID === exile[2]);
+  const stat = k => strong.stats.find(s => s.key === k);
+  check('cmp', 'baseline row is flagged', rows.filter(r => r.isBaseline).length, 1, 0);
+  // CCP flags every booster*Penalty highIsGood=1. They are also signed inconsistently — ArmorHP is
+  // negative, MissileAOECloud positive, both meaning "worse" — so MAGNITUDE decides, not sign.
+  check('cmp', 'stronger armor HP penalty reads worse', stat('boosterArmorHPPenalty').better ? 1 : 0, 0, 0);
+  check('cmp', 'stronger explosion radius penalty reads worse', stat('boosterMissileAOECloudPenalty').better ? 1 : 0, 0, 0);
+  check('cmp', 'higher side-effect chance reads worse', stat('boosterEffectChance1').better ? 1 : 0, 0, 0);
+  check('cmp', 'bigger armor repair bonus reads better', stat('armorDamageAmountBonus').better ? 1 : 0, 1, 0);
+  // aoeCloudSizeBonus is NEGATIVE when it helps, so a bigger magnitude is a stronger bonus.
+  const crash = ['Standard Crash Booster', 'Strong Crash Booster'].map(tid);
+  const cs2 = compareRows(crash, crash[0]).find(r => r.typeID === crash[1]);
+  check('cmp', 'stronger explosion radius BONUS reads better',
+        cs2.stats.find(s => s.key === 'aoeCloudSizeBonus').better ? 1 : 0, 1, 0);
+
+  // Sorting: the fitted module is the thing every delta is measured from, so it stays pinned in
+  // BOTH directions; unpriced rows sort as Infinity and must not float to the top when reversed.
+  const prices = new Map([[ext[1], 1.2e6], [ext[2], 4.5e6]]);
+  const er = compareRows(ext, ext[0]);
+  const order = (by, dir) => sortCompareRows(er, { by, dir, prices }).map(r => r.typeID);
+  check('cmp', 'baseline pinned first, price asc', order('price', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
+  check('cmp', 'baseline pinned first, price desc', order('price', 'desc')[0] === ext[0] ? 1 : 0, 1, 0);
+  check('cmp', 'cheapest first when ascending', order('price', 'asc')[1] === ext[1] ? 1 : 0, 1, 0);
+  check('cmp', 'dearest first when descending', order('price', 'desc')[1] === ext[2] ? 1 : 0, 1, 0);
+  check('cmp', 'meta sort keeps baseline pinned', order('meta', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
+
+  // ── Direction DERIVED from the module's own effects ───────────────────────────────────────
+  // The hand-kept lists could only ever be extended one reported bug at a time. This asks the
+  // dogma data instead: the effect says which attribute the modifier changes, how, and on whom,
+  // and the TARGET attribute's highIsGood then says whether that is an improvement.
+  const egress = ['Large Egress Port Maximizer I', 'Large Egress Port Maximizer II'].map(tid);
+  const eg2 = compareRows(egress, egress[0]).find(r => r.typeID === egress[1]);
+  const estat = eg2.stats.find(s => s.key === 'capNeedBonus');
+  // -15 -> -20: capNeedBonus drives capacitorNeed DOWN, and lower cap need is better.
+  check('cmp', 'egress II cap need delta is negative', estat.delta, -5, 1e-9);
+  check('cmp', 'deeper cap need reduction reads better', estat.better ? 1 : 0, 1, 0);
+
+  // The counterexample that rules out a blanket "negative means magnitude" shortcut. A Capacitor
+  // Power Relay's shieldBoostMultiplier is ALSO negative and also gets larger on better modules,
+  // but it lowers shieldBonus — which is higher-is-better — so it is a DRAWBACK: -5 beats -11.
+  const cpr = ['Capacitor Power Relay I', 'Capacitor Power Relay II'].map(tid);
+  const cpr2 = compareRows(cpr, cpr[0]).find(r => r.typeID === cpr[1]);
+  const cstat = cpr2.stats.find(s => s.key === 'shieldBoostMultiplier');
+  check('cmp', 'cap relay II shield penalty is deeper', cstat.delta, -1, 1e-9);
+  check('cmp', 'a deeper DRAWBACK reads worse', cstat.better ? 1 : 0, 0, 0);
+
+  // CCP mis-flags the whole industry multiplier family highIsGood=1, which would have made every
+  // structure rig's -20% manufacturing time read as a downgrade.
+  const engRig = ['Standup M-Set Advanced Component Manufacturing Time Efficiency I',
+                  'Standup M-Set Advanced Component Manufacturing Time Efficiency II'].map(tid);
+  const er2 = compareRows(engRig, engRig[0]).find(r => r.typeID === engRig[1]);
+  const erStat = er2.stats.find(s => s.key === 'attributeEngRigTimeBonus');
+  check('cmp', 'eng rig II cuts more manufacturing time', erStat.delta < 0 ? 1 : 0, 1, 0);
+  check('cmp', 'deeper manufacturing time cut reads better', erStat.better ? 1 : 0, 1, 0);
+
+  // Hostile modifiers are deliberately NOT derived, and this is the case that forces it: a warp
+  // scrambler's target attribute (warpScrambleStatus) is the ATTACKER's win condition, not the
+  // victim's stat, so the "bad for them is good for me" inversion would call a strength-1
+  // scrambler better than a strength-2. Asserted against derivedDirection directly — the attribute
+  // is constant across the Warp Scrambler group, so it never reaches a comparison row to be seen.
+  check('cmp', 'hostile modifiers are never derived',
+        derivedDirection(tid('Warp Scrambler II'), 'warpScrambleStrength') === null ? 1 : 0, 1, 0);
+  // ...while a self modifier on the very same module still resolves.
+  check('cmp', 'self modifiers on the same module still derive',
+        derivedDirection(tid('Warp Scrambler II'), 'capacitorNeed') === null ? 0 : 1, 0, 0);
+  check('cmp', 'cap need reduction derives to smaller-is-better',
+        derivedDirection(tid('Large Egress Port Maximizer II'), 'capNeedBonus') === false ? 1 : 0, 1, 0);
+
+  // ── Signed EWAR bonuses: sign is the module CLASS, magnitude is the strength ──────────────
+  // A Guidance Disruptor II's aoeVelocityBonus is −12 against a Guidance Disruptor I's −10 — more
+  // negative because it cripples the target's missiles harder. CCP flags all of these highIsGood=1,
+  // which read −12 as worse and coloured the STRONGER disruptor red.
+  const gd = ['Guidance Disruptor I', 'Guidance Disruptor II'].map(tid);
+  const gd2 = compareRows(gd, gd[0]).find(r => r.typeID === gd[1]);
+  const gstat = k => gd2.stats.find(s => s.key === k);
+  check('cmp', 'gd II explosion velocity delta is negative', gstat('aoeVelocityBonus').delta, -2, 1e-9);
+  check('cmp', 'stronger explosion VELOCITY bonus reads better', gstat('aoeVelocityBonus').better ? 1 : 0, 1, 0);
+  // Same family, opposite sign on the very same module — proof the rule is magnitude, not sign.
+  check('cmp', 'gd II explosion radius delta is positive', gstat('aoeCloudSizeBonus').delta, 2, 1e-9);
+  check('cmp', 'stronger explosion RADIUS bonus reads better', gstat('aoeCloudSizeBonus').better ? 1 : 0, 1, 0);
+  // Stasis webs are the same rule again: −60 cripples harder than −50, so it is the better web.
+  const web = ['Stasis Webifier I', 'Stasis Webifier II'].map(tid);
+  const web2 = compareRows(web, web[0]).find(r => r.typeID === web[1]);
+  const wstat = web2.stats.find(s => s.key === 'speedFactor');
+  check('cmp', 'web II velocity delta is negative', wstat.delta, -10, 1e-9);
+  check('cmp', 'stronger web reads better', wstat.better ? 1 : 0, 1, 0);
+  // The SAME attribute is positive on prop mods, where bigger is also better — the magnitude rule
+  // has to keep that right, not just flip the sign convention.
+  const prop = ['5MN Microwarpdrive I', '5MN Microwarpdrive II'].map(tid);
+  const prop2 = compareRows(prop, prop[0]).find(r => r.typeID === prop[1]);
+  const pstat = prop2.stats.find(s => s.key === 'speedFactor');
+  check('cmp', 'faster MWD still reads better', (pstat && pstat.delta > 0 && pstat.better) ? 1 : 0, 1, 0);
+  // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
+  // outranked the attributes a disruptor is actually chosen for. Excluded by name.
+  const gdAll = Object.keys(TYPES).filter(id => /Guidance Disruptor/i.test(TYPES[id].n ?? '')).map(Number);
+  check('cmp', 'heat absorption never shown', differingAttributes(gdAll).includes('heatAbsorbtionRateModifier') ? 1 : 0, 0, 0);
+
+  // ── NPC-facing attributes never belong in a fit comparison ───────────────────────────────
+  // entityCapacitorLevelModifier{Small,Medium,Large} is how much capacitor an NPC is left with
+  // after this neutraliser hits it — NPC AI data. No effect in the bundle references 1894–1897 and
+  // eos never reads them, so it is inert; it still took TWO of six rows on every energy
+  // neutraliser, displacing falloff — the one stat that separates the meta variants.
+  const neuts = Object.keys(TYPES).filter(id => TYPES[id].gn === 'Energy Neutralizer' && /^Small /.test(TYPES[id].n ?? '')).map(Number);
+  const nd = differingAttributes(neuts);
+  check('cmp', 'NPC capacitor attrs never shown', nd.some(k => /^entityCapacitorLevel/.test(k)) ? 1 : 0, 0, 0);
+  check('cmp', 'neut falloff is shown instead', nd.includes('falloffEffectiveness') ? 1 : 0, 1, 0);
+  // Every stat a neutraliser is actually chosen on now leads the list.
+  check('cmp', 'neut drain amount still leads', nd.includes('energyNeutralizerAmount') ? 1 : 0, 1, 0);
+
+  // ── Command bursts: range is the faction hulls' whole selling point ───────────────────────
+  // 'Vigilant' reaches 18 km against a T1/T2 burst's 15 km, and that row went missing because
+  // canFitShipType1/2 (raw typeIDs, present on one variant and absent on the other → a perfect 1.0
+  // spread) and warfareBuff2..4Value (identical siblings that never collapsed, since their index is
+  // INFIX not suffix) took five of the six slots between them.
+  const burst = ['Shield Command Burst I', 'Shield Command Burst II', '‘Vigilant’ Shield Command Burst'].map(tid);
+  const bd = differingAttributes(burst);
+  check('cmp', 'burst range is shown', bd.includes('maxRange') ? 1 : 0, 1, 0);
+  check('cmp', 'no typeID whitelists leak in', bd.some(k => /^canFitShip/.test(k)) ? 1 : 0, 0, 0);
+  check('cmp', "CCP's FAKE placeholder is excluded", bd.includes('commandBurstDbuffEffectStrengthFAKE') ? 1 : 0, 0, 0);
+  check('cmp', 'infix-numbered buff siblings collapse to one', bd.filter(k => /^warfareBuff\d+Value$/.test(k)).length, 1, 0);
+  const vig = compareRows(burst, burst[0]).find(r => r.typeID === burst[2]);
+  check('cmp', 'Vigilant burst reaches 3 km further', vig.stats.find(s => s.key === 'maxRange').delta, 3000, 1e-9);
+  check('cmp', 'longer burst range reads better', vig.stats.find(s => s.key === 'maxRange').better ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13k. ESI SKILL SYNC — a character's sheet must be AUTHORITATIVE
+//      ESI's /skills/ lists only what is TRAINED; an untrained skill is absent. In this app an
+//      absent skill key means level V (calcFitStats' default, so a fresh install isn't all-red).
+//      Merging the partial map over existing state therefore left every untrained skill at V —
+//      a real synced character came back with Ice Harvesting Drone Specialization V.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nESI SKILL SYNC');
+  // A deliberately sparse character: two trained skills, nothing else.
+  const resp = { skills: [
+    { skill_id: tid('Gunnery'), trained_skill_level: 5 },
+    { skill_id: tid('Drones'),  trained_skill_level: 3 },
+  ] };
+  const partial = esiSkillsToAppSkills(resp);
+  const full = esiSkillsToFullSkillMap(resp);
+  check('esi', 'partial map holds only what is trained', Object.keys(partial).length, 2, 0);
+  check('esi', 'full map covers the whole catalog', Object.keys(full).length, SKILL_CATALOG.length, 0);
+  check('esi', 'trained levels survive', full.gunnery, 5, 0);
+  check('esi', 'partial levels survive', full.drones, 3, 0);
+  // The exact skill from the report. Absent from ESI => must read 0, not fall through to V.
+  check('esi', 'untrained skill reads 0, not V', full.iceHarvestingDroneSpecialization, 0, 0);
+  check('esi', 'nothing is left unset', Object.values(full).some(v => v == null) ? 1 : 0, 0, 0);
+  check('esi', 'only the trained ones are non-zero', Object.values(full).filter(v => v > 0).length, 2, 0);
+  // skill_id -> key now resolves through SKILL_CATALOG's own typeIDs, so every catalog skill is
+  // reachable from an ESI response. The old name-based path missed four to name typos.
+  const unreachable = SKILL_CATALOG.filter(e => !e.typeID).length;
+  check('esi', 'every catalog skill has a typeID to match on', unreachable, 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13j. CHARGE BROWSER — which charges a module offers, and in what order
+//      All three of these are corrections to CCP's own filing, so nothing in the data will keep
+//      them right on its own: civilian ammo sits in a group it does not belong to, cap boosters
+//      are graded by a number in their name, and T2 turret ammo comes in a short/long pair that a
+//      pure range sort pushes to opposite ends of the list.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCHARGE BROWSER');
+  const chargesFor = (name) => getCompatibleCharges({ typeID: tid(name), name });
+  const familiesFor = (name) => groupChargesForBrowser(chargesFor(name)).map(g => g.family);
+  const civ = (name) => chargesFor(name).filter(c => /^civilian\b/i.test(c.name)).length;
+
+  // CCP files all four civilian turret ammos in group 86 "Frequency Crystal" at chargeSize 1,
+  // whatever weapon they are for — so every small energy turret offered autocannon, blaster and
+  // railgun ammo. Civilian Scourge Light Missile does the same to launchers.
+  check('chg', 'no civilian ammo on a beam laser', civ('Small Focused Beam Laser I'), 0, 0);
+  check('chg', 'no civilian ammo on a pulse laser', civ('Small Focused Pulse Laser I'), 0, 0);
+  check('chg', 'no civilian ammo on a launcher', civ('Light Missile Launcher II'), 0, 0);
+  // ...but a civilian MODULE keeps it. This is the difference between a rule and a blanket delete,
+  // and the only module in the game that can actually load one (the four civilian turrets carry no
+  // chargeGroup at all — they take no ammo).
+  check('chg', 'civilian launcher keeps its civilian missile', civ('Civilian Light Missile Launcher'), 1, 0);
+
+  // T2 turret ammo leads. One is the shortest-ranged charge in the list and the other the longest,
+  // so a pure range sort put the pair at opposite ends — Gleam first, Aurora dead last.
+  const beam2 = familiesFor('Small Focused Beam Laser II');
+  check('chg', 'beam laser T2 crystals lead', beam2.slice(0, 2).join(',') === 'Gleam S,Aurora S' ? 1 : 0, 1, 0);
+  const ac2 = familiesFor('200mm AutoCannon II');
+  check('chg', 'autocannon T2 ammo leads', ac2.slice(0, 2).join(',') === 'Hail S,Barrage S' ? 1 : 0, 1, 0);
+  // The range rule still governs everything after the T2 pair.
+  const t1Ranges = groupChargesForBrowser(chargesFor('200mm AutoCannon II')).filter(g => !g.t2Turret).map(g => g.range);
+  check('chg', 'non-T2 turret ammo still sorts by range',
+        t1Ranges.every((v, i) => i === 0 || v >= t1Ranges[i - 1]) ? 1 : 0, 1, 0);
+
+  // Missiles are ordered by DAMAGE TYPE, not range, and the T2-first rule must not reach them —
+  // Fury/Precision live inside their damage family, not as families of their own.
+  check('chg', 'missile damage-type order untouched',
+        familiesFor('Heavy Missile Launcher II').join(',') === 'Mjolnir (EM),Inferno (Thermal),Scourge (Kinetic),Nova (Explosive)' ? 1 : 0, 1, 0);
+
+  // Cap booster sizes are a number in the NAME, so the families sorted as strings: 100, 150, 200,
+  // 3200, 25, 400, 50, 75, 800.
+  const caps = groupChargesForBrowser(chargesFor('Heavy Capacitor Booster II'));
+  check('chg', 'cap boosters run largest first', caps[0].family === 'Cap Booster 3200' ? 1 : 0, 1, 0);
+  check('chg', 'cap boosters run smallest last', caps[caps.length - 1].family === 'Cap Booster 25' ? 1 : 0, 1, 0);
+  const capSizes = caps.map(g => g.capSize);
+  check('chg', 'cap booster sizes strictly descending',
+        capSizes.every((v, i) => i === 0 || v < capSizes[i - 1]) ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

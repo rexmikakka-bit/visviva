@@ -195,7 +195,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       // that are actually GROUPED. It used to match on name alone, so two Skirmish Command
       // Bursts always ended up with the same charge and running two different scripts was
       // impossible. Bursts (and anything else non-groupable) are one row each already.
-      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){const origName=sec[idx].name;return{...prev,[secKey]:sec.map(m=>m.name===origName&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};}
+      // ...and it must fan out to exactly the modules SHARING THAT DISPLAY ROW, which means
+      // matching on the same key computeDisplayRows groups by: name AND current ammo. Matching on
+      // name alone made the mutation disagree with the display — a Phoenix carrying three Rapid
+      // Torpedo Launchers deliberately loaded with three different Javelin types shows three
+      // separate rows, but changing the charge on any one of them silently rewrote all three,
+      // destroying the split. `origAmmo` is the OLD charge, which is what the row's members still
+      // carry at this point.
+      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){
+        const origName=sec[idx].name, origAmmo=sec[idx].ammo;
+        return{...prev,[secKey]:sec.map(m=>m.name===origName&&m.ammo===origAmmo&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};
+      }
       sec[idx]={...sec[idx],...updated};
 
       // EVE only lets ONE propulsion module run at a time: activating an MWD shuts off an
@@ -263,7 +273,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 
   return(
     <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
-      {fitError&&<div style={{position:'fixed',top:16,left:16,right:16,zIndex:500,background:C.danger,color:'#fff',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,textAlign:'center',boxShadow:'0 4px 16px rgba(0,0,0,.4)',pointerEvents:'none'}}>{fitError}</div>}
+      {/* `top` must clear the notch/Dynamic Island: a plain 16px put "No turret slots available"
+          underneath the iPhone sensor bar, where it is unreadable. Same treatment as the price
+          banner in App.jsx — env(safe-area-inset-top) is 0 on Android and the web, so the constant
+          is what applies there. */}
+      {fitError&&<div style={{position:'fixed',top:'calc(16px + env(safe-area-inset-top, 0px))',left:16,right:16,zIndex:500,background:C.danger,color:'#fff',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,textAlign:'center',boxShadow:'0 4px 16px rgba(0,0,0,.4)',pointerEvents:'none'}}>{fitError}</div>}
       <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>
       {shipModes&&(
         <div style={{display:"flex",gap:6,padding:"8px 10px 4px"}}>

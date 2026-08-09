@@ -15,7 +15,7 @@ APP_ID=$(node -p "require('./capacitor.config.json').appId")
 
 # ── ESI deep link ────────────────────────────────────────────────────────────
 # The iOS half of the OAuth callback. Android declares this as an intent-filter in its manifest
-# (scheme "visviva", host "auth-callback"); iOS needs the scheme in CFBundleURLTypes or the
+# (scheme "eveauth-visviva", host "auth-callback"); iOS needs the scheme in CFBundleURLTypes or the
 # redirect from login.eveonline.com has nowhere to land and the login silently never completes.
 # Must match ESI_NATIVE_CALLBACK_URL in src/esi-config.js AND a Callback URL registered on the
 # ESI application itself.

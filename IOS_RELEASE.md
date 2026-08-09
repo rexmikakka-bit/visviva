@@ -168,7 +168,7 @@ Testers install via the TestFlight app on iOS.
 | Generate the native iOS project | `npx cap add ios` — needs `capacitor.config.json` and a successful `npm run build` first. |
 | Generate app icons | Sources are `assets/logo.svg` etc. |
 | Verify the app icon | No 1024pt icon produced, or it has an alpha channel — Apple rejects alpha at upload, so this catches it in two minutes rather than after a 20-minute archive. |
-| Apply iOS project settings | `scripts/patch-ios-project.sh` — the `visviva://` URL scheme for ESI login and the export-compliance flag. Regenerated every run because `ios/` is not committed. |
+| Apply iOS project settings | `scripts/patch-ios-project.sh` — the `eveauth-visviva://` URL scheme for ESI login and the export-compliance flag. Regenerated every run because `ios/` is not committed. |
 | Install the signing certificate | The `.p12` was built without `-legacy` (see step B), or the password secret is wrong. |
 | Install the provisioning profile | Explicitly checks the profile's bundle ID against `capacitor.config.json` — a mismatch otherwise fails deep inside `codesign` with an unhelpful message. |
 | Archive / Export | Certificate, profile and Team ID have to agree with each other. |
@@ -193,6 +193,6 @@ just ships an older Xcode. Fix both together in `.github/workflows/ios-testfligh
 **ESI login does not work in these builds.** `ESI_CLIENT_ID` in `src/esi-config.js` is empty.
 Register the application at [developers.eveonline.com](https://developers.eveonline.com/) —
 Authentication & API Access, public client / PKCE — with **both** callback URLs (the web origin
-and `visviva://auth-callback`), paste the Client ID in, and ship a new build. The iOS URL scheme
+and `eveauth-visviva://auth-callback`), paste the Client ID in, and ship a new build. The iOS URL scheme
 is already wired up by `patch-ios-project.sh`; everything downstream of a successful login is
 fixture-verified (see CLAUDE.md's ESI section).

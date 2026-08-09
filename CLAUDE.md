@@ -840,7 +840,7 @@ round-trip precision ESI itself doesn't support.
   fit, "ESI isn't configured yet") renders correctly with a fake character record injected directly
   into `localStorage` (same technique as the Optimize Fit Price verification below) — confirmed live
   in the dev server, no crashes, no console errors.
-- The Android manifest's deep-link intent-filter (`visviva://auth-callback`) and the `CapacitorHttp`
+- The Android manifest's deep-link intent-filter (`eveauth-visviva://auth-callback`) and the `CapacitorHttp`
   config both compile in and show up correctly in a built debug APK (checked with `aapt2 dump
   xmltree` and by reading the synced `android/app/src/main/assets/capacitor.config.json`).
 
@@ -848,7 +848,7 @@ round-trip precision ESI itself doesn't support.
 
 1. Register an application at developers.eveonline.com — Application Type "Authentication & API
    Access", connection type public/PKCE. Register **both** callback URLs (the web origin and
-   `visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
+   `eveauth-visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
 2. Paste the resulting Client ID into `ESI_CLIENT_ID` in `src/esi-config.js`. That's the only
    required edit — everything else reads from that file.
 3. Live-test the actual login button once, on a debug build (emulator or device — `npm run
@@ -871,3 +871,84 @@ round-trip precision ESI itself doesn't support.
 - **Beware compensating errors.** Two bugs that cancel will look like a pass. The Astarte's repair
   amount and cycle time were *both* checked individually for exactly this reason.
 - A blank page in the app is almost always a React crash — check the console.
+
+---
+
+## Shipping a release (Android + iOS)
+
+Releases come off `main` unless you are deliberately cutting a device build of an unmerged branch
+(see the iOS `--ref` note). Always `npm run verify` first — CI runs the same suite on PRs, but the
+release path itself is not gated.
+
+### Version numbering
+
+`android/version.properties` is the source of truth for Android and is **auto-managed** — never
+hand-edit `versionCode`. iOS takes its marketing version from a workflow input and its build number
+from the run number, so the two platforms share a marketing version but NOT a build number.
+
+Feature work gets a minor bump (1.2.0 -> 1.3.0); fix-only gets a patch (1.3.0 -> 1.3.1).
+
+### Android
+
+```bash
+npm run cap:sync                             # vite build + cap sync
+node scripts/bump-android-version.mjs 1.3.0  # PASS THE VERSION EXPLICITLY
+node scripts/gradle-assemble.mjs
+```
+
+**`npm run android:build` is not the release path.** It runs `android:bump` with *no argument*,
+which only advances the patch digit — so a feature release built that way silently ships as
+1.2.2 instead of 1.3.0. Bump explicitly, then assemble.
+
+Verify the APK rather than trusting the bump script's own output — the two have disagreed before:
+
+```bash
+"$LOCALAPPDATA"/Android/Sdk/build-tools/*/aapt2.exe dump badging android/app/build/outputs/apk/debug/app-debug.apk | head -1
+```
+
+Then commit `android/version.properties` alone as `Release 1.3.0: versionCode 14`, push, and attach
+the APK (`android/app/build/outputs/apk/debug/app-debug.apk`, ~16 MB) to a GitHub release tagged
+`android-1.3.0`. The release notes are what testers actually read — write them in terms of what
+changed for the user, not the commit log.
+
+### iOS
+
+**Manual dispatch only, on purpose** — it publishes to testers and burns a build number that can
+never be reused:
+
+```bash
+gh workflow run ios-testflight.yml -f marketing_version=1.3.1 -f upload=true
+gh run watch <run-id> --exit-status
+```
+
+- Add `--ref <branch>` to build a testable device copy of an unmerged branch. That is the right
+  move when the point of the build is to exercise something that cannot be tested on a desktop
+  (ESI login, deep links, WKWebView behaviour) — it avoids merging device-untested work.
+- `upload=false` gives a signing dry run that produces only an `.ipa` artifact.
+- The build number is `github.run_number`: monotonic, never resets, never reuse a marketing version
+  with an old build number.
+- `ios/` is deliberately NOT committed — it is regenerated every run, so a stale native project
+  cannot drift from the web code. Anything you would otherwise hand-edit in Xcode belongs in
+  `scripts/patch-ios-project.sh`.
+- Roughly 3-20 minutes to build, then another 5-15 for App Store Connect to process before it
+  reaches testers. Grep the run log for `UPLOAD SUCCEEDED`.
+- No Mac required: the repo is public, so macOS runners are free. One-time signing/secret setup is
+  in `IOS_RELEASE.md`.
+
+### Two landmines that have cost real time
+
+- **`check()` in `regression.test.mjs` takes a RELATIVE tolerance.** `check(g, l, actual, 63773.5, 1)`
+  means +/-100%, not +/-1. Four checks were written that way and passed against any number until a
+  deliberate revert-the-fix test exposed them. For a hard baseline use `1e-5`; for a 0/1 assertion
+  use `0`. **Always prove a new check has teeth by reverting the fix and watching it fail.**
+- **Do not patch `App.jsx` or `components/ui.jsx` with scripted whole-span replacements.** Slicing
+  "from this function to the next `
+function `" silently swallows `export function` declarations
+  and top-level `const` blocks sitting between them; it removed `ItemDetailSheet` once and the
+  abyssal helper block twice. Worse, recovering the span from `git show HEAD` restores the
+  *committed* version, quietly reverting any uncommitted work in it — a diff against HEAD will not
+  show what you lost. Prefer targeted edits, and after any bulk patch diff the function inventory:
+
+  ```bash
+  diff <(git show HEAD:src/components/ui.jsx | grep -o "^\(export \)\?function [A-Za-z]*" | sort)        <(grep -o "^\(export \)\?function [A-Za-z]*" src/components/ui.jsx | sort)
+  ```

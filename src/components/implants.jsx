@@ -1,7 +1,11 @@
 import { useState, useMemo } from "react";
 import { C } from "../theme.js";
-import { BottomSheet } from "./ui.jsx";
+import { eveIcon } from "../lib/icons.js";
+import { ItemDetailSheet, BottomSheet } from "./ui.jsx";
 import { haptic, implantSetMembers, implantData } from "../lib/core.js";
+// An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
+// path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
+import { tidByName } from "../calc.js";
 
 // "Deadeye (Missile Bombardment)" -> "Missile Bombardment". The leading word is the hardwiring's
 // brand nickname (Deadeye, Snapshot, Squire, ...), which tells you nothing about what the implant
@@ -83,9 +87,15 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
       style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 16px",
               borderBottom:`1px solid ${C.border}`,cursor:"pointer",
               background:current===item.name?C.accentLight:"transparent"}}>
-      <div style={{minWidth:0}}>
+      {/* Item art, same as the module and booster browsers. Hidden on failure so the rare implant
+          with no bundled icon leaves a gap rather than a broken-image box. */}
+      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+        {item.typeID&&<img className="eve-icon" src={eveIcon(item.typeID,32)} width={28} height={28} alt=""
+          style={{borderRadius:5,flexShrink:0}} onError={e=>{e.target.style.visibility="hidden";}}/>}
+        <div style={{minWidth:0}}>
         <div style={{fontSize:13,fontWeight:600,color:current===item.name?C.accent:C.text}}>{item.name}</div>
         {item.metaGroupID>0&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>Meta {item.metaLevel??0}</div>}
+        </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
         {set&&<button onClick={e=>{e.stopPropagation();haptic();onSelectSet(set);onClose();}}
@@ -173,6 +183,7 @@ function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
 
 export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   const[picker,setPicker]=useState(null);
+  const[detail,setDetail]=useState(null);
   const[savingName,setSavingName]=useState(false);
   const[newLoadoutName,setNewLoadoutName]=useState("");
   const[showLoadouts,setShowLoadouts]=useState(false);
@@ -233,7 +244,10 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
           {grp.slots.map(slotNum=>{
             const imp=implants.find(i=>i.slot===slotNum);
             const empty=!imp||imp.name==="[Empty]";
-            return(<div key={slotNum} onClick={()=>setPicker(imp||{slot:slotNum,name:"[Empty]"})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${empty?C.border:grp.color+"44"}`,borderRadius:8,marginBottom:5,cursor:"pointer"}}>
+            // Tapping a FITTED implant opens its info/variations sheet; an empty slot has nothing
+            // to describe, so it goes straight to the picker as before. "Change implant" inside the
+            // sheet is what keeps the picker reachable for an occupied slot.
+            return(<div key={slotNum} onClick={()=>empty?setPicker({slot:slotNum,name:"[Empty]"}):setDetail({...imp,slot:slotNum,typeID:imp.typeID??tidByName(imp.name)})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${empty?C.border:grp.color+"44"}`,borderRadius:8,marginBottom:5,cursor:"pointer"}}>
               <div style={{width:26,height:26,borderRadius:6,background:empty?C.surfaceAlt:`${grp.color}18`,border:`1px solid ${empty?C.borderStrong:grp.color+"44"}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
                 <span style={{fontSize:10,fontWeight:800,color:empty?C.textMute:grp.color}}>{slotNum}</span>
               </div>
@@ -247,6 +261,17 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
         </div>
       ))}
     </div>
+    {detail&&(()=>{
+      const set=implantSetMembers(detail.name);
+      const acts=[];
+      if(set)acts.push({label:`+ ${set.setName} set`,primary:true,
+        title:`Fit all ${set.members.length} ${set.setName} implants`,
+        onClick:()=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))});
+      acts.push({label:"Change implant",onClick:()=>setPicker({slot:detail.slot,name:detail.name})});
+      return<ItemDetailSheet typeID={detail.typeID} name={detail.name} actions={acts}
+        onSwap={v=>setImplants(prev=>prev.map(i=>i.slot===detail.slot?{...i,name:v.name,bonus:null}:i))}
+        onClose={()=>setDetail(null)}/>;
+    })()}
     {picker&&<ImplantPicker slot={picker.slot} current={picker.name}
       onSelect={opt=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:opt.name,bonus:opt.bonus??null}:i))}
       onSelectSet={set=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))}

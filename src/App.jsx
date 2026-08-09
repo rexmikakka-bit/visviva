@@ -51,8 +51,10 @@ export default function App(){
   },[]);
   // ESI login callback (native only — the web build's redirect-based login is completed inline by
   // EsiSettingsPanel via esi.handleWebRedirectOnLoad() on mount instead). SSO opens the system
-  // browser via @capacitor/browser; CCP redirects to our visviva://auth-callback custom scheme,
-  // which Android/iOS hand back to the app as an appUrlOpen event rather than a page navigation.
+  // browser via @capacitor/browser; CCP redirects to our eveauth-visviva://auth-callback custom
+  // scheme, which Android/iOS hand back as an appUrlOpen event rather than a page navigation.
+  // The URL match goes through esi.isEsiCallbackUrl so the scheme is only written down once (in
+  // esi-config.js) — a hardcoded copy here silently rejected every callback once the scheme changed.
   useEffect(()=>{
     const Cap=(typeof window!=="undefined")&&window.Capacitor;
     if(!Cap?.isNativePlatform?.())return;
@@ -61,9 +63,9 @@ export default function App(){
       try{
         const [{App:CapApp},{Browser}]=await Promise.all([import('@capacitor/app'),import('@capacitor/browser')]);
         sub=await CapApp.addListener('appUrlOpen',async({url})=>{
-          if(!url?.startsWith('visviva://auth-callback'))return;
+          if(!esi.isEsiCallbackUrl(url))return;
           try{await Browser.close();}catch(e){}
-          try{await esi.completeLoginFromCallback(url);}catch(e){console.error('ESI login failed:',e);}
+          try{await esi.completeLoginFromCallback(url);}catch(e){console.error('ESI login failed:',e);esi.setLastLoginError(e);}
         });
       }catch(e){}
     })();
@@ -548,7 +550,7 @@ export default function App(){
       {!!activeFit?.ship&&<BottomNav active={bottomTab} onChange={setBottomTab}/>}
     </div>
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");}}/>}
     {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
       {icon:"&#128229;",label:"From EFT",sub:"Paste from clipboard",onSelect:()=>{setShowImportChooser(false);setShowImportFit(true);}},
       {icon:"&#128640;",label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
