@@ -63,8 +63,13 @@ const ships = JSON.parse(readFileSync(join(ROOT, 'src/data/ships.json'), 'utf8')
 
 // typeID -> graphicID. Renders are named by graphicID in pyfa, but the app looks them up by
 // typeID, so we need the mapping to rename on copy. It is precomputed into src/data/graphic-ids.json
-// (423 hulls, ~5 KB) rather than read from eve.db at runtime — that kept this script free of any
-// Python/sqlite dependency, which matters because `python3` is not a command on Windows.
+// (423 hulls + 18 structures, ~5 KB) rather than read from eve.db at runtime — that kept this script
+// free of any Python/sqlite dependency, which matters because `python3` is not a command on Windows.
+//
+// It is the RENDER WORKLIST, not a ship list — everything in it gets one, which is why structures
+// are in there too. CCP gives neither hulls nor structures an iconID (417 of 423 hulls and 17 of 18
+// structures have none at all), so the render is the ONLY art the app can show for them offline;
+// eveIcon() falls back to it. Planning renders off ships.json instead left every structure blank.
 const gid = JSON.parse(readFileSync(join(ROOT, 'src/data/graphic-ids.json'), 'utf8'));
 
 // ── icons: keyed by iconID, copied as <iconID>.png ──────────────────────────
@@ -74,9 +79,8 @@ const wantIcons = new Set(Object.values(typeIcons).map(String));
 // ── renders: pyfa names them by graphicID; we emit them by typeID so the app can look them up ──
 const srcRenders = new Set(readdirSync(join(IMGS, 'renders')).filter((f) => f.endsWith('@2x.png')));
 const renderPlan = [];   // [srcFile, destName]
-for (const s of Object.values(ships)) {
-  const g = gid[String(s.typeID)];
-  if (g && srcRenders.has(`${g}@2x.png`)) renderPlan.push([`${g}@2x.png`, `${s.typeID}.png`]);
+for (const [typeID, g] of Object.entries(gid)) {
+  if (g && srcRenders.has(`${g}@2x.png`)) renderPlan.push([`${g}@2x.png`, `${typeID}.png`]);
 }
 
 const iconPlan = [...wantIcons]
@@ -88,7 +92,7 @@ const iMB = (size('icons', iconPlan) / 1048576).toFixed(1);
 const rMB = (size('renders', renderPlan) / 1048576).toFixed(1);
 
 console.log(`icons  : ${iconPlan.length} / ${wantIcons.size} referenced iconIDs available  (${iMB} MB)`);
-console.log(`renders: ${renderPlan.length} / ${Object.keys(ships).length} hulls  (${rMB} MB)`);
+console.log(`renders: ${renderPlan.length} / ${Object.keys(gid).length} hulls + structures  (${rMB} MB)`);
 console.log(`total  : ${(+iMB + +rMB).toFixed(1)} MB`);
 
 const missIcons = wantIcons.size - iconPlan.length;
@@ -97,10 +101,12 @@ if (missIcons) console.log(`\n${missIcons} referenced iconIDs are not in pyfa's 
 // Name the hulls with no local render — offline they show nothing, so it's worth knowing which.
 // A pyfa SOURCE checkout carries less art than the RELEASE build; if this list matters, point
 // --pyfa at the imgs/ folder inside pyfa's Windows release zip instead.
+const shipNames = new Map(Object.values(JSON.parse(readFileSync(join(ROOT, 'src/data/ships.json'), 'utf8')))
+  .map((s) => [String(s.typeID), s.name]));
 const covered = new Set(renderPlan.map(([, d]) => d.replace('.png', '')));
-const noRender = Object.values(ships)
-  .filter((s) => !covered.has(String(s.typeID)))
-  .map((s) => s.name)
+const noRender = Object.keys(gid)
+  .filter((id) => !covered.has(id))
+  .map((id) => shipNames.get(id) ?? `type ${id}`)
   .sort();
 if (noRender.length) {
   console.log(`\n${noRender.length} hull(s) have NO local render (blank offline):`);
@@ -116,5 +122,7 @@ for (const [src, dst] of iconPlan) copyFileSync(join(IMGS, 'icons', src), join(O
 for (const [src, dst] of renderPlan) copyFileSync(join(IMGS, 'renders', src), join(OUT_RENDERS, dst));
 
 console.log(`\nwrote src/assets/icons/ (${iconPlan.length} files) and src/assets/renders/ (${renderPlan.length} files)`);
+console.log('NOTE: src/assets/type-icons/ (drone/fighter/deployable icons) is NOT managed by this');
+console.log('script — those were downloaded once from images.evetech.net and committed directly.');
 console.log('Commit src/assets/ — the shipped app needs it to work offline.');
 console.log('Then: npm run verify');

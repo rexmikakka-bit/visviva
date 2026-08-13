@@ -36,6 +36,53 @@ const HUB_REGIONS = {
 export const MARKET_HUBS = Object.keys(HUBS);
 export const MARKET_SOURCES = ['fuzzwork', 'ceve'];
 
+// ── Never hang ──────────────────────────────────────────────────────────────────────────────────
+// A price fetch is triggered by a button ("Optimize Fit Price") and reports through a banner, so a
+// request that never settles leaves "Checking market prices…" on screen forever with no way out.
+// That is exactly what a phone with no signal produces: neither Capacitor's native HTTP layer nor
+// `fetch()` applies a default timeout, and a dead socket can sit open for minutes.
+//
+// Two mechanisms, because one is not enough. The AbortController actually cancels the request, but
+// CapacitorHttp routes fetch() through native code and is not guaranteed to honour a signal — so
+// the deadline ALSO races a timer, which settles the caller's promise whether or not the underlying
+// request ever comes back. Belt and braces: the abort frees the socket where it works, the race is
+// what the UI can rely on.
+const REQUEST_TIMEOUT_MS = 8000;    // one HTTP request
+const BATCH_TIMEOUT_MS  = 20000;    // the whole fetch, however many requests it takes
+
+/** A network failure the UI can phrase as "you're offline" rather than "the market API is down". */
+function offlineError(msg) {
+  const e = new Error(msg);
+  e.offline = true;
+  return e;
+}
+
+function withDeadline(promise, ms, ctl) {
+  let timer;
+  const deadline = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      try { ctl.abort(); } catch {}
+      reject(offlineError('Price lookup timed out'));
+    }, ms);
+  });
+  return Promise.race([promise, deadline]).finally(() => clearTimeout(timer));
+}
+
+async function timedFetch(url, signal) {
+  const ctl = new AbortController();
+  const relay = () => ctl.abort();
+  signal?.addEventListener('abort', relay, { once: true });
+  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: ctl.signal });
+  } catch (e) {
+    throw (e?.name === 'AbortError') ? offlineError('Price request timed out') : e;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', relay);
+  }
+}
+
 // Run `jobs` with at most `limit` in flight. These two sources need one request PER TYPE, and a
 // 40-module fit firing 40 parallel requests is how you get rate-limited by a hobby API.
 async function pooled(items, limit, worker) {
@@ -75,10 +122,10 @@ export function getCachedPrices(hub = 'Jita', source = 'fuzzwork') { return load
 
 // ceve-market: one small aggregate per type, region-scoped. Must be www + https — the bare host
 // 301s to plain http, and a mixed-content request is blocked outright in the web build.
-async function fetchCeve(ids, region) {
+async function fetchCeve(ids, region, signal) {
   const out = new Map();
   await pooled(ids, 6, async (id) => {
-    const r = await fetch(`https://www.ceve-market.org/api/market/region/${region}/type/${id}.json`);
+    const r = await timedFetch(`https://www.ceve-market.org/api/market/region/${region}/type/${id}.json`, signal);
     if (!r.ok) return;
     const d = await r.json();
     const p = Number(d?.sell?.min);
@@ -87,9 +134,9 @@ async function fetchCeve(ids, region) {
   return out;
 }
 
-async function fetchFuzzwork(ids, station) {
+async function fetchFuzzwork(ids, station, signal) {
   const url = `https://market.fuzzwork.co.uk/aggregates/?types=${ids.join(',')}&station=${station}`;
-  const resp = await fetch(url);
+  const resp = await timedFetch(url, signal);
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   const data = await resp.json();
   const out = new Map();
@@ -113,10 +160,18 @@ export async function fetchPrices(typeIDs, hub = 'Jita', source = 'fuzzwork') {
   }
 
   if (needed.length) {
+    // Asked before anything is attempted, so a phone in a tunnel gets an instant honest answer
+    // instead of a spinner and a 20-second wait for the deadline below. Anything already cached is
+    // still returned above — being offline costs you the missing prices, not all of them.
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw offlineError('No connection — market prices unavailable offline');
+    }
     const region = HUB_REGIONS[hub] ?? HUB_REGIONS.Jita;
-    let fetched;
-    if (source === 'ceve') fetched = await fetchCeve(needed, region);
-    else fetched = await fetchFuzzwork(needed, HUBS[hub] ?? HUBS.Jita);
+    const ctl = new AbortController();
+    const fetched = await withDeadline(
+      source === 'ceve' ? fetchCeve(needed, region, ctl.signal)
+                        : fetchFuzzwork(needed, HUBS[hub] ?? HUBS.Jita, ctl.signal),
+      BATCH_TIMEOUT_MS, ctl);
     for (const [id, p] of fetched) result.set(id, p);
     saveCache(hub, source, cached ? new Map([...cached, ...result]) : new Map(result));
   }

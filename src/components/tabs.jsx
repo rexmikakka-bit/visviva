@@ -12,7 +12,7 @@ import { metaOf } from "../lib/meta.js";
 const CAN_FIT_GROUP_KEYS = ['canFitShipGroup01','canFitShipGroup02','canFitShipGroup03','canFitShipGroup04','canFitShipGroup05','canFitShipGroup06','canFitShipGroup07','canFitShipGroup08','canFitShipGroup09','canFitShipGroup10','canFitShipGroup11','canFitShipGroup12','canFitShipGroup13','canFitShipGroup14','canFitShipGroup15','canFitShipGroup16','canFitShipGroup17','canFitShipGroup18','canFitShipGroup19','canFitShipGroup20'];
 const CAN_FIT_TYPE_KEYS  = ['canFitShipType1','canFitShipType2','canFitShipType3','canFitShipType4','canFitShipType5','canFitShipType6','canFitShipType7','canFitShipType8','canFitShipType9','canFitShipType10','canFitShipType11','canFitShipType12'];
 // Group names that consume a turret hardpoint
-const TURRET_GROUPS = new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Mining Laser','Frequency Mining Laser','Citizen Mining Laser','Precursor Weapon']);
+const TURRET_GROUPS = new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Precursor Weapon','Vorton Projector']);
 const isTurretWeapon    = tid => TURRET_GROUPS.has(TYPES[String(tid)]?.gn ?? '');
 const isMissileLauncher = tid => /^Missile Launcher/i.test(TYPES[String(tid)]?.gn ?? '');
 

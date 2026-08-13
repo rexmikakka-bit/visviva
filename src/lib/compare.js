@@ -37,6 +37,12 @@ for (const [id, name] of Object.entries(ATTR_ID_TO_NAME)) ATTR_NAME_TO_ID[name] 
 const IGNORED = new Set([
   'metaLevel', 'metaLevelOld', 'techLevel', 'metaGroupID', 'typeColorScheme',
   'radius', 'volume', 'mass', 'capacity',
+  // Fitting cost is shown SEPARATELY and unconditionally, as the powergrid/CPU/calibration glyphs
+  // above the attribute list — it is the constraint every swap has to clear, so it must not depend
+  // on making the six-row cut. Ranking it here as well spent two of those six rows restating what
+  // the glyph line already says: a Large Shield Extender family "differs" in exactly capacityBonus,
+  // cpu and power, so two thirds of the comparison was fitting cost twice over.
+  'cpu', 'power', 'upgradeCost',
   'requiredSkill1', 'requiredSkill2', 'requiredSkill3',
   'requiredSkill1Level', 'requiredSkill2Level', 'requiredSkill3Level',
   'skillPoints', 'skillTimeConstant',

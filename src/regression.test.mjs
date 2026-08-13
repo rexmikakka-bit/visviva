@@ -1235,8 +1235,14 @@ function check(group, label, actual, expected, tol = 0.005) {
   const diff = differingAttributes(ext);
   // Only attributes that actually vary. Meta/tech level differ on every comparison by construction
   // and would crowd out the real ones, so they are excluded by name AND by pattern.
-  check('cmp', 'shield extenders differ in exactly 3 attrs', diff.length, 3, 0);
-  check('cmp', 'capacityBonus is one of them', diff.includes('capacityBonus') ? 1 : 0, 1, 0);
+  //
+  // ONE attribute, not three: this family also differs in cpu and power, and those are now drawn as
+  // the powergrid/CPU glyph line above the attribute list — shown on every row whether or not they
+  // changed, so ranking them here as well would spend two of the six rows saying it twice.
+  check('cmp', 'shield extenders differ in exactly 1 comparable attr', diff.length, 1, 0);
+  check('cmp', 'capacityBonus is the one', diff.includes('capacityBonus') ? 1 : 0, 1, 0);
+  check('cmp', 'fitting cost never enters the attribute list',
+        diff.some(k => ['cpu', 'power', 'upgradeCost'].includes(k)) ? 1 : 0, 0, 0);
   check('cmp', 'no meta/tech level leaks in', diff.some(k => /^(meta|tech)Level/i.test(k)) ? 1 : 0, 0, 0);
 
   const exile = ['Standard Exile Booster', 'Improved Exile Booster', 'Strong Exile Booster'].map(tid);

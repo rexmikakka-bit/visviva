@@ -275,8 +275,10 @@ export default function App(){
       for(const v of (moduleVariations?.[String(s.typeID)]??[]))if(v?.typeID)idsToPrice.add(v.typeID);
     }
     let priceMap;
+    // fetchPrices carries its own timeout, so this always settles — offline, the banner says so
+    // rather than sitting on "Checking market prices…" until the app is restarted.
     try{priceMap=await fetchPrices([...idsToPrice],priceHub);}
-    catch{setPriceBanner({kind:"none",msg:"Couldn't fetch market prices — try again"});setTimeout(()=>setPriceBanner(null),3500);return;}
+    catch(e){setPriceBanner({kind:"none",msg:e?.offline?"No connection — market prices need internet":"Couldn't fetch market prices — try again"});setTimeout(()=>setPriceBanner(null),3500);return;}
     let swapped=0;
     const patchSection=sec=>(slots[sec]??[]).map(s=>{
       const next=optimizeSlotPrice(s,priceMap);   // returns `s` itself when nothing changes
@@ -549,7 +551,7 @@ export default function App(){
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
-        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneCapacity??0):0;})()} shipDroneBandwidth={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.droneBandwidth??0):0;})()} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
+        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
         {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
       </div>

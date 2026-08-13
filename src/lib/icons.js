@@ -19,8 +19,11 @@ import TYPE_ICONS from "../data/type-icons.json";
 //
 // The image-server fallback stays for the ~1,000 types pyfa has no art for: fine online, hidden by
 // onError offline.
-const _ICON_FILES   = import.meta.glob("../assets/icons/*.png",   { eager: true, query: "?url", import: "default" });
-const _RENDER_FILES = import.meta.glob("../assets/renders/*.png", { eager: true, query: "?url", import: "default" });
+const _ICON_FILES      = import.meta.glob("../assets/icons/*.png",      { eager: true, query: "?url", import: "default" });
+const _RENDER_FILES    = import.meta.glob("../assets/renders/*.png",    { eager: true, query: "?url", import: "default" });
+// Per-typeID icons downloaded from images.evetech.net for types that carry no iconID in CCP's data
+// (drones, fighters, deployables). Keyed by typeID rather than iconID — see bundle-icons.mjs.
+const _TYPE_ICON_FILES = import.meta.glob("../assets/type-icons/*.png", { eager: true, query: "?url", import: "default" });
 
 const _iconByID = {};      // iconID -> bundled url
 for (const [p, u] of Object.entries(_ICON_FILES)) {
@@ -34,10 +37,26 @@ for (const [p, u] of Object.entries(_RENDER_FILES)) {
   if (m) _renderByType[m[1]] = u;
 }
 
+const _typeIconByID = {};  // typeID -> bundled url (for types with no iconID)
+for (const [p, u] of Object.entries(_TYPE_ICON_FILES)) {
+  const m = p.match(/\/(\d+)\.png$/);
+  if (m) _typeIconByID[m[1]] = u;
+}
+
+// ⚠️ SHIPS AND STRUCTURES HAVE NO iconID AT ALL — 417 of 423 hulls and 17 of 18 structures carry
+// none, because CCP identifies them by graphicID and lets the client render the model. So the
+// iconID lookup can never resolve a hull, and every ship icon in the browser, the fit list and the
+// tab strip came off the image server: fine online, blank the moment the phone lost signal.
+//
+// The RENDER is the same art at 64px and is already bundled for all 440 of them, so it stands in.
+// CCP's own image server does effectively this too — a ship's `/icon` is a downscaled render — so
+// the offline image matches what was there online rather than being a substitute for it.
 const eveIcon = (typeID, size = 32) => {
   if (!typeID) return null;
   const iid = TYPE_ICONS[typeID];
   if (iid != null && _iconByID[iid]) return _iconByID[iid];                 // bundled (offline)
+  if (_typeIconByID[typeID]) return _typeIconByID[typeID];                  // drone/fighter/deployable (offline)
+  if (_renderByType[typeID]) return _renderByType[typeID];                  // hull/structure render (offline)
   return `https://images.evetech.net/types/${typeID}/icon?size=${size}`;    // fallback (online only)
 };
 

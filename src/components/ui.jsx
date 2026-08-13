@@ -780,6 +780,69 @@ function FitCost({item, size=11}) {
   );
 }
 
+// Fitting cost is shown as GLYPHS on its own line above the other deltas, never as a named attribute
+// row — it is the one comparison every variant swap has to clear (does it still fit?), and the same
+// three icons already label it in the module browser and the resource strip. compare.js keeps cpu /
+// power / upgradeCost out of the attribute list for the same reason, so nothing filters them here.
+const hasDelta = st => st.delta != null && st.delta !== 0;
+
+// A delta, as a direction and a magnitude rather than a signed number in brackets.
+//
+// `dir` encodes EFFECTIVE direction — ▲ means this attribute is better on this variant, ▼ means
+// worse. For higher-is-better stats (DPS, shield HP) that matches the raw delta sign, but for
+// lower-is-better ones (resonances = resists) the raw number drops while the resist displayed to the
+// player rises — so the callers flip the sign when `better` is known rather than passing raw sign
+// unconditionally.  When `better === null` (CCP has no opinion) the raw sign is passed through so
+// the direction still gives some information, just without a colour judgement.
+//
+// `better === null` also covers the "no change" case, which the `=` branch renders.
+function DeltaMark({dir, text, better}) {
+  const color = better == null ? C.textMute : (better ? C.rig : C.danger);
+  if (!dir) return <span style={{color:C.textMid,fontSize:10,marginLeft:3}} title="same as fitted">=</span>;
+  return (
+    <span style={{color,marginLeft:3,whiteSpace:"nowrap"}}>
+      <span style={{fontSize:7,verticalAlign:1,marginRight:2}}>{dir > 0 ? '▲' : '▼'}</span>{text}
+    </span>
+  );
+}
+
+// The powergrid / CPU / calibration line for one variant, measured against the fitted module.
+// Deliberately shown even when a value is IDENTICAL (an "=" rather than nothing): the question being
+// asked here is "will this still fit", and an absent row cannot be told apart from an attribute that
+// simply did not make the six-row cut.
+// `baseTypeID` null = this IS the fitted module: show the values as a reference, with nothing to
+// compare them against.
+function FitCostDelta({typeID, baseTypeID}) {
+  const v = fitCostParts({typeID});
+  const b = baseTypeID != null ? fitCostParts({typeID: baseTypeID}) : v;
+  const g = 11;
+  // Inner span: glyph + number only — no DeltaMark inside the flex row so the delta gets the
+  // same 3px gap (DeltaMark's own marginLeft) as it does next to the attribute list values.
+  // With DeltaMark as a flex child it was getting gap(3.5) + marginLeft(3) = 6.5px, visibly wider.
+  const cell = k => ({display:"inline-flex",alignItems:"center",gap:3.5,color:RES_INK[k]});
+  const num  = {color:C.text,fontWeight:700};
+  const part = (key, Glyph, val, base, unit) => {
+    const d = val - base;
+    // Lower pg/cpu/calib = better → ▲ when d < 0 (flip raw sign so ▲ always means "beneficial").
+    const dir = d < 0 ? 1 : d > 0 ? -1 : 0;
+    return (
+      <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}`}>
+        <span style={{display:"inline-flex",alignItems:"center",gap:3.5}}>
+          <Glyph size={g}/><span style={num}>{fmtResource(val)}</span>
+        </span>
+        {/* Fitting cost is always lower-is-better, whatever the attribute's own highIsGood says. */}
+        {baseTypeID != null && <DeltaMark dir={dir} text={fmtResource(Math.abs(d))} better={d ? d < 0 : null}/>}
+      </span>
+    );
+  };
+  const cells = (v.calib > 0 || b.calib > 0)
+    ? [part('cal', CalGlyph, v.calib ?? 0, b.calib ?? 0, ' calibration')]
+    : [ (v.pg  > 0 || b.pg  > 0) && part('pg',  PgGlyph,  v.pg,  b.pg,  ' MW'),
+        (v.cpu > 0 || b.cpu > 0) && part('cpu', CpuGlyph, v.cpu, b.cpu, ' tf') ].filter(Boolean);
+  if (!cells.length) return null;
+  return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
+}
+
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
@@ -855,11 +918,15 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
               </div>
               <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
             </div>
+            {/* Fitting cost leads, on its own line: it is the constraint, not one attribute among
+                several. Shown on every row including the fitted one, where it reads as a reference
+                value with no delta beside it. */}
+            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID}/>
             {/* Only the attributes that DIFFER across this variant set, as deltas. `better` is null
                 for an unchanged value, and those stay neutral — no change is not an improvement. */}
-            {!r.isBaseline&&(
+            {!r.isBaseline&&r.stats.some(hasDelta)&&(
               <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,marginLeft:35,fontSize:10}}>
-                {r.stats.filter(st=>st.delta!=null&&st.delta!==0).map(st=>{
+                {r.stats.filter(hasDelta).map(st=>{
                   // Rate of fire is stored as a cycle-time MULTIPLIER, so its raw delta is
                   // meaningless — the difference has to be taken in display space, where the
                   // attribute is already expressed as a percentage of rate of fire.
@@ -871,13 +938,10 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
                   const dTxt=rate
                     ? `${Math.abs(dRaw).toFixed(2)} %`
                     : fmtMutaVal(st.key,Math.abs(st.delta));
-                  const up=dRaw>0;
                   return(
                   <span key={st.key} style={{color:C.textMid}}>
                     {mutaLabel(st.key)} <span style={{fontWeight:700,color:C.text}}>{val}</span>
-                    <span style={{marginLeft:3,color:st.better===null?C.textMute:(st.better?C.rig:C.warning)}}>
-                      ({up?'+':'−'}{dTxt})
-                    </span>
+                    <DeltaMark dir={(/[Rr]esonance/.test(st.key)&&st.better!=null)?(st.better?1:-1):Math.sign(dRaw)} text={dTxt} better={st.better}/>
                   </span>);
                 })}
               </div>

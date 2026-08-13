@@ -3229,8 +3229,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     sensorType:     ship.sensorType ?? '',
 
     // Drone bay (from ship base data, not engine)
-    droneBay:       ship.droneBay ?? s.get('droneCapacity') ?? 0,
-    droneBandwidth: ship.droneBandwidth ?? s.get('droneBandwidth') ?? 0,
+    droneBay:       s.get('droneCapacity') || ship.droneBay || 0,   // || not ?? — base=0 ships get subsystem bonus
+    droneBandwidth: s.get('droneBandwidth') || ship.droneBandwidth || 0,
     droneControlRange: Math.round(s.get('droneControlDistance') ?? 20000),
     droneControlRange,
     volume:         s.get('volume') ?? ship.volume ?? 0,

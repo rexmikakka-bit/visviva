@@ -26,7 +26,7 @@ const DIST = join(ROOT, 'dist');
 const ALLOWED = [
   {
     host: 'images.evetech.net',
-    why: 'Fallback for the ~700 types pyfa ships no art for. Hidden by onError when offline.',
+    why: 'Fallback for the ~233 types with no bundled art. Hidden by onError when offline.',
   },
   {
     host: 'login.eveonline.com',
