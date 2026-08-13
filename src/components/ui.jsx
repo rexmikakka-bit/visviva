@@ -71,16 +71,72 @@ function BottomSheet({title,onClose,children,height="70vh"}){
   // bottom of the screen. That is not a hazard worth re-discovering every time someone animates a
   // parent, so the sheet escapes the tree entirely. React events still bubble through the
   // component tree, so nothing else changes.
+  // ── Slide in, slide out, and drag the grabber ────────────────────────────────────────────
+  // The sheet used to appear with a 14px nudge and vanish instantly on close, which read as a cut
+  // rather than a movement. It now travels its full height both ways, and the handle is a real
+  // control: drag it down to peek at what is behind, release past a third of the way (or with a
+  // flick) to dismiss, otherwise it springs back.
+  const [closing,setClosing]=useState(false);
+  const [dragY,setDragY]=useState(0);
+  const sheetRef=useRef(null);
+  const drag=useRef(null);
+  const EXIT_MS=200;
+  // Close is DEFERRED so the exit animation can play — the caller unmounts us the moment it runs.
+  const dismiss=()=>{ if(closing)return; setClosing(true); setTimeout(()=>onClose?.(),EXIT_MS); };
+
+  const onGrabStart=e=>{
+    const t=e.touches?.[0]??e; drag.current={y:t.clientY,t:Date.now(),moved:0};
+  };
+  const onGrabMove=e=>{
+    if(!drag.current)return;
+    e.stopPropagation();                       // never let a sheet drag reach the page's tab swipe
+    const t=e.touches?.[0]??e;
+    // Downward only: dragging up would lift the sheet off the bottom edge and expose the backdrop
+    // beneath it, which looks broken rather than elastic.
+    const dy=Math.max(0,t.clientY-drag.current.y);
+    drag.current.moved=dy;
+    setDragY(dy);
+  };
+  const onGrabEnd=()=>{
+    const d=drag.current; drag.current=null;
+    if(!d)return;
+    const h=sheetRef.current?.offsetHeight??400;
+    // Floor the elapsed time at one frame: two touchmoves can land in the same millisecond, and
+    // dividing by that produced a velocity in the hundreds — every drag read as a flick.
+    const velocity=d.moved/Math.max(16,Date.now()-d.t);   // px per ms
+    // A flick needs distance AS WELL as speed. Speed alone dismisses on a twitch, which is the
+    // worst possible failure here: you meant to peek behind the sheet and it threw itself away.
+    const flick=d.moved>28&&velocity>0.7;
+    if(d.moved>h*0.33||flick) dismiss(); else setDragY(0);
+  };
+
+  const dragging=drag.current!=null;
   return createPortal(
-    <div style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
-      <div onClick={onClose} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)"}}/>
+    // stopPropagation on the whole overlay: a sheet is a modal surface, so a drag inside it must
+    // never reach the Fit/Stats/Graph swipe handler on an ancestor. React events bubble through the
+    // COMPONENT tree, not the DOM tree, so the portal above does not save us from this — which is
+    // how dragging an abyssal slider ended up sliding the page behind the sheet.
+    <div onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}
+         style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
+      <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
+           opacity:closing?0:1,transition:`opacity ${EXIT_MS}ms ease`}}/>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen. */}
-      <div className="vv-sheet" style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
-        <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
+      <div ref={sheetRef} className={`vv-sheet${closing||dragging?"":" vv-sheet-in"}`}
+           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)",
+                   transform:closing?"translateY(100%)":`translateY(${dragY}px)`,
+                   // No transition while a finger is down, or the sheet lags behind the drag.
+                   transition:dragging?"none":`transform ${EXIT_MS}ms cubic-bezier(.22,.61,.36,1)`}}>
+        {/* The grab area is padded well beyond the 4px pill — the pill is the affordance, not the
+            hit target. touchAction:none stops the browser claiming the gesture as a scroll. */}
+        <div onTouchStart={onGrabStart} onTouchMove={onGrabMove} onTouchEnd={onGrabEnd}
+             onMouseDown={onGrabStart} role="button" tabIndex={-1} aria-label="Drag to dismiss"
+             style={{padding:"10px 0 6px",cursor:"grab",touchAction:"none",flexShrink:0}}>
+          <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"0 auto"}}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
-          <button className="press" onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
+          <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
         <div style={{flex:1,overflowY:"auto"}}>{children}</div>
       </div>
@@ -122,7 +178,11 @@ function NumpadModal({label,initial,onConfirm,onClose}){
 }
 
 // ═══ RESOURCE STRIP ══════════════════════════════════════════════
-function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload}){
+// `children` render INSIDE the sticky box, under the meters. That is the whole point: anything
+// passed here is pinned for free, with no second sticky element to fight this one for top:0 and no
+// measuring of this strip's (variable) height to offset against. The Fit tab uses it for the
+// Undo/Grouped toolbar, which was previously scrolled away exactly when you needed it.
+function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
@@ -219,6 +279,7 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
           <div style={{display:"flex",gap:2}}>{Array.from({length:launchTotal},(_,i)=><div key={i} style={{width:6,height:6,borderRadius:2,background:(launchUsed>i)?C.mid:`${C.mid}30`}}/>)}</div>
         </div>}
       </div>}
+      {children}
     </div>
   );
 }

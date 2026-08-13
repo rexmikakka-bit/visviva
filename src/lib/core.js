@@ -236,11 +236,16 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 /* Rows and sheets entering. Short enough not to be in the way, long enough to read as motion. */
 @keyframes vv-fade-up{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .vv-in{animation:vv-fade-up .18s cubic-bezier(.22,.61,.36,1)}
-@keyframes vv-sheet-up{from{transform:translateY(14px);opacity:.6}to{transform:none;opacity:1}}
-.vv-sheet{animation:vv-sheet-up .2s cubic-bezier(.22,.61,.36,1)}
+/* The sheet travels its full height rather than nudging 14px — a bottom sheet that appears with a
+   small hop reads as a cut, not a movement. The ENTRY animation is a separate class from .vv-sheet
+   because .vv-sheet also carries the 430px max-width above: dropping the class to run an exit
+   would snap the sheet to full width mid-slide. Exit is an inline transform in BottomSheet, which
+   also owns the drag-to-dismiss offset. */
+@keyframes vv-sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
+.vv-sheet-in{animation:vv-sheet-up .22s cubic-bezier(.22,.61,.36,1)}
 @media (prefers-reduced-motion:reduce){
   .press:active{transform:none}
-  .vv-in,.vv-sheet{animation:none}
+  .vv-in,.vv-sheet-in{animation:none}
 }
 .vv-from-right{animation:vv-from-right .2s cubic-bezier(.22,.61,.36,1)}
 .vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}

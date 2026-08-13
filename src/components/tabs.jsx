@@ -72,7 +72,6 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   const[dragUI,setDragUI]=useState(null); // {secKey,fromIdx,overIdx} — visual state during pointer drag
   const dragInfo=useRef(null);             // live drag data (avoids re-render churn during move)
   const rowRefs=useRef({});                // `${secKey}:${rowIdx}` → row element (for hit-testing)
-  const[expanded,setExpanded]=useState(["subsystems","high","mid","low","rigs","services"]);
   // Subsystems have no ModuleMenu (tapping one opens the swap picker), so their description
   // and sibling list needed their own way in — an info button on the row.
   const[subInfo,setSubInfo]=useState(null);
@@ -278,7 +277,27 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           banner in App.jsx — env(safe-area-inset-top) is 0 on Android and the web, so the constant
           is what applies there. */}
       {fitError&&<div style={{position:'fixed',top:'calc(16px + env(safe-area-inset-top, 0px))',left:16,right:16,zIndex:500,background:C.danger,color:'#fff',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,textAlign:'center',boxShadow:'0 4px 16px rgba(0,0,0,.4)',pointerEvents:'none'}}>{fitError}</div>}
-      <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>
+      {/* Undo/Grouped live INSIDE the strip, which is the app's one sticky element on this tab.
+          They used to sit below it and scroll away — so the control you reach for after a misdrop
+          was off-screen exactly when you wanted it. Passing them as children pins them without a
+          second sticky box competing for top:0, and without measuring the strip's height (which
+          varies: hardpoint dots only render on hulls that have them). */}
+      <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
+          {/* Undo covers every edit to the fit (modules, charges, drones, cargo, implants, boosters,
+              projected/command fits) because the history snapshots the same state App.jsx persists.
+              Disabled rather than hidden so the control doesn't shift position as you edit. */}
+          <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
+            title={undoDepth?`Undo last change (${undoDepth})`:"Nothing to undo"}
+            style={{display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
+                    background:"none",border:`1px solid ${undoDepth?C.border:"transparent"}`,
+                    color:undoDepth?C.textMid:C.textMute,opacity:undoDepth?1:0.4,
+                    cursor:undoDepth?"pointer":"default"}}>
+            <span style={{fontSize:12,lineHeight:1}}>&#8630;</span>Undo
+          </button>
+          <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?"Grouped":"Ungrouped"}</button>
+        </div>
+      </ResourceStrip>
       {shipModes&&(
         <div style={{display:"flex",gap:6,padding:"8px 10px 4px"}}>
           {shipModes.map((mode)=>{
@@ -323,36 +342,21 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>
         </div>
       )}
-      {/* 8px top so this row doesn't sit flush against the sticky resource strip's border on a fit
-          with no tactical mode / pilot-sec / system-security block above it. The optional blocks all
-          carry the same 8px, so the gap under the strip is the same whichever of them is showing. */}
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px 4px"}}>
-        {/* Undo covers every edit to the fit (modules, charges, drones, cargo, implants, boosters,
-            projected/command fits) because the history snapshots the same state App.jsx persists.
-            Disabled rather than hidden so the control doesn't shift position as you edit. */}
-        <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
-          title={undoDepth?`Undo last change (${undoDepth})`:"Nothing to undo"}
-          style={{display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
-                  background:"none",border:`1px solid ${undoDepth?C.border:"transparent"}`,
-                  color:undoDepth?C.textMid:C.textMute,opacity:undoDepth?1:0.4,
-                  cursor:undoDepth?"pointer":"default"}}>
-          <span style={{fontSize:12,lineHeight:1}}>↶</span>Undo
-        </button>
-        <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?"Grouped":"Ungrouped"}</button>
-      </div>
       <div style={{flex:1,padding:"0 10px 12px"}}>
         {SECS.map(sec=>{
           const rows=getDisplayRows(sec.key);
           return(<div key={sec.key} style={{marginBottom:6}}>
-            <button onClick={()=>setExpanded(e=>e.includes(sec.key)?e.filter(k=>k!==sec.key):[...e,sec.key])} style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",background:"none",border:"none",cursor:"pointer",padding:"7px 4px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <img src={(slotIcons??{})[sec.key==="rigs"?"rig":sec.key]} style={{width:12,height:12,objectFit:"contain",filter:"brightness(10)",marginRight:2}} alt=""/>
-                <span style={{fontSize:12,fontWeight:700,color:C.text}}>{sec.label}</span>
-                <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600}}>{(slots[sec.key]??[]).length}</span>
-              </div>
-              <span style={{color:C.textMute,fontSize:11}}>{expanded.includes(sec.key)?"^":"v"}</span>
-            </button>
-            {expanded.includes(sec.key)&&rows.map((row,rowIdx)=>{
+            {/* A LABEL, not a control. Collapsing was removed: a slot section is three to eight
+                rows, so folding one buys almost no screen back, while a section left shut is
+                invisible — and not seeing a fitted module is the whole failure mode. Every row is
+                always rendered now, which also means drag-to-reorder and the scroll-into-view on
+                drop no longer have to care whether a section happens to be open. */}
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 4px"}}>
+              <img src={(slotIcons??{})[sec.key==="rigs"?"rig":sec.key]} style={{width:12,height:12,objectFit:"contain",filter:"brightness(10)",marginRight:2}} alt=""/>
+              <span style={{fontSize:12,fontWeight:700,color:C.text}}>{sec.label}</span>
+              <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600}}>{(slots[sec.key]??[]).length}</span>
+            </div>
+            {rows.map((row,rowIdx)=>{
               if(row.type==="empty")return(
                 <div key={row.id} ref={el=>{rowRefs.current[sec.key+":"+rowIdx]=el;}} onClick={()=>setEmptySlot({secKey:sec.key,id:row.id})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,background:C.surface,border:`1px dashed ${C.borderStrong}`,cursor:"pointer"}}>
                   <div style={{width:30,height:30,borderRadius:7,background:C.surfaceAlt,border:`1px dashed ${C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:C.borderStrong,fontSize:20}}>+</span></div>

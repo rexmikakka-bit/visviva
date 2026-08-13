@@ -116,6 +116,8 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
   const getDroneVol=(d)=>{const t=_droneTypeRec(d);return t?.attrs?.volume ?? d.volume ?? 5;};
   const getDroneBW=(d)=>{const t=_droneTypeRec(d);return t?.attrs?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
   const bayUsed=drones.reduce((s,d)=>s+d.qty*getDroneVol(d),0);
+  // Bandwidth counts only ACTIVE drones — the bay holds spares, the bandwidth flies them.
+  const bwUsed=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty*getDroneBW(d),0);
   const addDrone=d=>{const ex=drones.find(e=>e.name===d.name);if(ex){setDrones(drones.map(e=>e.name===d.name?{...e,qty:e.qty+5}:e));return;}setDrones(prev=>{
       const dtid = d.typeID ?? (d.name ? tidByName(d.name) : null);
       const dta = dtid!=null ? (TYPES[dtid]?.attrs ?? TYPES[String(dtid)]?.attrs ?? null) : null;
@@ -152,9 +154,20 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
         <div>
         <span style={{fontSize:12,fontWeight:700,color:C.text}}>Drone Bay</span>
-        <span style={{fontSize:11,color:C.textMute,marginLeft:8}}>{Math.round(bayUsed)} / {shipDroneBay} m³</span>
-        <span style={{fontSize:11,color:C.textMute,marginLeft:12}}>BW:</span>
-        <span style={{fontSize:11,color:C.textMute,marginLeft:4}}>{drones.filter(d=>d.active).reduce((s,d)=>s+d.qty*getDroneBW(d),0)} / {shipDroneBandwidth} Mbit/s</span>
+        {/* These two are what you check on every change here, and they were 11px at textMute —
+            about 2.4:1 on this surface, below any sensible floor for small text. Used value at full
+            text colour, the ship's total one step back at textMid rather than vanishing, and
+            tabular-nums so digits don't jitter as drones are added. The "BW:" label is gone:
+            "Mbit/s" already identifies it, and the label was competing with the number for
+            attention. Both turn red when over, which is the only state worth interrupting for. */}
+        <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
+          <span style={{fontWeight:700,color:bayUsed>shipDroneBay?C.danger:C.text}}>{Math.round(bayUsed)}</span>
+          <span style={{color:C.textMid}}>/{shipDroneBay} m³</span>
+        </span>
+        <span style={{fontSize:12,marginLeft:12,fontVariantNumeric:"tabular-nums"}}>
+          <span style={{fontWeight:700,color:bwUsed>shipDroneBandwidth?C.danger:C.text}}>{bwUsed}</span>
+          <span style={{color:C.textMid}}>/{shipDroneBandwidth} Mbit/s</span>
+        </span>
       </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:C.danger,fontWeight:600}}>Active DPS: {activeDroneDps>=100?Math.round(activeDroneDps):activeDroneDps.toFixed(1)}</span><button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
       </div>

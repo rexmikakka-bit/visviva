@@ -116,7 +116,15 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   };
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>Cargo Bay</span><span style={{fontSize:11,color:C.textMute,marginLeft:8}}>{totalVol} / {cap.toLocaleString()} m3</span></div>
+      {/* Same treatment as the drone bay readouts: used volume at full text colour, capacity one
+          step back, tabular-nums, and red once you are over. This was 11px at textMute, which is
+          the figure you are actually watching while loading cargo. */}
+      <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>Cargo Bay</span>
+        <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
+          <span style={{fontWeight:700,color:totalVol>cap?C.danger:C.text}}>{totalVol}</span>
+          <span style={{color:C.textMid}}>/{cap.toLocaleString()} m³</span>
+        </span>
+      </div>
       <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>
     </div>
     <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((parseFloat(totalVol)/cap)*100,100):0}%`,height:"100%",background:parseFloat(totalVol)>cap?C.danger:C.accent}}/></div>
