@@ -22,6 +22,10 @@ const T = {
   accent: "#3aa6d8", faction: "#4cae8a",
   em: "#4d90d9", th: "#d9584f", kin: "#c1c9d3", exp: "#e0932e",
   good: "#4cbf8a", warn: "#e0a83c", bad: "#e0584f", onl: "#4a5a6c",
+  // Overheat, deliberately its own token rather than borrowing exp. Deeper than the amber it
+  // used to share so it stops competing with the damage bars for attention, while staying
+  // ~4.5:1 on the card background — it marks a state you still want to notice.
+  overheat: "#c2610f",
 };
 const DMG = { em: T.em, th: T.th, kin: T.kin, exp: T.exp };
 const CARD_W = 1140;
@@ -45,7 +49,10 @@ function shortImplant(name) {
   const code = name.match(/\b([A-Z]{1,4}-\d{3,4})\b/)?.[1];
   if (nick && code) return `${nick} ${code}`;
   if (/Mindlink/i.test(name)) return name.replace(/\s*(Command|Warfare|Foreman|Mining)\s*/gi, " ").replace(/\s+/g, " ").trim();
-  if (/Zor'?s/i.test(name)) return "Zor's Nav";
+  // CCP ships BOTH "Zor's Custom Navigation Link" and "Zor's Custom Navigation Hyper-Link". The old
+  // "Zor's Nav" abbreviated them to the same string, so the card could not tell you which one was
+  // fitted — and Hyper-Link is the one people actually fly. Keep the word that separates them.
+  if (/Zor'?s/i.test(name)) return /hyper/i.test(name) ? "Zor's Nav Hyper-Link" : "Zor's Nav Link";
   if (nick) return nick;
   if (code) return code;
   const base = name.replace(/\s*-\s*(Basic|Standard|Improved|Enhanced|Advanced).*$/i, "").trim();
@@ -167,13 +174,13 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
 // ── sub-components ────────────────────────────────────────────────────────────────
 function ModRow({ m, meta, n }) {
   const st = m.state || "online";
-  const bl = st === "active" ? T.good : st === "overheated" ? T.exp : st === "offline" ? T.dim : T.onl;
+  const bl = st === "active" ? T.good : st === "overheated" ? T.overheat : st === "offline" ? T.dim : T.onl;
   const hasRight = m.ammo || meta.clip != null || meta.rng || meta.trk != null || meta.rah || st === "overheated";
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 9, padding: "3px 0 3px 10px",
       borderLeft: `2px solid ${bl}`, lineHeight: 1.15, opacity: st === "offline" ? 0.5 : 1,
-      background: st === "overheated" ? "linear-gradient(90deg,rgba(224,147,46,.07),transparent 55%)" : "none",
+      background: st === "overheated" ? "linear-gradient(90deg,rgba(194,97,15,.10),transparent 55%)" : "none",
     }}>
       <span style={{ flex: "1 1 auto", minWidth: 0, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                      fontSize: 14, fontWeight: 500, color: st === "offline" ? T.muted : T.text }}>
@@ -195,7 +202,7 @@ function ModRow({ m, meta, n }) {
           )}
           {meta.rng && <span style={{ color: "#8fb0c6", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.rng}</span>}
           {meta.trk != null && <span style={{ color: T.dim, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.trk} rad/s</span>}
-          {st === "overheated" && <svg viewBox="0 0 24 24" width={13} height={13} fill={T.exp}><path d={FLAME} /></svg>}
+          {st === "overheated" && <svg viewBox="0 0 24 24" width={13} height={13} fill={T.overheat}><path d={FLAME} /></svg>}
         </span>
       )}
     </div>
@@ -226,7 +233,11 @@ function LoadoutRow({ k, children }) {
   );
 }
 
-function ResistRow({ name, hp, res }) {
+// The trailing figure is EHP, not raw HP. Raw HP next to a resist profile invites exactly the wrong
+// arithmetic — the resists are right there, so the number beside them should already have them
+// applied. Taken from calcFitStats' own per-layer EHP rather than recomputed here, so the card and
+// the Stats tab cannot disagree.
+function ResistRow({ name, ehp, res }) {
   if (!res) return null;
   return (
     <>
@@ -237,7 +248,7 @@ function ResistRow({ name, hp, res }) {
           <span style={{ position: "relative", fontSize: 13, fontWeight: 600, color: T.text }}>{res[k] != null ? res[k].toFixed(1) : "-"}</span>
         </div>
       ))}
-      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, textAlign: "right" }}>{fmtK(hp)}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: T.text, textAlign: "right" }}>{fmtK(ehp)}</div>
     </>
   );
 }
@@ -425,6 +436,11 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         </div>
 
         <div style={{ flex: 1 }}>
+          {/* Subsystems FIRST, matching the Fit tab's own rack order (SECS in tabs.jsx). On a T3
+              cruiser they are not accessories — they decide the slot layout, the bonuses and half
+              the fit's identity, so a card that omitted them was describing a different ship. Rack
+              renders nothing when the array is empty, so every non-T3 hull is unaffected. */}
+          <Rack label="Subsystems" mods={slots?.subsystems} cs={cs} />
           <Rack label="High" mods={slots?.high} cs={cs} />
           <Rack label="Mid" mods={slots?.mid} cs={cs} />
           <Rack label="Low" mods={slots?.low} cs={cs} />
@@ -464,7 +480,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
       <div style={{ flex: 1, minWidth: 0, padding: "22px 22px 18px", display: "flex", flexDirection: "column", gap: 13 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <HeroStat cap="Total DPS" num={fmt(s.totalDps?.total)} numColor={T.accent}
-            sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drones <b style={{ color: T.text }}>{fmt(s.droneDps?.total ?? 0)}</b></span></>}
+            sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drone DPS <b style={{ color: T.text }}>{fmt(s.droneDps?.total ?? 0)}</b></span></>}
             bars={dmgTotal > 0 ? ["em", "th", "kin", "exp"].map((k) => ({ w: ((dmg[k] ?? 0) / dmgTotal) * 100, c: DMG[k] })) : []} />
           <HeroStat cap="Effective HP" num={fmtK(ehp)} numColor="#fff"
             sub={<><span>Rep <b style={{ color: T.good }}>{fmt(rep)}</b> ehp/s</span><span>Sust <b style={{ color: T.text }}>{fmt(sust)}</b></span></>}
@@ -479,10 +495,10 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               {[["EM", T.em], ["TH", T.th], ["KIN", T.kin], ["EXP", T.exp]].map(([l, c]) => (
                 <div key={l} style={{ fontSize: 10.5, letterSpacing: ".3px", fontWeight: 600, textAlign: "center", color: c }}>{l}</div>
               ))}
-              <div style={{ fontSize: 10.5, fontWeight: 600, textAlign: "center", color: T.dim }}>HP</div>
-              <ResistRow name="Shield" hp={s.shieldHP} res={s.resists?.shield} />
-              <ResistRow name="Armor" hp={s.armorHP} res={s.resists?.armor} />
-              <ResistRow name="Hull" hp={s.hullHP} res={s.resists?.hull} />
+              <div style={{ fontSize: 10.5, fontWeight: 600, textAlign: "center", color: T.dim }}>EHP</div>
+              <ResistRow name="Shield" ehp={s.shieldEHP} res={s.resists?.shield} />
+              <ResistRow name="Armor" ehp={s.armorEHP} res={s.resists?.armor} />
+              <ResistRow name="Hull" ehp={s.hullEHP} res={s.resists?.hull} />
             </div>
           </div>
         </div>
@@ -515,7 +531,14 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         )}
 
         <div style={{ marginTop: "auto", paddingTop: 12, borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ fontSize: 11, color: T.dim, fontWeight: 500 }}>All skills V · EVE Online is a trademark of Fenris Creations.</div>
+          {/* Two different kinds of text that were sharing one style. "All skills V" QUALIFIES every
+              number on the card and is the first thing a reader should check; the trademark line is
+              boilerplate nobody needs to read twice. Separated by weight and colour rather than by
+              adding a row, since the footer is height-constrained. */}
+          <div style={{ fontSize: 11, fontWeight: 500, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
+            <span style={{ color: T.text, fontWeight: 700, letterSpacing: ".02em", flexShrink: 0 }}>All skills V</span>
+            <span style={{ color: T.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>EVE Online is a trademark of Fenris Creations.</span>
+          </div>
           <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.muted }}>VIS<b style={{ color: T.accent }}>VIVA</b></div>
         </div>
       </div>
