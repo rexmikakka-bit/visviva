@@ -74,7 +74,7 @@ export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
       <div style={{width:"100%",maxHeight:"88vh",overflowY:"auto",boxSizing:"border-box",background:C.surface,borderRadius:"16px 16px 0 0",padding:20,boxShadow:"0 -8px 32px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
         <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Send Feedback</div>
         <div style={{fontSize:11,color:C.textMute,marginBottom:14,lineHeight:1.5}}>
-          Opens a pre-filled GitHub issue on Visviva's repo. You review it there before it's submitted — nothing is sent automatically.
+          Opens a pre-filled GitHub issue on Axis's repo. You review it there before it's submitted — nothing is sent automatically.
         </div>
 
         <div style={{display:"flex",gap:8,marginBottom:12}}>

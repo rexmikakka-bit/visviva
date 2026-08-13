@@ -354,7 +354,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const proj = projected ?? { links: [], incoming: [], remoteReps: {} };
   const showProj = proj.links.length > 0 || proj.incoming.length > 0;
 
-  const priceHub = (() => { try { return localStorage.getItem('visviva_pricehub') ?? 'Jita'; } catch { return 'Jita'; } })();
+  const priceHub = (() => { try { return localStorage.getItem('axis_pricehub') ?? 'Jita'; } catch { return 'Jita'; } })();
   const cachedPrices = getCachedPrices(priceHub);
   const fmtISKShort = (n) => n >= 1e12 ? `${(n / 1e12).toFixed(2)}T` : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1e3).toFixed(1)}K`;
   const priceBreakdown = (() => {
@@ -430,7 +430,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         </div>
 
         <div style={{ display: "flex", gap: 14, fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 14, flexWrap: "wrap" }}>
-          {[["Active", T.good], ["Overheated", T.exp], ["Online", T.onl]].map(([l, c]) => (
+          {[["Active", T.good], ["Overheated", T.overheat], ["Online", T.onl]].map(([l, c]) => (
             <span key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}</span>
           ))}
         </div>
@@ -539,7 +539,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             <span style={{ color: T.text, fontWeight: 700, letterSpacing: ".02em", flexShrink: 0 }}>All skills V</span>
             <span style={{ color: T.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>EVE Online is a trademark of Fenris Creations.</span>
           </div>
-          <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.muted }}>VIS<b style={{ color: T.accent }}>VIVA</b></div>
+          <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.accent }}>AXIS</div>
         </div>
       </div>
     </div>
@@ -564,7 +564,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
   // (which normally fetches) was never opened. Best-effort: an offline webview just skips it.
   useEffect(() => {
     let dead = false;
-    const priceHub = (() => { try { return localStorage.getItem("visviva_pricehub") ?? "Jita"; } catch { return "Jita"; } })();
+    const priceHub = (() => { try { return localStorage.getItem("axis_pricehub") ?? "Jita"; } catch { return "Jita"; } })();
     const { shipTypeID, slots, drones, implants, boosters } = cardProps;
     const ids = [];
     if (shipTypeID) ids.push(shipTypeID);

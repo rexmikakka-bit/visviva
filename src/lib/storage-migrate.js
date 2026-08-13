@@ -8,9 +8,14 @@
 //
 // Pure core (`runMigrations`) is React- and DOM-free so the regression suite can exercise it in Node.
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 export const SCHEMA_KEY = "pyfa-schema-version";
-const DATA_KEY_RE = /^pyfa[-_]/i;
+// Saved fits are `pyfa-*`; app preferences, ESI tokens and graph state were `visviva_*` before the
+// rename to Axis and are `axis_*` after it. All three prefixes must be snapshotted, or migration v1
+// cannot see the keys it exists to rename.
+const DATA_KEY_RE = /^(pyfa|visviva|axis)[-_]/i;
+// The shape installs were on before this file existed. An unstamped store holding data is here.
+const PRE_VERSIONING_SCHEMA = 1;
 
 // MIGRATIONS[v] upgrades a store from schema version v to v+1. The store is a plain
 // { key: rawJSONstring } map; a migration mutates it (edit values, add/delete keys).
@@ -28,6 +33,19 @@ const DATA_KEY_RE = /^pyfa[-_]/i;
 export const MIGRATIONS = [
   // (v0 -> v1) baseline — no-op.
   () => {},
+
+  // (v1 -> v2) Visviva -> Axis rename. Preferences, ESI character tokens, open tabs, graph prefs
+  // and price caches were all keyed `visviva_*`. Without this an updating user silently loses every
+  // preference and gets logged out of ESI, which reads as "the update wiped my settings".
+  // An existing `axis_*` key wins: it was written by the new code and is therefore newer.
+  (store) => {
+    for (const k of Object.keys(store)) {
+      if (!/^visviva[-_]/i.test(k)) continue;
+      const renamed = "axis" + k.slice("visviva".length);
+      if (!(renamed in store)) store[renamed] = store[k];
+      delete store[k];
+    }
+  },
 ];
 
 // Run migrations on a plain store map, in place, from `from` up to `to`. Returns the store.
@@ -61,9 +79,11 @@ export function migrateLocalStorage(ls = (typeof localStorage !== "undefined" ? 
     if (raw != null) {
       from = Number(raw) || 0;
     } else {
-      // Unstamped install. If it holds pyfa-* data it predates versioning but is already the v1
-      // shape, so there's nothing to migrate — just stamp it. A truly fresh install is also current.
-      from = hasDataKey(ls) ? SCHEMA_VERSION : SCHEMA_VERSION;
+      // Unstamped install. If it holds data it predates versioning, which means it is sitting on the
+      // v1 shape and must run the chain from there — NOT be stamped current, which would skip every
+      // migration it actually needs. (Both branches used to read SCHEMA_VERSION, which was harmless
+      // only while SCHEMA_VERSION was 1.) A truly fresh install has nothing to migrate.
+      from = hasDataKey(ls) ? PRE_VERSIONING_SCHEMA : SCHEMA_VERSION;
     }
   } catch { return; } // storage blocked (private mode / disabled) — nothing we can do
 

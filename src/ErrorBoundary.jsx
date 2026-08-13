@@ -42,13 +42,13 @@ class ErrorBoundary extends Component {
   componentDidCatch(error, info) {
     this.setState({ info });
     // Surface it in the console too, for anyone with devtools open.
-    console.error("Visviva crashed:", error, info?.componentStack);
+    console.error("Axis crashed:", error, info?.componentStack);
   }
 
   report() {
     const { error, info } = this.state;
     const lines = [
-      `Visviva error report`,
+      `Axis error report`,
       `time: ${new Date().toISOString()}`,
       `ua: ${navigator.userAgent}`,
       `url: ${location.href}`,
@@ -77,7 +77,7 @@ class ErrorBoundary extends Component {
   // it is exactly when someone decides it is safe to clear site data.
   async saveFits() {
     const json = buildBackup();
-    const name = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const name = `axis-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const done = () => {
       this.setState({ saved: true });
       setTimeout(() => this.setState({ saved: false }), 2500);
@@ -85,7 +85,7 @@ class ErrorBoundary extends Component {
     try {
       const file = new File([json], name, { type: "application/json" });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Visviva backup" });
+        await navigator.share({ files: [file], title: "Axis backup" });
         done();
         return;
       }
@@ -114,7 +114,7 @@ class ErrorBoundary extends Component {
         <div style={S.card}>
           <h1 style={S.h}>Something went wrong</h1>
           <p style={S.p}>
-            Visviva hit an error and couldn't finish drawing. Your saved fits are still in this
+            Axis hit an error and couldn't finish drawing. Your saved fits are still in this
             browser's storage — nothing was deleted. Back them up below before reloading, just in case.
           </p>
 

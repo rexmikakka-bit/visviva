@@ -212,10 +212,10 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   // Persisted: leaving the fittings tab unmounts this screen, so a plain useState reset you to
   // "Fit" every time you checked Drones or Effects and came back.
   const[fitSubTab,setFitSubTab]=useState(()=>{
-    try{const s=localStorage.getItem('visviva_fit_subtab');if(s&&_SUBTABS.includes(s))return s;}catch{}
+    try{const s=localStorage.getItem('axis_fit_subtab');if(s&&_SUBTABS.includes(s))return s;}catch{}
     return "Fit";
   });
-  useEffect(()=>{try{localStorage.setItem('visviva_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
+  useEffect(()=>{try{localStorage.setItem('axis_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
   // Sub-tab swipe — see lib/use-tab-swipe.js. Shared with the Effects screen's four sections rather
   // than duplicated, so the horizontal-scroller escape and the axis lock only exist once.
   const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SUBTABS,fitSubTab,setFitSubTab);
@@ -348,7 +348,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       {!search&&browsePath.length===0&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
-          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Visviva</div>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Axis</div>
           <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>Select a ship class below, choose a hull, then tap <strong style={{color:C.accent}}>+ New Fit</strong> to get started</div>
         </div>
       )}

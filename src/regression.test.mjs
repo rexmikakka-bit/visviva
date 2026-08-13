@@ -494,6 +494,28 @@ function check(group, label, actual, expected, tol = 0.005) {
   const holes = Array.from({ length: SCHEMA_VERSION }, (_, i) => i)
     .filter((i) => typeof MIGRATIONS[i] !== 'function').length;
   check('migrate', 'no missing migration in chain', holes, 0, 0);
+
+  // v1 -> v2: the Visviva -> Axis rename. A user updating from any earlier version must keep their
+  // preferences and ESI tokens; losing them reads as "the update wiped my settings".
+  const s3 = runMigrations({
+    'pyfa-fitsdb': '{"Astarte":[]}',
+    'visviva_pricehub': 'Amarr',
+    'visviva_esi_chars': '[{"name":"Pilot"}]',
+    'visviva-esi-active': '12345',
+  }, { from: 1 });
+  check('migrate', 'axis rename: pref carried over', s3['axis_pricehub'], 'Amarr', 0);
+  check('migrate', 'axis rename: ESI tokens carried over', s3['axis_esi_chars'], '[{"name":"Pilot"}]', 0);
+  check('migrate', 'axis rename: hyphen keys too', s3['axis-esi-active'], '12345', 0);
+  check('migrate', 'axis rename: old key removed', 'visviva_pricehub' in s3 ? 1 : 0, 0, 0);
+  check('migrate', 'axis rename: saved fits untouched', s3['pyfa-fitsdb'], '{"Astarte":[]}', 0);
+
+  // A value already written under the new name is newer and must not be clobbered by the old one.
+  const s4 = runMigrations({ 'visviva_pricehub': 'Amarr', 'axis_pricehub': 'Dodixie' }, { from: 1 });
+  check('migrate', 'axis rename: new key wins', s4['axis_pricehub'], 'Dodixie', 0);
+
+  // The rename must survive the whole chain from an unversioned install, not just from v1.
+  const s5 = runMigrations({ 'visviva_pricehub': 'Hek' }, { from: 0 });
+  check('migrate', 'axis rename: runs from v0 too', s5['axis_pricehub'], 'Hek', 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1202,6 +1224,112 @@ function check(group, label, actual, expected, tol = 0.005) {
       return t && (t.e ?? []).some((e) => SYSTEM_EFFECTS[e] || SYSTEM_EFFECTS[String(e)]);
     }).length;
   check('env', 'common systems have handlers', covered, 8, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12i. GENOLUTION SET ORDERING, on a real abyssal-heavy fit. Numbers read from pyfa by the user.
+//      An implant set does NOT hand a bonus to the ship — it multiplies each MEMBER'S OWN bonus
+//      attribute, and the member's ordinary effect then carries the amplified value across. Getting
+//      that order wrong leaves only one option, applying the difference as a second modifier, and a
+//      second op6 COMPOUNDS instead of combining: CA-2's +1.5% CPU at a set product of 3.276 became
+//      1.015 x 1.03414 rather than a single 1.04914.
+//
+//      The error is a fraction of a percent, which is exactly why it needs pinning — it is invisible
+//      on every stat except this one, where the whole question is whether the last module fits.
+//
+//      This is also the suite's first MUTATED-module baseline: eight of these modules are abyssal,
+//      so it doubles as proof that the EFT mutation blocks survive the parse into the engine. A
+//      dropped mutation moves CPU/PG by tens of units, not hundredths.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nGENOLUTION SET / ABYSSAL FITTING');
+  const CURSE = `[Curse, abucurse MOD v2 vs]
+
+Federation Navy 800mm Steel Plates [1]
+Corelum C-Type Multispectrum Energized Membrane
+Corpum B-Type Multispectrum Energized Membrane
+Medium Ancillary Armor Repairer, Nanite Repair Paste [2]
+
+Corelum B-Type 50MN Microwarpdrive [3]
+Tracking Disruptor II, Optimal Range Disruption Script
+Tracking Disruptor II, Optimal Range Disruption Script
+True Sansha Medium Capacitor Booster, Navy Cap Booster 800
+Guidance Disruptor II, Missile Range Disruption Script
+Guidance Disruptor II, Missile Range Disruption Script
+
+Corpum A-Type Medium Energy Neutralizer [4]
+Corpii A-Type Small Energy Neutralizer [5]
+Corpum B-Type Medium Energy Neutralizer [6]
+Corpii A-Type Small Energy Neutralizer [7]
+Corpum C-Type Medium Energy Neutralizer [8]
+
+Medium Egress Port Maximizer II
+Medium Ancillary Current Router II
+
+
+Caldari Navy Vespa x5
+Infiltrator II x5
+Vespa EC-600 x5
+
+
+Genolution Core Augmentation CA-1
+Genolution Core Augmentation CA-4
+Genolution Core Augmentation CA-3
+Genolution Core Augmentation CA-2
+Low-grade Snake Epsilon
+Eifyr and Co. 'Rogue' Navigation NN-605
+Eifyr and Co. 'Rogue' Evasive Maneuvering EM-705
+Zor's Custom Navigation Hyper-Link
+Eifyr and Co. 'Gunslinger' Surgical Strike SS-903
+Zainou 'Deadeye' Rapid Launch RL-1003
+
+Antipharmakon Aeolis
+Agency 'Overclocker' SB7 Dose III
+
+
+[1] Federation Navy 800mm Steel Plates
+  Gravid Medium Armor Plate Mutaplasmid
+  armorHPBonusAdd 2961.0, cpu 22.90375, massAddition 720450.0, power 222.203
+[2] Medium Ancillary Armor Repairer
+  Unstable Medium Ancillary Armor Repairer Mutaplasmid
+  armorDamageAmount 245.1708, capacitorNeed 111.104, cpu 32.4775, duration 11275.2, power 113.976, reloadTime 49992.0
+[3] Corelum B-Type 50MN Microwarpdrive
+  Unstable 50MN Microwarpdrive Mutaplasmid
+  capacitorNeed 204.288, cpu 69.588, power 140.37, signatureRadiusBonus 373.24, speedFactor 525.5976
+[4] Corpum A-Type Medium Energy Neutralizer
+  Unstable Medium Energy Neutralizer Mutaplasmid
+  capacitorNeed 190.8, cpu 18.954, energyNeutralizerAmount 155.376, maxRange 22017.6, power 237.6216
+[5] Corpii A-Type Small Energy Neutralizer
+  Unstable Small Energy Neutralizer Mutaplasmid
+  capacitorNeed 51.012, cpu 9.351, energyNeutralizerAmount 62.986, maxRange 11116.8, power 12.3882
+[6] Corpum B-Type Medium Energy Neutralizer
+  Unstable Medium Energy Neutralizer Mutaplasmid
+  capacitorNeed 172.68, cpu 22.93, energyNeutralizerAmount 187.452, maxRange 18228.0, power 185.787
+[7] Corpii A-Type Small Energy Neutralizer
+  Unstable Small Energy Neutralizer Mutaplasmid
+  capacitorNeed 48.42, cpu 13.334, energyNeutralizerAmount 54.769, maxRange 12182.4, power 11.3256
+[8] Corpum C-Type Medium Energy Neutralizer
+  Unstable Medium Energy Neutralizer Mutaplasmid
+  capacitorNeed 131.16, cpu 24.288, energyNeutralizerAmount 200.736, maxRange 16848.0, power 273.5582`;
+
+  const p = parseEFT(CURSE);
+  const ship = lookupShip(p.shipName);
+  const slots = buildSlotsFromEFT(ship, p.mods, p.subsystems);
+  const mutated = ['high', 'mid', 'low', 'rigs']
+    .flatMap(k => slots[k] ?? []).filter(s => s?.mutaplasmid).length;
+  check('geno', 'all eight abyssal modules kept their rolls', mutated, 8, 0);
+
+  const st = calcFitStats(ship, slots, p.drones ?? [], SKILLS_ALL_V, {
+    implants: p.implantNames ?? [],
+    boosters: (p.boosterNames ?? []).map(n => ({ name: n })),
+  });
+  // Curse base 380 tf / 900 MW; CPU Management V and Power Grid Management V take those to 475 and
+  // 1125; the Ancillary Current Router II adds 15% PG; CA-1/CA-2 each add 1.5% x 3.276.
+  check('geno', 'cpu output', st.cpuTotal, 498.34, 1e-5);
+  check('geno', 'pg output',  st.pgTotal, 1357.32, 1e-5);
+  // What the user actually reads off the fitting bar, and the reason the hundredths matter.
+  check('geno', 'cpu surplus', st.cpuTotal - st.cpuUsed, 3.51, 1e-3);
+  check('geno', 'pg surplus',  st.pgTotal  - st.pgUsed,  4.09, 1e-3);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

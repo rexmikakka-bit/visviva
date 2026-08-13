@@ -2,9 +2,17 @@
 // This code decides what happens to someone's saved fits, so it is covered by the regression suite
 // (see "BACKUP / RESTORE" in src/regression.test.mjs). Do not move it back into the component.
 
-const BACKUP_APP = "visviva";
+const BACKUP_APP = "axis";
+// Files written before the Visviva -> Axis rename carry the old tag. Rejecting them would mean a
+// user who reinstalls and restores their only backup is told it isn't a backup file, so import
+// tests membership of this set — never equality with BACKUP_APP.
+const BACKUP_APP_ACCEPTED = ["axis", "visviva"];
 const BACKUP_VERSION = 1;
 const KEY_RE = /^pyfa[-_]/i;
+
+function isBackupApp(app) {
+  return BACKUP_APP_ACCEPTED.includes(String(app ?? "").toLowerCase());
+}
 
 function collect() {
   const data = {};
@@ -63,4 +71,4 @@ function mergeFitsDB(currentRaw, incomingRaw) {
 }
 
 
-export { BACKUP_APP, BACKUP_VERSION, KEY_RE, collect, countFits, buildBackup, mergeFitsDB };
+export { BACKUP_APP, BACKUP_APP_ACCEPTED, isBackupApp, BACKUP_VERSION, KEY_RE, collect, countFits, buildBackup, mergeFitsDB };

@@ -95,7 +95,7 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
 export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice,onNewFit}){
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
     <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Visviva</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       <button onClick={()=>{if(onNewFit)onNewFit();onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
         <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:"&#10133;"}}/>
         <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Pick a hull and start fresh</div></div>
@@ -169,7 +169,7 @@ export function SkillGapSheet({missing,onClose}){
 
 export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,collapsed}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
-  const shipName=activeFit?.ship??"Visviva";
+  const shipName=activeFit?.ship??"Axis";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
   // Restored to its original proportions -- the condensed version saved pixels but read as cramped
   // next to comparable apps. The space is reclaimed by COLLAPSING instead: `collapsed` is driven by
@@ -184,13 +184,13 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
       <div style={{textAlign:"left",minWidth:0}}>
         {/* Uppercase by design -- it reads as a wordmark above the hull name. Hidden when collapsed:
             it is the least useful line once you are deep in a fit.
-            Also hidden when NO fit is open, because the line below it falls back to "Visviva" too —
+            Also hidden when NO fit is open, because the line below it falls back to "Axis" too —
             the eyebrow exists to label the hull name underneath it, and with no hull there is
             nothing to label, just the name printed twice. */}
         {activeFit?.ship&&
         <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",
                      maxHeight:collapsed?0:20,opacity:collapsed?0:1,lineHeight:1.6,overflow:"hidden",marginBottom:collapsed?0:2,
-                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Visviva</div>}
+                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Axis</div>}
         {/* lineHeight 1.2 left the line box 1px shorter than the glyphs need, and `overflow:hidden`
             (there for the ellipsis) then shaved the descenders off names like Apocalypse. */}
         <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.3,whiteSpace:"nowrap",

@@ -12,7 +12,7 @@
 //      really is missing; everything in this file is unaffected either way, since it only ever
 //      calls fetch() — it doesn't care whether the request is served by the WebView or native.
 //
-// Character tokens live in localStorage (visviva_esi_chars), same as everything else this app
+// Character tokens live in localStorage (axis_esi_chars), same as everything else this app
 // persists. Unlike a saved fit, a refresh token is a live credential — bounded by ESI's scopes
 // (it can only read skills and read/write fittings, nothing account- or wallet-affecting), but
 // still a meaningfully different risk class from the rest of what's stored here.
@@ -24,16 +24,16 @@ const ESI_BASE = 'https://esi.evetech.net/latest';
 const SSO_AUTHORIZE_URL = 'https://login.eveonline.com/v2/oauth/authorize/';
 const SSO_TOKEN_URL = 'https://login.eveonline.com/v2/oauth/token';
 
-const CHARS_KEY = 'visviva_esi_chars';
-const ACTIVE_KEY = 'visviva_esi_active';
-const PKCE_KEY = 'visviva_esi_pkce_pending';
+const CHARS_KEY = 'axis_esi_chars';
+const ACTIVE_KEY = 'axis_esi_active';
+const PKCE_KEY = 'axis_esi_pkce_pending';
 
 // ─── Storage ────────────────────────────────────────────────────────────────────
 // Fires whenever linked characters or the active character change, so every mounted ESI UI
 // component stays in sync regardless of which path made the change — needed because the native
 // login flow completes via an appUrlOpen deep-link event (App.jsx), not a page load, so a Settings
 // panel or import/export modal that was already open won't otherwise know to re-read storage.
-const CHANGE_EVENT = 'visviva-esi-change';
+const CHANGE_EVENT = 'axis-esi-change';
 function notifyChange() { try { window.dispatchEvent(new Event(CHANGE_EVENT)); } catch {} }
 export function onCharactersChanged(cb) {
   window.addEventListener(CHANGE_EVENT, cb);

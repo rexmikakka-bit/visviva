@@ -82,12 +82,15 @@ openssl pkcs12 -in distribution.p12 -info -nokeys -legacy | grep -i "MAC:\|PKCS7
 
 Still under **Certificates, IDs & Profiles**:
 
-1. **Identifiers → +** → App IDs → App. Description: `Vis Viva`. Bundle ID: **Explicit**,
+1. **Identifiers → +** → App IDs → App. Description: `Axis`. Bundle ID: **Explicit**,
    `com.rexmikakka.visviva` — this must match `appId` in `capacitor.config.json` exactly. No
-   capabilities need enabling.
+   capabilities need enabling. **The bundle ID deliberately still says `visviva`**: the app was
+   renamed Visviva → Axis, but a bundle ID is permanent — changing it orphans the App Store Connect
+   record, the provisioning profile and every TestFlight tester, and forces Android users to
+   uninstall/reinstall. It is never shown to a user. Do not "tidy" it.
 2. **Profiles → +** → Distribution → **App Store Connect** → select that App ID → select the
-   certificate from step B → name it something you will recognise (e.g. `VisViva App Store`) →
-   download `VisViva_App_Store.mobileprovision`.
+   certificate from step B → name it something you will recognise (e.g. `Axis App Store`) →
+   download the `.mobileprovision`.
 
 The workflow reads the profile's name and UUID out of the file itself, so there is nothing to
 copy down here.
@@ -97,8 +100,12 @@ copy down here.
 ## D. App Store Connect
 
 1. **appstoreconnect.apple.com → Apps → +** → New App. Platform iOS, the same bundle ID,
-   SKU anything (e.g. `visviva`), name `Vis Viva`. **The app record must exist before the first
+   SKU anything (e.g. `axis`), name `Axis`. **The app record must exist before the first
    upload** — the upload fails otherwise.
+
+   If the record already exists under the old name `Vis Viva`, rename it in **App Store Connect →
+   your app → App Information → Name**. That field, not the bundle ID, is what users see on the
+   App Store; it takes effect with the next submitted version.
 2. **Users and Access → Integrations → App Store Connect API → Team Keys → +**. Name it
    `GitHub Actions`, role **App Manager**. Download `AuthKey_XXXXXXXXXX.p8` — Apple lets you
    download it exactly once. Note the **Key ID** (in the filename) and the **Issuer ID** (shown
@@ -114,7 +121,7 @@ Settings → Secrets and variables → Actions → New repository secret, for ea
 | --- | --- |
 | `IOS_DIST_CERT_P12_BASE64` | `base64 -w0 distribution.p12` |
 | `IOS_DIST_CERT_PASSWORD` | the password you chose in step B |
-| `IOS_PROVISIONING_PROFILE_BASE64` | `base64 -w0 VisViva_App_Store.mobileprovision` |
+| `IOS_PROVISIONING_PROFILE_BASE64` | `base64 -w0 <your>.mobileprovision` |
 | `IOS_TEAM_ID` | your ten-character Team ID from step A |
 | `ASC_KEY_ID` | the Key ID from step D (the `XXXXXXXXXX` in the filename) |
 | `ASC_ISSUER_ID` | the Issuer ID UUID from step D |

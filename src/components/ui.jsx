@@ -575,7 +575,7 @@ function getItemSkills(typeID) {
 //
 // fetchPrices serves anything already cached without a network round trip, so re-opening an item —
 // or opening one that was priced as part of the fit total — is instant and works offline.
-const PRICE_HUB_KEY='visviva_pricehub', PRICE_SOURCE_KEY='visviva_pricesource';
+const PRICE_HUB_KEY='axis_pricehub', PRICE_SOURCE_KEY='axis_pricesource';
 function ItemPrice({typeID}) {
   const[state,setState]=useState({status:'loading',value:null,hub:'Jita'});
   useEffect(()=>{
@@ -788,14 +788,15 @@ const hasDelta = st => st.delta != null && st.delta !== 0;
 
 // A delta, as a direction and a magnitude rather than a signed number in brackets.
 //
-// `dir` encodes EFFECTIVE direction — ▲ means this attribute is better on this variant, ▼ means
-// worse. For higher-is-better stats (DPS, shield HP) that matches the raw delta sign, but for
-// lower-is-better ones (resonances = resists) the raw number drops while the resist displayed to the
-// player rises — so the callers flip the sign when `better` is known rather than passing raw sign
-// unconditionally.  When `better === null` (CCP has no opinion) the raw sign is passed through so
-// the direction still gives some information, just without a colour judgement.
+// The two halves say different things, and keeping them separate is what makes the mark readable:
+// `dir` is which way the NUMBER PRINTED NEXT TO IT moved, `better` is whether that is good news.
+// A variant with less CPU is ▼ and green. Collapsing the two — pointing ▲ whenever a change is
+// beneficial — reads as "this variant uses more CPU" at a glance and is worse than no arrow.
 //
-// `better === null` also covers the "no change" case, which the `=` branch renders.
+// The one apparent exception isn't one: resonances are stored inverted but DISPLAYED as resists, so
+// there the caller passes the direction the resist moved, which is still the printed number.
+//
+// `better === null` means no judgement (CCP has no opinion, or nothing changed — the `=` branch).
 function DeltaMark({dir, text, better}) {
   const color = better == null ? C.textMute : (better ? C.rig : C.danger);
   if (!dir) return <span style={{color:C.textMid,fontSize:10,marginLeft:3}} title="same as fitted">=</span>;
@@ -823,15 +824,14 @@ function FitCostDelta({typeID, baseTypeID}) {
   const num  = {color:C.text,fontWeight:700};
   const part = (key, Glyph, val, base, unit) => {
     const d = val - base;
-    // Lower pg/cpu/calib = better → ▲ when d < 0 (flip raw sign so ▲ always means "beneficial").
-    const dir = d < 0 ? 1 : d > 0 ? -1 : 0;
     return (
       <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}`}>
         <span style={{display:"inline-flex",alignItems:"center",gap:3.5}}>
           <Glyph size={g}/><span style={num}>{fmtResource(val)}</span>
         </span>
-        {/* Fitting cost is always lower-is-better, whatever the attribute's own highIsGood says. */}
-        {baseTypeID != null && <DeltaMark dir={dir} text={fmtResource(Math.abs(d))} better={d ? d < 0 : null}/>}
+        {/* Fitting cost is always lower-is-better, whatever the attribute's own highIsGood says —
+            but that belongs in the COLOUR. The arrow tracks the number, so cheaper is ▼ and green. */}
+        {baseTypeID != null && <DeltaMark dir={Math.sign(d)} text={fmtResource(Math.abs(d))} better={d ? d < 0 : null}/>}
       </span>
     );
   };

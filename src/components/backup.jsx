@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { C } from "../theme.js";
-import { BACKUP_APP, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
+import { isBackupApp, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
 
 // ── Backup & restore ────────────────────────────────────────────────────────────
 // Fits live in localStorage and NOWHERE else. No git commit protects them; clearing browser data,
@@ -28,13 +28,13 @@ function BackupPanel() {
   // Order: share sheet -> anchor download (desktop web) -> tell the truth and point at Copy.
   const download = async () => {
     const json = buildBackup();
-    const name = `visviva-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    const name = `axis-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const okMsg = `Exported ${mine.fits} fit${mine.fits === 1 ? "" : "s"}.`;
 
     try {
       const file = new File([json], name, { type: "application/json" });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Visviva backup" });
+        await navigator.share({ files: [file], title: "Axis backup" });
         setStatus({ ok: true, msg: okMsg });
         return;
       }
@@ -77,8 +77,8 @@ function BackupPanel() {
     let obj;
     try { obj = JSON.parse(text); }
     catch { setStatus({ ok: false, msg: "That isn't valid JSON." }); return; }
-    if (obj?.app !== BACKUP_APP || !obj?.data) {
-      setStatus({ ok: false, msg: "Not a Visviva backup file." });
+    if (!isBackupApp(obj?.app) || !obj?.data) {
+      setStatus({ ok: false, msg: "Not an Axis backup file." });
       return;
     }
     const c = countFits(obj.data["pyfa-fitsdb"]);
@@ -163,7 +163,7 @@ function BackupPanel() {
           <textarea
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
-            placeholder='{"app":"visviva",...}'
+            placeholder='{"app":"axis",...}'
             style={{ width: "100%", minHeight: 70, padding: 8, borderRadius: 8, fontSize: 11,
                      fontFamily: "monospace", background: C.surface, border: `1px solid ${C.border}`,
                      color: C.text, resize: "vertical" }}

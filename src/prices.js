@@ -100,7 +100,7 @@ async function pooled(items, limit, worker) {
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
 
-function cacheKey(hub, source) { return `visviva_price_${source}_${hub}`; }
+function cacheKey(hub, source) { return `axis_price_${source}_${hub}`; }
 
 function loadCache(hub, source) {
   try {

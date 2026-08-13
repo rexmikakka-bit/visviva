@@ -574,6 +574,14 @@ export class Fit {
     //     explosive resist against eos's 92.3.
     this._applyEnvironment();
 
+    // 2e. IMPLANT SET amplification. Also `runTime = 'early'` in pyfa, and for the same structural
+    //     reason as the environment above: the set effect multiplies each member's own BONUS
+    //     attribute, and it is the member's ordinary effect (in step 3) that carries that bonus to
+    //     the ship. Run it afterwards instead and the ship has already taken the un-amplified value,
+    //     leaving only the option of applying the difference as a SECOND modifier — which compounds
+    //     rather than combines. See _amplifyImplantSets.
+    this._amplifyImplantSets();
+
     // 3. Run effects for all non-ship items (modules read skill-modified attrs) (implants, boosters, modules, drones)
     //    The ship runs AFTER skills so skill-scaled ship attrs are ready.
     const nonShipGroups = [
@@ -678,6 +686,46 @@ export class Fit {
   // applies it to the ship, or to modules/charges/drones filtered by required skill, group, or
   // simply carrying a given attribute (which is how the overload effects select overloadable
   // modules).
+  // Implant sets (Snake, Genolution, Thukker, Blood Raider, ORE, Mordu's, warp-speed) each carry an
+  // `implantSet*` multiplier attribute. pyfa's set effects are `filteredItemMultiply` over the other
+  // implants' BONUS attributes — `cpuOutputBonus2 *= implantSetChristmas` — and never touch the ship.
+  // The member's own effect (Effect485/490/...) then propagates the already-amplified bonus.
+  //
+  // Getting the ORDER right is the whole point. A Genolution CA-2 is +1.5% CPU with a set product of
+  // 3.276, so pyfa gives one +4.914% bonus; applying +1.5% and then +3.414% separately instead yields
+  // 1.015 x 1.03414, and a Curse read 498.58 tf of CPU output against pyfa's 498.34.
+  _amplifyImplantSets() {
+    if (this._implants.length < 2) return;
+    // setAttr -> the bonus attributes that set amplifies. Effects route them to the ship; we don't.
+    const SET_BONUS_ATTRS = {
+      implantSetSerpentis:  ['velocityBonus'],
+      implantSetThukker:    ['agilityBonus'],
+      implantSetBloodraider:['durationBonus'],
+      implantSetORE:        ['maxRangeBonus'],
+      implantSetMordus:     ['rangeSkillBonus'],
+      implantSetWarpSpeed:  ['WarpSBonus'],
+      implantSetChristmas:  ['capacitorCapacityBonus', 'capRechargeBonus', 'agilityBonus',
+                             'implantBonusVelocity', 'shieldCapacityBonus', 'armorHpBonus2',
+                             'powerEngineeringOutputBonus', 'cpuOutputBonus2'],
+    };
+    for (const [setAttr, bonusAttrs] of Object.entries(SET_BONUS_ATTRS)) {
+      // Membership is attribute PRESENCE in the raw type data: getBase() returns the attribute's
+      // default (1 for a multiplier), so a non-member would read back as a member with no effect on
+      // the product but every effect on the amplified list.
+      const members = this._implants.filter(i => setAttr in (i._td?.a ?? {}));
+      if (members.length < 2) continue;
+      const setProduct = members.reduce((p, i) => p * (i.getBase(setAttr) ?? 1), 1);
+      if (setProduct === 1) continue;
+      for (const mi of members) {
+        for (const bonusAttr of bonusAttrs) {
+          if (!(bonusAttr in (mi._td?.a ?? {}))) continue;
+          const aid = AID[bonusAttr];
+          if (aid != null) mi.attrs.applyMod(aid, 4, setProduct, true);
+        }
+      }
+    }
+  }
+
   _applyEnvironment() {
     const env = this._environment;
     if (!env) return;
@@ -1252,60 +1300,7 @@ export class Fit {
         }
       }
     }
-    // ── 5b. Implant set bonuses (generic) ──────────────────────────────────────
-    // Many implant sets (Snake/Serpentis, Genolution/Christmas, Thukker, Halo, etc.) carry an
-    // `implantSet*` multiplier attr. Each set member's individual bonus attrs are amplified by the
-    // PRODUCT of all equipped members' multipliers (self-inclusive). Those bonus attrs then feed
-    // ship attrs via op=6 effects the engine already runs at the BASE value, so here we apply only
-    // the EXTRA (amplified − base) as an additional op=6 mod. The set effects are domain=charID
-    // LocationGroupModifiers which the generic dispatcher skips, so they're handled here for all sets.
-    {
-      // setAttr → list of {bonus attr, ship target attr}. Op is PostPercent (op6) for all of these.
-      const SET_BONUS_MAP = {
-        implantSetSerpentis:  [['velocityBonus','maxVelocity']],
-        implantSetThukker:    [['agilityBonus','agility']],
-        implantSetBloodraider:[['durationBonus','duration']],
-        implantSetORE:        [['maxRangeBonus','maxRange']],
-        implantSetMordus:     [['rangeSkillBonus','maxRange']],
-        implantSetWarpSpeed:  [['WarpSBonus','warpSpeedMultiplier']],
-        implantSetChristmas:  [
-          ['capacitorCapacityBonus','capacitorCapacity'],
-          ['capRechargeBonus','rechargeRate'],
-          ['agilityBonus','agility'],
-          ['implantBonusVelocity','maxVelocity'],
-          ['shieldCapacityBonus','shieldCapacity'],
-          ['armorHpBonus2','armorHP'],
-          ['powerEngineeringOutputBonus','powerOutput'],
-          ['cpuOutputBonus2','cpuOutput'],
-        ],
-      };
-      for (const [setAttr, bonusList] of Object.entries(SET_BONUS_MAP)) {
-        // A true set member carries the set multiplier attr in its OWN type data. getBase()
-        // returns the attribute default (1 for multiplier attrs) for items that lack it, so
-        // filtering on getBase would wrongly include non-members (e.g. NN-605, which has no
-        // implantSetChristmas) and amplify their bonus attrs. Check raw type data presence.
-        const hasSetAttr = (i) => {
-          const a = i._td?.a ?? {};
-          return setAttr in a;
-        };
-        const members = imp.filter(hasSetAttr);
-        if (members.length < 2) continue; // set bonus needs ≥2 members
-        const setProduct = members.reduce((p, i) => p * (i.getBase(setAttr) ?? 1), 1);
-        if (setProduct === 1) continue;
-        for (const [bonusAttr, shipAttr] of bonusList) {
-          for (const mi of members) {
-            // Only count the bonus attr if the member explicitly carries it (same default caveat).
-            if (!(bonusAttr in (mi._td?.a ?? {}))) continue;
-            const rawBonus = mi.getBase(bonusAttr) ?? 0;
-            if (rawBonus === 0) continue;
-            // Engine already applied rawBonus via the bonus attr's op6 effect. Apply the extra.
-            const extra = rawBonus * setProduct - rawBonus;
-            if (extra !== 0) ship.attrs.applyMod(AID[shipAttr] ?? shipAttr, 6, extra, true);
-          }
-        }
-      }
-    }
-
+    // ── 5b. Generic implant set bonuses — moved EARLY, see _amplifyImplantSets ─
 
     // ── 5c. Hydra implant set ────────────────────────────────────────────────────
     // Unlike the ship-attr sets above, Hydra's per-member bonuses target the loaded MISSILE

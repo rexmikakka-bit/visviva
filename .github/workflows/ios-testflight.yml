@@ -240,7 +240,7 @@ jobs:
       - name: Upload the .ipa as a build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VisViva-${{ inputs.marketing_version }}-${{ github.run_number }}
+          name: Axis-${{ inputs.marketing_version }}-${{ github.run_number }}
           path: ${{ runner.temp }}/export/*.ipa
           if-no-files-found: error
 

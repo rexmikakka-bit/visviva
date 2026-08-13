@@ -1,4 +1,17 @@
-# Vis Viva — EVE Online fitting calculator (mobile)
+# Axis — EVE Online fitting calculator (mobile)
+
+> **Renamed from "Vis Viva" / "Visviva" to "Axis".** Everything a user sees says Axis. Three things
+> deliberately still say `visviva` and must NOT be "cleaned up":
+>
+> | Still `visviva` | Why |
+> | --- | --- |
+> | Bundle ID `com.rexmikakka.visviva` (Android `applicationId` + namespace, Java package, iOS bundle ID, `strings.xml` `package_name`/`custom_url_scheme`) | Permanent identity. Changing it makes Android treat the app as a brand-new install (no update path, all local data lost) and orphans the App Store Connect record, provisioning profile and TestFlight testers. Never user-visible. |
+> | ESI deep link `eveauth-visviva://auth-callback` (`esi-config.js`, `AndroidManifest.xml`, `patch-ios-project.sh`) | Registered as a Callback URL on the EVE developer application. Changing it breaks ESI login until it is re-registered AND every install updates. Never user-visible. |
+> | The GitHub repo / clone URL | Not renamed yet. |
+>
+> localStorage keys DID move `visviva_*` → `axis_*`, carried by storage migration **v1 → v2**
+> (`lib/storage-migrate.js`). Saved fits were always `pyfa-*` and were untouched. Backup files now
+> tag `"app": "axis"` but `isBackupApp()` still accepts `"visviva"`, so old backups restore.
 
 A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It reimplements pyfa's dogma
 engine in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
@@ -27,7 +40,7 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 | `src/dogma-engine.js` | The dogma engine: attribute pools, stacking penalties, effect dispatch, custom handlers. ~1000 lines. |
 | `src/dogma-engine-init.js` | Loads the dogma bundles and calls `initEngine()`. Works in **both** Vite and Node. |
 | `src/calc.js` | Turns a fit + engine output into displayed stats (DPS, tank, cap, resists, graph data). |
-| `src/App.jsx` | The entire UI. ~4,400 lines — see "merge hazards" below. |
+| `src/App.jsx` | State, effects and composition only (~580 lines). The views live in `src/components/`. |
 | `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
 | `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
 | `src/lib/ship-taxonomy.js` | The nested ship-browser menu (Battleships > Faction Battleships > Pirate Faction). Pure + derived — see "ship browser taxonomy" below. |
@@ -387,6 +400,24 @@ Shield Emission Systems — so remote reps cycle FASTER. As with Mimesis, only t
 (Effect8017, domain=charID) was missing: a projected Nestor's Large Remote Armor Repairer II read
 141.62 HP/s against eos's 157.28.
 
+### ⚠️ A set amplifies the MEMBER'S bonus attribute, and it must run EARLY
+
+Every implant set — the five above and the generic ones (Snake, Genolution, Thukker, Blood Raider,
+ORE, Mordu's, warp-speed) handled by `_amplifyImplantSets` — works the same way in pyfa: the set
+effect is a `filteredItemMultiply` over the *other implants'* bonus attributes
+(`cpuOutputBonus2 *= implantSetChristmas`), marked `runTime='early'`, and it never touches the ship.
+It is the member's own ordinary effect (485/490/...) that carries the already-amplified bonus across.
+
+The generic sets used to be handled after the effect pass, which left only one option: apply the
+difference (`raw × product − raw`) as a *second* modifier on the ship attribute. **A second op6
+compounds — it does not combine.** A Genolution CA-2 is +1.5% CPU at a set product of 3.276, so pyfa
+gives one `+4.914%` while we gave `1.015 × 1.03414`, and a Curse read 498.58 tf of CPU output against
+pyfa's 498.34. Under a percent, invisible everywhere except the fitting bar, where it decides whether
+the last module fits. Pinned in `regression.test.mjs` section 12i (also the suite's first
+mutated-module baseline).
+
+If you add a set, amplify the bonus attr on the implant before step 3 — never patch the ship after.
+
 ### ⚠️ Incoming remote reps have DIMINISHING RETURNS
 
 Remote reps do not add up linearly — eos's `Fit.__getAppliedRr` scales each source down as the total
@@ -586,13 +617,14 @@ Astarte's tank to rise to ~1768.
   handler in `dogma-engine.js`. Only ONE hand patch remains: **effect 12887**, which CCP ships with an
   empty modifier list.
 
-- **`App.jsx` is 4,400 lines and everyone touches it.** Two people editing it in parallel is a
-  guaranteed conflict. It has obvious seams already (`GraphTab`, `ResourceStrip`, `ModuleBrowser`,
-  `SettingsOverlay`, `ModuleVariationsTab`) — splitting it into files is the single biggest reduction
-  in merge pain available.
+- **The `App.jsx` split already happened.** It was ~4,400 lines; it is now 583 and holds state,
+  effects and composition only. The UI lives in `src/components/` (`ui.jsx`, `tabs.jsx`,
+  `GraphTab.jsx`, `snapshot.jsx`, `effects.jsx`, `FittingsScreen.jsx`, …) and `src/lib/`. Do not
+  reintroduce view code into `App.jsx`. `calc.js` (3,265) and `ui.jsx` (1,517) are now the two
+  files most likely to conflict.
 
-- **Prefer targeted diffs over whole-file rewrites.** An agent handing back a full 4,400-line
-  `App.jsx` will silently revert whatever a teammate changed in the meantime.
+- **Prefer targeted diffs over whole-file rewrites.** An agent handing back a whole file silently
+  reverts whatever a teammate changed in the meantime.
 
 ---
 

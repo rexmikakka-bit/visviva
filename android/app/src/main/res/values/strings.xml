@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Visviva</string>
-    <string name="title_activity_main">Visviva</string>
+    <string name="app_name">Axis</string>
+    <string name="title_activity_main">Axis</string>
     <string name="package_name">com.rexmikakka.visviva</string>
     <string name="custom_url_scheme">com.rexmikakka.visviva</string>
 </resources>

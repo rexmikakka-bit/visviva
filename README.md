@@ -1,8 +1,12 @@
-# Vis Viva
+# Axis
 
 An EVE Online ship-fitting calculator for mobile. React + Vite. It reimplements pyfa's dogma engine
 in JavaScript, and **pyfa v2.68.0 (EVE client build 3424810) is the reference implementation** — when
 our numbers disagree with pyfa, we are wrong until proven otherwise.
+
+Formerly *Vis Viva*. The repository, the app bundle ID (`com.rexmikakka.visviva`) and the ESI
+callback scheme (`eveauth-visviva://`) deliberately keep the old name — renaming those breaks the
+update path for existing installs and the registered ESI callback, and none of them are user-visible.
 
 ## Getting started
 
@@ -10,7 +14,7 @@ our numbers disagree with pyfa, we are wrong until proven otherwise.
 git clone https://github.com/rexmikakka-bit/visviva.git
 cd visviva
 npm install
-npm test        # ALL 55 REGRESSION CHECKS PASSED  <- if this fails, stop and ask
+npm test        # ALL 386 REGRESSION CHECKS PASSED  <- if this fails, stop and ask
 npm run dev
 ```
 

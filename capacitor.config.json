@@ -1,6 +1,6 @@
 {
   "appId": "com.rexmikakka.visviva",
-  "appName": "Visviva",
+  "appName": "Axis",
   "webDir": "dist",
   "backgroundColor": "#0e0e10",
   "plugins": {
@@ -8,7 +8,7 @@
       "enabled": true
     },
     "SplashScreen": {
-      "launchShowDuration": 600,
+      "launchShowDuration": 3000,
       "backgroundColor": "#0e0e10",
       "showSpinner": false,
       "androidScaleType": "CENTER_CROP",

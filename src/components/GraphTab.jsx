@@ -597,7 +597,7 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
 // landing correctly the whole time; nothing read them back until a full page reload, which is why
 // the workbench appeared not to persist at all. The panel is keyed on the sub-tab in
 // FittingsScreen, so it remounts every time you swipe away and back — this runs on each of those.
-const GRAPH_PREFS_KEY='visviva_graph_prefs';
+const GRAPH_PREFS_KEY='axis_graph_prefs';
 function loadGraphPrefs(){
   try{return JSON.parse(localStorage.getItem(GRAPH_PREFS_KEY)||'{}')??{};}catch{return {};}
 }

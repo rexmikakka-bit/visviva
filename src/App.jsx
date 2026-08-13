@@ -19,10 +19,10 @@ import { FitTabs } from "./components/FitTabs.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import * as esi from "./lib/esi.js";
 
-const IMPLANT_LOADOUTS_KEY = 'visviva_implant_loadouts';
-const OPEN_TABS_KEY = 'visviva_open_tabs';
-const NEW_TAB_PREF_KEY = 'visviva_open_in_new_tab';
-const RECENT_FITS_KEY = 'visviva_recent_fits';
+const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
+const OPEN_TABS_KEY = 'axis_open_tabs';
+const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
+const RECENT_FITS_KEY = 'axis_recent_fits';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -131,10 +131,10 @@ export default function App(){
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
-  const[priceHub,setPriceHub]=useState(()=>{try{return localStorage.getItem('visviva_pricehub')??'Jita';}catch{return 'Jita';}});
-  useEffect(()=>{try{localStorage.setItem('visviva_pricehub',priceHub);}catch{}},[priceHub]);
-  const[priceSource,setPriceSource]=useState(()=>{try{return localStorage.getItem('visviva_pricesource')??'fuzzwork';}catch{return 'fuzzwork';}});
-  useEffect(()=>{try{localStorage.setItem('visviva_pricesource',priceSource);}catch{}},[priceSource]);
+  const[priceHub,setPriceHub]=useState(()=>{try{return localStorage.getItem('axis_pricehub')??'Jita';}catch{return 'Jita';}});
+  useEffect(()=>{try{localStorage.setItem('axis_pricehub',priceHub);}catch{}},[priceHub]);
+  const[priceSource,setPriceSource]=useState(()=>{try{return localStorage.getItem('axis_pricesource')??'fuzzwork';}catch{return 'fuzzwork';}});
+  useEffect(()=>{try{localStorage.setItem('axis_pricesource',priceSource);}catch{}},[priceSource]);
   const[projFits,setProjFits]=useState(initialFit?.projFits??[]);
   const[cmdFits,setCmdFits]=useState(initialFit?.cmdFits??[]);
   const[skills,setSkills]=useState(()=>{try{const s=localStorage.getItem("pyfa-skills");if(s)return{...SKILL_DEFAULTS,...JSON.parse(s)};}catch{}return SKILL_DEFAULTS;});
@@ -248,7 +248,7 @@ export default function App(){
       const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
       return cs?.fighterDetails ?? [];
     }catch{ return []; }
-  },[activeFit,slots,drones,skills,implants,boosters,fighters,dmgProfile]);
+  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,fighters,dmgProfile]);
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
   const[fittingsView,setFittingsView]=useState(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   const[showShipInfo,setShowShipInfo]=useState(false);
@@ -428,7 +428,7 @@ export default function App(){
   const _fitSnapshot=useMemo(()=>({slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits}),
     [slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits]);
   useEffect(()=>{
-    const key=activeFit?`${activeFit.ship} ${activeFit.fitName}`:null;
+    const key=activeFit?`${activeFit.ship}\0${activeFit.fitName}`:null;
     const prev=_undoPrev.current;
     _undoPrev.current=_fitSnapshot;
     // Switching fits (or the first load) replaces all eight values at once. That is not an edit —
