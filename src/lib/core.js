@@ -141,6 +141,9 @@ import { DRONE_TYPES } from "../dogma-engine-init.js";
 // If data-bundle.js is missing the app still works; features using this data just show empty
 let moduleVariations = {}, shipTraits = {}, implantData = {};
 let shipsByClass = {}, slotIcons = {}, raceIcons = {}, navIcons = {};
+// pyfa imgs/gui/slot_subsystem_small.png — the pentagon of five bent strokes EVE uses for a
+// subsystem slot. Inlined because the other four slot icons are inline data URIs too.
+const SUBSYSTEM_SLOT_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAA8UlEQVR42q3BA0xwYRiA0ee99/ttM0tz0pQ0JY159vKsptyUpdmIs9WalG3btnkOz+ideEsAJijxkADsEC6QD5mzO0s7H8txbVxY2imbwps3nPMhvTey51WdpOOtR78rW9h5VY81Z8Q0c+hFIZ68RgGfHFvf1uCOcErnKzZ84sQr/vOZU2++FEggijPvP+VoEbzgmNPs9utqfnDmfWKvfTsmHBG/tZ3vDXzjhIhj8ZRfB7Yce/0uu2tDT0QHQHgd2RbdJ9G85pQSd/6pBC0K43cZmIodlmhcov7Ujm5VzNXPSwg3eKOSzBpwQeNGguJh9gA8dDZR6aX2XQAAAABJRU5ErkJggg==';
 let _bundleReady = false;
 const _bundleListeners = [];
 // NOTE: do NOT add /* @vite-ignore */ here. It used to be there, and it meant Vite left the path
@@ -157,7 +160,11 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
   shipTraits       = m.shipTraits       ?? {};
   implantData      = m.implantData      ?? {};
   shipsByClass     = m.shipsByClass     ?? {};
-  slotIcons        = m.slotIcons        ?? {};
+  // data-bundle.js ships only high/mid/low/rig, so a T3 cruiser's Subsystems header rendered an
+  // empty box. Sourced from pyfa's imgs/gui/slot_subsystem_small.png, the same file the other
+  // four came from — verified byte-identical for all four before adding this one, so the set
+  // stays visually consistent. Merged HERE rather than into the bundle, which is generated.
+  slotIcons        = { ...(m.slotIcons ?? {}), subsystem: SUBSYSTEM_SLOT_ICON };
   raceIcons        = m.raceIcons        ?? {};
   navIcons         = m.navIcons         ?? {};
   // The bundle's ship-browser list predates newer hulls (Lancer Dreadnoughts, etc.), so any ship it
@@ -423,7 +430,10 @@ function computeDisplayRows(mods,secKey,grouped){
   const seen=new Map();
   mods.forEach(m=>{
     if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
-    const key=m.mutaplasmid?`__abyssal_${m.id}`:(m.ammo?`${m.name}||${m.ammo}`:m.name);
+    // `orphan` is part of the key: a module stranded by a subsystem swap must never merge into
+    // a group with a live one of the same name, or the red 'no longer have this slot' marking
+    // would apply to both — or to neither, depending which landed first.
+    const key=m.mutaplasmid?`__abyssal_${m.id}`:`${m.orphan?'__orphan_':''}${m.ammo?`${m.name}||${m.ammo}`:m.name}`;
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
     else seen.set(key,{...m,count:1,groupIds:[m.id]});
   });

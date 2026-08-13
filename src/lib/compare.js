@@ -76,6 +76,34 @@ const ID_VALUED_RE = /^(canFitShipType\d+|canFitShipGroup\d+|chargeGroup\d+|fits
  */
 const NPC_FACING_RE = /^entityCapacitorLevel/;
 
+/**
+ * SUBSYSTEMS are compared only on what they do to the fit's capacity.
+ *
+ * A T3 cruiser subsystem carries ~97 attributes, and the ones that actually vary between siblings
+ * are mostly `subsystemBonusMinmatarCore2` and friends — prescale values for the hull's trait
+ * bonuses, which mean nothing on their own and are already spelled out in the ship's trait panel.
+ * What you are really choosing between when you swap a subsystem is the SLOT LAYOUT and the fitting
+ * room, so that is all this shows: slots, hardpoints, CPU and powergrid.
+ *
+ * An allowlist rather than more exclusions, because the noise here is the overwhelming majority —
+ * blocking it item by item would mean listing ~88 attributes and re-listing every one CCP adds.
+ *
+ * Deliberately NOT included: the `subsystem*FittingReduction` family (per-module-type cost cuts for
+ * energy turrets, missiles, remote reps and so on). They do affect whether a fit fits, but they are
+ * a discount on one module class rather than a change to the ship's available fitting, and there
+ * are eight of them — enough to drown the four numbers that matter.
+ */
+const SUBSYSTEM_CATEGORY = 32;
+const SUBSYSTEM_FITTING_ATTRS = new Set([
+  'hiSlotModifier', 'medSlotModifier', 'lowSlotModifier',
+  'turretHardPointModifier', 'launcherHardPointModifier',
+  'cpuOutput', 'cpuOutputBonus2', 'powerOutput', 'powerEngineeringOutputBonus',
+]);
+function isSubsystem(typeID) {
+  const td = TYPES[typeID] ?? TYPES[String(typeID)];
+  return td?.c === SUBSYSTEM_CATEGORY;
+}
+
 /** The runtime attribute map for a type, keyed by attribute NAME. */
 function attrsOf(typeID) {
   const td = TYPES[typeID] ?? TYPES[String(typeID)];
@@ -95,9 +123,15 @@ function attrsOf(typeID) {
 export function differingAttributes(typeIDs, { limit = 6 } = {}) {
   const ids = [...new Set(typeIDs.filter(Boolean))];
   if (ids.length < 2) return [];
+  // Subsystems get an ALLOWLIST rather than the usual exclusions — see SUBSYSTEM_FITTING_ATTRS. The
+  // cap is lifted with it: the allowlist is nine attributes long, so there is nothing to crowd out,
+  // and truncating at six could hide a slot change, which is the most important row here.
+  const subsystemMode = ids.every(isSubsystem);
+  const cap = subsystemMode ? Math.max(limit, SUBSYSTEM_FITTING_ATTRS.size) : limit;
   const maps = ids.map(attrsOf);
   const keys = new Set();
   for (const m of maps) for (const k of Object.keys(m)) {
+    if (subsystemMode) { if (SUBSYSTEM_FITTING_ATTRS.has(k)) keys.add(k); continue; }
     if (IGNORED.has(k) || ID_VALUED_RE.test(k) || NPC_FACING_RE.test(k) || /^(meta|tech)Level/i.test(k)) continue;
     if (typeof m[k] === 'number' && Number.isFinite(m[k])) keys.add(k);
   }
@@ -136,7 +170,7 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
       if (prev === undefined) keptStems.set(stem, vec);
     }
     out.push(key);
-    if (out.length >= limit) break;
+    if (out.length >= cap) break;
   }
   return out;
 }

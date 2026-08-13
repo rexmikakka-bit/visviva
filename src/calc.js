@@ -905,7 +905,10 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
   for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
   for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
   const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? []), ...(slots.services ?? [])];
-  const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty').map(slot => {
+  // `!s.orphan` — a module stranded by a subsystem swap is KEPT in the rack so the user does not
+  // lose it, but the ship genuinely no longer has that slot, so it must not contribute CPU, PG,
+  // DPS or tank. Excluded here rather than at the UI, so every consumer of these stats agrees.
+  const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty' && !s.orphan).map(slot => {
     const m = fit.addModule(slot.typeID, slot.state ?? 'active', slot.mutations);
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
     return { slot, fitItem: m };
@@ -1148,7 +1151,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
   for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
   const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? []), ...(slots.services ?? [])];
-  const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty').map(slot => {
+  const modItems = allSlots.filter(s => s.typeID && s.type !== 'empty' && !s.orphan).map(slot => {
     const m = fit.addModule(slot.typeID, slot.state ?? 'active', slot.mutations);
     if (slot.ammo) { const chName = slot.ammo.replace(/\s*\(\d+\)$/, ''); const chTid = typeIDByName(chName) ?? tidByName(chName); if (chTid && TYPES[chTid]) fit.setCharge(m, chTid); }
     return { slot, fitItem: m };
@@ -1360,7 +1363,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     ...(slots.low  ?? []), ...(slots.rigs ?? []),
     ...(slots.services ?? []),
   ];
-  const activeSlots = allSlots.filter(s => s.typeID && s.type !== 'empty');
+  const activeSlots = allSlots.filter(s => s.typeID && s.type !== 'empty' && !s.orphan);
 
   // Add modules — keep reference to module FitItem aligned with slot index
   const modItems = activeSlots.map(slot => {

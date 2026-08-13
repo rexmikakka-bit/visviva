@@ -944,7 +944,13 @@ const MUTA_ATTR_LABELS={boosterEffectChance1:"Side Effect Chance",armorDamageAmo
 // A command burst's four buff slots all carry the same strength, and the compare view keeps
 // whichever one ranks first — so all four need the label, not just slot 1. Without it the row read
 // "Warfare Buff 1 Value 1.25", which names an internal attribute rather than the thing it decides.
-warfareBuff1Value:"Burst Strength",warfareBuff2Value:"Burst Strength",warfareBuff3Value:"Burst Strength",warfareBuff4Value:"Burst Strength",buffDuration:"Burst Duration"};
+warfareBuff1Value:"Burst Strength",warfareBuff2Value:"Burst Strength",warfareBuff3Value:"Burst Strength",warfareBuff4Value:"Burst Strength",buffDuration:"Burst Duration",
+// T3 subsystem fitting deltas. The raw names camel-case into "Hi Slot Modifier" / "Cpu Output
+// Bonus2", which is both ugly and vaguer than the thing itself — you are choosing a slot layout.
+hiSlotModifier:"High Slots",medSlotModifier:"Mid Slots",lowSlotModifier:"Low Slots",
+turretHardPointModifier:"Turret Hardpoints",launcherHardPointModifier:"Launcher Hardpoints",
+cpuOutput:"CPU Output",cpuOutputBonus2:"CPU Bonus",powerOutput:"Powergrid Output",
+powerEngineeringOutputBonus:"Powergrid Bonus"};
 // camelCase -> words, keeping ACRONYMS intact: a naive /([A-Z])/ split turned
 // `boosterArmorHPPenalty` into "Booster Armor H P Penalty". The leading "Booster " is then dropped
 // as redundant — you are already looking at a booster.

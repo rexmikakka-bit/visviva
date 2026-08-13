@@ -75,6 +75,34 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // Subsystems have no ModuleMenu (tapping one opens the swap picker), so their description
   // and sibling list needed their own way in — an info button on the row.
   const[subInfo,setSubInfo]=useState(null);
+  // Swap one subsystem and recompute the rack layout.
+  //
+  // Modules in slots the new subsystem takes away are NOT deleted. They stay in the rack flagged
+  // `orphan`, which renders them red and excludes them from every stat (see calc.js). pyfa behaves
+  // the same way, for the same reason: swapping a Loki's propulsion subsystem to compare numbers
+  // should not silently eat the low slot you had filled, leaving you to reconstruct it from memory.
+  //
+  // Re-absorption is automatic and needs no extra bookkeeping: an orphan lives at its original
+  // index, so if a later swap restores the slot count, the loop below picks it back up as a normal
+  // module and clears the flag.
+  const swapSubsystem=(slotId,sub)=>setSlots(prev=>{
+    const subs=[...(prev.subsystems??[])];
+    const idx=subs.findIndex(s=>s.id===slotId);
+    if(idx>=0)subs[idx]={...subs[idx],name:sub.name,typeID:sub.typeID,type:"subsystem"};
+    const layout=t3cSlotLayout(subs.filter(s=>s.typeID));
+    const isReal=m=>m&&m.typeID&&m.type!=="empty";
+    const label=key=>key==='mid'?'Mid':key==='rigs'?'Rig':key.charAt(0).toUpperCase()+key.slice(1);
+    const fit=(key,count)=>{
+      const cur=prev[key]??[];
+      const out=[];
+      for(let i=0;i<count;i++)
+        out.push(cur[i]?{...cur[i],orphan:false}
+                       :{id:`${key[0]}${i}`,name:`[Empty ${label(key)} Slot]`,icon:null,type:"empty"});
+      for(let i=count;i<cur.length;i++) if(isReal(cur[i])) out.push({...cur[i],orphan:true});
+      return out;
+    };
+    return{...prev,subsystems:subs,high:fit("high",layout.hiSlots),mid:fit("mid",layout.medSlots),low:fit("low",layout.lowSlots),rigs:fit("rigs",layout.rigSlots)};
+  });
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
   const[fitError,setFitError]=useState(null);
@@ -352,7 +380,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 always rendered now, which also means drag-to-reorder and the scroll-into-view on
                 drop no longer have to care whether a section happens to be open. */}
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 4px"}}>
-              <img src={(slotIcons??{})[sec.key==="rigs"?"rig":sec.key]} style={{width:12,height:12,objectFit:"contain",filter:"brightness(10)",marginRight:2}} alt=""/>
+              <img src={(slotIcons??{})[sec.key==="rigs"?"rig":sec.key==="subsystems"?"subsystem":sec.key]} style={{width:12,height:12,objectFit:"contain",filter:"brightness(10)",marginRight:2}} alt=""/>
               <span style={{fontSize:12,fontWeight:700,color:C.text}}>{sec.label}</span>
               <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600}}>{(slots[sec.key]??[]).length}</span>
             </div>
@@ -373,8 +401,14 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 // was selecting.
                 <div key={row.id||row.name} className="no-select"
                 ref={el=>{rowRefs.current[sec.key+":"+rowIdx]=el;}}
-                onClick={()=>sec.key==="subsystems"?setEmptySlot({secKey:"subsystems",id:row.id}):setModuleMenu({secKey:sec.key,modId:row.id})}
-                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,background:isDragOver?C.accentLight:C.surface,border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:C.border}`,borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
+                onClick={()=>sec.key==="subsystems"?setSubInfo({typeID:row.typeID,name:row.name,slotId:row.id}):setModuleMenu({secKey:sec.key,modId:row.id})}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,
+                        // ORPHANED: the ship no longer has this slot after a subsystem swap. Kept
+                        // rather than deleted, and marked hard enough that it cannot be mistaken for
+                        // a fitted module — it contributes nothing to any stat.
+                        background:isDragOver?C.accentLight:row.orphan?`${C.danger}14`:C.surface,
+                        border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:row.orphan?C.danger:C.border}`,
+                        borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
                   <div style={{width:6,height:6,borderRadius:99,background:stateColor,flexShrink:0,boxShadow:row.state==="overheated"?`0 0 6px ${stateColor}`:"none"}}/>
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
@@ -383,11 +417,9 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     <div style={{display:"flex",alignItems:"center",gap:5}}>
                       {row.count>1&&<span style={{fontSize:9,fontWeight:800,color:sec.color,background:`${sec.color}20`,borderRadius:4,padding:"1px 5px"}}>{row.count}x</span>}
                       {row.mutaplasmid&&<span title="Abyssal (mutated) module" style={{fontSize:9,lineHeight:1,fontWeight:800,color:C.danger,background:`${C.danger}22`,border:`1px solid ${C.danger}`,borderRadius:4,padding:"2px 4px",flexShrink:0,display:"inline-flex",alignItems:"center"}}>▲</span>}
-                      <span style={{fontSize:12,fontWeight:600,color:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
-                      {/* Tapping a subsystem row opens the swap picker, so its description and the
-                          rest of its family had no route in. Modules reach both through ModuleMenu. */}
-                      {sec.key==="subsystems"&&row.typeID&&
-                        <InfoButton title={`${row.name} info`} onClick={e=>{e.stopPropagation();setSubInfo({typeID:row.typeID,name:row.name});}}/>}
+                      <span style={{fontSize:12,fontWeight:600,color:row.orphan?C.danger:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
+                      {/* Colour alone would just look like an error. Say what happened. */}
+                      {row.orphan&&<span title="This slot was removed by a subsystem change. The module is kept here so you don't lose it, but it isn't fitted and doesn't affect any stat." style={{fontSize:9,fontWeight:700,color:C.danger,border:`1px solid ${C.danger}`,borderRadius:4,padding:"0 4px",flexShrink:0,letterSpacing:.3}}>NO SLOT</span>}
                     </div>
                     <div style={{display:"flex",gap:8,marginTop:2}}>
                       {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
@@ -496,19 +528,15 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
         })}
       </div>
       {menuMod&&<ModuleMenu mod={menuMod} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null}/>}
-      {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name} onClose={()=>setSubInfo(null)}/>}
+      {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
+          doing the swapping that used to need a separate picker. */}
+      {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
+        onSwap={v=>swapSubsystem(subInfo.slotId,{name:v.name,typeID:v.typeID})}
+        onClose={()=>setSubInfo(null)}/>}
       {emptySlot&&emptySlot.secKey==="subsystems"&&(
         <SubsystemPickerSheet ship={ship} slotId={emptySlot.id}
           current={(slots.subsystems??[]).find(s=>s.id===emptySlot.id)}
-          onSelect={sub=>{setSlots(prev=>{
-            const subs=[...(prev.subsystems??[])];
-            const idx=subs.findIndex(s=>s.id===emptySlot.id);
-            if(idx>=0)subs[idx]={...subs[idx],name:sub.name,typeID:sub.typeID,type:"subsystem"};
-            // Recompute slot layout from the new subsystem set; preserve filled module slots where possible.
-            const layout=t3cSlotLayout(subs.filter(s=>s.typeID));
-            const fit=(key,count)=>{const cur=prev[key]??[];const out=[];for(let i=0;i<count;i++)out.push(cur[i]??{id:`${key[0]}${i}`,name:`[Empty ${key==='mid'?'Mid':key==='rigs'?'Rig':key.charAt(0).toUpperCase()+key.slice(1)} Slot]`,icon:null,type:"empty"});return out;};
-            return{...prev,subsystems:subs,high:fit("high",layout.hiSlots),mid:fit("mid",layout.medSlots),low:fit("low",layout.lowSlots),rigs:fit("rigs",layout.rigSlots)};
-          });setEmptySlot(null);}}
+          onSelect={sub=>{swapSubsystem(emptySlot.id,sub);setEmptySlot(null);}}
           onClose={()=>setEmptySlot(null)}/>
       )}
       {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)}/>}
