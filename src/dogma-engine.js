@@ -234,6 +234,30 @@ class AttrMap {
   }
 
   get(attrIDorName, _capping = false) {
+    return this._resolve(attrIDorName, null, _capping);
+  }
+
+  /**
+   * What get() WOULD return with one extra PostPercent modifier in the penalised pool.
+   *
+   * Not a convenience — it is the only correct way to PREVIEW a modifier that is not applied yet,
+   * because adding one to a penalised attribute does not simply scale the current value: it takes
+   * a stacking slot, and demotes everything weaker than it by one rank.
+   *
+   * The case that forced it: a module row shows "OH: n km" for a web while it is still cold. That
+   * preview used to be `current * (1 + overloadRangeBonus/100)`, which is only right when nothing
+   * else is boosting the range. Under an Interdiction Maneuvers link a Loki's Domination web reads
+   * 45.1 km cold and the naive preview promised 65.5 km — but actually overheating it gives 63.3,
+   * because the 45% overload bonus outranks the 33.75% burst and pushes the burst into slot two
+   * (x0.8691). The preview was writing a cheque the engine would not cash.
+   *
+   * Shares _resolve with get(), so the preview and the real value cannot disagree about stacking.
+   */
+  getWithExtraPercent(attrIDorName, pct) {
+    return this._resolve(attrIDorName, pct ? 1 + pct / 100 : null, false);
+  }
+
+  _resolve(attrIDorName, extraPenalised, _capping = false) {
     // A numeric string is an attribute ID, NOT a name. Three garbage attrs (1847/1848 named "902",
     // 2018 named "2015") carry purely-numeric names that poison the AID name→id map, so an
     // AID-first lookup of e.g. "2015" resolves to attr 2018 (value 0) instead of attr 2015. Reading
@@ -268,6 +292,9 @@ class AttrMap {
     // the Bane's lance DPS and the Minokawa's EHP, so those modifiers do not compete in this group.
     const stacked0 = applyStacking(base, this._post0[aid] ?? [], aid);
     const penalised = [...(this._post4[aid] ?? []), ...(this._post[aid] ?? [])];
+    // A hypothetical modifier joins the pool BEFORE stacking is applied — that is the whole point:
+    // it has to compete for a slot like any real one.
+    if (extraPenalised != null) penalised.push(extraPenalised);
     const stacked = applyStacking(stacked0, penalised, aid);
     // The 'postPerc' pool stacks within itself (base 1) and multiplies in on top — separate from the
     // main penalised pool, so e.g. a Bastion RoF bonus and an overload RoF bonus penalise each other
@@ -302,6 +329,8 @@ export class DogmaItem {
   }
 
   get(attrName)   { return this.attrs.get(attrName); }
+  // Preview an unapplied PostPercent modifier with correct stacking — see AttrMap.
+  getWithExtraPercent(attrName, pct) { return this.attrs.getWithExtraPercent(attrName, pct); }
   getA(attrID)    { return this.attrs.get(attrID); }
   getBase(n)      { return this.attrs.getBase(n); }
 

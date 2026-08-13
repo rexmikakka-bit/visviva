@@ -1466,6 +1466,72 @@ Republic Fleet Command Mindlink`;
   check('burst', 'links raise EHP materially', linked.totalEHP > bare.totalEHP * 1.15 ? 1 : 0, 1, 0);
 }
 
+// 13m. OVERHEAT PREVIEW UNDER LINKS - the "OH: n km" hint must not lie
+//      A module row previews its overheated range while the module is still cold. That preview is
+//      a HYPOTHETICAL modifier, and on a penalised attribute a new modifier does not just scale
+//      the current value - it takes a stacking slot and demotes everything weaker by a rank.
+//
+//      Validated by hand: a Loki with Domination webs under a Sleipnir's Interdiction Maneuvers
+//      link reads 45.1 km cold and 63.3 km overheated. The old preview multiplied 45.1 by the full
+//      45% overload bonus and promised 65.5 km, because it ignored that overheating pushes the
+//      33.75% burst into the second slot (x0.8691).
+{
+  console.log('\nOVERHEAT PREVIEW UNDER LINKS');
+  const LOKI = `[Loki, web test]
+Loki Core - Immobility Drivers
+Loki Defensive - Adaptive Defense Node
+Loki Offensive - Support Processor
+Loki Propulsion - Intercalated Nanofibers
+
+Damage Control II
+
+Domination Stasis Webifier
+Domination Stasis Webifier
+5MN Y-T8 Compact Microwarpdrive
+`;
+  const SLEIP = `[Sleipnir, skirmish]
+50MN Quad LiF Restrained Microwarpdrive
+
+Skirmish Command Burst II, Interdiction Maneuvers Charge
+
+Medium Command Processor I
+
+
+Republic Fleet Command Mindlink`;
+  const mk = (eft) => { const p = parseEFT(eft); const ship = lookupShip(p.shipName);
+    return { p, ship, slots: buildSlotsFromEFT(ship, p.mods, p.subsystems) }; };
+  const L = mk(LOKI), S = mk(SLEIP);
+  const bursts = computeCommandBursts(S.ship, S.slots, SKILLS_ALL_V, { implants: S.p.implantNames ?? [] });
+  check('oh', 'interdiction maneuvers burst strength', bursts.find(b => b.buffID === 21)?.value ?? 0, 33.75, 1e-9);
+
+  // Returns the first stasis web's {optimal, heatedOptimal} at the given module state.
+  const web = (state, eb) => {
+    const slots = JSON.parse(JSON.stringify(L.slots));
+    for (const sl of slots.mid) if (/Stasis Webifier/.test(sl.name || '')) sl.state = state;
+    const ses = calcFitStats(L.ship, slots, [], SKILLS_ALL_V, eb ? { externalBursts: eb } : {}).slotEngineStats;
+    for (const [sl, v] of (ses instanceof Map ? ses.entries() : Object.entries(ses || {})))
+      if (v && v.optimal != null && /Stasis/.test(sl?.name || '')) return v;
+    return null;
+  };
+
+  const cold = web('active', bursts), hot = web('overheated', bursts);
+  check('oh', 'linked web cold range', cold.optimal, 45.1, 1e-4);
+  check('oh', 'linked web overheated range', hot.optimal, 63.3, 1e-4);
+  // THE invariant: what the hint promises is what toggling overheat actually delivers.
+  check('oh', 'preview equals the real overheated value', cold.heatedOptimal, hot.optimal, 1e-9);
+  // ...and it is not simply the old naive multiply, which is what regressing would restore.
+  check('oh', 'preview is not the naive multiply',
+        Math.abs(cold.heatedOptimal - cold.optimal * 1.45) > 1 ? 1 : 0, 1, 0);
+
+  // With nothing else in the pool the overload IS the only modifier, so the correct answer and the
+  // naive one coincide - the fix must not disturb the ordinary case.
+  const cold2 = web('active', null), hot2 = web('overheated', null);
+  check('oh', 'unlinked web cold range', cold2.optimal, 33.8, 1e-4);
+  check('oh', 'unlinked preview equals real overheated', cold2.heatedOptimal, hot2.optimal, 1e-9);
+  check('oh', 'unlinked preview still matches the naive multiply',
+        Math.abs(cold2.heatedOptimal - cold2.optimal * 1.45) < 0.15 ? 1 : 0, 1, 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 13k. ESI SKILL SYNC — a character's sheet must be AUTHORITATIVE
 //      ESI's /skills/ lists only what is TRAINED; an untrained skill is absent. In this app an

@@ -2581,7 +2581,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     let heatedRange = null;
     const overloadRangeBonus = fitItem.get('overloadRangeBonus') ?? 0;
     if (overloadRangeBonus && !isOverheated(slot.state)) {
-      heatedRange = maxRange * (1 + overloadRangeBonus / 100);
+      // NOT `maxRange * (1 + bonus/100)`. maxRange is already stacked, and the overload bonus is a
+      // PostPercent that would land in that same penalised pool — so applying it on top double-
+      // counts the slot it takes. Under an Interdiction Maneuvers link a Loki's Domination web
+      // reads 45.1 km cold; the naive form promised 65.5 km against the 63.3 you actually get,
+      // because overheating demotes the burst to the second stacking slot. getWithExtraPercent
+      // resolves the attribute with the bonus IN the pool, through the same code path as the real
+      // overheated value, so the preview and the toggled state now agree by construction.
+      heatedRange = fitItem.getWithExtraPercent('maxRange', overloadRangeBonus);
     }
     slotEngineStats.set(slot, {
       optimal:  Math.round(maxRange / 1000 * 10) / 10,
