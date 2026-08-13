@@ -60,6 +60,21 @@ function checkFitRestriction(modTypeID, ship) {
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
+// A module stranded by a subsystem swap sits past the end of its rack flagged `orphan`. Freeing a real
+// slot in that rack pulls the first one back in, so making room by deleting something else is enough
+// to recover it — previously the only way was to delete the stranded module and re-add it by hand.
+const reabsorbOrphans=arr=>{
+  if(!arr.some(m=>m.orphan))return arr;
+  const out=[...arr];
+  for(;;){
+    const free=out.findIndex(m=>!m.orphan&&m.type==="empty");
+    const orph=out.findIndex(m=>m.orphan);
+    if(free<0||orph<0)return out;
+    out[free]={...out[orph],id:out[free].id,orphan:false};
+    out.splice(orph,1);
+  }
+};
+
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -254,9 +269,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     });if(!keepOpen)setModuleMenu(null);
   };
   const removeMod=(secKey,modId)=>{
-    const ship_=ship??{};
-    const labels={high:"High",mid:"Mid",low:"Low",rigs:"Rig"};
-    setSlots(prev=>({...prev,[secKey]:prev[secKey].map(m=>m.id===modId?{id:m.id,name:`[Empty ${labels[secKey]} Slot]`,icon:null,type:"empty"}:m)}));
+    const labels={high:"High",mid:"Mid",low:"Low",rigs:"Rig",services:"Service"};
+    setSlots(prev=>{
+      const arr=[];
+      for(const m of prev[secKey]??[]){
+        // Deleting an ORPHAN leaves nothing behind — the ship has no such slot, so an empty
+        // placeholder in its place would offer a slot the fit does not actually have.
+        if(m.id===modId&&m.orphan)continue;
+        arr.push(m.id===modId?{id:m.id,name:`[Empty ${labels[secKey]} Slot]`,icon:null,type:"empty"}:m);
+      }
+      return{...prev,[secKey]:reabsorbOrphans(arr)};
+    });
   };
   const duplicateMod=(secKey,mod)=>{
     const empty=slots[secKey].find(m=>m.type==="empty");
