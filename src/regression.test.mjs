@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, isTurret, isLauncher, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -1928,16 +1928,17 @@ Republic Fleet Command Mindlink`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 13c. HARDPOINT CLASSIFICATION — the resource strip's turret/launcher dots
-//      These counters used to carry their own list of three turret groups, which silently omitted
-//      Precursor Weapons (an entropic disintegrator used no turret hardpoint on a Vedmak), Mining
-//      Lasers and Vorton Projectors. They now go through the engine's own predicates, so this pins
-//      that the two stay in agreement.
+//      Hardpoint usage is CCP's turretFitted (42) / launcherFitted (40) marker effects and nothing
+//      else — the rule pyfa's Module.__calculateHardpoint uses. Group names and weapon class are
+//      NOT the signal, and each wrong guess cost a real slot: a hand-written list of three turret
+//      groups let an entropic disintegrator use no turret hardpoint on a Vedmak, and "is a missile
+//      weapon" (effect 101 useMissiles) gave a Scan Probe Launcher a launcher hardpoint on a Legion.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nHARDPOINTS');
-  const grp = (n) => { const t = TYPES[tid(n)]; return { gn: t?.gn, e: t?.e }; };
-  const turret = (n) => { const g = grp(n); return isTurret(g.gn) ? 1 : 0; };
-  const launcher = (n) => { const g = grp(n); return isLauncher(g.gn, g.e) ? 1 : 0; };
+  const eff = (n) => TYPES[tid(n)]?.e;
+  const turret = (n) => usesTurretHardpoint(eff(n)) ? 1 : 0;
+  const launcher = (n) => usesLauncherHardpoint(eff(n)) ? 1 : 0;
   check('hardpt', 'entropic disintegrator is a turret', turret('Heavy Entropic Disintegrator II'), 1, 0);
   check('hardpt', 'mining laser is a turret', turret('Miner II'), 1, 0);
   check('hardpt', 'hybrid is a turret', turret('Neutron Blaster Cannon II'), 1, 0);
@@ -1946,8 +1947,15 @@ Republic Fleet Command Mindlink`;
   check('hardpt', 'a launcher is NOT a turret', turret('Heavy Missile Launcher II'), 0, 0);
   check('hardpt', 'ship launcher counts as a launcher', launcher('Heavy Missile Launcher II'), 1, 0);
   // CCP names structure launcher groups "Structure <kind> Missile Launcher", so a "Missile Launcher"
-  // prefix test misses them; the engine keys on effect 101 instead.
+  // prefix test misses them — the marker effect catches them anyway.
   check('hardpt', 'structure launcher counts as a launcher', launcher('Standup Multirole Missile Launcher I'), 1, 0);
+  // The three that carry useMissiles but NO launcherFitted. Probe launchers were the reported bug;
+  // bomb and defender launchers are the same mistake wearing a "Missile Launcher" group name.
+  check('hardpt', 'scan probe launcher uses NO launcher hardpoint', launcher('Expanded Probe Launcher II'), 0, 0);
+  check('hardpt', 'survey probe launcher uses NO launcher hardpoint', launcher('Survey Probe Launcher II'), 0, 0);
+  check('hardpt', 'bomb launcher uses NO launcher hardpoint', launcher('Bomb Launcher I'), 0, 0);
+  check('hardpt', 'defender launcher uses NO launcher hardpoint', launcher('Defender Launcher I'), 0, 0);
+  check('hardpt', 'a probe launcher is not a turret either', turret('Expanded Probe Launcher II'), 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1986,6 +1994,52 @@ Republic Fleet Command Mindlink`;
   const db = { Rifter: [{ id: NaN, name: 'My Fit' }] };
   const stored = Array.from({ length: 6 }, () => ({ ship: 'Rifter', id: NaN, name: 'My Fit' }));
   check('tabs', 'a saved duplicate strip collapses on load', resolveTabs(stored, db).length, 1, 0);
+
+  // Restoring a backup allocated fit ids PER SHIP, so the first fit of every ship got id 1. Harmless
+  // in every per-ship list, fatal in the one place that flattens the DB: the projected/command fit
+  // pickers key their rows on fit.id, and duplicate React keys stopped the list re-rendering when
+  // the search box was typed into — the reported "search does nothing in the app". The counter is
+  // DB-wide now, so a flattened view can rely on ids being unique.
+  const { mergeFitsDB } = await import('./lib/backup-io.js');
+  const restored = JSON.parse(mergeFitsDB('{}', JSON.stringify({
+    Rifter: [{ name: 'a' }, { name: 'b' }],
+    Orthrus: [{ name: 'c' }],
+    Drake: [{ name: 'd' }, { name: 'e' }],
+  })));
+  const ids = Object.values(restored).flat().map((f) => f.id);
+  check('tabs', 'restored fits get ids unique across SHIPS', new Set(ids).size, ids.length, 0);
+  // Merging a second backup must not reissue ids the first one already used.
+  const twice = JSON.parse(mergeFitsDB(JSON.stringify(restored), JSON.stringify({ Orthrus: [{ name: 'f' }] })));
+  const ids2 = Object.values(twice).flat().map((f) => f.id);
+  check('tabs', 'a second restore keeps ids unique', new Set(ids2).size, ids2.length, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13d. EFT IMPORT — Discord code fences
+//      A fit pasted out of Discord arrives wrapped in ```. Stripping whole fence LINES was not
+//      enough on a phone: a fence sharing the header's line, a single-backtick wrap, or a blank
+//      line between the fence and the header all left the import failing, because the header was
+//      read from index 0 specifically. Backticks now come off both ends of every line and the
+//      header is SEARCHED for. Each case here is a paste shape that used to need hand-editing.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nEFT CODE FENCES');
+  const BODY = '[Legion, Test]\nHeat Sink II\n';
+  const F = '```';
+  const ok = (eft) => { const r = parseEFT(eft); return r.error ? 0 : (r.shipName === 'Legion' && r.mods.length === 1 ? 1 : 0); };
+  check('eft', 'unfenced still imports',            ok(BODY), 1, 0);
+  check('eft', 'plain fence',                       ok(`${F}\n${BODY}${F}`), 1, 0);
+  check('eft', 'fence with a language tag',         ok(`${F}eft\n${BODY}${F}`), 1, 0);
+  check('eft', 'blank line before the fence',       ok(`\n${F}\n${BODY}${F}`), 1, 0);
+  check('eft', 'blank line after the fence',        ok(`${F}\n\n${BODY}${F}`), 1, 0);
+  check('eft', 'fence on the header line',          ok(`${F}[Legion, Test]\nHeat Sink II\n${F}`), 1, 0);
+  check('eft', 'fence closing the last line',       ok(`${F}[Legion, Test]\nHeat Sink II${F}`), 1, 0);
+  check('eft', 'single-backtick inline wrap',       ok('`' + BODY + '`'), 1, 0);
+  check('eft', 'CRLF inside a fence',               ok(`${F}\r\n[Legion, Test]\r\nHeat Sink II\r\n${F}`), 1, 0);
+  check('eft', 'chat prose above the fit',          ok(`someone: try this\n${F}\n${BODY}${F}`), 1, 0);
+  // ...and it must still REJECT, or every check above passes on a parser that accepts anything.
+  check('eft', 'non-fit text is still rejected',    ok('hello there'), 0, 0);
+  check('eft', 'empty text is still rejected',      ok(''), 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

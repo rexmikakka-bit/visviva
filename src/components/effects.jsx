@@ -171,7 +171,6 @@ function BoosterPickerSheet({onAdd,onClose}){
   const[slotDrill,setSlotDrill]=useState(null);
   const[catDrill,setCatDrill]=useState(null);
   const[search,setSearch]=useState("");
-  const gradeChance={Synth:0,Standard:0.15,Improved:0.20,Strong:0.30};
   const slotData=slotDrill?BOOSTER_DATA[slotDrill]??{}:{};
   const catNames=Object.keys(slotData);
   const drugs=catDrill?(slotData[catDrill]??[]):[];
@@ -242,11 +241,13 @@ function BoosterPickerSheet({onAdd,onClose}){
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:600,color:C.text}}>{drugName}</div>
           {(()=>{
-            const grade=["Synth","Improved","Standard","Strong"].find(g=>drugName.startsWith(g))||"Standard";
-            const chance=gradeChance[grade]??0;
-            return chance>0
-              ?<div style={{fontSize:10,color:C.warning,marginTop:2}}>{Math.round(chance*100)}% side effect chance</div>
-              :<div style={{fontSize:10,color:C.rig,marginTop:2}}>No side effects</div>;
+            // Read the real penalty attributes rather than guessing from the name: the grade prefixes
+            // don't cover the Agency doses (which carry no side effects at all) and the hardcoded
+            // per-grade table understated every real chance by a step.
+            const se=boosterSideEffectsFor(drugName);
+            if(!se.length)return<div style={{fontSize:10,color:C.rig,marginTop:2}}>No side effects</div>;
+            const chance=Math.max(...se.map(s=>s.chance??0));
+            return<div style={{fontSize:10,color:C.warning,marginTop:2}}>{se.length} side effect{se.length>1?"s":""} &middot; {Math.round(chance*100)}% chance</div>;
           })()}
         </div>
         <span style={{color:C.textMute}}>+</span>
@@ -259,7 +260,8 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
   const[search,setSearch]=useState("");
   const allFits=[];
   Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))allFits.push({ship,fit:f});}));
-  const filtered=search.trim()?allFits.filter(({ship,fit})=>ship.toLowerCase().includes(search.toLowerCase())||fit.name.toLowerCase().includes(search.toLowerCase())):allFits;
+  const q=search.trim().toLowerCase();
+  const filtered=q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
   return(<BottomSheet title={title} onClose={onClose} height="75vh">
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
@@ -268,8 +270,13 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
       </div>
     </div>
     {filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
-    {filtered.map(({ship,fit})=>(
-      <div key={fit.id} onClick={()=>{onSelect(ship,fit);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+    {/* Keyed by POSITION, not by fit.id. This list is the one place in the app that flattens every
+        ship's fits into a single list, and fit ids are only unique within a ship — a restored backup
+        gives the first fit of every ship the id 1. Duplicate React keys meant the rows were not
+        reconciled when the filter changed, so typing in the search box left the old list on screen.
+        It only ever showed up on a device restored from a backup, never on a hand-built library. */}
+    {filtered.map(({ship,fit},i)=>(
+      <div key={`${ship}::${fit.name}::${i}`} onClick={()=>{onSelect(ship,fit);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
         <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{ship} / Modified {fit.modified}</div></div>
         <span style={{fontSize:14,color:C.textMute,flexShrink:0}}>{">"}</span>
       </div>

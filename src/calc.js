@@ -728,6 +728,17 @@ function isMissileLauncherGroup(g, effectIDs) {
 export function isTurret(groupName)   { return TURRET_GROUPS.has(groupName); }
 export function isLauncher(groupName, effectIDs) { return isMissileLauncherGroup(groupName, effectIDs); }
 
+// "Is this a missile weapon" and "does this consume a launcher hardpoint" are DIFFERENT questions,
+// and conflating them cost a Legion a launcher slot: a Scan Probe Launcher carries effect 101
+// (useMissiles) like every launcher does, so isLauncher() called it one. pyfa keys hardpoint usage
+// on its own pair of marker effects instead — 42 turretFitted / 40 launcherFitted, see
+// Module.__calculateHardpoint — and nothing else. That also correctly frees Bomb and Defender
+// launchers (group name starts "Missile Launcher", but neither takes a hardpoint) while still
+// catching structure launchers, whose group names don't match any prefix.
+const EFF_TURRET_FITTED = 42, EFF_LAUNCHER_FITTED = 40;
+export function usesTurretHardpoint(effectIDs)   { return Array.isArray(effectIDs) && effectIDs.includes(EFF_TURRET_FITTED); }
+export function usesLauncherHardpoint(effectIDs) { return Array.isArray(effectIDs) && effectIDs.includes(EFF_LAUNCHER_FITTED); }
+
 /**
  * Is a BIGGER value of this attribute better for the pilot?
  *

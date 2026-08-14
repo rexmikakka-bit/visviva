@@ -4,17 +4,17 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
-import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
 const CAN_FIT_GROUP_KEYS = ['canFitShipGroup01','canFitShipGroup02','canFitShipGroup03','canFitShipGroup04','canFitShipGroup05','canFitShipGroup06','canFitShipGroup07','canFitShipGroup08','canFitShipGroup09','canFitShipGroup10','canFitShipGroup11','canFitShipGroup12','canFitShipGroup13','canFitShipGroup14','canFitShipGroup15','canFitShipGroup16','canFitShipGroup17','canFitShipGroup18','canFitShipGroup19','canFitShipGroup20'];
 const CAN_FIT_TYPE_KEYS  = ['canFitShipType1','canFitShipType2','canFitShipType3','canFitShipType4','canFitShipType5','canFitShipType6','canFitShipType7','canFitShipType8','canFitShipType9','canFitShipType10','canFitShipType11','canFitShipType12'];
-// Group names that consume a turret hardpoint
-const TURRET_GROUPS = new Set(['Projectile Weapon','Energy Weapon','Hybrid Weapon','Precursor Weapon','Vorton Projector']);
-const isTurretWeapon    = tid => TURRET_GROUPS.has(TYPES[String(tid)]?.gn ?? '');
-const isMissileLauncher = tid => /^Missile Launcher/i.test(TYPES[String(tid)]?.gn ?? '');
+// Hardpoint consumption, off CCP's turretFitted/launcherFitted markers — same predicates the
+// resource strip's dots use, so the gate and the readout can't disagree.
+const isTurretWeapon    = tid => usesTurretHardpoint(TYPES[String(tid)]?.e);
+const isMissileLauncher = tid => usesLauncherHardpoint(TYPES[String(tid)]?.e);
 
 // Returns null if module can fit the ship, or an error string if not.
 function checkFitRestriction(modTypeID, ship) {

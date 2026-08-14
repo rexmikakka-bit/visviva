@@ -484,10 +484,21 @@ function parseEFT(text){
   const fenced = norm.split("\n")
     .filter(l => !/^[\s ]*`{3,}[\s ]*\w*[\s ]*$/.test(l))
     .join("\n");
-  const rawLines=fenced.split("\n").map(l=>l.replace(/ /g," ").trim());
-  if(!rawLines.length)return{error:"Empty text"};
-  const hm=rawLines[0].match(/^\[(.+?),\s*(.+)\]$/);
-  if(!hm)return{error:"Invalid EFT header — expected [Ship Name, Fit Name]"};
+  const _srcLines=fenced.split("\n").map(l=>l.replace(/ /g," ").trim());
+  // Filtering whole fence LINES is still not enough for a paste off a phone. Three shapes kept
+  // arriving with the fence attached: a fence sharing its line with the header ("```[Legion, Foo]"),
+  // a single-backtick inline wrap, and a fence followed by a blank line — that last one survived
+  // because the header was read from index 0 specifically, so one empty line failed the whole
+  // import. So strip backticks off both ends of every line too, then SEARCH for the header instead
+  // of demanding it come first. Searching also means surrounding chat prose no longer has to be
+  // deleted by hand. No EFT line legitimately begins or ends with a backtick.
+  const allLines=_srcLines.map(l=>l.replace(/^`+|`+$/g,"").trim());
+  if(!allLines.some(l=>l))return{error:"Empty text"};
+  const HEADER=/^\[(.+?),\s*(.+)\]$/;
+  const hdrAt=allLines.findIndex(l=>HEADER.test(l));
+  if(hdrAt<0)return{error:"Invalid EFT header — expected [Ship Name, Fit Name]"};
+  const rawLines=allLines.slice(hdrAt);
+  const hm=rawLines[0].match(HEADER);
   const shipName=hm[1].trim(),fitName=hm[2].trim();
   const ship=Object.values(shipsData).find(s=>s.name===shipName)??shipFromDogma(shipName);
   if(!ship)return{error:`Unknown ship: "${shipName}"`};

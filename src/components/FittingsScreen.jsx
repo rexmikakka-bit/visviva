@@ -6,6 +6,7 @@ import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
+import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
@@ -231,7 +232,16 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const[renamingFit,setRenamingFit]=useState(false);
   const[newFitName,setNewFitName]=useState("");
 
-  const activeShip=activeFit?.ship?lookupShip(activeFit.ship):null;
+  // A T3 cruiser hull carries ZERO turret/launcher hardpoints of its own — they come entirely from
+  // the fitted subsystems. Without this the hardpoint dots never render on a Legion, and addMod's
+  // gate reads 0 and refuses every weapon.
+  const activeShip=useMemo(()=>{
+    const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
+    if(!sh||!isT3Cruiser(sh.name))return sh;
+    const layout=t3cSlotLayout((slots?.subsystems??[]).filter(s=>s?.typeID));
+    return{...sh,turrets:layout.turrets,launchers:layout.launchers,
+           hiSlots:layout.hiSlots,medSlots:layout.medSlots,lowSlots:layout.lowSlots,rigSlots:layout.rigSlots};
+  },[activeFit?.ship,slots?.subsystems]);
 
   const saveRename=(ship,fitId)=>{
     const name=editName.trim()||"Unnamed Fit";

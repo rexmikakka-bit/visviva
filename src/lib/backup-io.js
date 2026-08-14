@@ -41,20 +41,26 @@ function buildBackup() {
   }, null, 2);
 }
 
-// Merge imported fits into the existing DB instead of clobbering it. Fit IDs are per-ship and can
-// collide across backups, so imported fits always get fresh IDs; same-name fits are suffixed rather
-// than silently overwriting the one you already have.
+// Merge imported fits into the existing DB instead of clobbering it. Imported fits always get fresh
+// IDs; same-name fits are suffixed rather than silently overwriting the one you already have.
+//
+// The counter is DB-WIDE, not per-ship. Allocating per-ship restarted at 1 for every ship with no
+// existing fits, so restoring a backup into a fresh install gave the first fit of all 30 ships the
+// id 1. That is invisible everywhere fits are listed per-ship (every id is unique within its own
+// ship), and breaks the moment something flattens the DB: the projected/command fit pickers do, and
+// with React keys colliding their list stopped re-rendering when you typed in the search box.
 function mergeFitsDB(currentRaw, incomingRaw) {
   let cur = {}, inc = {};
   try { cur = JSON.parse(currentRaw || "{}") || {}; } catch { cur = {}; }
   try { inc = JSON.parse(incomingRaw || "{}") || {}; } catch { inc = {}; }
 
   const out = { ...cur };
+  let nextId = Object.values(out).flat()
+    .reduce((m, f) => Math.max(m, Number(f?.id) || 0), 0) + 1;
   for (const [ship, fits] of Object.entries(inc)) {
     if (!Array.isArray(fits)) continue;
     const existing = Array.isArray(out[ship]) ? [...out[ship]] : [];
     const names = new Set(existing.map((f) => f.name));
-    let nextId = existing.reduce((m, f) => Math.max(m, Number(f.id) || 0), 0) + 1;
     for (const f of fits) {
       let name = f.name ?? "Imported Fit";
       if (names.has(name)) {

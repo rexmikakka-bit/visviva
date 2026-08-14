@@ -9,7 +9,7 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
-import { TYPES, tidByName, calcFitStats, subsystemsForHull , isTurret, isLauncher, attrHighIsGood } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
 import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
@@ -182,6 +182,10 @@ function NumpadModal({label,initial,onConfirm,onClose}){
 // passed here is pinned for free, with no second sticky element to fight this one for top:0 and no
 // measuring of this strip's (variable) height to offset against. The Fit tab uses it for the
 // Undo/Grouped toolbar, which was previously scrolled away exactly when you needed it.
+// Powergrid red, CPU blue, calibration grey — EVE's own fitting-window colours, so the strip reads
+// the same way the in-game fitting screen does.
+const RESOURCE_COLORS={pg:"#e0584f",cpu:"#4f8ef7",cal:"#9898a6"};
+
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
@@ -193,19 +197,14 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
     {key:"cpu",label:"CPU",   used:cs.cpuUsed??0,  total:cs.cpuTotal??0,  unit:"tf",  warn:95},
     {key:"cal",label:"Cal",   used:cs.calUsed??0,  total:cs.calTotal??400, unit:"pts", warn:95},
   ];
-  // Hardpoint usage
-  // Counted through the ENGINE's own predicates, against TYPES rather than a name scan of
-  // modulesData. The previous version listed three turret groups by hand and so never counted a
-  // Precursor Weapon — an entropic disintegrator used no turret hardpoint on a Vedmak — and matched
-  // launchers on a "Missile Launcher" name prefix, which CCP breaks for structures (those groups
-  // read "Structure <kind> Missile Launcher"). It also rescanned every module in the game per slot.
+  // Hardpoint usage, counted off CCP's own turretFitted/launcherFitted marker effects — the same
+  // signal pyfa uses — rather than a group-name scan. Weapon CLASS is a different question: keying
+  // this on "is a missile weapon" gave a Scan Probe Launcher a launcher hardpoint.
   const {turretsUsed,launchUsed}=(slots?.high??[]).reduce((acc,s)=>{
     if(!s||s.type==="empty")return acc;
     const t=TYPES[s.typeID]??TYPES[String(s.typeID)];
-    const gn=t?.gn??t?.groupName;
-    if(!gn)return acc;
-    if(isTurret(gn))acc.turretsUsed++;
-    else if(isLauncher(gn,t?.e))acc.launchUsed++;
+    if(usesTurretHardpoint(t?.e))acc.turretsUsed++;
+    else if(usesLauncherHardpoint(t?.e))acc.launchUsed++;
     return acc;
   },{turretsUsed:0,launchUsed:0});
   const turretsTotal=ship?.turrets??0, launchTotal=ship?.launchers??0;
@@ -232,14 +231,11 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
       {resources.map((res,i)=>{
         const rawPct=res.total>0?(res.used/res.total)*100:0;
         const isOver=rawPct>100;
-        const isCalRig=res.key==='cal';
-        // Green under 100%, yellow→red when over. Cal: instantly red when over.
-        const overFactor=isCalRig?1:Math.min((rawPct-100)/10,1);  // 0=just over, 1=fully red at 110%
-        const barColor=isOver
-          ? (isCalRig ? C.danger : `hsl(${Math.round(40*(1-overFactor))},85%,48%)`)  // 40°yellow→0°red
-          : '#4ade80';  // green while under max
-        const pct=Math.min(rawPct,100);
-        const crit=isOver;
+        // Each bar keeps its RESOURCE's colour at all times, so the three columns are told apart at a
+        // glance instead of by reading their labels. Overload is signalled by the used figure turning
+        // red above — a bar that changed colour said "something is wrong" without saying which of the
+        // three, and cost the only cue that distinguished them.
+        const barColor=RESOURCE_COLORS[res.key];
         const rem=(res.total??0)-(res.used??0), over=rem<0;
         return(
           <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
@@ -258,7 +254,7 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
                     <span style={{fontSize:10,color:over?C.danger:C.textMid}}> {over?"over":"left"}</span>
                   </span>
                 : <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
-                    <span style={{fontWeight:700,color:crit?C.danger:C.text}}>{fmtShort(res.used)}</span>
+                    <span style={{fontWeight:700,color:isOver?C.danger:C.text}}>{fmtShort(res.used)}</span>
                     <span style={{fontSize:10,color:C.textMid}}>/{fmtShort(res.total)}</span>
                   </span>}
             </div>

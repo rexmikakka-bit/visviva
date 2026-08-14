@@ -253,10 +253,10 @@ function ResistRow({ name, ehp, res }) {
   );
 }
 
-function KV({ k, v, unit, color }) {
+function KV({ k, v, unit, color, kColor }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "2.5px 0", fontSize: 13 }}>
-      <span style={{ color: T.muted, fontWeight: 500 }}>{k}</span>
+      <span style={{ color: kColor ?? T.muted, fontWeight: 500 }}>{k}</span>
       <span style={{ fontWeight: 600, color: color ?? T.text }}>
         {v}{unit && <small style={{ color: T.dim, fontWeight: 500, fontSize: 11 }}> {unit}</small>}
       </span>
@@ -519,7 +519,9 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <Block title="Capacitor">
             <KV k="Capacity" v={fmtK(s.capCapacity)} unit="GJ" />
             <KV k="Delta" v={`${capD >= 0 ? "+" : ""}${fmt(capD, 2)}`} color={capD >= 0 ? T.good : T.bad} />
-            <KV k="Stable" v={s.capStable ? `${((s.capLevel ?? 1) * 100).toFixed(0)}%` : mmss(s.capTime)} color={s.capStable ? T.good : T.warn} />
+            <KV k={s.capStable ? "Stable at" : "Unstable"} kColor={s.capStable ? T.good : T.bad}
+                v={s.capStable ? `${((s.capLevel ?? 1) * 100).toFixed(0)}%` : mmss(s.capTime)}
+                color={s.capStable ? T.good : T.bad} />
           </Block>
         </div>
 

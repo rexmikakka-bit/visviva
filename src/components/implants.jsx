@@ -107,13 +107,21 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
     </div>);
   };
 
-  if(drill){
-    return(<BottomSheet title={`Slot ${slot} › ${implantGroupLabel(drill)}`} onClose={()=>setDrill(null)} height="82vh">
-      {drillItems.map(item=><ItemRow key={item.typeID} item={item}/>)}
-    </BottomSheet>);
-  }
-
-  return(<BottomSheet title={`Slot ${slot} Implants`} onClose={onClose} height="82vh">
+  // ONE sheet for both levels, with an in-content Back bar — the same shape as the module browser.
+  // Rendering a second <BottomSheet> for the drilled level put a different element at the same tree
+  // position, so React reused the instance and its half-finished `closing` state: after backing out
+  // of a group the sheet stayed translated off-screen while its full-screen overlay kept eating every
+  // tap, which reads as the whole app freezing.
+  return(<BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh">
+    {drill&&(
+      <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <button onClick={()=>{haptic();setDrill(null);}} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
+        <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{implantGroupLabel(drill)}</span>
+      </div>
+    )}
+    {drill
+      ? drillItems.map(item=><ItemRow key={item.typeID} item={item}/>)
+      : <>
     {current&&current!=="[Empty]"&&(
       <div style={{padding:"10px 14px 0"}}>
         <div style={{padding:"9px 12px",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,marginBottom:4}}>
@@ -140,6 +148,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
           </div>
         ))
     }
+      </>}
   </BottomSheet>);
 }
 
