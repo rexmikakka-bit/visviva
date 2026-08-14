@@ -28,6 +28,17 @@ $PB -c "Add :CFBundleURLTypes:0:CFBundleURLName string $APP_ID" "$PLIST"
 $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
 $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
 
+# ── Orientation lock ─────────────────────────────────────────────────────────
+# Portrait only, on iPad as well as iPhone. Every layout in the app is built for one narrow column
+# — the fit list, the sticky resource strip, the bottom sheets — so a landscape rotation gives a
+# stretched, unusable screen rather than a wider one. Android does this with
+# android:screenOrientation in its manifest.
+for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ipad"; do
+  $PB -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
+  $PB -c "Add :$KEY array" "$PLIST"
+  $PB -c "Add :$KEY:0 string UIInterfaceOrientationPortrait" "$PLIST"
+done
+
 # ── Export compliance ────────────────────────────────────────────────────────
 # Declaring this up front skips the "does your app use encryption?" prompt on every single upload.
 # False is correct here: the app ships no cryptography of its own and only makes ordinary HTTPS
@@ -38,4 +49,5 @@ $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
 echo "patched $PLIST:"
 echo "  bundle id      $APP_ID"
 echo "  url scheme     $SCHEME://"
+echo "  orientation    portrait only"
 echo "  encryption     exempt"
