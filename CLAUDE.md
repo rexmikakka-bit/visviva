@@ -987,6 +987,24 @@ gh run watch <run-id> --exit-status
 - No Mac required: the repo is public, so macOS runners are free. One-time signing/secret setup is
   in `IOS_RELEASE.md`.
 
+#### ⚠️ The app is iPhone-only, and that is what makes the portrait lock legal
+
+Capacitor generates a **universal** (`TARGETED_DEVICE_FAMILY = "1,2"`) project. App Store Connect
+rejects any iPad-capable bundle whose `UISupportedInterfaceOrientations~ipad` does not list **all
+four** orientations — error **90474**, "to support iPad multitasking". `UIRequiresFullScreen` used to
+exempt you; it is **ignored as of the iOS 26 SDK**, which is what CI builds against, so that escape
+hatch is gone. Portrait-locking a universal build is therefore an automatic rejection.
+
+`patch-ios-project.sh` seds the target down to `"1"` (iPhone) and **deletes** the `~ipad` key rather
+than setting it. Both halves matter: a portrait-only `~ipad` key is the exact thing the validator
+looks at.
+
+The failure costs a build number and ~15 minutes, because it happens inside Apple's validator
+*after* a successful archive and export — the archive itself is perfectly happy. That is why the
+script `grep`s its own sed and exits non-zero if the setting ever moves, rather than letting a
+universal build sail through to the upload step. If the app ever grows a genuine wide layout,
+revisit this: the fix is to go universal again and give the iPad all four orientations.
+
 ### Two landmines that have cost real time
 
 - **`check()` in `regression.test.mjs` takes a RELATIVE tolerance.** `check(g, l, actual, 63773.5, 1)`

@@ -28,16 +28,34 @@ $PB -c "Add :CFBundleURLTypes:0:CFBundleURLName string $APP_ID" "$PLIST"
 $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes array" "$PLIST"
 $PB -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string $SCHEME" "$PLIST"
 
+# ── iPhone only ──────────────────────────────────────────────────────────────
+# Capacitor generates a universal (1,2) app, which is incompatible with the portrait lock below:
+# App Store Connect rejects any iPad-capable bundle whose iPad orientation key does not list all
+# four orientations (error 90474, "you need to include all of the ... orientations to support iPad
+# multitasking"). UIRequiresFullScreen used to exempt you from that; it is ignored as of the iOS 26
+# SDK, which is what CI builds against — so keeping portrait means not shipping for iPad.
+#
+# Little is lost: every layout here is a single narrow column, so an iPad build was a stretched
+# phone app rather than a tablet one. Revisit if the app ever grows a wide layout.
+PBXPROJ="ios/App/App.xcodeproj/project.pbxproj"
+sed -i '' 's/TARGETED_DEVICE_FAMILY = "[^"]*";/TARGETED_DEVICE_FAMILY = "1";/g' "$PBXPROJ"
+# Fail loudly rather than silently archiving a universal build: if Capacitor ever renames or drops
+# the setting, the sed is a no-op and the failure would otherwise surface 15 minutes later inside
+# Apple's validator, having burned a build number.
+grep -q 'TARGETED_DEVICE_FAMILY = "1";' "$PBXPROJ" || {
+  echo "TARGETED_DEVICE_FAMILY not found in $PBXPROJ — the iPhone-only patch did not apply"; exit 1; }
+
 # ── Orientation lock ─────────────────────────────────────────────────────────
-# Portrait only, on iPad as well as iPhone. Every layout in the app is built for one narrow column
-# — the fit list, the sticky resource strip, the bottom sheets — so a landscape rotation gives a
-# stretched, unusable screen rather than a wider one. Android does this with
-# android:screenOrientation in its manifest.
-for KEY in UISupportedInterfaceOrientations "UISupportedInterfaceOrientations~ipad"; do
-  $PB -c "Delete :$KEY" "$PLIST" 2>/dev/null || true
-  $PB -c "Add :$KEY array" "$PLIST"
-  $PB -c "Add :$KEY:0 string UIInterfaceOrientationPortrait" "$PLIST"
-done
+# Every layout in the app is built for one narrow column — the fit list, the sticky resource strip,
+# the bottom sheets — so a landscape rotation gives a stretched, unusable screen rather than a wider
+# one. Android does this with android:screenOrientation in its manifest.
+#
+# The ~ipad variant is DELETED, not set to portrait: a portrait-only iPad key is precisely what
+# Apple's validator rejects, and with an iPhone-only target it would be dead weight anyway.
+$PB -c "Delete :UISupportedInterfaceOrientations~ipad" "$PLIST" 2>/dev/null || true
+$PB -c "Delete :UISupportedInterfaceOrientations" "$PLIST" 2>/dev/null || true
+$PB -c "Add :UISupportedInterfaceOrientations array" "$PLIST"
+$PB -c "Add :UISupportedInterfaceOrientations:0 string UIInterfaceOrientationPortrait" "$PLIST"
 
 # ── Export compliance ────────────────────────────────────────────────────────
 # Declaring this up front skips the "does your app use encryption?" prompt on every single upload.
@@ -49,5 +67,6 @@ $PB -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST"
 echo "patched $PLIST:"
 echo "  bundle id      $APP_ID"
 echo "  url scheme     $SCHEME://"
+echo "  device family  iPhone only"
 echo "  orientation    portrait only"
 echo "  encryption     exempt"
