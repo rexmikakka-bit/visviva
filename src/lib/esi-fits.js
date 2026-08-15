@@ -1,17 +1,22 @@
 // ESI saved-fitting <-> app fit model mapping (both directions).
 //
-// ESI's /characters/{id}/fittings/ items use the CLASSIC numeric "inventory flag" scheme (the
-// same one the old XML API and the SDE's invFlags table used) — NOT the newer string-named flag
-// enum (HiSlot0, MedSlot0, ...) used by the unrelated /characters/{id}/assets/ endpoint. Verified
-// against pyfa's own service/port/esi.py (Pyfa-268/service/port/esi.py) — the same fitting-export
-// code pyfa uses against the live ESI API — rather than trusting docs summaries, which conflated
-// the two schemes. Ranges confirmed against this app's own dogma bundle (subSystemSlot attribute
-// values land in the 125-128 range pyfa expects, e.g. Tengu Defensive subsystems = 126).
+// ⚠️ `flag` on a fitting item is a STRING ENUM — "HiSlot0", "MedSlot3", "RigSlot0", "SubSystemSlot1",
+// "ServiceSlot0", "Cargo", "DroneBay", "FighterBay", plus "Invalid" for entries ESI wants discarded.
+// It is NOT the classic numeric inventory-flag scheme (LoSlot0=11, HiSlot0=27, ...) that the old XML
+// API and the SDE's invFlags table used. Both directions of the live endpoint take the strings; the
+// numbers are silently rejected, which is why every module of an imported fit vanished and left a
+// bare hull.
 //
-// Service Slots (structures only, flag base 164) use the exact same numeric scheme, also verified
-// against pyfa's esi.py (FittingSlot.SERVICE).
+// The authoritative source is CCP's own published schema, https://esi.evetech.net/meta/openapi.json
+// (`CharactersCharacterIdFittingsGet` and the POST request body) — NOT pyfa. pyfa's
+// service/port/esi.py still sends the old numeric INV_FLAGS, so reading it here (as this file
+// originally did) reproduces a scheme the API has since moved off. Check the schema, not a port of
+// it, whenever this endpoint misbehaves.
 //
-// Also confirmed there (and matches the well-known in-game limitation): a saved fitting does NOT
+// Numeric flags are still ACCEPTED on import, because a fitting JSON saved by an older tool is a
+// real thing a user will paste at us and the two schemes cannot be confused — one is a number.
+//
+// A saved fitting does NOT
 // record which module a charge was loaded into. pyfa's own export aggregates ALL loaded charges
 // fleet-fit-wide into a flat cargo-hold quantity (flag=CARGO) rather than per-module, and its
 // import just dumps everything with flag=CARGO into the fit's cargo hold, full stop — no attempt
@@ -20,27 +25,39 @@
 
 import { TYPES, tidByName } from '../calc.js';
 import { lookupShip } from './core.js';
-import dronesData from '../data/drones.json';
+import dronesData from '../data/drones.json' with { type: 'json' };
 
-const FLAG_CARGO = 5;
-const FLAG_DRONEBAY = 87;
-const FLAG_FIGHTER = 158;
-const FLAG_LOW = 11, FLAG_LOW_END = 18;
-const FLAG_MED = 19, FLAG_MED_END = 26;
-const FLAG_HIGH = 27, FLAG_HIGH_END = 34;
-const FLAG_RIG = 92, FLAG_RIG_END = 94;
-// Service Slots (structures only). Base 164 matches pyfa's FittingSlot.SERVICE (service/port/esi.py).
-// End bound covers the largest real service-slot count in the bundle (Palatine Keepstar/Moreau &
-// Marginis Fortizar = 8).
-const FLAG_SERVICE = 164, FLAG_SERVICE_END = 171;
+// name -> our section key. Order is the enum's, and the names are exact: "FighterBay", not "Fighter".
+const SLOT_PREFIX = { HiSlot: 'high', MedSlot: 'mid', LoSlot: 'low', RigSlot: 'rig', ServiceSlot: 'service', SubSystemSlot: 'subsystem' };
+const SECTION_PREFIX = { high: 'HiSlot', mid: 'MedSlot', low: 'LoSlot', rigs: 'RigSlot', services: 'ServiceSlot' };
+const FLAG_CARGO = 'Cargo', FLAG_DRONEBAY = 'DroneBay', FLAG_FIGHTER = 'FighterBay';
 
-function slotForFlag(flag) {
-  if (flag >= FLAG_LOW && flag <= FLAG_LOW_END) return 'low';
-  if (flag >= FLAG_MED && flag <= FLAG_MED_END) return 'mid';
-  if (flag >= FLAG_HIGH && flag <= FLAG_HIGH_END) return 'high';
-  if (flag >= FLAG_RIG && flag <= FLAG_RIG_END) return 'rig';
-  if (flag >= FLAG_SERVICE && flag <= FLAG_SERVICE_END) return 'service';
-  return null;
+// Legacy numeric ranges, import-only. Kept so a fitting file written by an older tool still loads.
+const NUMERIC_RANGES = [
+  [5, 5, 'Cargo'], [87, 87, 'DroneBay'], [158, 158, 'FighterBay'],
+  [11, 18, 'low'], [19, 26, 'mid'], [27, 34, 'high'],
+  [92, 99, 'rig'], [125, 132, 'subsystem'], [164, 171, 'service'],
+];
+
+// -> { kind: 'cargo'|'drone'|'fighter'|'slot', section?, index? }, or null for "Invalid"/unknown.
+// The index matters: ESI lists items in no particular order, so without it a fit's modules land in
+// whatever order they happened to arrive rather than in the slots the pilot put them in.
+function parseFlag(flag) {
+  if (typeof flag === 'number' || /^\d+$/.test(String(flag))) {
+    const n = Number(flag);
+    const hit = NUMERIC_RANGES.find(([lo, hi]) => n >= lo && n <= hi);
+    if (!hit) return null;
+    const [lo, , kind] = hit;
+    return kind === 'Cargo' ? { kind: 'cargo' } : kind === 'DroneBay' ? { kind: 'drone' }
+      : kind === 'FighterBay' ? { kind: 'fighter' } : { kind: 'slot', section: kind, index: n - lo };
+  }
+  const s = String(flag ?? '');
+  if (s === FLAG_CARGO) return { kind: 'cargo' };
+  if (s === FLAG_DRONEBAY) return { kind: 'drone' };
+  if (s === FLAG_FIGHTER) return { kind: 'fighter' };
+  const m = s.match(/^([A-Za-z]+?)(\d+)$/);
+  const section = m && SLOT_PREFIX[m[1]];
+  return section ? { kind: 'slot', section, index: Number(m[2]) } : null;
 }
 
 // ─── Import: ESI fitting -> the shape App.jsx's importFit(parsed) already accepts ─────────────
@@ -53,37 +70,47 @@ export function esiFittingToImportShape(esiFitting) {
   const shipName = shipTd.n;
   const ship = lookupShip(shipName);
 
-  const mods = [], drones = [], fighters = [], cargo = [], subsystems = [];
+  const placed = [], drones = [], fighters = [], cargo = [], subsystems = [];
   for (const it of (esiFitting.items ?? [])) {
     const td = TYPES[it.type_id];
     if (!td?.n) continue; // unknown/unpublished type — skip rather than mis-place
     const name = td.n;
     const cat = td.c ?? td.category;
+    const f = parseFlag(it.flag);
+    if (!f) continue; // "Invalid", or a flag CCP added after this was written — never guess a slot
 
-    if (it.flag === FLAG_DRONEBAY) {
+    if (f.kind === 'drone') {
       const dd = Object.values(dronesData).find(d => d.name === name);
       if (dd) drones.push({ name, qty: it.quantity, drone: dd });
       continue;
     }
-    if (it.flag === FLAG_FIGHTER || cat === 87) {
+    if (f.kind === 'fighter' || cat === 87) {
       fighters.push({ name, qty: it.quantity, typeID: it.type_id });
       continue;
     }
-    if (it.flag === FLAG_CARGO) {
+    if (f.kind === 'cargo') {
       // Includes real cargo, loaded charges (aggregated, not per-module — see file header), and
       // any implants/boosters the exporting tool bundled in. All land in cargo on import, exactly
       // like pyfa's own importESI — there's no reliable signal to sort them apart.
       cargo.push({ name, qty: it.quantity, typeID: it.type_id });
       continue;
     }
-    if (cat === 32) { // Subsystem
+    if (cat === 32 || f.section === 'subsystem') { // Subsystem — placed by group, not by slot index
       subsystems.push({ typeID: it.type_id, name });
       continue;
     }
-    const slot = slotForFlag(it.flag);
-    if (!slot) continue; // unrecognized flag (e.g. a structure Service Management/upgrade slot) — skip, don't corrupt-place
-    mods.push({ name, typeID: it.type_id, slot, charge: undefined, state: undefined });
+    // A slot flag names ONE slot, so quantity is normally 1. An older tool that aggregated a rack
+    // into a single entry would otherwise lose every copy but the first; buildSlotsFromEFT drops
+    // anything that overflows the rack, so expanding here cannot overfill it.
+    const qty = Math.max(1, Math.min(Number(it.quantity) || 1, 8));
+    for (let i = 0; i < qty; i++) {
+      placed.push({ section: f.section, index: f.index + i,
+                    mod: { name, typeID: it.type_id, slot: f.section, charge: undefined, state: undefined } });
+    }
   }
+  // buildSlotsFromEFT fills each rack sequentially in array order, so sorting by the slot index ESI
+  // gave us is what actually puts a module back where the pilot had it.
+  const mods = placed.sort((a, b) => a.index - b.index).map(p => p.mod);
 
   return {
     shipName, fitName: esiFitting.name || 'Imported Fit', ship,
@@ -98,13 +125,13 @@ export function esiFittingToImportShape(esiFitting) {
 export function slotsToEsiFitting(shipTypeID, fitName, slots, drones, cargoItems, fighters, opts = {}) {
   const { description = '', includeCharges = true, includeImplants = false, includeBoosters = false, implants = [], boosters = [] } = opts;
   const items = [];
-  const flagCursor = { high: FLAG_HIGH, mid: FLAG_MED, low: FLAG_LOW, rigs: FLAG_RIG, services: FLAG_SERVICE };
+  const flagCursor = { high: 0, mid: 0, low: 0, rigs: 0, services: 0 };
   const chargeTotals = new Map(); // typeID -> total quantity across the whole fit
 
   for (const section of ['high', 'mid', 'low', 'rigs', 'services']) {
     for (const slot of (slots?.[section] ?? [])) {
       if (!slot?.typeID) continue;
-      items.push({ flag: flagCursor[section]++, quantity: 1, type_id: slot.typeID });
+      items.push({ flag: `${SECTION_PREFIX[section]}${flagCursor[section]++}`, quantity: 1, type_id: slot.typeID });
       if (includeCharges && slot.ammo) {
         const chargeTid = tidByName((slot.ammo || '').replace(/\s*\(\d+\)$/, ''));
         if (chargeTid) {
@@ -114,10 +141,12 @@ export function slotsToEsiFitting(shipTypeID, fitName, slots, drones, cargoItems
       }
     }
   }
+  // The subSystemSlot attribute is still the classic 125-128 numbering (that is how CCP ships it on
+  // the type), so it names the slot INDEX — 125 is SubSystemSlot0.
   for (const sub of (slots?.subsystems ?? [])) {
     if (!sub?.typeID) continue;
-    const flag = TYPES[sub.typeID]?.attrs?.subSystemSlot ?? TYPES[sub.typeID]?.a?.subSystemSlot;
-    if (flag != null) items.push({ flag: Math.round(flag), quantity: 1, type_id: sub.typeID });
+    const raw = TYPES[sub.typeID]?.attrs?.subSystemSlot ?? TYPES[sub.typeID]?.a?.subSystemSlot;
+    if (raw != null) items.push({ flag: `SubSystemSlot${Math.round(raw) - 125}`, quantity: 1, type_id: sub.typeID });
   }
   for (const d of (drones ?? [])) {
     const tid = d.typeID ?? tidByName(d.name);

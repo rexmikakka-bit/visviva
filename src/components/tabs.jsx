@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, STATE_COLORS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, STATE_DOT, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -416,6 +416,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 </div>
               );
               const stateColor=STATE_COLORS[row.state]||C.textMid;
+              const stateDot=STATE_DOT[row.state]??STATE_DOT.online;
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
               return(
@@ -432,7 +433,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         background:isDragOver?C.accentLight:row.orphan?`${C.danger}14`:C.surface,
                         border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:row.orphan?C.danger:C.border}`,
                         borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
-                  <div style={{width:6,height:6,borderRadius:99,background:stateColor,flexShrink:0,boxShadow:row.state==="overheated"?`0 0 6px ${stateColor}`:"none"}}/>
+                  {/* Fixed-width gutter: the dot's size varies by state, and letting it size the
+                      row would step every module icon in the column left and right. */}
+                  <div style={{width:10,display:"flex",justifyContent:"center",flexShrink:0}}>
+                    <div style={{width:stateDot.size,height:stateDot.size,borderRadius:99,background:stateColor,boxShadow:stateDot.glow?`0 0 ${stateDot.glow}px ${stateColor}`:"none"}}/>
+                  </div>
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
                   </div>
@@ -953,6 +958,35 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <span style={{color:C.textMute}}>Spool-up time</span>
               <span style={{color:C.text,fontWeight:700}}>{fmtF(spoolRep.spoolTimeS)}s</span>
             </div>}
+            </>}
+          </div>
+        );
+      })()}
+
+      {/* Mining — only on fits that actually mine, so it never takes space on a combat ship. */}
+      {(cs.mining?.totalM3S??0)>0&&(()=>{
+        const mn=cs.mining;
+        const cols=[
+          {key:"lasers",label:"Lasers",val:mn.moduleM3S,color:C.rig},
+          ...(mn.droneM3S>0?[{key:"drones",label:"Drones",val:mn.droneM3S,color:C.low}]:[]),
+          {key:"total", label:"Total", val:mn.totalM3S, color:C.success},
+        ];
+        return(
+          <div style={card}>
+            <SectionHead id="mining" title="Mining" right={<span style={{fontSize:11,fontWeight:700,color:C.success}}>{fmtF(mn.totalM3S)} m³/s</span>}/>
+            {isOpen("mining")&&<>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${cols.length},1fr)`,borderBottom:`1px solid ${C.border}`}}>
+              {cols.map((col,i)=>(
+                <div key={col.key} style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none"}}>
+                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>{col.label}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:col.val>0?col.color:C.textMute}}>{fmtF(col.val)} m³/s</div>
+                </div>
+              ))}
+            </div>
+            <Row label="Per hour" value={`${fmtN(Math.round(mn.totalM3S*3600))} m³`} last={(mn.wasteM3S??0)<=0}/>
+            {/* Waste is ore destroyed, not yield lost — the hold still fills at the rate above. It
+                decides how fast the rock disappears, which is what separates two equal-yield fits. */}
+            {(mn.wasteM3S??0)>0&&<Row label="Ore wasted" value={`${fmtF(mn.wasteM3S)} m³/s`} color={C.warning} last/>}
             </>}
           </div>
         );

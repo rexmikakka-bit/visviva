@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
-import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_DOT, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -230,13 +230,19 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
       <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
       {resources.map((res,i)=>{
         const rawPct=res.total>0?(res.used/res.total)*100:0;
-        const isOver=rawPct>100;
         // Each bar keeps its RESOURCE's colour at all times, so the three columns are told apart at a
-        // glance instead of by reading their labels. Overload is signalled by the used figure turning
-        // red above — a bar that changed colour said "something is wrong" without saying which of the
-        // three, and cost the only cue that distinguished them.
+        // glance instead of by reading their labels — a bar that changed colour said "something is
+        // wrong" without saying which of the three.
         const barColor=RESOURCE_COLORS[res.key];
         const rem=(res.total??0)-(res.used??0), over=rem<0;
+        // The used figure carries the overload instead, and it FADES: the theme's amber the instant
+        // you cross, full danger red by 110%. How far over you are is the thing you act on — a few tf
+        // is one meta swap from fitting, 40% over means rethinking the fit — and a binary red could
+        // not tell those apart. Endpoints are the theme's own warning/danger so this agrees with
+        // every other red in the app. Same curve the bars carried before they took their own colours.
+        // total<=0 can't be scaled against, so treat any usage there as fully over.
+        const overFactor=res.total>0?Math.min(Math.max(rawPct-100,0)/10,1):1;  // 0 = just over, 1 = 110%+
+        const overColor=`hsl(${Math.round(38*(1-overFactor))},${Math.round(92-8*overFactor)}%,${Math.round(50+10*overFactor)}%)`;
         return(
           <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
                title={`${res.label}: ${fmtRes(res.used)} / ${fmtRes(res.total)} ${res.unit} — tap to switch readout`}
@@ -250,11 +256,11 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
                   and tabular-nums stops the digits jittering as they change under a drag. */}
               {showRemaining
                 ? <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
-                    <span style={{fontWeight:700,color:over?C.danger:C.text}}>{fmtShort(Math.abs(rem))}</span>
-                    <span style={{fontSize:10,color:over?C.danger:C.textMid}}> {over?"over":"left"}</span>
+                    <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(Math.abs(rem))}</span>
+                    <span style={{fontSize:10,color:over?overColor:C.textMid}}> {over?"over":"left"}</span>
                   </span>
                 : <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
-                    <span style={{fontWeight:700,color:isOver?C.danger:C.text}}>{fmtShort(res.used)}</span>
+                    <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(res.used)}</span>
                     <span style={{fontSize:10,color:C.textMid}}>/{fmtShort(res.total)}</span>
                   </span>}
             </div>
@@ -675,6 +681,40 @@ function ItemInfoPanel({typeID}) {
   );
 }
 
+// CCP writes trait text for hulls, structures AND T3 subsystems, in one three-part shape:
+// per-skill-level sections, a role bonus, then anything else. Shared by the ship info sheet and the
+// item detail sheet so a Legion's subsystem bonuses read exactly like its hull's.
+//
+// A T3 cruiser's bonuses live almost entirely on its SUBSYSTEMS — the hull's own trait text says
+// little — so without this the numbers actually deciding the fit had nowhere to be shown.
+function hasTraits(typeID){
+  const t=(shipTraits??{})[String(typeID)];
+  return !!(t&&(t.skills?.length||t.role||t.misc));
+}
+
+function TraitsPanel({typeID, empty="No trait data available."}){
+  const t=(shipTraits??{})[String(typeID)]??{};
+  const Section=({header,bonuses})=>(
+    <div style={{marginBottom:14}}>
+      {header&&<div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{header}</div>}
+      {(bonuses||[]).map((b,i)=>(
+        <div key={i} style={{display:'flex',gap:8,padding:'3px 0'}}>
+          {b.number&&<span style={{fontSize:12,fontWeight:700,color:C.accent,minWidth:44,flexShrink:0}}>{b.number}</span>}
+          <span style={{fontSize:12,color:C.textMid}}>{b.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+  if(!hasTraits(typeID)) return <div style={{color:C.textMute,fontSize:13}}>{empty}</div>;
+  return (
+    <div>
+      {t.skills?.map((s,i)=><Section key={i} header={s.header} bonuses={s.bonuses}/>)}
+      {t.role&&<Section header={t.role.header||'Role Bonus:'} bonuses={t.role.bonuses}/>}
+      {t.misc&&<Section header={t.misc.header||'Misc:'} bonuses={t.misc.bonuses}/>}
+    </div>
+  );
+}
+
 // Standalone bottom sheet for item info (triggered from browser or charge list)
 function ItemInfoSheet({typeID, onClose}) {
   return (
@@ -966,7 +1006,10 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
 export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
   const [tab, setTab] = useState("info");
   const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
-  const TABS = [["info", "Info"], ["vars", "Variations"]];
+  // Traits only appears for things CCP actually wrote trait text for — in this sheet that is the T3
+  // subsystems. Showing an always-empty third tab on every drone and implant would cost more than it
+  // gives, and the tab row is already tight on a phone.
+  const TABS = [["info", "Info"], ...(hasTraits(typeID) ? [["traits", "Traits"]] : []), ["vars", "Variations"]];
   return (
     <BottomSheet title={title} onClose={onClose} height="82vh">
       {actions?.length>0&&(
@@ -990,6 +1033,7 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
       </div>
       <div style={{padding:"4px 14px 16px"}}>
         {tab==="info" && <ItemInfoPanel typeID={typeID}/>}
+        {tab==="traits" && <div style={{paddingTop:12}}><TraitsPanel typeID={typeID}/></div>}
         {/* readOnly when the caller gave no handler, so the list stops advertising "tap to swap"
             on rows that cannot do anything — which is how this shipped for boosters. */}
         {tab==="vars" && <ModuleVariationsTab typeID={typeID} currentName={title} readOnly={!onSwap}
@@ -1277,7 +1321,11 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Module State</div>
           <div style={{display:"flex",gap:8,marginBottom:20}}>
             {states.map(s=>(<button key={s} className="press" onClick={()=>{if(mod.state!==s)haptic("medium");onUpdateMod({...mod,state:s});}} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${mod.state===s?STATE_COLORS[s]:C.border}`,background:mod.state===s?`${STATE_COLORS[s]}22`:"none",cursor:"pointer",transition:"background-color .18s ease, border-color .18s ease"}}>
-              <div style={{width:8,height:8,borderRadius:99,background:STATE_COLORS[s],margin:"0 auto 4px",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
+              {/* Fixed-height row so the varying dot size can't shift the label under it. Same
+                  size/glow ladder as the fit list, so the picker teaches the mapping the rows use. */}
+              <div style={{height:10,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}>
+                <div style={{width:STATE_DOT[s].size,height:STATE_DOT[s].size,borderRadius:99,background:STATE_COLORS[s],boxShadow:STATE_DOT[s].glow?`0 0 ${STATE_DOT[s].glow}px ${STATE_COLORS[s]}`:"none",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
+              </div>
               <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]}</span>
             </button>))}
           </div>
@@ -1510,4 +1558,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, TraitsPanel, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };

@@ -3,7 +3,8 @@ import { C } from "../theme.js";
 import * as esi from "../lib/esi.js";
 import { esiFittingToImportShape, slotsToEsiFitting } from "../lib/esi-fits.js";
 import { ESI_CLIENT_ID } from "../esi-config.js";
-import { tidByName } from "../calc.js";
+import { tidByName, TYPES } from "../calc.js";
+import { eveIcon } from "../lib/icons.js";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
 function friendlyError(e) {
@@ -194,6 +195,7 @@ export function EsiImportModal({ onClose, onImport }) {
   const [fittings, setFittings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [search, setSearch] = useState("");
 
   const load = useCallback((characterId) => {
     if (!characterId) return;
@@ -213,6 +215,14 @@ export function EsiImportModal({ onClose, onImport }) {
     } catch (e) { setError(friendlyError(e)); }
   };
 
+  // Search matches the HULL as well as the fit name — a pilot with 200 saved fits looks for "every
+  // Legion I have" far more often than for a fit whose name they remember exactly.
+  const q = search.trim().toLowerCase();
+  const shipNameOf = f => TYPES[f?.ship_type_id]?.n ?? "";
+  const shown = q
+    ? (fittings ?? []).filter(f => String(f.name ?? "").toLowerCase().includes(q) || shipNameOf(f).toLowerCase().includes(q))
+    : (fittings ?? []);
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
       <div style={{ width: "100%", maxHeight: "88vh", overflowY: "auto", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 32px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
@@ -222,10 +232,22 @@ export function EsiImportModal({ onClose, onImport }) {
         {loading && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Loading saved fittings…</div>}
         {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
         {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No saved fittings on this character.</div>}
-        {fittings?.map(f => (
-          <div key={f.fitting_id} onClick={() => importOne(f)} style={{ padding: "10px 12px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 6, cursor: "pointer" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{f.name}</div>
-            <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{f.items?.length ?? 0} items</div>
+        {fittings && fittings.length > 0 && (
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search fits or hulls…"
+                 style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, padding: "9px 11px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.text, fontSize: 13, outline: "none" }} />
+        )}
+        {fittings && fittings.length > 0 && shown.length === 0 && (
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No fit matches “{search.trim()}”.</div>
+        )}
+        {shown.map(f => (
+          <div key={f.fitting_id} onClick={() => importOne(f)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 6, cursor: "pointer" }}>
+            <img src={eveIcon(f.ship_type_id, 32)} alt="" width={32} height={32}
+                 style={{ width: 32, height: 32, borderRadius: 5, flexShrink: 0, background: C.surface }}
+                 onError={e => { e.currentTarget.style.visibility = "hidden"; }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
+              <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{shipNameOf(f) || "Unknown hull"} · {f.items?.length ?? 0} items</div>
+            </div>
           </div>
         ))}
         <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>

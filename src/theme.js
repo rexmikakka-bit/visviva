@@ -5,7 +5,11 @@ const C={
   accent:"#4f8ef7",accentLight:"rgba(79,142,247,0.1)",accentBorder:"rgba(79,142,247,0.3)",
   warning:"#f59e0b",danger:"#ef4444",success:"#22c55e",
   high:"#a78bfa",mid:"#4f8ef7",low:"#22d3ee",rig:"#34d399",
-  offline:"#55555f",online:"#9898a6",active:"#34d399",overheat:"#f97316",
+  // Module states. These four are used ONLY by STATE_COLORS in lib/core.js. `active` is a hotter,
+  // more saturated green than C.rig (which it used to duplicate) and `online` is dimmer than
+  // C.textMid (which it used to duplicate), so the running state now outranks the idle one on
+  // brightness as well as hue — they were near-identical in luminance and hard to tell apart at 6px.
+  offline:"#55555f",online:"#85858f",active:"#1ded96",overheat:"#f97316",
 };
 // EVE damage type colours: EM=blue, Thermal=red, Kinetic=green, Explosive=orange
 export { C };

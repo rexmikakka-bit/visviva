@@ -8,7 +8,7 @@ import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
 import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton } from "./ui.jsx";
+import { InfoButton, TraitsPanel } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
@@ -79,18 +79,6 @@ export function ShipInfoSheet({ship, onClose}) {
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
-  const TraitSection = ({header, bonuses}) => (
-    <div style={{marginBottom:14}}>
-      <div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{header}</div>
-      {(bonuses||[]).map((b,i) => (
-        <div key={i} style={{display:'flex',gap:8,padding:'3px 0'}}>
-          {b.number && <span style={{fontSize:12,fontWeight:700,color:C.accent,minWidth:44,flexShrink:0}}>{b.number}</span>}
-          <span style={{fontSize:12,color:C.textMid}}>{b.text}</span>
-        </div>
-      ))}
-    </div>
-  );
-
   const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
   const attrs = {
     fitting: [
@@ -160,16 +148,7 @@ export function ShipInfoSheet({ship, onClose}) {
           ))}
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'14px 16px'}}>
-          {tab==='traits' && (
-            <div>
-              {traits.skills?.map((s,i) => <TraitSection key={i} header={s.header} bonuses={s.bonuses}/>)}
-              {traits.role && <TraitSection header={traits.role.header||'Role Bonus:'} bonuses={traits.role.bonuses}/>}
-              {traits.misc && <TraitSection header={traits.misc.header||'Misc:'} bonuses={traits.misc.bonuses}/>}
-              {!traits.skills?.length && !traits.role && (
-                <div style={{color:C.textMute,fontSize:13}}>No trait data available.</div>
-              )}
-            </div>
-          )}
+          {tab==='traits' && <TraitsPanel typeID={ship?.typeID}/>}
           {/* pre-wrap: CCP's descriptions are multi-paragraph, separated by blank lines; without
               it they collapse into one undifferentiated wall of text. */}
           {tab==='description' && (

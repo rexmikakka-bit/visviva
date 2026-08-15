@@ -1697,6 +1697,110 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 13m. ESI FITTING IMPORT/EXPORT — the flag scheme
+//      ESI's fitting `flag` is a STRING enum ("HiSlot0", "Cargo", "DroneBay"), not the classic
+//      numeric inventory flag (HiSlot0=27) that pyfa's service/port/esi.py still sends. Reading
+//      pyfa instead of CCP's published schema meant every module failed the slot lookup and was
+//      dropped, so an imported fit arrived as a bare hull with the right name.
+//      Schema: https://esi.evetech.net/meta/openapi.json (CharactersCharacterIdFittingsGet).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nESI FITTING FLAGS');
+  const { esiFittingToImportShape, slotsToEsiFitting } = await import('./lib/esi-fits.js');
+  const mk = (items) => esiFittingToImportShape({ fitting_id: 1, name: 'T', description: '', ship_type_id: tid('Rifter'), items });
+
+  const modern = mk([
+    { flag: 'HiSlot2', quantity: 1, type_id: tid('Small Energy Neutralizer II') },
+    { flag: 'HiSlot0', quantity: 1, type_id: tid('200mm AutoCannon II') },
+    { flag: 'HiSlot1', quantity: 1, type_id: tid('200mm AutoCannon II') },
+    { flag: 'MedSlot0', quantity: 1, type_id: tid('5MN Y-T8 Compact Microwarpdrive') },
+    { flag: 'LoSlot0', quantity: 1, type_id: tid('Damage Control II') },
+    { flag: 'RigSlot0', quantity: 1, type_id: tid('Small Projectile Burst Aerator II') },
+    { flag: 'Cargo', quantity: 100, type_id: tid('Republic Fleet EMP S') },
+    { flag: 'DroneBay', quantity: 2, type_id: tid('Warrior II') },
+    { flag: 'Invalid', quantity: 1, type_id: tid('Damage Control II') },
+  ]);
+  check('esifit', 'string flags place every module', modern.mods.length, 6, 0);
+  check('esifit', 'string DroneBay is read', modern.drones.length, 1, 0);
+  check('esifit', 'string Cargo is read', modern.cargo.length, 1, 0);
+  check('esifit', 'Invalid entries are discarded', modern.mods.filter(m => m.name === 'Damage Control II').length, 1, 0);
+  // ESI returns items in no order; the slot index is what puts them back where the pilot had them.
+  const built = buildSlotsFromEFT(modern.ship, modern.mods, undefined);
+  check('esifit', 'slot index orders the rack', built.high[2].name, 'Small Energy Neutralizer II', 0);
+  check('esifit', 'first high slot is the gun', built.high[0].name, '200mm AutoCannon II', 0);
+  check('esifit', 'rig placed in the rig rack', built.rigs[0].name, 'Small Projectile Burst Aerator II', 0);
+
+  // A fitting file written by an older tool still carries the numeric scheme.
+  const legacy = mk([
+    { flag: 27, quantity: 1, type_id: tid('200mm AutoCannon II') },
+    { flag: 19, quantity: 1, type_id: tid('5MN Y-T8 Compact Microwarpdrive') },
+    { flag: 11, quantity: 1, type_id: tid('Damage Control II') },
+    { flag: 5,  quantity: 10, type_id: tid('Republic Fleet EMP S') },
+    { flag: 87, quantity: 2, type_id: tid('Warrior II') },
+  ]);
+  check('esifit', 'numeric flags still import', legacy.mods.length, 3, 0);
+  check('esifit', 'numeric DroneBay still imports', legacy.drones.length, 1, 0);
+
+  // Export must EMIT the strings — numbers are rejected by the live endpoint.
+  const out = slotsToEsiFitting(tid('Rifter'), 'T', { high: built.high, mid: built.mid, low: built.low, rigs: built.rigs, services: [] },
+                                [{ name: 'Warrior II', qty: 2, typeID: tid('Warrior II') }], [], []);
+  check('esifit', 'export emits no numeric flags', out.items.filter(i => typeof i.flag !== 'string').length, 0, 0);
+  check('esifit', 'export numbers the high rack', out.items.filter(i => /^HiSlot\d$/.test(i.flag)).length, 3, 0);
+  check('esifit', 'export names the drone bay', out.items.filter(i => i.flag === 'DroneBay').length, 1, 0);
+  // Round-trip: what we send must come back as the same fit.
+  const round = esiFittingToImportShape({ ...out, fitting_id: 2 });
+  check('esifit', 'round-trip keeps every module', round.mods.length, 6, 0);
+
+  // T3 cruiser subsystems ride their own flag range and are placed by group, not by index.
+  const t3 = esiFittingToImportShape({ fitting_id: 3, name: 'T', description: '', ship_type_id: tid('Legion'), items: [
+    { flag: 'SubSystemSlot0', quantity: 1, type_id: tid('Legion Core - Augmented Antimatter Reactor') },
+    { flag: 'SubSystemSlot1', quantity: 1, type_id: tid('Legion Defensive - Augmented Plating') },
+  ] });
+  check('esifit', 'subsystem flags are recognised', t3.subsystems.length, 2, 0);
+  const t3out = slotsToEsiFitting(tid('Legion'), 'T', { high: [], mid: [], low: [], rigs: [], services: [],
+    subsystems: [{ typeID: tid('Legion Core - Augmented Antimatter Reactor') }] }, [], [{ name: 'Warrior II', qty: 1, typeID: tid('Warrior II') }], []);
+  check('esifit', 'subsystem exports as SubSystemSlot0', t3out.items.filter(i => i.flag === 'SubSystemSlot0').length, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13n. TRAIT TEXT — hulls, structures AND T3 subsystems
+//      build-bundle.py generates ship-traits.json from eve.db's invtraits. It filtered on HULL_CATS
+//      alone, so all 48 subsystems came out empty — and a T3 cruiser's real bonuses live on the
+//      SUBSYSTEM, not the hull, which made the numbers deciding the fit unreachable in the UI.
+//      Values below are read off pyfa's own Traits tab for the same item.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nTRAITS');
+  const traits = (await import('./data/ship-traits.json', { with: { type: 'json' } })).default;
+  const at = n => traits[String(tid(n))] ?? {};
+
+  const legion = at('Legion Offensive - Liquid Crystal Magnifiers');
+  check('traits', 'subsystem carries a per-skill-level section', legion.skills?.length ?? 0, 1, 0);
+  check('traits', 'subsystem skill header', legion.skills?.[0]?.header ?? '', 'Amarr Offensive Systems bonuses (per skill level):', 0);
+  check('traits', 'subsystem lists all three skill bonuses', legion.skills?.[0]?.bonuses?.length ?? 0, 3, 0);
+  check('traits', 'leading percentage is split out for colouring', legion.skills?.[0]?.bonuses?.[1]?.number ?? '', '10%', 0);
+  check('traits', 'bonus text keeps the rest of the line', legion.skills?.[0]?.bonuses?.[1]?.text ?? '', 'bonus to Medium Energy Turret damage', 0);
+  check('traits', 'subsystem carries a role bonus', legion.role?.bonuses?.length ?? 0, 5, 0);
+  check('traits', "role bonus keeps CCP's bulleted base-stat notes", legion.role?.bonuses?.[2]?.text ?? '', '• +7 High Slots, +6 Turret Hardpoints', 0);
+
+  // Every subsystem, not just the one that was checked by hand — the generator either includes the
+  // category or it does not, so a partial result means something subtler is wrong than a bad filter.
+  let subs = 0, subsWithTraits = 0;
+  for (const [id, td] of Object.entries(TYPES)) {
+    if ((td.c ?? td.category) !== 32) continue;
+    subs++;
+    if (traits[id]?.skills?.length || traits[id]?.role) subsWithTraits++;
+  }
+  check('traits', 'every subsystem has trait bonuses', subs - subsWithTraits, 0, 0);
+  check('traits', 'subsystems are actually present', subs > 0 ? 1 : 0, 1, 0);
+
+  // Descriptions stay in type-descriptions.json for subsystems — one source per string. Hulls keep
+  // theirs here, next to their bonuses, which is the split the info panel is built around.
+  check('traits', 'subsystem carries no duplicate description', legion.desc === undefined ? 1 : 0, 1, 0);
+  check('traits', 'hull still carries its description', (at('Legion').desc ?? '').length > 0 ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13j. CHARGE BROWSER — which charges a module offers, and in what order
 //      All three of these are corrections to CCP's own filing, so nothing in the data will keep
 //      them right on its own: civilian ammo sits in a group it does not belong to, cap boosters
@@ -2089,6 +2193,56 @@ Republic Fleet Command Mindlink`;
   check('spool', 'projected rep carries spoolMax', rr?.spoolMax ?? 0, 1.5, 0.0001);
   check('spool', 'projected rep carries spoolPerCycle', rr?.spoolPerCycle ?? 0, 0.1, 0.0001);
   check('spool', 'rep cycles to full spool', Math.ceil(1.5 / 0.1), 15, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 15. MINING YIELD — every figure below is eos's, to full float precision (scripts/oracle,
+//     `fit.minerYield` / `fit.droneYield` / `fit.minerDrain` / `fit.droneDrain`).
+//
+//     Two things here are easy to break and invisible when they are:
+//     - A mining CRYSTAL modifies its parent MODULE via domain otherID (Effect1200), the same shape
+//       as Conflagration's capNeedBonus. The engine does not iterate charges as effect sources, so
+//       without explicit handling the crystal silently does nothing — and a Modulated Strip Miner II
+//       at 120 m3/cycle instead of 216 just looks like a low number, not like a bug. The crystals
+//       check is therefore the load-bearing one: it is ~2.3x the bare figure.
+//     - eos measures WASTE against the PRE-crit yield and folds the crit bonus in afterwards, so
+//       drain is not simply yield x (1 + wasteChance). Getting that order wrong shifts waste by the
+//       3.75% crit factor, which is small enough to look like rounding.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMINING (eos oracle: minerYield / droneYield / drain)');
+  const CRYS = 'Simple Asteroid Mining Crystal Type A II';
+  const mining = (ship, fit, drones = []) =>
+    calcFitStats({ typeID: tid(ship), name: ship }, fit, drones, null, {}).mining;
+
+  const crys = mining('Hulk', {
+    high: [M('Modulated Strip Miner II', 'active', CRYS), M('Modulated Strip Miner II', 'active', CRYS)],
+    low: [M('Mining Laser Upgrade II', 'online'), M('Mining Laser Upgrade II', 'online'), M('Mining Laser Upgrade II', 'online')],
+  });
+  check('mining', 'Hulk + T2 crystals + 3 MLU', crys.totalM3S, 41.702510, 1e-5);
+  check('mining', 'Hulk + crystals waste', crys.wasteM3S, 15.113392, 1e-5);
+
+  const bare = mining('Hulk', { high: [M('Modulated Strip Miner II', 'active'), M('Modulated Strip Miner II', 'active')] });
+  check('mining', 'Hulk, no crystals', bare.totalM3S, 17.889994, 1e-5);
+  check('mining', 'Hulk, no crystals waste', bare.wasteM3S, 5.862745, 1e-5);
+
+  check('mining', 'Venture, 2x Miner II',
+    mining('Venture', { high: [M('Miner II', 'active'), M('Miner II', 'active')] }).totalM3S, 8.105469, 1e-5);
+  check('mining', 'Venture, 2x Gas Cloud Harvester II',
+    mining('Venture', { high: [M('Gas Cloud Harvester II', 'active'), M('Gas Cloud Harvester II', 'active')] }).totalM3S, 6.666667, 1e-5);
+
+  const proc = mining('Procurer', { high: [M('Strip Miner I', 'active')] },
+    [{ name: 'Mining Drone II', typeID: tid('Mining Drone II'), qty: 2, active: true }]);
+  check('mining', 'Procurer strip miner', proc.moduleM3S, 5.944010, 1e-5);
+  check('mining', 'Procurer 2x Mining Drone II', proc.droneM3S, 2.268750, 1e-5);
+  check('mining', 'Procurer total', proc.totalM3S, 8.212760, 1e-5);
+
+  // An OFFLINE miner mines nothing, and a fit with no mining modules must report a clean zero —
+  // the Stats card is gated on totalM3S > 0, so a stray non-zero puts a Mining panel on a combat fit.
+  check('mining', 'offline strip miner yields nothing',
+    mining('Hulk', { high: [M('Modulated Strip Miner II', 'offline')] }).totalM3S, 0, 0);
+  check('mining', 'non-mining fit reports zero',
+    mining('Rifter', { high: [M('200mm AutoCannon II', 'active', 'Republic Fleet EMP S')] }).totalM3S, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

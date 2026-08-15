@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -258,8 +258,18 @@ function BoosterPickerSheet({onAdd,onClose}){
 
 export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
   const[search,setSearch]=useState("");
-  const allFits=[];
-  Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))allFits.push({ship,fit:f});}));
+  // MEMOISED because `filterFn` is expensive: the command picker passes hasCommandBursts, which runs
+  // a full computeCommandBursts dogma pass PER FIT (~11 ms on a desktop, several times that on a
+  // phone). Built in the render body it re-ran for every fit in the library on every keystroke —
+  // ~450 ms a character against a 40-fit library — which is what made this search feel broken. The
+  // result cannot change while typing, so it is keyed on the inputs that actually decide it.
+  // `filterFn` is module-scope (hasCommandBursts) or undefined, never an inline arrow, so its
+  // identity is stable and this does not silently re-run anyway.
+  const allFits=useMemo(()=>{
+    const out=[];
+    Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))out.push({ship,fit:f});}));
+    return out;
+  },[fitsDB,filterFn]);
   const q=search.trim().toLowerCase();
   const filtered=q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
   return(<BottomSheet title={title} onClose={onClose} height="75vh">
@@ -291,6 +301,14 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
 // The PROJECTED picker is deliberately UNFILTERED: anything can be projected, and hiding fits there
 // would take choices away rather than remove noise.
 function hasCommandBursts(ship,fit){
+  // Cheap necessary condition first: computeCommandBursts builds a whole Fit and runs the dogma
+  // engine (~11 ms on a desktop), and this filter runs over the entire library every time the picker
+  // opens. A fit carrying no Command Burst module cannot produce a burst, and that is most fits.
+  // Deliberately tests ONLY the module group — not its state or its loaded charge, both of which
+  // computeCommandBursts also requires — so this stays a strict SUPERSET of what that function
+  // accepts and the expensive call remains the only thing that decides the answer.
+  const all=[...(fit.slots?.high??[]),...(fit.slots?.mid??[]),...(fit.slots?.low??[]),...(fit.slots?.rigs??[]),...(fit.slots?.services??[])];
+  if(!all.some(s=>s?.typeID&&(TYPES[s.typeID]??TYPES[String(s.typeID)])?.gn==="Command Burst"))return false;
   try{
     return computeCommandBursts({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
       {implants:fit.implants,boosters:fit.boosters}).length>0;

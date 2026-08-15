@@ -2710,6 +2710,54 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     }
   }
 
+  // ── 9c. Mining yield ──────────────────────────────────────────────────────
+  // Ports eos's Fit.calculatemining (module.py / drone.py `__calculateMining`). Yield per cycle
+  // divided by cycle seconds, summed over ACTIVE mining modules and LAUNCHED mining drones — the
+  // same state rules the DPS passes above use, and for the same reason: an offline strip miner
+  // mines nothing.
+  //
+  // Everything that scales the yield (the Mining/Astrogeology/Ice Harvesting skills, Mining Laser
+  // Upgrades, the barge/exhumer/Venture hull bonuses, mining crystals) reaches `miningAmount` on the
+  // engine-computed item, so this reads the engine and never the raw type data.
+  //
+  // `wasteM3S` is eos's mining DRAIN minus the yield: the ore a miner destroys without collecting.
+  // It is not a yield loss to the pilot (the hold fills at `yieldM3S` either way) but it decides how
+  // fast a rock is gone, which is what makes two equal-yield fits different.
+  const mining = { moduleM3S: 0, droneM3S: 0, totalM3S: 0, wasteM3S: 0, modules: [] };
+  {
+    // eos reads the module's cycle from `speed` first, then `duration`; a mining laser only carries
+    // `duration`, but reading them in the same order keeps this honest if CCP ever adds one.
+    const cycleS = (it) => ((it.get('speed') || it.get('duration') || 0) / 1000);
+    const wasted = (it, yps) => {
+      const chance = Math.max(0, Math.min(1, (it.get('miningWasteProbability') ?? 0) / 100));
+      return yps * chance * (it.get('miningWastedVolumeMultiplier') ?? 0);
+    };
+    for (const { slot, fitItem } of modItems) {
+      if (!fitItem || !isActive(slot.state)) continue;
+      const amount = fitItem.get('miningAmount') ?? 0;
+      const cyc = cycleS(fitItem);
+      if (amount <= 0 || cyc <= 0) continue;
+      let yps = amount / cyc;
+      mining.wasteM3S += wasted(fitItem, yps);
+      // Mining crits roll per cycle, so the displayed yield is the EXPECTED value — chance × bonus
+      // on top of the base. eos folds this in the same way, and only after waste has been measured
+      // against the un-crit yield.
+      yps += yps * (fitItem.get('miningCritChance') ?? 0) * (fitItem.get('miningCritBonusYield') ?? 0);
+      mining.moduleM3S += yps;
+      mining.modules.push({ name: fitItem.name ?? TYPES[slot.typeID]?.n ?? '?', m3s: yps, cycleS: cyc });
+    }
+    for (const { item, qty, active } of droneItems) {
+      if (!item || !active) continue;
+      const amount = item.get('miningAmount') ?? 0;
+      const cyc = cycleS(item);
+      if (amount <= 0 || cyc <= 0) continue;
+      const yps = (amount * qty) / cyc;
+      mining.wasteM3S += wasted(item, yps);
+      mining.droneM3S += yps;
+    }
+    mining.totalM3S = mining.moduleM3S + mining.droneM3S;
+  }
+
   // ── 9b. Fighters (squadron DPS, speed, EHP, per-ability toggles) ───────────
   // Fighters aren't dogma-engine FitItems, so their multipliers are composed analytically from the
   // modifiers Pyfa applies: Fighters (+5%/lvl), racial Fighter Specialization (+2%/lvl, T2), Heavy
@@ -3174,6 +3222,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     weaponDps, weaponVolley,
     droneDps, droneVolley, droneInfo,
     fighterDps, fighterVolley, fighterDetails,
+    mining,
     totalDps: {
       em: weaponDps.em + droneDps.em + fighterDps.em, th: weaponDps.th + droneDps.th + fighterDps.th,
       kin: weaponDps.kin + droneDps.kin + fighterDps.kin, exp: weaponDps.exp + droneDps.exp + fighterDps.exp,

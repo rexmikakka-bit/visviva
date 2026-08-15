@@ -45,7 +45,7 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 | `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
 | `src/lib/ship-taxonomy.js` | The nested ship-browser menu (Battleships > Faction Battleships > Pirate Faction). Pure + derived — see "ship browser taxonomy" below. |
 | `src/data/dogma-*.json` | The dogma bundle: types, effects, attributes. **Generated + hand-patched.** |
-| `src/data/ship-traits.json` | Per-hull trait bonuses + flavour description (Ship + Structure). **Generated** by `build-bundle.py` from eve.db's `invtraits`/`invtypes`; overrides `data-bundle.js`'s stale `shipTraits`. |
+| `src/data/ship-traits.json` | Trait bonuses for Ships + Structures (with flavour description) and **T3 subsystems** (bonuses only — their description lives in `type-descriptions.json`, one source per string). **Generated** by `build-bundle.py` from eve.db's `invtraits`/`invtypes`; overrides `data-bundle.js`'s stale `shipTraits`. A T3 cruiser's real bonuses live on the SUBSYSTEM, not the hull, so `TRAIT_ONLY_CATS` matters. |
 | `src/data/type-descriptions.json` | Item flavour text for the info panel (modules, charges, implants, drones, fighters, subsystems, deployables, **structure modules**). **Generated** by `build-bundle.py`. Lazy-imported — see the null-guard note below. |
 | `src/data-bundle.js` | Legacy precomputed bundle (5.8 MB). Ship lists, module lists, meta labels. **Partly wrong — see below.** |
 
@@ -488,6 +488,14 @@ engine does NOT iterate charges as effect sources, so those effects are dead. Co
 `capNeedBonus` (+25% cap, Effect804) is handled explicitly in the charge pass; if another
 charge-modifies-module effect turns up, it needs the same treatment.
 
+**Mining crystals are the second case (Effect1200, added 2026-08-14).** All three of its modifiers
+are `otherID`: `specializationAsteroidYieldMultiplier` PostMuls the strip miner's `miningAmount`,
+and the two `specializationCrystalMining…` attributes ModAdd onto its waste probability / wasted-volume
+multiplier. pyfa uses `multiplyItemAttr`/`increaseItemAttr` with no stacking flag, so all three are
+**unpenalised** (`direct=true`). The failure mode is the reason this sat broken: a crystal is roughly
+half an exhumer's yield (a Modulated Strip Miner II is 120 m³/cycle bare, 216 with a T2 crystal), and
+dropping it produces a plausible-looking small number rather than anything that reads as a bug.
+
 ### Hull damage/RoF/tank bonuses split across TWO code paths
 
 Faction/navy hull bonuses (the 2026-07 navy destroyer batch is the worked example) land in one of two
@@ -835,19 +843,31 @@ backend-less.** If the web build ever turns out to need a proxy for the token ex
 (nothing else), that's a small addition scoped to one function (`tokenRequest` in `esi.js`) — it
 does not touch this file's architecture.
 
-### The ESI fittings flag scheme (the part most likely to be re-guessed wrong)
+### ⚠️ The ESI fittings flag scheme is a STRING ENUM (corrected 2026-08-13)
 
-`/characters/{id}/fittings/` items use the **classic numeric "inventory flag" scheme** (LoSlot0=11,
-MedSlot0=19, HiSlot0=27, RigSlot0=92, DroneBay=87, Cargo=5, Fighter=158, Subsystem=125-128) — the
-same numbering the old XML API and the SDE's `invFlags` table used. This is **not** the newer
-string-named flag enum (`"HiSlot0"`, `"MedSlot0"`, ...) that `/characters/{id}/assets/` uses — a
-different, unrelated endpoint. A first search-engine pass on this confidently produced the *wrong*
-(string) scheme, apparently conflating the two endpoints. Ground truth came from reading
-`Pyfa-master/service/port/esi.py` (`exportESI`/`importESI`) — the actual code pyfa runs against live
-ESI — not from docs summaries. Verified against this app's own bundle too: Tengu Defensive
-subsystems carry `subSystemSlot` (attr 1366) = 126, matching pyfa's subsystem-flag base of 125.
-**Read pyfa's source before trusting a web summary of an ESI schema — same lesson as the dogma
-effects, just for a different corner of the API.**
+`/characters/{id}/fittings/` items use **string flags** in both directions: `"HiSlot0".."HiSlot7"`,
+`"MedSlot0..7"`, `"LoSlot0..7"`, `"RigSlot0..2"`, `"ServiceSlot0..7"`, `"SubSystemSlot0..3"`, plus
+`"Cargo"`, `"DroneBay"`, `"FighterBay"` and `"Invalid"` (entries ESI wants discarded). It is **not**
+the classic numeric inventory-flag scheme (LoSlot0=11, HiSlot0=27, RigSlot0=92, Cargo=5, …) that the
+old XML API and the SDE's `invFlags` table used. The numbers are silently rejected.
+
+This file previously documented the numeric scheme, sourced from `Pyfa-master/service/port/esi.py` —
+which still sends numeric `INV_FLAGS`. **That was the bug**: every module of an imported fit failed
+its flag lookup and was dropped, leaving a bare hull, and every exported fit was rejected the same
+way. The authoritative source is CCP's own published schema,
+**https://esi.evetech.net/meta/openapi.json** (`CharactersCharacterIdFittingsGet` and the POST request
+body) — check the schema, not a port of it. Note `/latest/swagger.json` now 404s; `/latest` still
+works as a request base.
+
+Numeric flags are still **accepted on import**, because a fitting JSON written by an older tool is a
+real thing a user will paste at us and the two schemes cannot be confused — one is a number. Export
+emits strings only. `SubSystemSlot<n>` is derived from the type's `subSystemSlot` attribute (attr
+1366), which CCP still ships in the old 125-128 numbering, so it names the slot **index** (125 →
+`SubSystemSlot0`). Pinned by regression section **13l**.
+
+**The wider lesson still holds, with a correction: read the live schema first, then pyfa.** pyfa's
+source is authoritative for *dogma effects* because eos hand-implements them; it is not authoritative
+for an API contract CCP has since changed underneath it.
 
 Also confirmed there (and it matches a well-known in-game limitation): a saved fitting does **not**
 record which module a charge was loaded into. pyfa's own export aggregates all loaded charges,
@@ -862,7 +882,7 @@ round-trip precision ESI itself doesn't support.
   byte-exact match.
 - JWT payload decode, including non-ASCII character names (UTF-8 through the base64url path).
 - `esiFittingToImportShape()` → `buildSlotsFromEFT()` → `slotsToEsiFitting()` round-trip, including
-  the T3-cruiser subsystem case (flags 125/126/127/128 preserved exactly).
+  the T3-cruiser subsystem case (`SubSystemSlot0..3` preserved exactly).
 - Unknown/unpublished `type_id`s in an ESI fitting are skipped, not mis-placed or crash-inducing.
 - Skill-id → app-skill mapping reuses `calc.js`'s existing `SKILL_CAMEL_TO_PYFA` (now exported) —
   159/163 skill keys resolve to a real ESI skill_id; the 4 that don't are a pre-existing gap in that

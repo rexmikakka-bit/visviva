@@ -620,6 +620,26 @@ export class Fit {
           if (aid != null) m.attrs.applyMod(aid, 6, val, true);
           continue;
         }
+        // Mining crystals are the same shape (Effect1200, all three modifiers domain otherID): the
+        // crystal multiplies its strip miner's yield and shifts the module's waste figures. A
+        // Modulated Strip Miner II is 120 m3/cycle bare and 216 with a T2 crystal, so the crystal is
+        // roughly half of an exhumer's yield — dropping it does not look like a bug, just a low
+        // number. pyfa's multiplyItemAttr/increaseItemAttr pass no stacking flag → unpenalised.
+        if (name === 'specializationAsteroidYieldMultiplier') {
+          const aid = AID['miningAmount'];
+          if (aid != null) m.attrs.applyMod(aid, 4, val, true);
+          continue;
+        }
+        if (name === 'specializationCrystalMiningWastedVolumeMultiplierBonus') {
+          const aid = AID['miningWastedVolumeMultiplier'];
+          if (aid != null) m.attrs.applyMod(aid, 2, val, true);
+          continue;
+        }
+        if (name === 'specializationCrystalMiningWasteProbabilityBonus') {
+          const aid = AID['miningWasteProbability'];
+          if (aid != null) m.attrs.applyMod(aid, 2, val, true);
+          continue;
+        }
         const mm = name.match(/^(.+Bonus)Bonus$/);
         if (!mm) continue;
         const targetAid = AID[mm[1]];

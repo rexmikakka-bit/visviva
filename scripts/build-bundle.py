@@ -99,6 +99,12 @@ def num(v):
 
 # Hull categories that get a traits/description entry: 6 Ship, 65 Structure.
 HULL_CATS = {6, 65}
+# Subsystems (32) carry traitText too — a T3 cruiser's per-skill-level bonuses live on the SUBSYSTEM,
+# not on the hull, so without these a Legion's Traits tab can only show the handful of bonuses the
+# hull itself carries and the ones actually deciding the fit are invisible. They get traits only,
+# never a `desc`: subsystem flavour text already ships in type-descriptions.json (DESC_CATS below),
+# and duplicating it would give the info panel two sources for one string.
+TRAIT_ONLY_CATS = {32}
 # Categories whose flavour text the item info panel can show. Hulls are deliberately absent — their
 # description ships inside ship-traits.json alongside their trait bonuses, so the panel reads one
 # file per kind of thing rather than both. The pre-existing hand-built type-descriptions.json only
@@ -352,12 +358,14 @@ def main():
     desc_text  = {r[0]: r[1] for r in db.execute("SELECT typeID,typeDescription FROM invtypes")}
     ship_traits, trait_hulls = {}, 0
     for tid in fit_types:
-        if groups.get(types[tid][2], ('', 0))[1] not in HULL_CATS:
+        cat = groups.get(types[tid][2], ('', 0))[1]
+        if cat not in HULL_CATS and cat not in TRAIT_ONLY_CATS:
             continue
         entry = parse_trait_text(trait_html.get(tid)) or {}
-        desc = strip_html(desc_text.get(tid))
-        if desc:
-            entry['desc'] = desc
+        if cat in HULL_CATS:
+            desc = strip_html(desc_text.get(tid))
+            if desc:
+                entry['desc'] = desc
         if entry:
             ship_traits[str(tid)] = entry
             trait_hulls += 1
