@@ -169,8 +169,15 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
         </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
+      {/* Credit to pyfa is not decoration. Environment-effect mechanics (wormhole classes,
+          metaliminal storms) are the one thing CCP publishes no modifier data for, so every engine
+          that models them is standing on pyfa's hand-written handlers — ours included. Naming that
+          in the shipped app, not only in the repo, is the honest place for it. */}
       <div style={{flexShrink:0,padding:"10px 16px calc(10px + env(safe-area-inset-bottom, 0px))",borderTop:`1px solid ${C.border}`,background:C.surfaceAlt,fontSize:10,lineHeight:1.5,color:C.textMute,textAlign:"center"}}>
         Unofficial, fan-made tool — not affiliated with, endorsed by, or sponsored by CCP Games / Fenris Creations. EVE Online and all related materials are used with limited permission; all intellectual property belongs to Fenris Creations.
+        <div style={{marginTop:6}}>
+          Fitting calculations are validated against <a href="https://github.com/pyfa-org/Pyfa" target="_blank" rel="noreferrer" style={{color:C.textMid}}>pyfa</a>, and its environment-effect data is used with thanks. pyfa is licensed GPLv3.
+        </div>
       </div>
     </div>
   </div>);

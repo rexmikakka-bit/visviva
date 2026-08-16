@@ -109,3 +109,32 @@ wrong.
 
 Work on a branch, open a PR, let CI run. `App.jsx` and the data bundles are the files most likely to
 conflict — keep changes to them focused.
+
+---
+
+## Credits and third-party material
+
+**[pyfa](https://github.com/pyfa-org/Pyfa) (GPLv3)** is this project's reference implementation, and
+one piece of shipped data is derived from it. CCP publishes no `modifierInfo` for Effect Beacon
+(group 920) environment effects — wormhole class effects, metaliminal storms, event beacons — so
+there is nothing to extract from `eve.db` and every engine that models them relies on pyfa's
+hand-written handlers. `src/data/system-effects.json` is generated from those handlers by
+`scripts/build-system-effects.py`.
+
+What that file contains is a wiring table — `{effectID, target, operation, attribute}` using CCP's
+own attribute names. It carries no pyfa source, no comments and no magnitudes; every value is read
+from CCP's data at runtime. Roughly 42% of its rows fall directly out of CCP's naming conventions;
+the remainder encodes mappings pyfa's authors worked out.
+
+pyfa itself is **not** redistributed here. `Pyfa-master/` and `eve.db` are gitignored, and neither
+the repository nor the built app contains pyfa code.
+
+This has not been cleared with pyfa's maintainers. If you are one of them and would rather this data
+were not used, please open an issue — it will be removed.
+
+**EVE Online** and all related materials are the intellectual property of CCP hf. Axis is an
+unofficial, free, fan-made tool, not affiliated with or endorsed by CCP. Static game data is used
+under CCP's developer terms.
+
+**Market prices** come from [Fuzzwork](https://market.fuzzwork.co.uk/) and
+[ceve-market](https://www.ceve-market.org/), fetched only when you ask for them.
