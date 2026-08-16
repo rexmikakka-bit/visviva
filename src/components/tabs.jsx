@@ -287,6 +287,38 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     addMod(secKey,empty.id,{name:mod.name,typeID:mod.typeID,mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
     setModuleMenu(null);
   };
+  // How many more of THIS weapon the hull can still take: the smaller of its free hardpoints of the
+  // matching kind and its empty high slots. Both limits are real — an Apocalypse has 8 highs and 8
+  // turret hardpoints, but a Drake has 8 highs and only 7 launchers.
+  const hardpointRoom=(secKey,mod)=>{
+    if(secKey!=="high"||!ship||!mod?.typeID)return 0;
+    const isT=isTurretWeapon(mod.typeID);
+    if(!isT&&!isMissileLauncher(mod.typeID))return 0;
+    const match=isT?isTurretWeapon:isMissileLauncher;
+    const total=(isT?ship.turrets:ship.launchers)??0;
+    const high=slots.high??[];
+    const used=high.filter(s=>s.typeID&&match(s.typeID)).length;
+    return Math.max(0,Math.min(total-used,high.filter(s=>s.type==="empty").length));
+  };
+  const fillHardpoints=(secKey,mod)=>{
+    const n=hardpointRoom(secKey,mod);
+    if(!n)return;
+    // Copies the SLOT, not just the type — so the rack arrives loaded and in the same state as the
+    // gun it came from. `orphan` is dropped deliberately: the copies are going into slots the ship
+    // genuinely has, whatever the source's own standing.
+    const clone={...mod};delete clone.id;delete clone.orphan;
+    // ONE setSlots for the whole rack. Calling addMod in a loop cannot work: it resolves the target
+    // slot against `slots` from this render's closure, so every iteration would aim at the same one.
+    //
+    // The updater must also be PURE — StrictMode double-invokes it, so a countdown held in the
+    // enclosing scope would be spent by the first pass and fill nothing on the second.
+    setSlots(prev=>{
+      const sec=prev[secKey]??[];
+      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,n).map(m=>m.id));
+      return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
+    });
+    setModuleMenu(null);
+  };
   const addMod=(secKey,id,modData)=>{
     if(ship&&modData.typeID){
       const fitErr=checkFitRestriction(modData.typeID,ship);
@@ -551,7 +583,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}

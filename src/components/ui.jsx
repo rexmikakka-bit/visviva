@@ -264,7 +264,14 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
                     <span style={{fontSize:10,color:C.textMid}}>/{fmtShort(res.total)}</span>
                   </span>}
             </div>
-            <div style={{height:3,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
+            {/* The empty part of the track is the half you actually read — "how much room is left"
+                is the question, and it was C.border on C.surfaceAlt, a 1.16:1 ratio you cannot see
+                where the bar ends. Tinting the track with the resource's own hue instead of a
+                neutral grey roughly triples the luminance gap against the strip while keeping the
+                filled/empty step at ~3:1, and it reinforces the per-resource colour coding above.
+                Same alpha-on-hue idiom as the hardpoint dots below. 4px because a low-contrast edge
+                needs a couple of pixels to register at all. */}
+            <div style={{height:4,background:`${barColor}59`,borderRadius:99,overflow:"hidden"}}><div style={{width:`${Math.min(rawPct,110)}%`,maxWidth:'100%',height:"100%",background:barColor,borderRadius:99}}/></div>
           </div>
         );
       })}
@@ -1296,7 +1303,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   </div>);
 }
 
-function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate}){
+function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -1375,6 +1382,11 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
             </>}
           </div>);
         })()}
+          {/* Only offered at 2 or more: at exactly one free hardpoint it would be Duplicate under a
+              second name, and two buttons doing the same thing is worse than one. The count is in
+              the label because the two limits it reconciles (free hardpoints, empty high slots)
+              aren't both visible from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
+          {onFillHardpoints&&fillCount>1&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Fill Hardpoints (+{fillCount})</button>}
           {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Duplicate to Next Empty Slot</button>}
           <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>Remove Module</button>
         </div>)}
