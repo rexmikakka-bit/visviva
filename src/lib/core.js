@@ -16,6 +16,7 @@ import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
 import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
+import { classifyHull } from "./ship-taxonomy.js";
 
 
 const MUTA_BY_TYPE = {};   // baseTypeID -> [mutaTypeID]
@@ -280,6 +281,17 @@ const calcTransversal=(a,b)=>{const d=Math.abs(a-b)%360,n=d>180?360-d:d;return M
 
 // ── Ship lookup ────────────────────────────────────────────────────
 // ── Ship lookup ─────────────────────────────────────────────────────
+// What class of hull is this, and who built it? Both are derived from the type data, never read off
+// the ships.json row: that row's `hullClass` is wrong for 64 hulls and its `race` for 116. The Draugur
+// — a Triglavian Command Destroyer — is filed there as an "Unknown Attack Battlecruiser", and the
+// Bifrost and Stork as "Flag Cruisers". TYPES[].gn is CCP's own group name and `classifyHull` reads
+// the hull's factionID, which is exactly what the ship browser already routes on; sharing that here is
+// what stops the header subtitle and the browser from disagreeing about the same ship.
+function hullIdentity(typeID){
+  const td=typeID?(TYPES[typeID]??TYPES[String(typeID)]):null;
+  if(!td) return null;
+  return {hullClass:td.groupName??td.gn??"", race:classifyHull(td,typeID).race};
+}
 // Fallback: build a ships.json-shaped object from dogma TYPES data for ships
 // that are missing from ships.json (e.g. Naga). Fixes blank stats/slots.
 function shipFromDogma(name){
@@ -290,10 +302,9 @@ function shipFromDogma(name){
   const sensors=[["Radar",a.scanRadarStrength],["Ladar",a.scanLadarStrength],["Magnetometric",a.scanMagnetometricStrength],["Gravimetric",a.scanGravimetricStrength]]
     .filter(([,v])=>v>0).sort((x,y)=>(y[1]??0)-(x[1]??0));
   const rz=k=>Math.round((1-(a[k]??1))*1000)/10;
-  let race=null;
-  for(const races of Object.values(SHIPS_BY_CLASS)){for(const[r,ships] of Object.entries(races)){if(ships.includes(name)){race=r;break;}}if(race)break;}
+  const{hullClass,race}=hullIdentity(tid)??{hullClass:"",race:null};
   return{
-    typeID:tid,name,hullClass:td.groupName??td.gn??"",race,
+    typeID:tid,name,hullClass,race,
     cpu:a.cpuOutput??0,pg:a.powerOutput??0,calibration:a.upgradeCapacity??400,
     hiSlots:a.hiSlots??0,medSlots:a.medSlots??0,lowSlots:a.lowSlots??0,rigSlots:a.rigSlots??a.upgradeSlotsLeft??0,serviceSlots:a.serviceSlots??0,
     turrets:a.turretSlotsLeft??0,launchers:a.launcherSlotsLeft??0,
@@ -317,12 +328,8 @@ function shipFromDogma(name){
 function lookupShip(name){
   const found=Object.values(shipsData).find(s=>s.name===name);
   const ship=found?{...found}:(shipFromDogma(name)??{name});
-  // Override hullClass from authoritative SHIPS_BY_CLASS (fixes Malediction as Tactical Destroyer bug)
-  for(const[cls,races] of Object.entries(SHIPS_BY_CLASS)){
-    for(const ships of Object.values(races)){
-      if(ships.includes(name)){ship.hullClass=cls;break;}
-    }
-  }
+  const id=hullIdentity(ship.typeID);
+  if(id){ship.hullClass=id.hullClass;ship.race=id.race;}
   return ship;
 }
 const fmtN=n=>{if(n==null)return"-";if(n>=1e6)return`${(n/1e6).toFixed(2)}M`;if(n>=100000)return`${Math.round(n/1000)}k`;if(n>=1000){const k=n/1000;return`${k%1===0?k.toFixed(0):k.toFixed(1)}k`;}return String(Math.round(n));};
@@ -376,30 +383,6 @@ const HULL_CLASSES=[
   {key:"Attack Battlecruiser",icon:"🔶",color:C.warning},
   {key:"Battleship",icon:"🔺",color:C.danger},{key:"Black Ops",icon:"🔺",color:C.danger},{key:"Marauder",icon:"🔺",color:C.danger},
 ];
-const SHIPS_BY_CLASS={
-  "Frigate":{Caldari:["Condor","Merlin","Kestrel","Heron","Bantam"],Gallente:["Incursus","Atron","Tristan","Imicus","Navitas"],Amarr:["Punisher","Executioner","Tormentor","Magnate","Inquisitor"],Minmatar:["Rifter","Slasher","Probe","Breacher","Burst"]},
-  "Assault Frigate":{Caldari:["Harpy","Hawk"],Gallente:["Enyo","Ishkur"],Amarr:["Retribution","Vengeance"],Minmatar:["Jaguar","Wolf"]},
-  "Interceptor":{Caldari:["Crow","Raptor"],Gallente:["Ares","Taranis"],Amarr:["Crusader","Malediction"],Minmatar:["Claw","Stiletto"]},
-  "Covert Ops":{Caldari:["Buzzard"],Gallente:["Helios"],Amarr:["Anathema"],Minmatar:["Cheetah"]},
-  "Electronic Attack Ship":{Caldari:["Kitsune"],Gallente:["Keres"],Amarr:["Sentinel"],Minmatar:["Hyena"]},
-  "Stealth Bomber":{Caldari:["Manticore"],Gallente:["Nemesis"],Amarr:["Purifier"],Minmatar:["Hound"]},
-  "Logistics Frigate":{Caldari:["Bantam"],Gallente:["Navitas"],Amarr:["Inquisitor"],Minmatar:["Burst"]},
-  "Destroyer":{Caldari:["Cormorant","Corax"],Gallente:["Catalyst","Algos"],Amarr:["Coercer","Dragoon"],Minmatar:["Thrasher","Talwar"]},
-  "Tactical Destroyer":{Caldari:["Jackdaw"],Gallente:["Hecate"],Amarr:["Confessor"],Minmatar:["Svipul"]},
-  "Interdictor":{Caldari:["Flycatcher"],Gallente:["Eris"],Amarr:["Heretic"],Minmatar:["Sabre"]},
-  "Cruiser":{Caldari:["Caracal","Moa","Osprey","Blackbird"],Gallente:["Thorax","Vexor","Celestis","Exequror"],Amarr:["Omen","Maller","Arbitrator","Augoror"],Minmatar:["Rupture","Stabber","Bellicose","Scythe"]},
-  "Heavy Assault Cruiser":{Caldari:["Cerberus","Eagle"],Gallente:["Deimos","Ishtar"],Amarr:["Sacrilege","Zealot"],Minmatar:["Vagabond","Muninn"]},
-  "Recon Ship":{Caldari:["Falcon","Rook"],Gallente:["Arazu","Lachesis"],Amarr:["Pilgrim","Curse"],Minmatar:["Huginn","Rapier"]},
-  "Heavy Interdictor":{Caldari:["Onyx"],Gallente:["Phobos"],Amarr:["Devoter"],Minmatar:["Broadsword"]},
-  "Logistics":{Caldari:["Basilisk"],Gallente:["Oneiros"],Amarr:["Guardian"],Minmatar:["Scimitar"]},
-  "Flag Cruiser":{Caldari:["Stork"],Gallente:["Squall"],Amarr:["Sovereign"],Minmatar:["Bifrost"]},
-  "Battlecruiser":{Caldari:["Drake","Ferox"],Gallente:["Brutix","Myrmidon"],Amarr:["Harbinger","Prophecy"],Minmatar:["Hurricane","Cyclone"]},
-  "Command Ship":{Caldari:["Nighthawk","Vulture"],Gallente:["Astarte","Eos"],Amarr:["Damnation","Absolution"],Minmatar:["Claymore","Sleipnir"]},
-  "Attack Battlecruiser":{Caldari:["Naga"],Gallente:["Talos"],Amarr:["Oracle"],Minmatar:["Tornado"]},
-  "Battleship":{Caldari:["Raven","Scorpion","Rokh","Raven Navy Issue"],Gallente:["Hyperion","Dominix","Megathron","Vindicator"],Amarr:["Apocalypse","Abaddon","Armageddon","Nightmare"],Minmatar:["Tempest","Typhoon","Maelstrom","Bhaalgorn"]},
-  "Black Ops":{Caldari:["Widow"],Gallente:["Sin"],Amarr:["Redeemer"],Minmatar:["Panther"]},
-  "Marauder":{Caldari:["Golem"],Gallente:["Kronos"],Amarr:["Paladin"],Minmatar:["Vargur"]},
-};
 const SAVED_FITS_SEED={};
 const CMD_SHIP_FITS={
   "Claymore":{bursts:["Interdiction Maneuvers: +12.5% Velocity","Evasive Maneuvers: +12.5% Agility","Rapid Deployment: -12.5% Align Time"]},
@@ -1178,4 +1161,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SHIPS_BY_CLASS, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };

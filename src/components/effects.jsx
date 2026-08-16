@@ -332,12 +332,25 @@ const BoosterIcon=({name,size=28})=>{
 // Pill, whose entire effect is `shieldBoostMultiplier`, with no such suffix. Naming conventions are
 // not a reliable way to find the point of an item.
 const BOOSTER_NOISE=/^(mass|volume|radius|capacity|metaLevel.*|techLevel|requiredSkill\d(Level)?|typeColorScheme)$/i;
+
+// `rangeSkillBonus` is CCP's internal name for the turret OPTIMAL RANGE bonus — it is the attribute
+// the Sharpshooter skill moves — and camel-cases into "Range Skill Bonus", which names a skill
+// rather than the stat it changes. Overridden here and not in MUTA_ATTR_LABELS because that map is
+// shared with the mutaplasmid rows, where the attribute is a different thing on a different item.
+const BOOSTER_LABELS={rangeSkillBonus:"Optimal Range"};
+
+// The trailing "Bonus"/"Penalty" is redundant beside a signed percentage, and it is wrong often
+// enough to be worth dropping rather than just shortening: Crash read "Expl. Radius Bonus −20%" for
+// its whole point, and X-Instinct "Sig Radius Penalty −7.5%" for something you fly it to get. The
+// sign already says which way the number moves; the word could only agree with it or argue.
+const boosterLabel=k=>(BOOSTER_LABELS[k]??mutaLabel(k)).replace(/ (Bonus\d?|Penalty)$/,"");
+
 function boosterBonuses(b){
   const t=TYPES[tidByName(b?.name)];
   const a=t?.attrs??t?.a??{};
   return Object.entries(a)
     .filter(([k,v])=>typeof v==="number"&&v!==0&&!BOOSTER_NOISE.test(k)&&!/^booster/i.test(k))
-    .map(([k,v])=>`${mutaLabel(k)} ${v>0?"+":"−"}${Math.abs(v)}%`);
+    .map(([k,v])=>`${boosterLabel(k)} ${v>0?"+":"−"}${Math.abs(v)}%`);
 }
 
 // A booster's slot is CCP's `boosterness` (attr 1087). Read from the type rather than the saved

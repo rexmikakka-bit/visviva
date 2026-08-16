@@ -125,9 +125,17 @@ core `runMigrations` is DOM-free and covered by the regression suite.
    unset skill to level V. A raw `Fit` harness that loops over skill types can miss some (e.g. Caldari
    Tactical Destroyer defaulting to 1 → wrong reload), producing numbers that look like engine bugs.
 
-8. **`ships.json`'s `hullClass` is wrong for 64 hulls.** It files the Crow under "Tactical Destroyer"
-   and the Cenotaph under plain "Battlecruiser". Use CCP's group name from the type data
-   (`TYPES[typeID].gn`) as the authoritative hull class.
+8. **`ships.json`'s `hullClass` is wrong for 64 hulls, and its `race` for 116.** It files the Crow
+   under "Tactical Destroyer", the Cenotaph under plain "Battlecruiser", and the Draugur — a
+   Triglavian Command Destroyer — as an **"Unknown Attack Battlecruiser"**, which is what a user
+   reported seeing in the fit header. Use CCP's group name from the type data (`TYPES[typeID].gn`)
+   as the authoritative hull class and `classifyHull()` (`lib/ship-taxonomy.js`) for the race.
+
+   `lookupShip()` derives both, via `hullIdentity()`, so the header subtitle and the ship browser
+   cannot describe the same hull differently. The hardcoded `SHIPS_BY_CLASS` table that used to
+   patch `hullClass` here is **deleted** — it was itself stale (it filed the Bifrost and Stork, both
+   Command Destroyers, as "Flag Cruisers") and it only ever covered a couple of dozen hulls.
+   **Do not reintroduce a hand-listed class table.** Regression section 14b sweeps every hull.
 
 9. **`data-bundle.js`'s `meta` strings are wrong** — faction/storyline/deadspace/officer modules all
    came through as "T2". Meta group is derived from CCP's `metaGroupID` (shipped as `mg` on every type

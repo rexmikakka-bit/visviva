@@ -485,6 +485,34 @@ export default function App(){
       if(next) loadFit(next.ship,next.name);
     }
   };
+  // Deleting the fit you have open leaves the same hole as closing its tab, so it lands the same
+  // way: step to the neighbouring tab. It used to just clear the active fit, which hides the bottom
+  // nav (see its render) and the tab strip at once, stranding you on the Fits list until you opened
+  // something else by hand.
+  //
+  // With an empty strip -- a legitimate state, since tabs are opt-in -- there is no neighbour, so it
+  // falls back to another fit of the SAME ship: that is the list being looked at, and deleting one
+  // of three Rifter fits should leave a Rifter open. Only when the ship has none left does the fit
+  // actually clear, and that is the one case where losing the bottom nav is right: nothing to show.
+  const deleteFit=(ship,fit)=>{
+    const wasActive=activeFit?.ship===ship&&activeFit?.fitName===fit.name;
+    const tabIdx=openFitTabs.findIndex(t=>t.ship===ship&&sameTab(t,fit,fit.name));
+    const tabNext=tabIdx>=0?(openFitTabs[tabIdx+1]??openFitTabs[tabIdx-1]):null;
+    const siblings=fitsDB[ship]??[];
+    const sibIdx=siblings.findIndex(f=>f.id===fit.id);
+    const sibNext=sibIdx>=0?(siblings[sibIdx+1]??siblings[sibIdx-1]):null;
+    setFitsDB(prev=>{
+      const next={...prev,[ship]:(prev[ship]||[]).filter(f=>f.id!==fit.id)};
+      if(!next[ship].length) delete next[ship];
+      return next;
+    });
+    if(!wasActive)return;
+    // The deleted fit's tab is not pruned here: resolveTabs reconciles the strip against fitsDB on
+    // every render, so it drops out on its own (see the openTabs comment).
+    if(tabNext) loadFit(tabNext.ship,tabNext.name);
+    else if(sibNext) loadFit(ship,sibNext.name);
+    else setActiveFit(null);
+  };
   // Auto-hide the strip while you scroll a fit, so a phone spends its rows on the fit instead of on
   // navigation; it collapses to a segmented line that still says which tab you are in, and comes
   // back on scroll-up, on reaching the top, or on a tap.
@@ -549,7 +577,7 @@ export default function App(){
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource}/>}
+        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}

@@ -2364,6 +2364,37 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 14b. HULL IDENTITY ON THE FIT ITSELF — the header subtitle reads `${race} ${hullClass}` off
+//      lookupShip(), and those two fields used to come from the ships.json row and a hardcoded
+//      SHIPS_BY_CLASS table. Both are stale: ships.json calls the Draugur an "Unknown Attack
+//      Battlecruiser", and the table files the Bifrost and Stork (Command Destroyers) as "Flag
+//      Cruisers". They are derived from TYPES[].gn + classifyHull now, so the subtitle and the
+//      browser cannot describe the same hull differently. The sweep is the real check — a named
+//      example only catches the hull someone happened to notice.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nHULL IDENTITY');
+  const hulls = Object.entries(TYPES).filter(([, t]) => (t.c ?? t.category) === 6 && t.gn && t.gn !== 'Capsule');
+  const wrong = [];
+  for (const [id, t] of hulls) {
+    const s = lookupShip(t.n);
+    if (s?.hullClass !== t.gn || s?.race !== classifyHull(t, id).race) wrong.push(t.n);
+  }
+  if (wrong.length) console.log(`      DISAGREES WITH CCP: ${wrong.slice(0, 8).join(', ')}`);
+  check('hull', 'every hull class/race matches the type data', wrong.length, 0, 0);
+
+  const sub = (n) => { const s = lookupShip(n); return `${s.race ?? ''} ${s.hullClass ?? ''}`.trim(); };
+  check('hull', 'Draugur is a Triglavian Command Destroyer', sub('Draugur'), 'Triglavian Command Destroyer', 0);
+  check('hull', 'Bifrost is not a Flag Cruiser', sub('Bifrost'), 'Minmatar Command Destroyer', 0);
+  // The hull SHIPS_BY_CLASS existed to fix. It has to survive the table's removal.
+  check('hull', 'Malediction is still an Interceptor', sub('Malediction'), 'Amarr Interceptor', 0);
+  // A real Attack Battlecruiser must keep the label the Draugur wrongly borrowed.
+  check('hull', 'Naga is still an Attack Battlecruiser', sub('Naga'), 'Caldari Attack Battlecruiser', 0);
+  // No racial skill and no mapped faction: the subtitle drops the race rather than saying "Unknown".
+  check('hull', 'Gnosis has no race to show', sub('Gnosis'), 'Combat Battlecruiser', 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
