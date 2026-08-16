@@ -195,7 +195,7 @@ being discovered mid-release.
 | --- | --- |
 | Check required secrets | One of the seven is missing or empty. Names them explicitly. |
 | Generate the native iOS project | `npx cap add ios` — needs `capacitor.config.json` and a successful `npm run build` first. |
-| Generate app icons | Sources are `assets/logo.svg` etc. |
+| Generate app icons | Sources are `assets/icon-only.png` and `assets/splash.png`, both produced from the master by `scripts/build-icons.mjs`. |
 | Verify the app icon | No 1024pt icon produced, or it has an alpha channel — Apple rejects alpha at upload, so this catches it in two minutes rather than after a 20-minute archive. |
 | Apply iOS project settings | `scripts/patch-ios-project.sh` — the `eveauth-visviva://` URL scheme for ESI login and the export-compliance flag. Regenerated every run because `ios/` is not committed. |
 | Install the signing certificate | The `.p12` was built without `-legacy` (see step B), or the password secret is wrong. |

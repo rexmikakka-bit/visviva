@@ -3,9 +3,9 @@ import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
-// The one copy of the app mark. Kept byte-identical to public/favicon.svg so the header, the
-// browser tab and the installed app icon can never show three different drawings.
-import appMark from "../assets/app-mark.svg";
+// The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
+// is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
+import appMark from "../assets/app-mark.png";
 
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
 
@@ -211,19 +211,13 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
           {ship.typeID
             ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>
             /* The app's own mark, standing in for a hull render that has not loaded (or a fit with
-               no ship yet) — and it is THE SHIPPED ICON FILE, byte-identical to public/favicon.svg,
-               not a redrawing of it.
-               It used to be a hand-simplified inline copy: a plain stroked ellipse at flat 50%
-               opacity, on the reasoning that at 26px the tapered orbit ribbon and its opacity
-               gradient were sub-pixel. That reasoning expired when the mark was enlarged to 34/52px,
-               and the copy was left behind showing the old SYMMETRIC orbit while the real icon had
-               moved on to the tapered one. Rendering the file removes the second copy that could
-               drift; imported through Vite's asset pipeline (like lib/icons.js) so it is bundled and
-               works offline. */
-            /* Sized to the BUTTON, not to an arbitrary 26px. A hull render fills the whole square,
+               no ship yet) — and it is THE SHIPPED ICON FILE, not a redrawing of it. A hand-drawn
+               inline copy lived here once and silently fell out of step with the real icon; nothing
+               catches that. Imported through Vite's asset pipeline (like lib/icons.js) so it is
+               bundled and works offline.
+               Sized to the BUTTON, not to an arbitrary 26px: a hull render fills the whole square,
                so a half-size glyph beside it read as a placeholder that had failed to load. The
-               artwork occupies ~76% of its own viewBox, so filling the button still leaves the mark
-               visually inset rather than crowding the edges. */
+               artwork is full-bleed, so the button's border-radius is what rounds it. */
             :<img src={appMark} width={collapsed?34:52} height={collapsed?34:52} alt=""
                   style={{borderRadius:collapsed?8:11,display:"block"}}/>
           }

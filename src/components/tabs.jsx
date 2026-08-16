@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, STATE_COLORS, STATE_DOT, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, STATE_GLOW, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -416,7 +416,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 </div>
               );
               const stateColor=STATE_COLORS[row.state]||C.textMid;
-              const stateDot=STATE_DOT[row.state]??STATE_DOT.online;
+              const stateGlow=STATE_GLOW[row.state]??0;
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
               return(
@@ -433,11 +433,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         background:isDragOver?C.accentLight:row.orphan?`${C.danger}14`:C.surface,
                         border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:row.orphan?C.danger:C.border}`,
                         borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
-                  {/* Fixed-width gutter: the dot's size varies by state, and letting it size the
-                      row would step every module icon in the column left and right. */}
-                  <div style={{width:10,display:"flex",justifyContent:"center",flexShrink:0}}>
-                    <div style={{width:stateDot.size,height:stateDot.size,borderRadius:99,background:stateColor,boxShadow:stateDot.glow?`0 0 ${stateDot.glow}px ${stateColor}`:"none"}}/>
-                  </div>
+                  <div style={{width:6,height:6,borderRadius:99,flexShrink:0,background:stateColor,boxShadow:stateGlow?`0 0 ${stateGlow}px ${stateColor}`:"none"}}/>
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
                   </div>

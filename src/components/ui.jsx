@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
-import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_DOT, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MODULE_STATES, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -1004,12 +1004,17 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
  * implant does, without this component needing to know what an implant is.
  */
 export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
-  const [tab, setTab] = useState("info");
-  const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
   // Traits only appears for things CCP actually wrote trait text for — in this sheet that is the T3
   // subsystems. Showing an always-empty third tab on every drone and implant would cost more than it
   // gives, and the tab row is already tight on a phone.
-  const TABS = [["info", "Info"], ...(hasTraits(typeID) ? [["traits", "Traits"]] : []), ["vars", "Variations"]];
+  //
+  // Where it does appear it leads, and opens selected: the bonuses ARE the reason you pick one
+  // subsystem over another, whereas Info is the same boilerplate description on all of them. Every
+  // other item type is unaffected and still opens on Info.
+  const traits = hasTraits(typeID);
+  const [tab, setTab] = useState(traits ? "traits" : "info");
+  const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
+  const TABS = [...(traits ? [["traits", "Traits"]] : []), ["info", "Info"], ["vars", "Variations"]];
   return (
     <BottomSheet title={title} onClose={onClose} height="82vh">
       {actions?.length>0&&(
@@ -1321,11 +1326,8 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Module State</div>
           <div style={{display:"flex",gap:8,marginBottom:20}}>
             {states.map(s=>(<button key={s} className="press" onClick={()=>{if(mod.state!==s)haptic("medium");onUpdateMod({...mod,state:s});}} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${mod.state===s?STATE_COLORS[s]:C.border}`,background:mod.state===s?`${STATE_COLORS[s]}22`:"none",cursor:"pointer",transition:"background-color .18s ease, border-color .18s ease"}}>
-              {/* Fixed-height row so the varying dot size can't shift the label under it. Same
-                  size/glow ladder as the fit list, so the picker teaches the mapping the rows use. */}
-              <div style={{height:10,display:"flex",alignItems:"center",justifyContent:"center",marginBottom:4}}>
-                <div style={{width:STATE_DOT[s].size,height:STATE_DOT[s].size,borderRadius:99,background:STATE_COLORS[s],boxShadow:STATE_DOT[s].glow?`0 0 ${STATE_DOT[s].glow}px ${STATE_COLORS[s]}`:"none",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
-              </div>
+              {/* Same glow as the fit list, so the picker teaches the mapping the rows use. */}
+              <div style={{width:8,height:8,borderRadius:99,background:STATE_COLORS[s],margin:"0 auto 4px",boxShadow:STATE_GLOW[s]?`0 0 ${STATE_GLOW[s]}px ${STATE_COLORS[s]}`:"none",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
               <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]}</span>
             </button>))}
           </div>

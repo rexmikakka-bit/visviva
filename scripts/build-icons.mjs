@@ -1,113 +1,131 @@
-// Generates every app icon / splash SVG from one description of the mark.
+// Derives every icon/splash/favicon variant from ONE master image, then expands them into android/.
 //
-//   node scripts/build-icons.mjs
+//   npm i --no-save sharp @capacitor/assets && node scripts/build-icons.mjs
 //
-// Writes public/favicon.svg, assets/icon-only.svg, assets/logo.svg, assets/splash.svg and
-// assets/splash-dark.svg. Then run `npx capacitor-assets generate` to expand those into the
-// Android mipmap/drawable sets and the iOS AppIcon set.
+// The master is `assets/icon-only.png` — designer-supplied artwork, 1024x1024, square, full-bleed,
+// no transparency. It is the ONLY file here that is hand-dropped; this script never writes it, and
+// refuses to run if its shape is wrong (a mask or a splash built from an off-size master fails in a
+// way you only notice on a device).
 //
-// The mark: a "VV" monogram riding a tapered orbit. A stroke cannot vary in width, so the orbit is
-// a FILLED ribbon — walk the ellipse once offsetting outward by +w(t)/2, walk back offsetting by
-// -w(t)/2, close. w(t) peaks at the head (where the body dot sits) and thins around the back, and
-// the opacity gradient runs along the same axis so thickness and opacity taper together.
+// Everything else is generated, so the header mark, the browser tab, the launcher icon and the
+// splash can never drift into being four different drawings:
 //
-// These are checked in, but regenerate rather than hand-editing: the path is ~120 line segments.
-import { writeFileSync, mkdirSync } from "node:fs";
+//   assets/icon-foreground.png   Android adaptive foreground   \ capacitor-assets expands these
+//   assets/icon-background.png   Android adaptive background   / into android/ and ios/
+//   assets/splash.png            splash (light + dark are the same — the app is dark-only)
+//   assets/splash-dark.png
+//   public/favicon.png           browser tab
+//   src/assets/app-mark.png      in-app header mark
+//
+// iOS needs none of this run locally: CI regenerates ios/ from assets/ on every release build.
+// Android's res/ IS committed, so this script drives capacitor-assets itself and commits the result.
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import sharp from "sharp";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
+const MASTER = join(ROOT, "assets/icon-only.png");
 
-const CX = 512, CY = 512, RX = 372, RY = 228, ROT = -24;
-const BLUE = "#4f8ef7", LIGHT = "#a8c8ff", BG = "#0f0f10";
+// The splash field, matching the app's own background. The mark sits at 34% of the canvas — the
+// proportion the previous splash used, kept so the launch animation lands in the same place.
+const SPLASH_BG = "#0f0f10", SPLASH_SIZE = 2732, SPLASH_FRAC = 0.34;
 
-// A3 + 64: the boldest taper, with the two Vs pulled together so the pair reads as an overlapping
-// monogram rather than a single W.
-const MARK = {
-  wMax: 58, wMin: 4, headDeg: -8, power: 2.0,
-  tailOpacity: 0, headOpacity: 1.0, dotR: 34, tighten: 64,
-};
+// Sampled from the master's top and bottom edges. Only ever visible if a launcher parallaxes the
+// adaptive foreground far enough to expose the layer behind it, so it has to be the same gradient.
+const PLATE_TOP = "#264179", PLATE_BOTTOM = "#1a2b51";
 
-const rad = d => (d * Math.PI) / 180;
-const rot = (dx, dy, a) => {
-  const c = Math.cos(rad(a)), s = Math.sin(rad(a));
-  return [dx * c - dy * s, dx * s + dy * c];
-};
+// Apple's continuous-corner radius is 22.37% of the icon's width. The launcher and the browser tab
+// apply their own mask, so this is only used where WE draw the plate: the splash.
+const CORNER = 0.2237;
 
-// 120 steps = a 3° arc; at rx=372 the sagitta is 0.13px, so the polyline reads as a smooth curve
-// while the path data stays small enough to ship as a favicon.
-function ribbon({ wMax, wMin, headDeg, power, steps = 120 }) {
-  const pt = t => [RX * Math.cos(t), RY * Math.sin(t)];
-  const nrm = t => {                       // outward unit normal of the ellipse
-    const nx = Math.cos(t) / RX, ny = Math.sin(t) / RY;
-    const m = Math.hypot(nx, ny);
-    return [nx / m, ny / m];
-  };
-  const halfW = t => (wMin + (wMax - wMin) * ((1 + Math.cos(t - rad(headDeg))) / 2) ** power) / 2;
-  const outer = [], inner = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = (i / steps) * Math.PI * 2;
-    const [px, py] = pt(t), [nx, ny] = nrm(t), h = halfW(t);
-    outer.push([px + nx * h, py + ny * h]);
-    inner.push([px - nx * h, py - ny * h]);
-  }
-  const f = ([x, y]) => `${(x + CX).toFixed(1)} ${(y + CY).toFixed(1)}`;
-  return `M ${f(outer[0])} ` + outer.slice(1).map(p => `L ${f(p)}`).join(" ")
-    + ` L ${f(inner.at(-1))} ` + inner.slice().reverse().slice(1).map(p => `L ${f(p)}`).join(" ")
-    + " Z";
-}
-
-const headPos = deg => {
-  const [dx, dy] = rot(RX * Math.cos(rad(deg)), RY * Math.sin(rad(deg)), ROT);
-  return [CX + dx, CY + dy];
-};
-
-// The two Vs, each 344 wide with its apex at the midpoint. `tighten` slides them toward each other
-// by that many units; both move equally, so the glyph stays centred on 512.
-const monogram = tighten =>
-  `<path d="M ${214 + tighten} 356 L ${386 + tighten} 668 L ${558 + tighten} 356" fill="none" stroke="${BLUE}" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>`
-  + `<path d="M ${466 - tighten} 356 L ${638 - tighten} 668 L ${810 - tighten} 356" fill="none" stroke="${LIGHT}" stroke-width="92" stroke-linecap="round" stroke-linejoin="round"/>`;
-
-/** The artwork on a 1024 grid, without a background. `id` namespaces the gradient. */
-function artwork(id = "vv") {
-  const m = MARK;
-  const [hx, hy] = headPos(m.headDeg);
-  const [tx, ty] = headPos(m.headDeg + 180);
-  const mid = ((m.tailOpacity + m.headOpacity) / 2 * 0.75).toFixed(2);
-  return `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${tx.toFixed(1)}" y1="${ty.toFixed(1)}" x2="${hx.toFixed(1)}" y2="${hy.toFixed(1)}">`
-    + `<stop offset="0" stop-color="${BLUE}" stop-opacity="${m.tailOpacity}"/>`
-    + `<stop offset=".45" stop-color="${BLUE}" stop-opacity="${mid}"/>`
-    + `<stop offset="1" stop-color="${BLUE}" stop-opacity="${m.headOpacity}"/>`
-    + `</linearGradient></defs>`
-    + `<path d="${ribbon(m)}" fill="url(#${id})" transform="rotate(${ROT} ${CX} ${CY})"/>`
-    + `<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="${m.dotR}" fill="${BLUE}" opacity=".95"/>`
-    + monogram(m.tighten);
-}
-
-/** Full-bleed square icon. */
-const icon = (size) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 1024 1024">`
-  + `<rect width="1024" height="1024" fill="${BG}"/>${artwork()}</svg>`;
-
-/** Splash: the mark centred small on a large field, matching the previous splash proportions. */
-function splash(size = 2732, frac = 0.34) {
-  const s = (size * frac) / 1024, off = (size - size * frac) / 2;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
-    + `<rect width="${size}" height="${size}" fill="${BG}"/>`
-    + `<g transform="translate(${off.toFixed(2)} ${off.toFixed(2)}) scale(${s.toFixed(4)})">${artwork("vvs")}</g></svg>`;
-}
-
-const files = {
-  "public/favicon.svg":     icon(1024),
-  "assets/icon-only.svg":   icon(1024),
-  "assets/logo.svg":        icon(1024),
-  "assets/splash.svg":      splash(),
-  "assets/splash-dark.svg": splash(),
-};
-for (const [rel, svg] of Object.entries(files)) {
+const out = [];
+const write = async (rel, buf) => {
   const p = join(ROOT, rel);
   mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, svg);
-  console.log(`wrote ${rel}  (${(svg.length / 1024).toFixed(1)} KB)`);
+  writeFileSync(p, buf);
+  out.push([rel, buf.length]);
+};
+
+const master = sharp(MASTER);
+const meta = await master.metadata();
+if (meta.width !== 1024 || meta.height !== 1024) {
+  throw new Error(`assets/icon-only.png must be 1024x1024, got ${meta.width}x${meta.height}`);
 }
-console.log("\nNOW RUN:  npx capacitor-assets generate   <- expands these into android/ and ios/");
+
+// ── Android adaptive icon ────────────────────────────────────────────────────
+// The foreground is the WHOLE master, not a cut-out mark. capacitor-assets writes an adaptive-icon
+// XML that insets both layers by 16.7% of the 108dp canvas, which places the drawable exactly over
+// the 72dp region the launcher mask shows — so full-bleed artwork fills the mask edge to edge, the
+// same way it does on iOS. A circular mask clips the corners; every element of the mark sits within
+// r=0.42 of centre, well inside the inscribed circle, so nothing is lost.
+await write("assets/icon-foreground.png", readFileSync(MASTER));
+
+await write("assets/icon-background.png", await sharp({
+  create: { width: 1024, height: 1024, channels: 3, background: PLATE_BOTTOM },
+}).composite([{
+  input: Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">`
+    + `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0" stop-color="${PLATE_TOP}"/><stop offset="1" stop-color="${PLATE_BOTTOM}"/>`
+    + `</linearGradient></defs><rect width="1024" height="1024" fill="url(#g)"/></svg>`),
+}]).png().toBuffer());
+
+// ── Splash ───────────────────────────────────────────────────────────────────
+// The master carries its own plate, so on the near-black field it needs rounded corners or it reads
+// as a stray navy rectangle rather than the app's mark.
+const markSize = Math.round(SPLASH_SIZE * SPLASH_FRAC);
+const r = Math.round(markSize * CORNER);
+const roundedMark = await sharp(MASTER)
+  .resize(markSize, markSize)
+  .composite([{
+    input: Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${markSize}" height="${markSize}">`
+      + `<rect width="${markSize}" height="${markSize}" rx="${r}" ry="${r}" fill="#fff"/></svg>`),
+    blend: "dest-in",
+  }])
+  .png().toBuffer();
+
+const splash = await sharp({
+  create: { width: SPLASH_SIZE, height: SPLASH_SIZE, channels: 3, background: SPLASH_BG },
+}).composite([{ input: roundedMark, gravity: "centre" }]).png().toBuffer();
+
+await write("assets/splash.png", splash);
+await write("assets/splash-dark.png", splash);
+
+// ── Web ──────────────────────────────────────────────────────────────────────
+// Square and unrounded on purpose: the browser rounds the tab icon itself, and the in-app header
+// applies its own border-radius in CSS, so a pre-rounded source would double up.
+const web = await master.clone().resize(256, 256).png().toBuffer();
+await write("public/favicon.png", web);
+await write("src/assets/app-mark.png", web);
+
+const w = Math.max(...out.map(([rel]) => rel.length));
+for (const [rel, bytes] of out) console.log(`wrote ${rel.padEnd(w)}  ${(bytes / 1024).toFixed(1)} KB`);
+
+// ── Expand into android/app/src/main/res ─────────────────────────────────────
+console.log("\n$ npx capacitor-assets generate --android");
+// One string, not argv: npx needs a shell on Windows, and passing an args array alongside
+// shell:true is what Node deprecated in DEP0190. Nothing here is user-supplied.
+const gen = spawnSync("npx capacitor-assets generate --android",
+  { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"], shell: true });
+if (gen.status !== 0) throw new Error("capacitor-assets failed — is it installed? (npm i --no-save @capacitor/assets)");
+
+// ⚠️ WORKAROUND for a bug in @capacitor/assets (v3.x): when the adaptive layers come from explicit
+// `icon-foreground`/`icon-background` sources, generateAdaptiveIcon{Foreground,Background} filter
+// the templates by kind `icon` instead of kind `adaptive-icon` — so they write the adaptive layers
+// at the LEGACY launcher sizes (192 at xxxhdpi) instead of the adaptive ones (432). An adaptive
+// layer is a 108dp canvas of which the mask shows the middle 72dp, so 192px of source ends up
+// stretched across a 108dp slot: the launcher icon renders soft, and nothing warns you. The
+// `logo` code path uses the right templates, which is why this never showed up before the artwork
+// moved to explicit sources. Rewrite the twelve files at the sizes Android actually wants.
+const ADAPTIVE = { ldpi: 81, mdpi: 108, hdpi: 162, xhdpi: 216, xxhdpi: 324, xxxhdpi: 432 };
+const RES = join(ROOT, "android/app/src/main/res");
+for (const [density, size] of Object.entries(ADAPTIVE)) {
+  for (const [name, src] of [["foreground", "assets/icon-foreground.png"], ["background", "assets/icon-background.png"]]) {
+    const dest = join(RES, `mipmap-${density}`, `ic_launcher_${name}.png`);
+    await sharp(join(ROOT, src)).resize(size, size).png().toFile(dest);
+  }
+}
+console.log(`rewrote ${Object.keys(ADAPTIVE).length * 2} adaptive layers at 108dp sizes (capacitor-assets writes them too small)`);

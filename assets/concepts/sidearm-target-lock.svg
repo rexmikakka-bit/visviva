@@ -4,9 +4,11 @@
 
   An app icon for the working name "Sidearm", explored 2026-08-09 while weighing a rename away
   from Vis Viva. Nothing here is live: `capacitor-assets generate` matches fixed filenames
-  (icon-only / logo / splash / splash-dark) directly in assets/ and does not recurse, so a file
-  in this folder cannot reach a build by accident. Adopting it means copying it over
-  assets/icon-only.svg + assets/logo.svg, and matching public/favicon.svg + src/assets/app-mark.svg.
+  (icon-only / icon-foreground / icon-background / splash / splash-dark) directly in assets/ and
+  does not recurse, so a file in this folder cannot reach a build by accident. Adopting it means
+  rasterising it over assets/icon-only.png — the one hand-dropped master — and re-running
+  scripts/build-icons.mjs, which derives the favicon, the in-app mark, the splash and android/res
+  from it.
 
   The design is EVE's target-lock UI: chevrons converging on a locked ship, inside a segmented
   reticle ring. The centre glyph is the battlecruiser class bracket (hull + bar).
