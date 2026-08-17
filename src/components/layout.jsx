@@ -228,7 +228,11 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
   </div>);
 }
 
-const BOOSTER_ICON=eveIcon(3211,32);
+// Standard Exile Booster (15479) — was 3211, an IMPLANT (Cyber Gunnery 'Lancer' ME-804) whose icon
+// happens to be booster-shaped, which is exactly the kind of thing that looks right until someone
+// checks the type. The Effects tab covers boosters, not implants (that's its own tab) — using a
+// real booster's icon here is what makes the tab bar honest.
+const BOOSTER_ICON=eveIcon(15479,32);
 
 export function BottomNav({active,onChange}){
   const tabs=[
