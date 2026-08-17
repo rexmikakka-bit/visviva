@@ -218,9 +218,9 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return null;
     try{
-      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{fighters,implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
-  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fighters,skills,implants,boosters,externalBursts,projectedEffects]);
   const shipMeta=useMemo(()=>{
     const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
     return {faction:sh?.race??"",cls:sh?.hullClass??sh?.groupName??""};
@@ -601,7 +601,7 @@ export default function App(){
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showSkillGaps&&<SkillGapSheet missing={skillCheck.missing} onClose={()=>setShowSkillGaps(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
-    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills} priceHub={priceHub} priceSource={priceSource}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills} priceHub={priceHub} priceSource={priceSource}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}

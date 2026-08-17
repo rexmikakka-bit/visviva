@@ -693,9 +693,17 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         ...(implants??[]).filter(i=>i?.name&&i.name!=='[Empty]').map(i=>({typeID:tidByName(i.name),qty:1})),
         ...(boosters??[]).map(b=>({typeID:tidByName(b.name),qty:1})),
       ].filter(s=>s.typeID),
-      drones:(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1})).filter(d=>d.typeID),
+      // Fighters sit in the Drones group rather than a group of their own — no hull carries both,
+      // so a "Fighters" row would be permanently empty on every ship that isn't a carrier.
+      // `qty` on a fighter is SQUADRONS, but the market sells them one at a time, so the priced
+      // quantity is squadrons x squadron size (a single Templar II squadron is six hulls).
+      drones:[
+        ...(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1})),
+        ...(fighters??[]).map(f=>{const t=f.typeID??tidByName(f.name);
+          return{typeID:t,qty:(f.qty??1)*((t!=null?TYPES[t]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
+      ].filter(d=>d.typeID),
     };
-  },[ship,slots,implants,boosters,drones]);
+  },[ship,slots,implants,boosters,drones,fighters]);
   const allPriceIDs=useMemo(()=>{const s=new Set();for(const g of Object.values(priceItems))for(const{typeID}of g)if(typeID)s.add(typeID);return[...s];},[priceItems]);
   const fitFingerprint=useMemo(()=>allPriceIDs.slice().sort((a,b)=>a-b).join(','),[allPriceIDs]);
   useEffect(()=>{

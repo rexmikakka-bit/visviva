@@ -169,7 +169,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
           <span style={{color:C.textMid}}>/{shipDroneBandwidth} Mbit/s</span>
         </span>
       </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:C.danger,fontWeight:600}}>Active DPS: {activeDroneDps>=100?Math.round(activeDroneDps):activeDroneDps.toFixed(1)}</span><button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:C.danger,fontWeight:600}}>DPS: {activeDroneDps>=100?Math.round(activeDroneDps):activeDroneDps.toFixed(1)}</span><button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
       </div>
       <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${shipDroneBay>0?Math.min((bayUsed/shipDroneBay)*100,100):0}%`,height:"100%",background:bayUsed>shipDroneBay?C.danger:C.rig,borderRadius:99}}/></div>
     </div>
@@ -178,7 +178,11 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
           <span style={{fontSize:12,fontWeight:700,color:C.text}}>Fighter Bay</span>
-          <span style={{fontSize:11,color:fighterBayUsed>shipFighter.cap?C.danger:C.textMute}}>{fmtM3(fighterBayUsed)} / {fmtM3(shipFighter.cap)} m³</span>
+          {/* Same treatment as the drone bay readout above — see the contrast note there. */}
+          <span style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
+            <span style={{fontWeight:700,color:fighterBayUsed>shipFighter.cap?C.danger:C.text}}>{fmtM3(fighterBayUsed)}</span>
+            <span style={{color:C.textMid}}>/{fmtM3(shipFighter.cap)} m³</span>
+          </span>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:11,color:C.high,fontWeight:700}}>{fighterDpsActive.toLocaleString()} DPS</span>

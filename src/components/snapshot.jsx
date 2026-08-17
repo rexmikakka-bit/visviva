@@ -341,7 +341,7 @@ function Projected({ links, incoming }) {
 
 // The card renders off-screen at a fixed 1140px so the exported image is consistent regardless of the
 // phone's viewport. The two columns stretch to equal height, so a tall loadout grows the whole card.
-function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, implants, boosters, projected }) {
+function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected }) {
   const s = cs ?? {};
   const dmg = s.totalDps ?? {};
   const dmgTotal = (dmg.em ?? 0) + (dmg.th ?? 0) + (dmg.kin ?? 0) + (dmg.exp ?? 0);
@@ -349,6 +349,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const capD = s.capDelta ?? 0;
   const layerColor = { shield: T.accent, armor: T.faction, hull: T.dim };
   const activeDrones = (drones ?? []).filter((d) => d?.name);
+  const activeFighters = (fighters ?? []).filter((f) => f?.name);
   const imp = shortenImplants(implants);
   const bst = (boosters ?? []).filter((b) => b?.name && b.active !== false);
   const proj = projected ?? { links: [], incoming: [], remoteReps: {} };
@@ -360,20 +361,27 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const priceBreakdown = (() => {
     if (!cachedPrices.size) return null;
     let fit = 0, character = 0;
-    const addFit = (id) => { if (id > 0) fit += cachedPrices.get(id) ?? 0; };
+    const addFit = (id, qty = 1) => { if (id > 0) fit += (cachedPrices.get(id) ?? 0) * qty; };
     const addChar = (id) => { if (id > 0) character += cachedPrices.get(id) ?? 0; };
-    if (shipTypeID) addFit(shipTypeID);
+    const ship = shipTypeID ? (cachedPrices.get(shipTypeID) ?? null) : null;
     const allSlots = [...(slots?.high ?? []), ...(slots?.mid ?? []), ...(slots?.low ?? []), ...(slots?.rigs ?? []), ...(slots?.subsystems ?? [])];
     for (const m of allSlots) {
       if (!isReal(m)) continue;
       if (m.typeID > 0) addFit(m.typeID);
       if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id); }
     }
-    for (const d of (drones ?? [])) { if (d?.typeID > 0) addFit(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) addFit(id); } }
+    // Drones and fighters are priced by the UNIT, so the stack size counts: five Hobgoblin IIs are
+    // five hulls, and a fighter's `qty` is SQUADRONS — six Templar IIs to a squadron. This block
+    // used to add one of each and ignore both quantities, which understated a carrier badly.
+    for (const d of (drones ?? [])) { const id = d?.typeID > 0 ? d.typeID : (d?.name ? tidByName(d.name) : 0); if (id) addFit(id, d.qty ?? 1); }
+    for (const f of (fighters ?? [])) {
+      const id = f?.typeID > 0 ? f.typeID : (f?.name ? tidByName(f.name) : 0);
+      if (id) addFit(id, (f.qty ?? 1) * ((TYPES[id]?.attrs?.fighterSquadronMaxSize) || 1));
+    }
     for (const i of (implants ?? [])) { if (i?.name && i.name !== '[Empty]') { const id = tidByName(i.name); if (id) addChar(id); } }
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addChar(id); } }
-    const total = fit + character;
-    return total > 0 ? { fit, character, total } : null;
+    const total = (ship ?? 0) + fit + character;
+    return total > 0 ? { ship, fit, character, total } : null;
   })();
 
   // Rep = local rep EHP/s + projected remote-rep EHP/s (folded in). Sustained stays local.
@@ -421,7 +429,8 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             <div style={{ flexShrink: 0, textAlign: "right" }}>
               <div style={{ fontSize: 10, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }}>Est. Value</div>
               <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}</div>
-              <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>Fit: {fmtISKShort(priceBreakdown.fit)}</div>
+              <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>Ship: {priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : "N/A"}</div>
+              <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Fit: {fmtISKShort(priceBreakdown.fit)}</div>
               {priceBreakdown.character > 0 && (
                 <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Character: {fmtISKShort(priceBreakdown.character)}</div>
               )}
@@ -457,6 +466,15 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               ))}
             </LoadoutRow>
           )}
+          {activeFighters.length > 0 && (
+            <LoadoutRow k="Fighters">
+              {activeFighters.map((f, i) => (
+                <span key={i}>{i > 0 && " · "}
+                  {f.active !== false ? <b style={{ color: T.text, fontWeight: 600 }}>{f.qty ?? 1}× {f.name}</b> : <span style={{ color: T.bad, opacity: 0.75 }}>{f.qty ?? 1}× {f.name}</span>}
+                </span>
+              ))}
+            </LoadoutRow>
+          )}
           {(imp.sets.length > 0 || imp.singles.length > 0) && (
             <LoadoutRow k="Implants">
               {imp.sets.map((st, i) => (
@@ -480,7 +498,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
       <div style={{ flex: 1, minWidth: 0, padding: "22px 22px 18px", display: "flex", flexDirection: "column", gap: 13 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <HeroStat cap="Total DPS" num={fmt(s.totalDps?.total)} numColor={T.accent}
-            sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drone DPS <b style={{ color: T.text }}>{fmt(s.droneDps?.total ?? 0)}</b></span></>}
+            sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drone DPS <b style={{ color: T.text }}>{fmt((s.droneDps?.total ?? 0) + (s.fighterDps?.total ?? 0))}</b></span></>}
             bars={dmgTotal > 0 ? ["em", "th", "kin", "exp"].map((k) => ({ w: ((dmg[k] ?? 0) / dmgTotal) * 100, c: DMG[k] })) : []} />
           <HeroStat cap="Effective HP" num={fmtK(ehp)} numColor="#fff"
             sub={<><span>Rep <b style={{ color: T.good }}>{fmt(rep)}</b> ehp/s</span><span>Sust <b style={{ color: T.text }}>{fmt(sust)}</b></span></>}
@@ -567,7 +585,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
   useEffect(() => {
     let dead = false;
     const priceHub = (() => { try { return localStorage.getItem("axis_pricehub") ?? "Jita"; } catch { return "Jita"; } })();
-    const { shipTypeID, slots, drones, implants, boosters } = cardProps;
+    const { shipTypeID, slots, drones, fighters, implants, boosters } = cardProps;
     const ids = [];
     if (shipTypeID) ids.push(shipTypeID);
     for (const rack of ["high", "mid", "low", "rigs", "subsystems"]) for (const m of (slots?.[rack] ?? [])) {
@@ -575,7 +593,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
       if (m.typeID > 0) ids.push(m.typeID);
       if (m.ammo) { const id = tidByName(m.ammo.replace(/\s*\(\d+\)$/, "")); if (id) ids.push(id); }
     }
-    for (const d of (drones ?? [])) { if (d?.typeID > 0) ids.push(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) ids.push(id); } }
+    for (const d of ([...(drones ?? []), ...(fighters ?? [])])) { if (d?.typeID > 0) ids.push(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) ids.push(id); } }
     for (const i of (implants ?? [])) { if (i?.name && i.name !== "[Empty]") { const id = tidByName(i.name); if (id) ids.push(id); } }
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) ids.push(id); } }
     fetchPrices(ids, priceHub, priceSource).then(() => { if (!dead) setPricesReady(true); }).catch(() => {});
