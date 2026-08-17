@@ -626,6 +626,18 @@ function buildSlotsFromEFT(ship,parsedMods,subsystems){
     slots[secKey][idx]={...slots[secKey][idx],name:mod.name,typeID:mod.typeID,icon:null,type:modType,state,ammo:mod.charge,charges:maxChargesVal,maxCharges:maxChargesVal,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:mod.mutaplasmid??undefined,mutations:mod.mutations??undefined};
     counters[secKey]++;
   }
+  // Only ONE propulsion module may run at a time, so an imported fit carrying an MWD *and* an
+  // afterburner cannot have both active — every prop mod cycles, so the defaultState above would
+  // otherwise light up all of them. First one listed wins; the rest come in merely online, which is
+  // the legal state and the one the user can flip from.
+  let propSeen=false;
+  for(const k of ["high","mid","low"]){
+    slots[k]=(slots[k]??[]).map(m=>{
+      if(TYPES[m?.typeID]?.gn!=="Propulsion Module"||m.state!=="active")return m;
+      if(propSeen)return{...m,state:"online"};
+      propSeen=true;return m;
+    });
+  }
   return slots;
 }
 

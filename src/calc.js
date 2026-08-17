@@ -1474,6 +1474,38 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   if (opts.systemSecurity) fit.systemSecurity = opts.systemSecurity;
   fit.calculate();
 
+  // How many modules of a given GROUP the fit may run at once. CCP ships this as maxGroupOnline /
+  // maxGroupActive on the module itself, and the ENGINE is what makes it correct: a Command Burst's
+  // base 1/1 is raised to 2 by a Command Ship's role bonus, to 3 on a command carrier, and by +1 per
+  // Command Processor rig (effect 6766, ModAdd of the rig's maxGangModules) — which is why the
+  // standard three-link Bifrost carries two of them. Reading the raw type attribute instead would
+  // call that fit illegal. Keyed by group NAME because the limit is per-group, fit-wide; 0/absent
+  // means unlimited. Propulsion modules sit at the other end of the same mechanic: maxGroupActive 1
+  // with no online limit, so several may be fitted and online but only one may run.
+  //
+  // `fitted` (maxGroupFitted) is the odd sibling and must be read RAW, not through the engine —
+  // the exact opposite of the two above. pyfa reads the unmodified attribute and says why: a FAX's
+  // capacitor boosters carry a base of 10 that computes down to 1, yet the game lets you fit
+  // several. It is also a FITTING restriction rather than a state ceiling, so unlike the other two
+  // nothing can be resolved by switching a module off — one Damage Control, one Warp Core
+  // Stabilizer, one Siege Module, three Hyperspatial Accelerators, and that is that.
+  const groupLimits = {}, groupCounts = {};
+  for (const { slot, fitItem } of modItems) {
+    const gn = fitItem?.groupName;
+    if (!gn) continue;
+    groupCounts[gn] = (groupCounts[gn] ?? 0) + 1;
+    if (groupLimits[gn]) continue;
+    const online = fitItem.get('maxGroupOnline') || 0, active = fitItem.get('maxGroupActive') || 0;
+    const fitted = TYPES[slot.typeID]?.a?.maxGroupFitted || 0;
+    if (online || active || fitted) groupLimits[gn] = { online, active, fitted };
+  }
+  // Groups carrying more modules than they may. The module browser blocks this at the point of
+  // fitting, so the only way a fit arrives here over the cap is an EFT/ESI import — which is
+  // precisely why it also has to surface in the Validation panel rather than only in the UI gate.
+  const groupOverFitted = Object.entries(groupLimits)
+    .filter(([gn, l]) => l.fitted && groupCounts[gn] > l.fitted)
+    .map(([gn, l]) => ({ group: gn, cap: l.fitted, count: groupCounts[gn] }));
+
   // ── Booster side effects (user-toggled) ───────────────────────────────────
   // Each active booster may carry sideEffects: [{key, value, chance, enabled}].
 
@@ -3299,6 +3331,9 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
     // Per-slot engine-computed stats (ammo-adjusted range, cycle time etc.)
     slotEngineStats,
+    // Per-GROUP "how many may run at once / be fitted" limits — see where they're built above.
+    groupLimits,
+    groupOverFitted,
 
     // Graph helpers
     optMult: optMultOut, trkMult: trkMultOut, fallMult: fallMultOut,

@@ -75,6 +75,69 @@ const reabsorbOrphans=arr=>{
   }
 };
 
+// "How many of this group may run at once" — activating a second MWD shuts the first one off, and a
+// Bifrost may only online ONE Skirmish Command Burst until Command Processor rigs raise the ceiling.
+// Both are the SAME CCP mechanic (maxGroupActive / maxGroupOnline), so neither is special-cased here:
+// `limits` comes straight from the engine via calcFitStats, which is what folds in the Command Ship
+// role bonus (2), the command-carrier one (3) and +1 per Command Processor. Enforced in the UI rather
+// than the engine so the fit the user sees is the fit that gets calculated.
+//
+// Every path that can put a module into a constrained state has to come through here: changing a
+// module's state and fitting one into an empty slot are separate code paths, and only the first one
+// used to check — which is how a second MWD could arrive already active.
+const ACTIVE_STATES=new Set(["active","overheated"]);
+const ONLINE_STATES=new Set(["online","active","overheated"]);
+// "How many of this group may be FITTED" (maxGroupFitted) is the third sibling of the two above, and
+// the one that isn't a state ceiling: a hull takes one Damage Control however you set it, so there is
+// nothing to demote and the add has to be refused outright. Rigs and service slots count too — Higgs
+// Anchors and ~90 structure rig groups are capped this way.
+//
+// The cap comes from `limits`, which only knows a group once one of its modules is fitted — and that
+// is sufficient, because with none fitted the count is zero and nothing can be over the cap. Same
+// reasoning as enforceGroupLimit's.
+const FITTED_RACKS=["high","mid","low","rigs","services"];
+const groupFittedRoom=(slots,limits,typeID,exceptId)=>{
+  const gn=TYPES[typeID]?.gn;
+  const cap=gn?limits?.[gn]?.fitted:0;
+  if(!cap)return Infinity;
+  let n=0;
+  for(const k of FITTED_RACKS)for(const m of slots[k]??[]){
+    if(m.id!==exceptId&&m.typeID&&TYPES[m.typeID]?.gn===gn)n++;
+  }
+  return Math.max(0,cap-n);
+};
+const groupFittedError=typeID=>{
+  const gn=TYPES[typeID]?.gn??"module", cap=TYPES[typeID]?.a?.maxGroupFitted||1;
+  return `Only ${cap===1?"one":cap} ${gn} module${cap===1?"":"s"} can be fitted`;
+};
+const enforceGroupLimit=(slots,limits,changedId)=>{
+  const gnOf=m=>TYPES[m?.typeID]?.gn;
+  const racks=["high","mid","low"];
+  const changed=racks.flatMap(k=>slots[k]??[]).find(m=>m.id===changedId);
+  const gn=gnOf(changed);
+  const lim=gn?limits?.[gn]:null;
+  if(!lim)return slots;
+  const out={...slots};
+  // Two independent ceilings, applied strongest-first: anything over the ONLINE cap goes offline, and
+  // anything still over the ACTIVE cap drops back to online. The module the user just touched always
+  // survives — it is the one they expressed intent about — so the demotions come out of the others,
+  // oldest slot first.
+  for(const[cap,states,demoteTo]of[[lim.online,ONLINE_STATES,"offline"],[lim.active,ACTIVE_STATES,"online"]]){
+    if(!cap)continue;
+    // The changed module only occupies a place if it is actually in the constrained state — setting
+    // one burst OFFLINE must free its place rather than reserve it.
+    let room=cap-(states.has(changed?.state)?1:0);
+    for(const k of racks){
+      out[k]=(out[k]??[]).map(m=>{
+        if(m.id===changedId||gnOf(m)!==gn||!states.has(m.state))return m;
+        if(room>0){room--;return m;}
+        return{...m,state:demoteTo};
+      });
+    }
+  }
+  return out;
+};
+
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -250,21 +313,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       }
       sec[idx]={...sec[idx],...updated};
 
-      // EVE only lets ONE propulsion module run at a time: activating an MWD shuts off an
-      // afterburner and vice versa. Enforce it here rather than in the engine, so the fit the user
-      // sees is the fit that gets calculated.
-      if(updated.state==="active"||updated.state==="overheated"){
-        const isProp=m=>{const g=TYPES[m?.typeID]?.gn; return g==="Propulsion Module";};
-        if(isProp(sec[idx])){
-          const out={...prev,[secKey]:sec};
-          for(const k of ["high","mid","low"]){
-            const arr=(k===secKey?sec:out[k])??[];
-            out[k]=arr.map(m=>(m.id!==modId&&isProp(m)&&(m.state==="active"||m.state==="overheated"))
-              ?{...m,state:"online"}:m);
-          }
-          return out;
-        }
-      }
+      if(updated.state!==undefined)return enforceGroupLimit({...prev,[secKey]:sec},_cs.groupLimits,modId);
       return{...prev,[secKey]:sec};
     });if(!keepOpen)setModuleMenu(null);
   };
@@ -287,9 +336,12 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     addMod(secKey,empty.id,{name:mod.name,typeID:mod.typeID,mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
     setModuleMenu(null);
   };
-  // How many more of THIS weapon the hull can still take: the smaller of its free hardpoints of the
-  // matching kind and its empty high slots. Both limits are real — an Apocalypse has 8 highs and 8
-  // turret hardpoints, but a Drake has 8 highs and only 7 launchers.
+  // How many more of THIS weapon the hull can still take: the smallest of its free hardpoints of the
+  // matching kind, its empty high slots, and whatever its group still has room for. All three limits
+  // are real — an Apocalypse has 8 highs and 8 turret hardpoints, but a Drake has 8 highs and only 7
+  // launchers, and a Bomb Launcher takes a launcher hardpoint yet is capped at one per hull. This
+  // count is what the menu's "Fill" label shows AND what the fill itself uses, so the two cannot
+  // disagree. No exceptId on the group room: the module being copied stays put and counts.
   const hardpointRoom=(secKey,mod)=>{
     if(secKey!=="high"||!ship||!mod?.typeID)return 0;
     const isT=isTurretWeapon(mod.typeID);
@@ -298,7 +350,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     const total=(isT?ship.turrets:ship.launchers)??0;
     const high=slots.high??[];
     const used=high.filter(s=>s.typeID&&match(s.typeID)).length;
-    return Math.max(0,Math.min(total-used,high.filter(s=>s.type==="empty").length));
+    return Math.max(0,Math.min(total-used,high.filter(s=>s.type==="empty").length,
+      groupFittedRoom(slots,_cs.groupLimits,mod.typeID)));
   };
   const fillHardpoints=(secKey,mod)=>{
     const n=hardpointRoom(secKey,mod);
@@ -323,6 +376,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     if(ship&&modData.typeID){
       const fitErr=checkFitRestriction(modData.typeID,ship);
       if(fitErr){showFitError(fitErr);return;}
+      if(groupFittedRoom(slots,_cs.groupLimits,modData.typeID,id)<1){showFitError(groupFittedError(modData.typeID));return;}
       if(secKey==='high'&&isTurretWeapon(modData.typeID)){
         const used=(slots.high??[]).filter(s=>s.typeID&&isTurretWeapon(s.typeID)).length;
         if(used>=(ship.turrets??0)){showFitError('No turret hardpoints available');return;}
@@ -347,7 +401,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     // Ancillary boosters/repairers arrive pre-loaded — see defaultChargeFor. Anything else
     // starts empty, as before.
     const preload=defaultChargeFor(modData.typeID);
-    setSlots(prev=>({...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state:defaultState,ammo:preload?.name,charges:preload?.qty,maxCharges:preload?.qty,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)}));
+    setSlots(prev=>{
+      const next={...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state:defaultState,ammo:preload?.name,charges:preload?.qty,maxCharges:preload?.qty,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)};
+      // The new module isn't in `_cs` yet, but the limit is a property of the GROUP and the fit, not
+      // of the individual module — so the ceiling read from a same-group module already fitted is the
+      // one that applies. With none fitted the count is zero and nothing can be over the limit.
+      return enforceGroupLimit(next,_cs.groupLimits,id);
+    });
   };
 
   const getDisplayRows=(secKey)=>computeDisplayRows(slots[secKey]??[],secKey,grouped);
@@ -776,6 +836,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*_dBW(d),0);
         if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:`Drone bay over capacity by ${fr(bayUsed-cs.droneBay)} m³`});
         if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:`Drone bandwidth exceeded by ${fr(bwUsed-cs.droneBandwidth)} Mbit/s`});
+        // maxGroupFitted. The browser refuses to fit one too many, so anything caught here came in
+        // through an EFT or ESI import, where the fit was built somewhere with no such gate.
+        for(const g of (cs.groupOverFitted??[])) issues.push({sev:"err",msg:`${g.count} ${g.group} modules fitted — only ${g.cap===1?"one":g.cap} allowed`});
         const hasErr=issues.some(i=>i.sev==="err");
         const accent=hasErr?C.danger:(issues.length?C.warning:C.success);
         return(

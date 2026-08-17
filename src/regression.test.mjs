@@ -1686,6 +1686,68 @@ Republic Fleet Command Mindlink`;
   check('burst', 'links raise EHP materially', linked.totalEHP > bare.totalEHP * 1.15 ? 1 : 0, 1, 0);
 }
 
+// 13o. HOW MANY OF A GROUP MAY RUN AT ONCE (calcFitStats().groupLimits)
+//      The Fit tab refuses to activate a second MWD, or to online a second Command Burst, off these
+//      numbers. They must come from the ENGINE, not the raw type attribute: CCP's base for a burst is
+//      maxGroupOnline/Active 1, raised to 2 by a Command Ship's role bonus (effect 2251), to 3 on a
+//      command carrier (6619), and by +1 per Command Processor rig (6766). Read the base attribute
+//      instead and the standard three-link Bifrost — which carries two Command Processors for exactly
+//      this reason — gets called illegal. Prop mods are the same mechanic at the other extreme:
+//      maxGroupActive 1 with NO online limit, so several may be fitted and online but only one runs.
+{
+  console.log('\nGROUP LIMITS (maxGroupOnline / maxGroupActive)');
+  const limits = (shipName, mods) =>
+    calcFitStats(lookupShip(shipName), { high: mods.high ?? [], mid: mods.mid ?? [], low: mods.low ?? [], rigs: mods.rigs ?? [] },
+      [], SKILLS_ALL_V).groupLimits ?? {};
+  const BURST = [M('Skirmish Command Burst II', 'active'), M('Skirmish Command Burst II', 'active')];
+  const PROC  = [M('Small Command Processor I', 'online'), M('Small Command Processor I', 'online')];
+
+  const bare = limits('Bifrost', { high: BURST });
+  check('grouplim', 'bare Bifrost onlines one burst', bare['Command Burst']?.online, 1, 0);
+  check('grouplim', 'bare Bifrost activates one burst', bare['Command Burst']?.active, 1, 0);
+  // The fit the rule exists for: two Command Processors buy the third link.
+  const proc = limits('Bifrost', { high: BURST, rigs: PROC });
+  check('grouplim', 'two Command Processors buy three links', proc['Command Burst']?.online, 3, 0);
+  // Role bonuses, which are a different mechanism from the rig and must both be live.
+  check('grouplim', 'Command Ship runs two bursts',
+    limits('Damnation', { high: [M('Armor Command Burst II', 'active')] })['Command Burst']?.online, 2, 0);
+  check('grouplim', 'command carrier runs three bursts',
+    limits('Salvation', { high: [M('Armor Command Burst II', 'active')] })['Command Burst']?.online, 3, 0);
+
+  // Prop mods: one ACTIVE, any number online. A nonzero online cap here would offline the second
+  // prop mod on every fit that carries an MWD and an afterburner, which is a legal, common setup.
+  const prop = limits('Rifter', { mid: [M('5MN Quad LiF Restrained Microwarpdrive', 'active'),
+                                        M('1MN Monopropellant Enduring Afterburner', 'online')] });
+  check('grouplim', 'one propulsion module active', prop['Propulsion Module']?.active, 1, 0);
+  check('grouplim', 'propulsion modules have no online cap', prop['Propulsion Module']?.online ?? 0, 0, 0);
+
+  // maxGroupFitted — the third sibling, and the one that must be read RAW. It is a fitting
+  // restriction, not a state ceiling, so `groupOverFitted` reports the violation instead of the UI
+  // quietly switching something off.
+  const over = (shipName, mods) =>
+    calcFitStats(lookupShip(shipName), { high: mods.high ?? [], mid: mods.mid ?? [], low: mods.low ?? [], rigs: mods.rigs ?? [] },
+      [], SKILLS_ALL_V).groupOverFitted ?? [];
+  const dcLim = limits('Rifter', { low: [M('Damage Control II', 'online')] });
+  check('grouplim', 'Damage Control caps at one fitted', dcLim['Damage Control']?.fitted, 1, 0);
+  check('grouplim', 'one Damage Control is legal', over('Rifter', { low: [M('Damage Control II', 'online')] }).length, 0, 0);
+  const twoDC = over('Rifter', { low: [M('Damage Control II', 'online'), M('Damage Control II', 'online')] });
+  check('grouplim', 'two Damage Controls is one violation', twoDC.length, 1, 0);
+  check('grouplim', 'the violation names the group', twoDC[0]?.group === 'Damage Control' ? 1 : 0, 1, 0);
+  check('grouplim', 'the violation counts the modules', twoDC[0]?.count, 2, 0);
+  // Not everything capped is capped at ONE — a hardcoded 1 would call three accelerators illegal.
+  const HYPER = M('Limited Hyperspatial Accelerator', 'online');
+  check('grouplim', 'Hyperspatial Accelerators cap at three',
+    limits('Rifter', { low: [HYPER] })['Warp Accelerator']?.fitted, 3, 0);
+  check('grouplim', 'three Hyperspatial Accelerators are legal', over('Rifter', { low: [HYPER, HYPER, HYPER] }).length, 0, 0);
+  check('grouplim', 'a fourth Hyperspatial Accelerator is caught', over('Rifter', { low: [HYPER, HYPER, HYPER, HYPER] }).length, 1, 0);
+  // Rigs count too, and are a rack the state-based limits never had to walk.
+  const HIGGS = M('Small Higgs Anchor I', 'online');
+  check('grouplim', 'two Higgs Anchors is a violation', over('Rifter', { rigs: [HIGGS, HIGGS] }).length, 1, 0);
+  // A group with no cap must never be reported, however many are fitted.
+  check('grouplim', 'uncapped groups never violate',
+    over('Rifter', { low: [M('Gyrostabilizer II', 'online'), M('Gyrostabilizer II', 'online'), M('Gyrostabilizer II', 'online')] }).length, 0, 0);
+}
+
 // 13m. OVERHEAT PREVIEW UNDER LINKS - the "OH: n km" hint must not lie
 //      A module row previews its overheated range while the module is still cold. That preview is
 //      a HYPOTHETICAL modifier, and on a penalised attribute a new modifier does not just scale
