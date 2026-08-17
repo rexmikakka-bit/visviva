@@ -182,9 +182,9 @@ function NumpadModal({label,initial,onConfirm,onClose}){
 // passed here is pinned for free, with no second sticky element to fight this one for top:0 and no
 // measuring of this strip's (variable) height to offset against. The Fit tab uses it for the
 // Undo/Grouped toolbar, which was previously scrolled away exactly when you needed it.
-// Powergrid red, CPU blue, calibration grey — EVE's own fitting-window colours, so the strip reads
-// the same way the in-game fitting screen does.
-const RESOURCE_COLORS={pg:"#e0584f",cpu:"#4f8ef7",cal:"#9898a6"};
+// Powergrid red, CPU blue-teal, calibration grey — loosely EVE's own fitting-window colours; PG and
+// CPU were nudged for contrast (PG more saturated, CPU shifted toward teal) rather than kept literal.
+const RESOURCE_COLORS={pg:"#e84f45",cpu:"#50cdf7",cal:"#9898a6"};
 
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
   const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
