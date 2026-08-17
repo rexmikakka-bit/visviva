@@ -55,6 +55,9 @@ ios/
 *.mobileprovision
 *.keystore
 *.jks
+# The Android upload keystore's path and its three passwords, in plaintext. Read by
+# android/app/build.gradle; see "Google Play" under Shipping a release in CLAUDE.md for setup.
+key.properties
 
 # ── Logs ─────────────────────────────────────────────────────────────────────
 logs

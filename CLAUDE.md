@@ -971,6 +971,39 @@ the APK (`android/app/build/outputs/apk/debug/app-debug.apk`, ~16 MB) to a GitHu
 `android-1.3.0`. The release notes are what testers actually read — write them in terms of what
 changed for the user, not the commit log.
 
+#### Google Play (signed AAB — a different artifact from the GitHub release)
+
+The GitHub release ships a **debug-signed APK**, which is right for sideloading and wrong for Play.
+Play needs a **signed AAB**, built by a separate task:
+
+```bash
+node scripts/bump-android-version.mjs 1.7.0   # explicit, same as the APK path
+npm run android:bundle                        # → android/app/build/outputs/bundle/release/app-release.aab
+```
+
+`android:bundle` deliberately does **not** bump, for the same reason `android:build` doing an
+implicit bump is a trap (above). Bump first, explicitly.
+
+Signing is driven by **`android/key.properties`**, which is gitignored (it holds three passwords in
+plaintext and this repo is public). Its absence is the normal case and does not break anything — the
+project still configures, `assembleDebug` still works, and `bundleRelease` still succeeds but emits
+an **unsigned** AAB that Play rejects loudly. If an upload is refused for signing, check that this
+file exists before suspecting the Gradle config. Format:
+
+```properties
+storeFile=C:/Users/owen_/keys/axis-upload.jks
+storePassword=...
+keyAlias=axis-upload
+keyPassword=...
+```
+
+`storeFile` resolves against `android/`; an absolute path outside the repo is preferred. **Use
+forward slashes** — in a Java `.properties` file a backslash is an escape character, so a pasted
+Windows path fails with a confusing "keystore not found".
+
+Play App Signing means Google holds the real distribution key and this is only the *upload* key, so
+losing it is recoverable through Play support — unlike the old pre-2021 model. Back it up anyway.
+
 ### iOS
 
 **Manual dispatch only, on purpose** — it publishes to testers and burns a build number that can

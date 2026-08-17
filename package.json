@@ -16,6 +16,7 @@
     "cap:sync": "vite build && cap sync",
     "android:bump": "node scripts/bump-android-version.mjs",
     "android:build": "npm run cap:sync && npm run android:bump && node scripts/gradle-assemble.mjs",
+    "android:bundle": "npm run cap:sync && node scripts/gradle-assemble.mjs bundleRelease",
     "ios:open": "npm run cap:sync && cap open ios"
   },
   "dependencies": {

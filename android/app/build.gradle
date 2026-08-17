@@ -11,6 +11,18 @@ if (versionPropsFile.exists()) {
 def appVersionCode = (versionProps['versionCode'] ?: '1').toInteger()
 def appVersionName = versionProps['versionName'] ?: '1.0'
 
+// Play upload signing. key.properties holds a keystore path and three passwords in PLAINTEXT, so it
+// is gitignored and never committed — this repo is public. Its ABSENCE is the normal case (CI, a
+// fresh clone, anyone building a debug APK), so every reference below is guarded: without the file
+// the project still configures and `assembleDebug` still works. An unsigned release build is the
+// correct fallback — Play rejects it loudly, which is far better than a mystery failure here.
+def keystorePropsFile = file('../key.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+def hasUploadKey = keystorePropsFile.exists() && keystoreProps['storeFile']
+
 android {
     namespace = "com.rexmikakka.visviva"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -27,8 +39,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasUploadKey) {
+                // Resolved against android/ (not android/app/), so a relative path in key.properties
+                // means "next to key.properties". An absolute path pointing outside the repo also
+                // works, and is the better place to keep the real keystore.
+                storeFile rootProject.file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig hasUploadKey ? signingConfigs.release : null
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
