@@ -8,7 +8,7 @@
 //
 // Pure core (`runMigrations`) is React- and DOM-free so the regression suite can exercise it in Node.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const SCHEMA_KEY = "pyfa-schema-version";
 // Saved fits are `pyfa-*`; app preferences, ESI tokens and graph state were `visviva_*` before the
 // rename to Axis and are `axis_*` after it. All three prefixes must be snapshotted, or migration v1
@@ -45,6 +45,22 @@ export const MIGRATIONS = [
       if (!(renamed in store)) store[renamed] = store[k];
       delete store[k];
     }
+  },
+
+  // (v2 -> v3) Fit tags. Every saved fit gains a `tags` array. `tagsOf` is defensive about a missing
+  // or malformed one anyway, so this is not load-bearing for rendering — the point is that exactly
+  // one shape exists in storage, so nothing downstream has to keep guessing which era a fit is from.
+  (store) => {
+    const raw = store["pyfa-fitsdb"];
+    if (typeof raw !== "string") return;
+    let db;
+    try { db = JSON.parse(raw); } catch { return; }
+    if (!db || typeof db !== "object") return;
+    for (const fits of Object.values(db)) {
+      if (!Array.isArray(fits)) continue;
+      for (const f of fits) if (f && typeof f === "object" && !Array.isArray(f.tags)) f.tags = [];
+    }
+    store["pyfa-fitsdb"] = JSON.stringify(db);
   },
 ];
 

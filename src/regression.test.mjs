@@ -516,6 +516,92 @@ function check(group, label, actual, expected, tol = 0.005) {
   // The rename must survive the whole chain from an unversioned install, not just from v1.
   const s5 = runMigrations({ 'visviva_pricehub': 'Hek' }, { from: 0 });
   check('migrate', 'axis rename: runs from v0 too', s5['axis_pricehub'], 'Hek', 0);
+
+  // v2 -> v3: fit tags. Every saved fit gains a `tags` array, and a malformed one is normalized
+  // rather than left for the UI to trip over.
+  const s6 = runMigrations({ 'pyfa-fitsdb': '{"Rifter":[{"id":1,"name":"Solo"}]}' }, { from: 2 });
+  check('migrate', 'v3: fit gains a tags array', Array.isArray(JSON.parse(s6['pyfa-fitsdb']).Rifter[0].tags) ? 1 : 0, 1, 0);
+  const s7 = runMigrations({ 'pyfa-fitsdb': '{"Rifter":[{"id":1,"tags":["Doctrine"]}]}' }, { from: 2 });
+  check('migrate', 'v3: existing tags survive', JSON.parse(s7['pyfa-fitsdb']).Rifter[0].tags.join(), 'Doctrine', 0);
+  // A null fit in the array and a `tags` that isn't an array must both be survivable.
+  const s8 = runMigrations({ 'pyfa-fitsdb': '{"Rifter":[{"id":1,"tags":"nope"},null]}' }, { from: 2 });
+  check('migrate', 'v3: non-array tags normalized', Array.isArray(JSON.parse(s8['pyfa-fitsdb']).Rifter[0].tags) ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9c. FIT TAGS — the fit browser's cross-hull axis. A fit stores tag NAMES and colours live in a
+//     separate registry, so the two can disagree; every function here has to survive that, plus a
+//     fit that predates tags entirely. See src/lib/fit-tags.js.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFIT TAGS (cross-hull grouping, name-keyed and self-healing)');
+  const T = await import('./lib/fit-tags.js');
+  const { normalizeTag, tagKey, tagsOf, hasTag, withTag, withoutTag, toggleTag,
+          allTags, fitsWithTag, colorForTag, setTagColor, renameTag, removeTagEverywhere,
+          mergeTagColors, TAG_PALETTE, MAX_TAG_LEN } = T;
+
+  check('tags', 'normalize trims and collapses', normalizeTag('  TQ   Flykiller '), 'TQ Flykiller', 0);
+  check('tags', 'normalize caps length', normalizeTag('x'.repeat(80)).length, MAX_TAG_LEN, 0);
+  check('tags', 'tags match case-insensitively', tagKey('FlyKiller') === tagKey('flykiller') ? 1 : 0, 1, 0);
+
+  // A fit saved before tags existed, and one whose tags were mangled, must both read as untagged
+  // rather than throwing on render — that is the blank page the storage migration exists to prevent.
+  check('tags', 'pre-tags fit reads untagged', tagsOf({ name: 'Old' }).length, 0, 0);
+  check('tags', 'garbage tags read untagged', tagsOf({ tags: 'nope' }).length, 0, 0);
+  check('tags', 'duplicates collapse case-insensitively', tagsOf({ tags: ['Flykiller', 'flykiller'] }).length, 1, 0);
+  check('tags', 'first spelling is the one kept', tagsOf({ tags: ['Flykiller', 'FLYKILLER'] })[0], 'Flykiller', 0);
+
+  const base = { id: 1, name: 'Jackdaw', modified: 'Aug 1, 2026' };
+  const tagged = withTag(base, 'TQ Flykiller');
+  check('tags', 'withTag adds', hasTag(tagged, 'TQ Flykiller') ? 1 : 0, 1, 0);
+  check('tags', 'hasTag ignores case', hasTag(tagged, 'tq flykiller') ? 1 : 0, 1, 0);
+  check('tags', 'adding twice is a no-op', tagsOf(withTag(tagged, 'TQ FLYKILLER')).length, 1, 0);
+  // Filing a fit under a doctrine is not editing the fit, so the modified date must not move.
+  check('tags', 'tagging leaves modified alone', tagged.modified, 'Aug 1, 2026', 0);
+  check('tags', 'withoutTag removes', tagsOf(withoutTag(tagged, 'tq flykiller')).length, 0, 0);
+  check('tags', 'toggle round-trips', tagsOf(toggleTag(toggleTag(base, 'A'), 'a')).length, 0, 0);
+  check('tags', 'empty tag is refused', tagsOf(withTag(base, '   ')).length, 0, 0);
+
+  const DB = {
+    Jackdaw: [{ id: 1, name: 'Flykiller Jackdaw', tags: ['TQ Flykiller', 'WIP'] }],
+    Bifrost: [{ id: 2, name: 'Skirm', tags: ['tq flykiller'] }],
+    Rifter:  [{ id: 3, name: 'Solo' }],
+  };
+  const list = allTags(DB);
+  check('tags', 'two distinct tags across the DB', list.length, 2, 0);
+  check('tags', 'count merges spellings', list.find(t => t.key === 'tq flykiller')?.count, 2, 0);
+  check('tags', 'tag list is alphabetical', list[0].name, 'TQ Flykiller', 0);
+
+  // The whole point of the feature: one tag, fits from more than one hull.
+  const cross = fitsWithTag(DB, 'TQ FLYKILLER');
+  check('tags', 'tag spans hulls', cross.length, 2, 0);
+  check('tags', 'cross-hull list is ship-sorted', cross[0]?.ship ?? 'none', 'Bifrost', 0);
+  check('tags', 'untagged fits stay out', fitsWithTag(DB, 'WIP').length, 1, 0);
+
+  // Colour is derived when the registry has nothing, so a lost or partial registry degrades to a
+  // stable palette colour instead of a ghost reference.
+  const auto = colorForTag('TQ Flykiller', {});
+  check('tags', 'unregistered tag still gets a colour', TAG_PALETTE.includes(auto) ? 1 : 0, 1, 0);
+  check('tags', 'derived colour is stable', colorForTag('tq flykiller', {}), auto, 0);
+  const withColor = setTagColor({}, 'TQ Flykiller', '#123456');
+  check('tags', 'registry overrides the palette', colorForTag('TQ FLYKILLER', withColor), '#123456', 0);
+  check('tags', 'corrupt colour falls back', TAG_PALETTE.includes(colorForTag('X', { x: 'javascript:alert(1)' })) ? 1 : 0, 1, 0);
+
+  // Renaming onto an EXISTING tag merges rather than leaving a fit carrying both.
+  const merged = renameTag(DB, 'WIP', 'TQ Flykiller');
+  check('tags', 'rename merges into existing', tagsOf(merged.Jackdaw[0]).length, 1, 0);
+  check('tags', 'rename reaches every hull', fitsWithTag(renameTag(DB, 'TQ Flykiller', 'Doctrine'), 'Doctrine').length, 2, 0);
+  check('tags', 'rename leaves other tags alone', hasTag(renameTag(DB, 'TQ Flykiller', 'Doctrine').Jackdaw[0], 'WIP') ? 1 : 0, 1, 0);
+
+  const purged = removeTagEverywhere(DB, 'tq flykiller');
+  check('tags', 'delete clears every hull', fitsWithTag(purged, 'TQ Flykiller').length, 0, 0);
+  check('tags', 'delete keeps the fits', purged.Jackdaw.length, 1, 0);
+  check('tags', 'delete spares other tags', hasTag(purged.Jackdaw[0], 'WIP') ? 1 : 0, 1, 0);
+
+  // Restoring a backup by merge must not repaint a tag the user has since recoloured.
+  const mc = mergeTagColors({ a: '#111111' }, { a: '#222222', b: '#333333' });
+  check('tags', 'merge keeps my colour', mc.a, '#111111', 0);
+  check('tags', 'merge adds unknown colour', mc.b, '#333333', 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { C } from "../theme.js";
 import { isBackupApp, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
+import { mergeTagColors } from "../lib/fit-tags.js";
 
 // ── Backup & restore ────────────────────────────────────────────────────────────
 // Fits live in localStorage and NOWHERE else. No git commit protects them; clearing browser data,
@@ -108,9 +109,17 @@ function BackupPanel() {
       } else {
         const merged = mergeFitsDB(localStorage.getItem("pyfa-fitsdb"), obj.data["pyfa-fitsdb"]);
         localStorage.setItem("pyfa-fitsdb", merged);
+        // Tag colours merge per-tag rather than all-or-nothing. The blanket rule below would drop the
+        // whole incoming registry the moment you had a single tag of your own, and the imported fits
+        // would arrive carrying tag names with no colours.
+        try {
+          const cur = JSON.parse(localStorage.getItem("pyfa-tagcolors") || "{}") || {};
+          const inc = JSON.parse(obj.data["pyfa-tagcolors"] || "{}") || {};
+          localStorage.setItem("pyfa-tagcolors", JSON.stringify(mergeTagColors(cur, inc)));
+        } catch {}
         // Only fill in settings that don't exist yet — a merge shouldn't overwrite your skills.
         for (const [k, v] of Object.entries(obj.data)) {
-          if (k !== "pyfa-fitsdb" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
+          if (k !== "pyfa-fitsdb" && k !== "pyfa-tagcolors" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
         }
       }
       // Reloading is the honest way to re-init every piece of state from storage at once.

@@ -7,6 +7,8 @@ import { eveIcon, eveRender } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
 import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
+import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleTag,
+         allTags, fitsWithTag, colorForTag, setTagColor, renameTag, removeTagEverywhere } from "../lib/fit-tags.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, TraitsPanel } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
@@ -70,6 +72,77 @@ export function RecentFitsList({fitsDB, activeFit, loadFit, recents}) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// A tag reads as a coloured pill. The tag's colour is the BORDER and the text, over a heavily
+// transparent fill of the same colour, so eight palette entries stay legible on the dark surface —
+// solid pills at this size turned the fit list into confetti and buried the fit names.
+export function TagChip({name, color, onClick, onRemove, dim}) {
+  return (
+    <span onClick={onClick} className={onClick?"press":undefined}
+      style={{display:"inline-flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:99,
+              fontSize:10,fontWeight:700,lineHeight:1.5,whiteSpace:"nowrap",cursor:onClick?"pointer":"default",
+              color:dim?C.textMute:color,background:dim?"transparent":`${color}1f`,
+              border:`1px solid ${dim?C.border:`${color}59`}`}}>
+      {name}
+      {onRemove&&<span onClick={e=>{e.stopPropagation();onRemove();}} aria-label={`Remove tag ${name}`}
+        style={{fontSize:12,lineHeight:1,opacity:.7,cursor:"pointer",paddingLeft:1}}>&times;</span>}
+    </span>
+  );
+}
+
+// Assign/unassign tags for ONE fit. Creating is folded into the same text input as searching, so a
+// new tag costs one line of typing and no colour decision — the palette assigns itself, and
+// recolouring lives in the tag's own view where it isn't in the way.
+function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
+  const [draft, setDraft] = useState("");
+  const mine = tagsOf(fit);
+  const n = normalizeTag(draft);
+  const others = allNames.filter(t=>!hasTag(fit,t)&&(!n||t.toLowerCase().includes(n.toLowerCase())));
+  // Only offer to CREATE when the typed name isn't already a tag — otherwise the same name would
+  // appear twice, once as "add existing" and once as "create new".
+  const canCreate = !!n && !allNames.some(t=>tagKey(t)===tagKey(n));
+  const commit = () => { if(canCreate){onToggle(n);setDraft("");} };
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70vh",overflowY:"auto",background:C.surface,
+        borderTop:`1px solid ${C.border}`,borderRadius:"14px 14px 0 0",padding:"14px 16px 22px"}}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:2}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:700,color:C.text}}>Tags</div>
+            <div style={{fontSize:11,color:C.textMute,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fit?.name}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>&times;</button>
+        </div>
+
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,margin:"12px 0"}}>
+          {mine.length===0&&<span style={{fontSize:11,color:C.textMute}}>No tags yet</span>}
+          {mine.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)} onRemove={()=>onToggle(t)}/>)}
+        </div>
+
+        <input value={draft} onChange={e=>setDraft(e.target.value)} maxLength={MAX_TAG_LEN}
+          onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")setDraft("");}}
+          autoCapitalize="words" autoCorrect="off" spellCheck={false} enterKeyHint="done"
+          placeholder="Find or create a tag..."
+          style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,
+                  borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13}}/>
+
+        {canCreate&&(
+          <button onClick={commit} className="press" style={{marginTop:8,width:"100%",padding:"9px 0",background:C.accent,
+            border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            Create "{n}"
+          </button>
+        )}
+
+        {others.length>0&&(<>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,margin:"14px 0 7px"}}>Add existing</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {others.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)} onClick={()=>onToggle(t)} dim/>)}
+          </div>
+        </>)}
+      </div>
     </div>
   );
 }
@@ -211,6 +284,46 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const[renamingFit,setRenamingFit]=useState(false);
   const[newFitName,setNewFitName]=useState("");
 
+  // Tag COLOURS only. The tags themselves live on the fits, so this registry is disposable — losing
+  // it costs you your colour choices and nothing else (see lib/fit-tags.js). Keyed `pyfa-` so the
+  // backup file picks it up with everything else.
+  const[tagColors,setTagColors]=useState(()=>{try{return JSON.parse(localStorage.getItem("pyfa-tagcolors")||"{}")||{};}catch{return{};}});
+  useEffect(()=>{try{localStorage.setItem("pyfa-tagcolors",JSON.stringify(tagColors));}catch{}},[tagColors]);
+  const[tagSheet,setTagSheet]=useState(null);   // {ship, fitId} whose tag sheet is open
+  // Persisted for the same reason fitSubTab is: `view` lives in App and outlives this component, so
+  // leaving the fittings tab from a tag view and coming back would otherwise restore the view with
+  // no tag in it. Same shape as the sub-tab: remember where you were.
+  const[selectedTag,setSelectedTag]=useState(()=>{try{return localStorage.getItem('axis_selected_tag')||null;}catch{return null;}});
+  useEffect(()=>{try{
+    if(selectedTag)localStorage.setItem('axis_selected_tag',selectedTag);
+    else localStorage.removeItem('axis_selected_tag');
+  }catch{}},[selectedTag]);
+  const[tagEditing,setTagEditing]=useState(false);
+  const[tagRename,setTagRename]=useState("");
+
+  const tagList=useMemo(()=>allTags(fitsDB),[fitsDB]);
+  const tagNames=useMemo(()=>tagList.map(t=>t.name),[tagList]);
+
+  const applyTagToggle=(ship,fitId,name)=>{
+    setFitsDB(prev=>({...prev,[ship]:(prev[ship]||[]).map(f=>f.id===fitId?toggleTag(f,name):f)}));
+    haptic("light");
+  };
+
+  // Renaming ONTO an existing tag merges the two, so the old name's colour must not follow it across
+  // and repaint the survivor. Only a rename to a genuinely new name carries the colour over.
+  const commitTagRename=()=>{
+    const next=normalizeTag(tagRename);
+    if(!next||!selectedTag||tagKey(next)===tagKey(selectedTag)){setTagEditing(false);return;}
+    const merging=tagNames.some(t=>tagKey(t)===tagKey(next));
+    setFitsDB(prev=>renameTag(prev,selectedTag,next));
+    setTagColors(prev=>{
+      const {[tagKey(selectedTag)]:old,...rest}=prev??{};
+      return merging||old==null?rest:{...rest,[tagKey(next)]:old};
+    });
+    setSelectedTag(next);
+    setTagEditing(false);
+  };
+
   // A T3 cruiser hull carries ZERO turret/launcher hardpoints of its own — they come entirely from
   // the fitted subsystems. Without this the hardpoint dots never render on a Legion, and addMod's
   // gate reads 0 and refuses every weapon.
@@ -272,7 +385,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     const taken=new Set((fitsDB[ship]||[]).map(f=>f.name));
     let name="New Fit", n=2;
     while(taken.has(name))name=`New Fit ${n++}`;
-    const nf={id:nextId,name,modified:now,slots:generateEmptySlots(lookupShip(ship))};
+    const nf={id:nextId,name,modified:now,tags:[],slots:generateEmptySlots(lookupShip(ship))};
     setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),nf]}));
     setNextId(x=>x+1);
     setSelectedShip(ship);
@@ -291,7 +404,13 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     Object.entries(shipsByClass||{}).forEach(([cls,ships])=>{
       ships.forEach(s=>{
         if(s.name.toLowerCase().includes(q))results.push({type:"ship",ship:s.name,hull:cls,race:"",color:C.rig});
-        (fitsDB[s.name]||[]).forEach(fit=>{if(fit.name.toLowerCase().includes(q))results.push({type:"fit",ship:s.name,hull:cls,race:"",fitName:fit.name,modified:fit.modified,color:C.accent});});
+        // Tag names are searched alongside fit names, so typing a doctrine finds its fits without
+        // having to go via the tag list first.
+        (fitsDB[s.name]||[]).forEach(fit=>{
+          const tags=tagsOf(fit);
+          if(fit.name.toLowerCase().includes(q)||tags.some(t=>t.toLowerCase().includes(q)))
+            results.push({type:"fit",ship:s.name,hull:cls,race:"",fitName:fit.name,modified:fit.modified,tags,color:C.accent});
+        });
       });
     });
     return results;
@@ -334,6 +453,20 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     </div>
     <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
       {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit} recents={recents}/>}
+      {/* The cross-hull axis. Chips rather than rows because a doctrine list is short and scanned by
+          colour, and rows would push the ship classes below the fold the way Recent Fits used to.
+          Hidden entirely until something is tagged — an empty section is just chrome. */}
+      {!search&&browsePath.length===0&&tagList.length>0&&(
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,padding:"4px 0",marginBottom:6}}>Tags</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {tagList.map(t=>(
+              <TagChip key={t.key} name={`${t.name} ${t.count}`} color={colorForTag(t.name,tagColors)}
+                onClick={()=>{setSelectedTag(t.name);setTagEditing(false);haptic("light");setView("tag");}}/>
+            ))}
+          </div>
+        </div>
+      )}
       {!search&&browsePath.length===0&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
@@ -346,7 +479,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No ships or fits found</div>}
         {searchResults.map((rr,i)=>(<div key={i} onClick={()=>{setSelectedShip(rr.ship);setView(rr.type==="fit"?"active":"fits");if(rr.type==="fit")loadFit(rr.ship,rr.fitName);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
           <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.type==="fit"?rr.fitName:rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.ship} / {rr.hull} / {rr.race}</div></div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.type==="fit"?rr.fitName:rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.ship} / {rr.hull} / {rr.race}</div>
+            {rr.tags?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:3}}>{rr.tags.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}</div>}
+          </div>
           <span style={{fontSize:10,color:rr.type==="fit"?C.accent:C.textMute,background:rr.type==="fit"?C.accentLight:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>{rr.type==="fit"?"fit":"ship"}</span>
           {rr.type!=="fit"&&<InfoButton title={`${rr.ship} info`} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>}
         </div>))}
@@ -394,6 +529,72 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     {shipInfoSheet}
   </div>);
 
+  // The cross-hull view: every fit under one tag, whatever it's flying. Managing the tag itself
+  // (rename, recolour, delete) lives HERE rather than in the per-fit sheet, so filing a fit never
+  // puts a colour picker in the way.
+  if(view==="tag"){
+    const tagged=selectedTag?fitsWithTag(fitsDB,selectedTag):[];
+    const color=colorForTag(selectedTag,tagColors);
+    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <button onClick={()=>{setTagEditing(false);setView("browse");}} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
+        <span style={{width:9,height:9,borderRadius:99,background:color,flexShrink:0}}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedTag}</div>
+          <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{tagged.length} fit{tagged.length!==1?"s":""}</div>
+        </div>
+        <button onClick={()=>{setTagRename(selectedTag??"");setTagEditing(v=>!v);}} className="press"
+          style={{padding:"6px 11px",background:tagEditing?C.accentLight:C.surface,border:`1px solid ${tagEditing?C.accentBorder:C.border}`,
+                  borderRadius:7,color:tagEditing?C.accent:C.textMid,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
+      </div>
+
+      {tagEditing&&(
+        <div style={{padding:"12px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
+          <input value={tagRename} onChange={e=>setTagRename(e.target.value)} maxLength={MAX_TAG_LEN}
+            onKeyDown={e=>{if(e.key==="Enter")commitTagRename();if(e.key==="Escape")setTagEditing(false);}}
+            onBlur={commitTagRename} autoCapitalize="words" autoCorrect="off" spellCheck={false}
+            style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13,fontWeight:600}}/>
+          <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"12px 0 4px"}}>
+            {TAG_PALETTE.map(p=>(
+              <button key={p} onClick={()=>{setTagColors(prev=>setTagColor(prev,selectedTag,p));haptic("light");}} aria-label={`Colour ${p}`}
+                style={{width:26,height:26,borderRadius:99,background:p,cursor:"pointer",
+                        border:p.toLowerCase()===color.toLowerCase()?`2px solid ${C.text}`:"2px solid transparent"}}/>
+            ))}
+          </div>
+          <button onClick={()=>{
+              if(!window.confirm(`Remove the tag "${selectedTag}" from ${tagged.length} fit${tagged.length!==1?"s":""}? The fits themselves are kept.`))return;
+              setFitsDB(prev=>removeTagEverywhere(prev,selectedTag));
+              setTagColors(prev=>{const{[tagKey(selectedTag)]:_gone,...rest}=prev??{};return rest;});
+              setTagEditing(false);setSelectedTag(null);setView("browse");
+            }} className="press"
+            style={{marginTop:10,width:"100%",padding:"9px 0",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",
+                    borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Delete tag</button>
+        </div>
+      )}
+
+      <div style={{flex:1,overflowY:"auto",padding:12}}>
+        {tagged.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>No fits carry this tag</div>}
+        {tagged.map(({ship,fit})=>{
+          const active=activeFit?.fitName===fit.name&&activeFit?.ship===ship;
+          const others=tagsOf(fit).filter(t=>tagKey(t)!==tagKey(selectedTag));
+          return(<div key={`${ship}:${fit.id}`} onClick={()=>{loadFit(ship,fit.name);setView("active");}} className="press"
+            style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:active?C.accentLight:C.surface,
+                    border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,cursor:"pointer"}}>
+            <img src={eveIcon(Object.values(shipsByClass||{}).flat().find(s=>s.name===ship)?.typeID,64)}
+              style={{width:38,height:38,borderRadius:4,objectFit:"contain",background:"#1a1a2e",flexShrink:0}}
+              onError={e=>{e.target.style.display="none";}} alt=""/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:active?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fit.name}</div>
+              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ship}</div>
+              {others.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>{others.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}</div>}
+            </div>
+            <span style={{color:C.textMute,fontSize:16,flexShrink:0}}>{">"}</span>
+          </div>);
+        })}
+      </div>
+    </div>);
+  }
+
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -411,13 +612,28 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
               :<div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fit.name}</div>
             }
             <div style={{fontSize:11,color:C.textMute,marginTop:2}}>Modified {fit.modified}</div>
+            {/* The tag row doubles as the control that opens the tag sheet, so tagging needs no
+                button of its own. `+ Tag` is what makes it discoverable when the fit has none —
+                an empty row would be invisible. */}
+            <div onClick={e=>{e.stopPropagation();setTagSheet({ship:selectedShip,fitId:fit.id});}}
+              style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6,cursor:"pointer"}}>
+              {tagsOf(fit).map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}
+              <TagChip name={tagsOf(fit).length?"+":"+ Tag"} color={C.textMid} dim/>
+            </div>
           </div>
           <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}} style={{width:28,height:28,borderRadius:6,background:editingFitId===fit.id?C.accentLight:C.surfaceAlt,border:`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>&#9998;</button>
           <button onClick={e=>{e.stopPropagation();openCopyOfFit(selectedShip,fit.name);}} title="Open a copy" aria-label={`Open a copy of ${fit.name}`} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textMid,flexShrink:0}}>&#128203;</button>
           <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`))deleteFit(selectedShip,fit);}} style={{width:28,height:28,borderRadius:6,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.danger,flexShrink:0,lineHeight:1}} title="Delete fit">&times;</button>
-          <button onClick={()=>{loadFit(selectedShip,fit.name);setView("active");}} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.textMute,flexShrink:0}}>{">"}</button>
         </div>))}
       </div>
+      {/* Re-resolved from fitsDB every render rather than captured when the sheet opened, so the
+          chips update as you toggle instead of showing the state the fit was in on the first tap. */}
+      {tagSheet&&(()=>{
+        const f=(fitsDB[tagSheet.ship]||[]).find(x=>x.id===tagSheet.fitId);
+        if(!f)return null;
+        return <TagSheet fit={f} tagColors={tagColors} allNames={tagNames}
+          onToggle={name=>applyTagToggle(tagSheet.ship,tagSheet.fitId,name)} onClose={()=>setTagSheet(null)}/>;
+      })()}
     </div>);
   }
 
