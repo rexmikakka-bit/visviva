@@ -277,6 +277,43 @@ const STATE_COLORS={offline:C.offline,online:C.online,active:C.active,overheated
 const STATE_GLOW={offline:0,online:0,active:7,overheated:9};
 const STATE_LABELS={offline:"Offline",online:"Online",active:"Active",overheated:"Overheat"};
 const MODULE_STATES=["offline","online","active","overheated"];
+// Which states this module can legally hold, low to high. Lives here rather than in the state picker
+// because the dot in the fit row and the picker in the module menu both have to answer it, and two
+// copies of "can this overheat?" would eventually disagree — the dot would then offer a state the
+// picker doesn't and the engine ignores.
+function validStatesFor(mod){
+  if(!mod||mod.type==="empty")return [];
+  if(mod.type==="rig")return ["online"];
+  const td=TYPES[mod.typeID]??TYPES[String(mod.typeID)];
+  const a=td?.attrs??td?.a??{};
+  // A cloak has neither a duration nor a cap cost, so it fails the generic test and has to be named.
+  const canActivate=((td?.gn??td?.groupName)==="Cloaking Device")
+    ||!!(Number(a.duration||a['73']||0)||Number(a.speed||a['51']||0)||Number(a.capacitorNeed||a['6']||0));
+  if(!canActivate)return ["offline","online"];
+  return Number(a.heatDamage??a['1211']??0)>0?MODULE_STATES:["offline","online","active"];
+}
+// Where a gesture on the state dot should take a module, or null if that gesture means nothing here.
+//
+// Each gesture RESOLVES TO A TOGGLE rather than a one-way set, because the dot is the only control
+// on the row — a gesture that can only go one way strands you in a state you need the module menu to
+// leave. Hold offlines; holding again brings it back.
+//
+// What a gesture means depends on what the module can legally do, so the mapping is computed from
+// `states` rather than hardcoded: a passive module has no active state, and tap on it toggles the
+// only pair it has. A module with no second state at all (a rig) has no gesture, and says so by
+// returning null — the caller reports that rather than silently doing nothing.
+function gestureTarget(states,cur,gesture){
+  const has=(s)=>states.includes(s);
+  if(gesture==="hold")   return has("offline")?(cur==="offline"?"online":"offline"):null;
+  if(gesture==="double") return has("overheated")?(cur==="overheated"?"active":"overheated"):null;
+  // Tap: run/stop. "Run" is active where the module has one, otherwise online — which makes tap the
+  // on/off switch for a passive module instead of a dead gesture. Overheated counts as running, so a
+  // single tap stops an overheated module outright rather than stepping down through active first.
+  if(!has("online"))return null;
+  const run=has("active")?"active":"online";
+  if(run==="online")return has("offline")?(cur==="online"?"offline":"online"):null;
+  return (cur==="active"||cur==="overheated")?"online":run;
+}
 const calcTransversal=(a,b)=>{const d=Math.abs(a-b)%360,n=d>180?360-d:d;return Math.min(n,180-n);};
 
 // ── Ship lookup ────────────────────────────────────────────────────
@@ -1173,4 +1210,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

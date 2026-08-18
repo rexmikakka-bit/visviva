@@ -346,18 +346,104 @@ export const JARGON = {
   mtu:  J('mtu', 'mobile tractor unit'),
 };
 
-// Returns filtered mods for the given query string, or null if query is empty.
-// Splits on spaces: each token is expanded via JARGON if possible, else used
-// as a literal substring. A module passes if it satisfies ALL tokens.
-export function jargonSearch(query, mods) {
-  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return null;
-  const tokenPatterns = tokens.map(tok => {
+// ── Matching and ranking ────────────────────────────────────────────────────────
+// Two things live here beyond the jargon table above, and both exist because filtering alone is not
+// a search. The table decides IF a name matches; nothing decided what order matches came back in, so
+// results arrived in market-tree order — which put ten Omnidirectional Tracking Links above the plain
+// Tracking Computer for the query "tracking".
+
+// Word initials: "Omen Navy Issue" -> "oni", "Tracking Enhancer II" -> "tei". This is how a player
+// actually types a hull name (ONI, RSI, TFI), and it is the ONLY reason "te" can find a Tracking
+// Enhancer at all — the letters `te` appear nowhere in that name, so no substring match exists.
+export function initialsOf(name) {
+  return String(name ?? "").split(/[^a-z0-9]+/i).filter(Boolean).map(w => w[0].toLowerCase()).join("");
+}
+
+const isAlnum = (c) => (c >= "a" && c <= "z") || (c >= "0" && c <= "9");
+
+// Does `needle` occur in `hay` at the start of a word? "tracking" starts a word in "Remote Tracking
+// Computer" but not in "Retracking". Hand-rolled rather than a \b regex so the query needs no
+// escaping — a query is user input and may hold regex metacharacters.
+function atWordStart(hay, needle) {
+  let i = hay.indexOf(needle);
+  while (i >= 0) {
+    if (i === 0 || !isAlnum(hay[i - 1])) return true;
+    i = hay.indexOf(needle, i + 1);
+  }
+  return false;
+}
+
+// An initialism is only inferred for SHORT alphabetic tokens. "tracking" as initials would be a
+// 8-word name, which no item has, so allowing it would only ever add noise.
+const MIN_INITIALISM = 2, MAX_INITIALISM = 5;
+const isInitialismToken = (tok) => tok.length >= MIN_INITIALISM && tok.length <= MAX_INITIALISM && /^[a-z]+$/.test(tok);
+
+// A jargon key's EXPANSION beats an incidental literal hit. `ac` means autocannon, but the letters
+// "ac" appear nowhere in "AutoCannon" — they do appear in "Hostile Target Acquisition", which
+// literal scoring rates a word-start match. Without this, ranking buried the autocannons at 158th
+// in their own search. Patterns whose source IS the token are the literal half of the entry and are
+// deliberately not counted, or every `ac` substring would score the same as the real expansion.
+// A match in the MIDDLE of a word is only honoured for longer queries. It has to exist at all: EVE is
+// full of compound words and players type the second half — every one of the 70 hits for "burner" is
+// mid-word in "Afterburner", so without it that search returns nothing, and "cannon" would miss every
+// AutoCannon. But at two letters it is all noise: "te" matched 939 modules, 930 of them incidental
+// (Compressor, Fighter Support Unit, Setele's), which is the pile the plain Tracking Enhancer was
+// buried under. Four is where the two stop overlapping — every real query measured keeps its full
+// result set, and no shorter string that only ever occurs mid-word is one a player would type.
+const MIN_MIDWORD = 4;
+const literalMatch = (name, tok) =>
+  atWordStart(name, tok) || (tok.length >= MIN_MIDWORD && name.includes(tok));
+
+const EXPANSION = 700;
+function expansionScore(name, query) {
+  const entry = JARGON[query];
+  if (!entry) return 0;
+  return entry.some((re) => re.source !== query && re.test(name)) ? EXPANSION : 0;
+}
+
+// Relevance, highest first. The tiers are deliberately coarse and gap-separated: within a tier the
+// caller breaks ties on name LENGTH, which is what floats "Tracking Computer I" above "Unit
+// D-34343's Modified Tracking Computer" without needing to know anything about meta levels.
+export function searchScore(name, query) {
+  const n = String(name ?? "").toLowerCase();
+  const q = String(query ?? "").trim().toLowerCase();
+  if (!q) return 0;
+  if (n === q) return 1000;                                     // exact
+  if (n.startsWith(q)) return 800;                              // "tracking" -> Tracking Computer
+  const jargonHit = expansionScore(n, q);                       // "ac" -> AutoCannon
+  if (jargonHit) return jargonHit;
+  if (atWordStart(n, q)) return 600;                            // -> Remote Tracking Computer
+  if (initialsOf(name).startsWith(q.replace(/\s+/g, ""))) return 500;  // "te" -> Tracking Enhancer
+  if (n.includes(q)) return 300;                                // "cannon" -> AutoCannon (mid-word)
+  return 100;                                                   // matched via jargon / another token
+}
+
+export function rankByRelevance(names, query, nameOf = (x) => x) {
+  return names
+    .map((x, i) => ({ x, i, s: searchScore(nameOf(x), query) }))
+    .sort((a, b) => b.s - a.s || String(nameOf(a.x)).length - String(nameOf(b.x)).length || a.i - b.i)
+    .map((r) => r.x);
+}
+
+// True if `name` satisfies every token: each is a jargon expansion, else a literal substring OR an
+// initialism. Used directly for ships (which have no jargon table of their own).
+export function nameMatchesQuery(name, query) {
+  const tokens = String(query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return false;
+  const lower = String(name).toLowerCase();
+  return tokens.every((tok) => {
     const entry = JARGON[tok];
-    if (entry) return entry;
-    // Escape regex metacharacters for literal substring match
-    const escaped = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return [new RegExp(escaped, 'i')];
+    // A jargon entry pairs curated EXPANSIONS with the literal token itself. The expansions are
+    // trusted as written, but that literal half is an unanchored regex and so bypassed the mid-word
+    // gate — /ac/i matched "Tr[ac]tor Beam". It is just a literal token, so it obeys the same rule.
+    if (entry) return entry.some((re) => (re.source === tok ? literalMatch(lower, tok) : re.test(name)));
+    return literalMatch(lower, tok)
+        || (isInitialismToken(tok) && initialsOf(name).startsWith(tok));
   });
-  return mods.filter(m => tokenPatterns.every(pats => pats.some(re => re.test(m.name))));
+}
+
+// Returns mods matching the query, MOST RELEVANT FIRST, or null if the query is empty.
+export function jargonSearch(query, mods) {
+  if (!String(query ?? "").trim()) return null;
+  return rankByRelevance(mods.filter((m) => nameMatchesQuery(m.name, query)), query, (m) => m.name);
 }

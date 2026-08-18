@@ -9,6 +9,7 @@ import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, ha
 import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleTag,
          allTags, fitsWithTag, colorForTag, setTagColor, renameTag, removeTagEverywhere } from "../lib/fit-tags.js";
+import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, TraitsPanel } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
@@ -399,21 +400,30 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     setView("active");
   };
 
+  // Hulls match on initials as well as substring, so "ONI" finds Omen Navy Issue (and Osprey Navy
+  // Issue) the way a player would actually type it. Fit names and tags stay substring-only: those
+  // are user-authored, and inferring an initialism from someone's own naming is a guess.
+  //
+  // Results are then ranked rather than left in hull-iteration order — an exact or prefix hit
+  // belongs above an incidental one, and without this "raven" led with Raven Navy Issue.
   const searchResults=search.trim().length>1?(()=>{
     const q=search.toLowerCase(),results=[];
     Object.entries(shipsByClass||{}).forEach(([cls,ships])=>{
       ships.forEach(s=>{
-        if(s.name.toLowerCase().includes(q))results.push({type:"ship",ship:s.name,hull:cls,race:"",color:C.rig});
+        if(nameMatchesQuery(s.name,search))results.push({type:"ship",ship:s.name,hull:cls,race:"",color:C.rig,_rank:s.name});
         // Tag names are searched alongside fit names, so typing a doctrine finds its fits without
         // having to go via the tag list first.
         (fitsDB[s.name]||[]).forEach(fit=>{
           const tags=tagsOf(fit);
           if(fit.name.toLowerCase().includes(q)||tags.some(t=>t.toLowerCase().includes(q)))
-            results.push({type:"fit",ship:s.name,hull:cls,race:"",fitName:fit.name,modified:fit.modified,tags,color:C.accent});
+            results.push({type:"fit",ship:s.name,hull:cls,race:"",fitName:fit.name,modified:fit.modified,tags,color:C.accent,_rank:fit.name});
         });
       });
     });
-    return results;
+    return results
+      .map((r,i)=>({r,i,s:searchScore(r._rank,search)}))
+      .sort((a,b)=>b.s-a.s||a.r._rank.length-b.r._rank.length||a.i-b.i)
+      .map(x=>x.r);
   })():null;
 
   // Same sheet the ship image in the fit header opens. Shared by the browse and fits views, which
@@ -597,6 +607,16 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
 
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
+    // These three were icon-only, and two of the three glyphs are guesses: a pencil could mean
+    // "rename" or "edit the fit", and a clipboard could mean copy, paste or export. `title` is the
+    // usual answer and does nothing at all on touch — there is no hover — so on a phone the only way
+    // to learn them was to tap one and find out, which for the third is destructive. A micro-label
+    // is what the app's own bottom nav already does (icon over "Fittings", "Cargo", "Drones"), so
+    // this is the established idiom here rather than a new one.
+    const rowBtn=(border,color)=>({width:42,borderRadius:6,background:C.surfaceAlt,border,color,cursor:"pointer",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
+      padding:"4px 0",flexShrink:0,lineHeight:1});
+    const rowBtnCap={fontSize:8,fontWeight:700,letterSpacing:.2,textTransform:"uppercase"};
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>setView("browse")} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
@@ -621,9 +641,19 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
               <TagChip name={tagsOf(fit).length?"+":"+ Tag"} color={C.textMid} dim/>
             </div>
           </div>
-          <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}} style={{width:28,height:28,borderRadius:6,background:editingFitId===fit.id?C.accentLight:C.surfaceAlt,border:`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>&#9998;</button>
-          <button onClick={e=>{e.stopPropagation();openCopyOfFit(selectedShip,fit.name);}} title="Open a copy" aria-label={`Open a copy of ${fit.name}`} style={{width:28,height:28,borderRadius:6,background:C.surfaceAlt,border:`1px solid ${C.border}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:C.textMid,flexShrink:0}}>&#128203;</button>
-          <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`))deleteFit(selectedShip,fit);}} style={{width:28,height:28,borderRadius:6,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:C.danger,flexShrink:0,lineHeight:1}} title="Delete fit">&times;</button>
+          <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}}
+            title="Rename fit" aria-label={`Rename ${fit.name}`}
+            style={{...rowBtn(`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,editingFitId===fit.id?C.accent:C.textMid),
+                    background:editingFitId===fit.id?C.accentLight:C.surfaceAlt}}>
+            <span style={{fontSize:13}}>&#9998;</span><span style={rowBtnCap}>Rename</span></button>
+          <button onClick={e=>{e.stopPropagation();openCopyOfFit(selectedShip,fit.name);}}
+            title="Open a copy" aria-label={`Open a copy of ${fit.name}`}
+            style={rowBtn(`1px solid ${C.border}`,C.textMid)}>
+            <span style={{fontSize:12}}>&#128203;</span><span style={rowBtnCap}>Copy</span></button>
+          <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`))deleteFit(selectedShip,fit);}}
+            title="Delete fit" aria-label={`Delete ${fit.name}`}
+            style={{...rowBtn("1px solid rgba(239,68,68,.25)",C.danger),background:"rgba(239,68,68,.08)"}}>
+            <span style={{fontSize:15}}>&times;</span><span style={rowBtnCap}>Delete</span></button>
         </div>))}
       </div>
       {/* Re-resolved from fitsDB every render rather than captured when the sheet opened, so the
