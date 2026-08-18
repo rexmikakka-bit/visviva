@@ -554,6 +554,19 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   const inputRef = useRef(null);
   const [scrubbing,setScrubbing] = useState(false);
 
+  // A slide across a number cell is a gesture, not a text edit — but the browser has already begun a
+  // selection by the time we know that, and blurring the field only ends the part of it inside the
+  // field: the drag then keeps extending a selection across the labels behind it, which on iOS also
+  // raises the magnifier. So the whole document is made unselectable for the duration and whatever
+  // was highlighted in the first few pixels is dropped. `.no-select` is the class every other
+  // draggable surface here uses (it carries the -webkit- prefixes WebKit needs).
+  const lockSelection = on => {
+    document.body.classList.toggle("no-select", on);
+    if(on) window.getSelection?.()?.removeAllRanges();
+  };
+  // A drag cut short by an unmount (switching tabs mid-scrub) must not leave the page unselectable.
+  useEffect(()=>()=>lockSelection(false),[]);
+
   const onPointerDown = e => {
     drag.current = { x:e.clientX, start:Number.isFinite(value)?value:anchor, armed:false, id:e.pointerId, step:1 };
   };
@@ -569,6 +582,7 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
       // A scrub is not a text edit. Left focused, the mobile keyboard slides up over the graph the
       // gesture exists to watch.
       inputRef.current?.blur();
+      lockSelection(true);
       setScrubbing(true);
       haptic();
     }
@@ -579,20 +593,28 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
     const d = drag.current; if(!d) return;
     if(d.armed){
       try{ e.currentTarget.releasePointerCapture(d.id); }catch{}
+      lockSelection(false);
       setScrubbing(false);
       suppressClick.current = true;   // the click that closes a drag must not then open the keyboard
     }
     drag.current = null;
   };
   // Same defence VectorCompass documents: any horizontal movement here must never reach the
-  // Fit/Stats/Graph swipe handler on an ancestor, or scrubbing flicks you to another sub-tab.
+  // Fit/Stats/Graph swipe handler on an ancestor, or scrubbing flicks you to another sub-tab. All
+  // THREE touch events are swallowed, not just move: that handler is a little state machine, and
+  // feeding it an end without the matching start leaves it reasoning about the previous gesture.
   const swallowTouch = e => e.stopPropagation();
 
   return (
     <input ref={inputRef} type="number" inputMode="numeric" value={display} placeholder={placeholder} title={title}
       onChange={onType}
       onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-      onTouchStart={swallowTouch} onTouchMove={swallowTouch}
+      // Losing the capture is the backstop release. A pointerup that never arrives (the element
+      // re-rendered out from under the gesture, the OS took the pointer) would otherwise strand the
+      // whole page unselectable, which outlives the graph the drag was for.
+      onLostPointerCapture={endDrag}
+      onTouchStart={swallowTouch} onTouchMove={swallowTouch} onTouchEnd={swallowTouch}
+      onDragStart={e=>e.preventDefault()}
       onClick={e=>{ if(suppressClick.current){ suppressClick.current=false; e.preventDefault(); inputRef.current?.blur(); } }}
       // pan-y, not none: the cell sits in a scrolling panel, so vertical drags must still scroll the
       // page. Only the horizontal axis is claimed, which is the only one being read.
