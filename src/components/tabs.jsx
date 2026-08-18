@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, STATE_COLORS, STATE_GLOW, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, haptic, moduleTakesCharges, slotIcons } from "../lib/core.js";
+import { DMG, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -110,6 +110,72 @@ const groupFittedError=typeID=>{
   const gn=TYPES[typeID]?.gn??"module", cap=TYPES[typeID]?.a?.maxGroupFitted||1;
   return `Only ${cap===1?"one":cap} ${gn} module${cap===1?"":"s"} can be fitted`;
 };
+// ── The state dot, as a control ──────────────────────────────────────────────────────────────────
+// Tap = run/stop, double-tap = overheat, hold = offline. Setting a module's state was a three-tap
+// trip through the module menu (open, State tab, pick, dismiss), which is a lot of ceremony for the
+// thing you toggle most while reading the numbers.
+//
+// The gesture→state mapping itself is pure and lives in lib/core.js, where the regression suite can
+// reach it without a DOM.
+// 300ms is Android's own DOUBLE_TAP_TIMEOUT, so the window matches what a thumb is already trained
+// on elsewhere on the phone. Erring long is the safer direction here: a missed double-tap reads as a
+// broken control, while a pair of deliberate taps landing inside 300ms overheats visibly and one more
+// tap undoes it.
+const HOLD_MS=450, DOUBLE_MS=300;
+function StateDot({row,states,onSet}){
+  const t=useRef({timer:null,lastTap:0,held:false});
+  useEffect(()=>()=>clearTimeout(t.current.timer),[]);
+  const color=STATE_COLORS[row.state]||C.textMid, glow=STATE_GLOW[row.state]??0;
+  const fire=(gesture)=>{
+    const next=gestureTarget(states,row.state,gesture);
+    // Refusing has to be felt, or a dead gesture reads as a missed tap and you try again.
+    if(!next||next===row.state){haptic("warning");return;}
+    haptic(gesture==="double"?"heavy":"medium");
+    onSet(next);
+  };
+  const down=()=>{
+    t.current.held=false;
+    t.current.timer=setTimeout(()=>{t.current.held=true;t.current.lastTap=0;fire("hold");},HOLD_MS);
+  };
+  const up=(e)=>{
+    clearTimeout(t.current.timer);
+    e.stopPropagation();           // never opens the module menu — the row's onClick is the menu
+    if(t.current.held)return;      // the hold already fired; this is just the finger leaving
+    // e.timeStamp, NOT Date.now(): the browser stamps an input event when it RECEIVES it, so a stamp
+    // survives the queue. Reading the clock inside the handler measures when React got round to us
+    // instead — and the first tap commits a state change that recalculates the whole fit, which blocks
+    // the main thread for ~500ms here. Measured that way a genuine 140ms double-tap reads as 650ms and
+    // silently degrades into two single taps: the module runs, stops, and never overheats.
+    const now=e.timeStamp, isDouble=now-t.current.lastTap<DOUBLE_MS;
+    t.current.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
+    fire(isDouble?"double":"tap");
+  };
+  return(
+    <div onPointerDown={down} onPointerUp={up}
+         onPointerLeave={()=>clearTimeout(t.current.timer)}
+         onPointerCancel={()=>clearTimeout(t.current.timer)}
+         onClick={e=>e.stopPropagation()}
+         onContextMenu={e=>e.preventDefault()}   // long-press on touch otherwise raises the OS menu
+         title={`${STATE_LABELS[row.state]??"—"} — tap to run/stop, double-tap to overheat, hold to offline`}
+         aria-label={`Module state: ${STATE_LABELS[row.state]??"unknown"}`}
+         className="no-select"
+         // The dot is 6px and the finger is not. Padding gives it a ~28px target without moving the
+         // dot or changing the row's height; the negative margin takes back the space it borrows so
+         // the icon beside it does not shift.
+         // touchAction "manipulation", NOT "none": the dot sits in a scrolling list, and "none" would
+         // make a 28px band down the left edge of every row refuse to scroll. "manipulation" keeps
+         // the scroll and hands us a pointercancel when the browser claims the gesture, which is what
+         // stops a flick that happened to start on a dot from also toggling it.
+         style={{flexShrink:0,padding:"11px 10px",margin:"-11px -6px -11px -10px",cursor:"pointer",touchAction:"manipulation",
+                 display:"flex",alignItems:"center",justifyContent:"center"}}>
+      {/* The transition is doing real work: a double-tap commits the tap's state first and then
+          overrides it, and easing the colour turns what would read as a flicker into one sweep. */}
+      <div style={{width:6,height:6,borderRadius:99,background:color,
+                   boxShadow:glow?`0 0 ${glow}px ${color}`:"none",
+                   transition:"background-color .18s ease, box-shadow .18s ease"}}/>
+    </div>);
+}
+
 const enforceGroupLimit=(slots,limits,changedId)=>{
   const gnOf=m=>TYPES[m?.typeID]?.gn;
   const racks=["high","mid","low"];
@@ -317,6 +383,19 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return{...prev,[secKey]:sec};
     });if(!keepOpen)setModuleMenu(null);
   };
+  // A grouped row stands for every slot in row.groupIds, and state is NOT part of the grouping key —
+  // so the row shows its first member's state and the gesture has to set all of them, or the row
+  // would render as active while four of the five turrets behind it stayed online. Same reasoning
+  // (and same groupIds) as the unload-charge button.
+  const setRowState=(secKey,row,state)=>{
+    const ids=new Set(row.groupIds??[row.id]);
+    setSlots(prev=>{
+      const next={...prev,[secKey]:(prev[secKey]??[]).map(m=>ids.has(m.id)?{...m,state}:m)};
+      // Group ceilings (one MWD active, N command bursts online) are enforced on the way in, exactly
+      // as the menu's picker does — the dot must not be a way around a limit the picker respects.
+      return enforceGroupLimit(next,_cs.groupLimits,row.id);
+    });
+  };
   const removeMod=(secKey,modId)=>{
     const labels={high:"High",mid:"Mid",low:"Low",rigs:"Rig",services:"Service"};
     setSlots(prev=>{
@@ -507,8 +586,6 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                   <span style={{marginLeft:"auto",fontSize:11,color:C.accent,fontWeight:600}}>Add module</span>
                 </div>
               );
-              const stateColor=STATE_COLORS[row.state]||C.textMid;
-              const stateGlow=STATE_GLOW[row.state]??0;
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
               return(
@@ -525,7 +602,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         background:isDragOver?C.accentLight:row.orphan?`${C.danger}14`:C.surface,
                         border:`1px solid ${isDragSrc?C.accent:isDragOver?C.accentBorder:row.orphan?C.danger:C.border}`,
                         borderTop:isDragOver?`2px solid ${C.accent}`:undefined,transition:"opacity .15s ease, background-color .15s ease, border-color .15s ease"}}>
-                  <div style={{width:6,height:6,borderRadius:99,flexShrink:0,background:stateColor,boxShadow:stateGlow?`0 0 ${stateGlow}px ${stateColor}`:"none"}}/>
+                  {/* Subsystems have no state to set — their row opens the subsystem sheet, not the
+                      module menu — so they keep a plain dot. */}
+                  {sec.key==="subsystems"
+                    ?<div style={{width:6,height:6,borderRadius:99,flexShrink:0,background:STATE_COLORS[row.state]||C.textMid,boxShadow:(STATE_GLOW[row.state]??0)?`0 0 ${STATE_GLOW[row.state]}px ${STATE_COLORS[row.state]||C.textMid}`:"none"}}/>
+                    :<StateDot row={row} states={validStatesFor(row)} onSet={s=>setRowState(sec.key,row,s)}/>}
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
                   </div>

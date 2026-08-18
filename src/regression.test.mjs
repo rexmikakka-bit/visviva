@@ -29,6 +29,8 @@ import { differingAttributes, compareRows, sortCompareRows, derivedDirection } f
 import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
+import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
+import { REAL_MODULE_BROWSER, gestureTarget, validStatesFor } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2540,6 +2542,166 @@ Republic Fleet Command Mindlink`;
   check('hull', 'Naga is still an Attack Battlecruiser', sub('Naga'), 'Caldari Attack Battlecruiser', 0);
   // No racial skill and no mapped faction: the subtitle drops the race rather than saying "Unknown".
   check('hull', 'Gnosis has no race to show', sub('Gnosis'), 'Combat Battlecruiser', 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 15. SEARCH RANKING AND INITIALISMS — jargonSearch used to FILTER only, so results came back in
+//     market-tree order. That put ten Omnidirectional Tracking Links above the plain Tracking
+//     Computer for "tracking", and `te` (an initialism, matching no substring of "Tracking
+//     Enhancer") could not find that module AT ALL. Ranking is the fix; the trap it introduces is
+//     that a curated jargon expansion must still outrank an incidental literal hit — `ac` means
+//     autocannon, and the letters "ac" appear only in unrelated names like "…Acquisition".
+//     Positions, not scores, are asserted: the score tiers are an implementation detail, "the thing
+//     you searched for is at the top" is the contract.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nSEARCH');
+  const modsIn = (slot) => {
+    const out = [];
+    (function walk(ns) { for (const n of ns) { for (const m of (n.mods ?? [])) out.push(m); walk(n.children ?? []); } })(REAL_MODULE_BROWSER[slot] ?? []);
+    return out;
+  };
+  const rankOf = (slot, query, re) => (jargonSearch(query, modsIn(slot)) ?? []).findIndex((m) => re.test(m.name)) + 1;  // 1-based, 0 = absent
+
+  // The two cases that prompted this. Both were reproduced against the real browser lists first:
+  // "tracking" put Tracking Computer below ten Omni links, and "te" did not return the Enhancer.
+  check('search', '"tracking" leads with the Tracking Computer', rankOf('mid', 'tracking', /^Tracking Computer I$/), 1, 0);
+  check('search', '"te" finds the Tracking Enhancer at all', rankOf('low', 'te', /^Tracking Enhancer I$/) > 0 ? 1 : 0, 1, 0);
+  check('search', '"te" leads with it', rankOf('low', 'te', /^Tracking Enhancer I$/), 1, 0);
+  // Typing the words in full must not rank the Omnidirectional variant above the plain one.
+  check('search', '"tracking enhancer" prefers the plain module', rankOf('low', 'tracking enhancer', /^Tracking Enhancer I$/), 1, 0);
+
+  // The regression that ranking itself introduced: scoring the literal query alone dropped every
+  // autocannon to 158th of 200, behind "Hostile Target Acquisition".
+  check('search', '"ac" leads with an autocannon', rankOf('high', 'ac', /AutoCannon/i), 1, 0);
+  // pyfa's curated shorthands must keep working now that they are ranked rather than only filtered.
+  check('search', '"tc" leads with the Tracking Computer', rankOf('mid', 'tc', /^Tracking Computer I$/), 1, 0);
+  check('search', '"dda" leads with the Drone Damage Amplifier', rankOf('low', 'dda', /^Drone Damage Amplifier I$/), 1, 0);
+  check('search', '"istab" leads with Inertial Stabilizers', rankOf('low', 'istab', /^Inertial Stabilizers I$/), 1, 0);
+  check('search', '"point" leads with a Warp Disruptor', rankOf('mid', 'point', /^Warp Disruptor I$/), 1, 0);
+
+  // Hull initialisms — the feature this section was added for. ONI is deliberately ambiguous in
+  // game chat too, so BOTH hulls must come back rather than the search picking one.
+  const hulls = Object.values(TYPES).filter((t) => (t.c ?? t.category) === 6 && t.n).map((t) => t.n);
+  const shipHits = (q) => hulls.filter((n) => nameMatchesQuery(n, q))
+                               .sort((a, b) => searchScore(b, q) - searchScore(a, q) || a.length - b.length);
+  check('search', 'initials of Omen Navy Issue', initialsOf('Omen Navy Issue'), 'oni', 0);
+  check('search', 'ONI finds both Navy Issue hulls', shipHits('oni').slice(0, 2).join('|'), 'Omen Navy Issue|Osprey Navy Issue', 0);
+  check('search', 'RSI finds the Raven State Issue', shipHits('rsi')[0], 'Raven State Issue', 0);
+  check('search', 'VNI finds the Vexor Navy Issue', shipHits('vni')[0], 'Vexor Navy Issue', 0);
+  check('search', 'TFI covers all four Fleet Issue hulls', shipHits('tfi').filter((n) => /Fleet Issue$/.test(n)).length, 4, 0);
+  // A full name must still beat the longer hull that contains it — "raven" is not Raven Navy Issue.
+  check('search', 'an exact hull name outranks its variants', shipHits('raven')[0], 'Raven', 0);
+  check('search', 'substring search still works', shipHits('ishtar')[0], 'Ishtar', 0);
+
+  // The MID-WORD gate, asserted in BOTH directions. A long query must keep matching inside a compound
+  // word: every one of the 70 hits for "burner" is mid-word in "Afterburner", so a regression here
+  // EMPTIES the search rather than merely reordering it. A short one must not, which is what stopped
+  // "te" returning 939 modules with the Enhancer buried in them.
+  const nMatch = (slot, q, re) => modsIn(slot).filter((m) => nameMatchesQuery(m.name, q) && re.test(m.name)).length;
+  check('search', '"burner" still finds Afterburners mid-word', rankOf('mid', 'burner', /^1MN Afterburner I$/), 1, 0);
+  check('search', '"cannon" still finds AutoCannons mid-word', nMatch('high', 'cannon', /AutoCannon/i) > 0 ? 1 : 0, 1, 0);
+  check('search', '"te" no longer drags in mid-word noise', nMatch('low', 'te', /Setele|Co-Processor|Diagnostic/i), 0, 0);
+  check('search', '"ac" no longer matches Tractor Beam', nMatch('high', 'ac', /Tractor Beam/i), 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16. MODULE STATE GESTURES
+//
+// The state dot on a fit row is a control: tap = run/stop, double-tap = overheat, hold = offline.
+// Two things are worth pinning. First that the gestures are TOTAL — every gesture from every legal
+// state either lands on another legal state or refuses (null); anything else is a dot that puts a
+// module into a state the engine will not honour. Second REACHABILITY: from wherever a module
+// currently is, every other state it can legally hold is reachable using only these three gestures.
+// That is what makes the dot self-sufficient as the only control on the row — a gesture set that can
+// strand you (hold offlines but nothing brings it back) would send you to the module menu the dot
+// exists to replace. Reachability is the right property here and self-inverse is NOT: applying a
+// gesture from a THIRD state can't return you to where you started without remembering the trip
+// (tap from `overheated` lands on `online`, and tapping again runs it, correctly).
+//
+// `validStatesFor` is driven off real module types rather than hand-written lists, so a bundle regen
+// that changes an attribute shows up here instead of being assumed away.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMODULE STATE GESTURES');
+  const GESTURES = ['tap', 'double', 'hold'];
+  const modOf = (name, type) => ({ typeID: tid(name), name, type: type ?? 'module' });
+
+  // Four modules chosen for their SHAPES, not their stats: a heat-capable active module (all four
+  // states), an activatable one that cannot overheat, a passive one (offline/online only), and a rig
+  // (online only — no gesture does anything).
+  // Damage Control II is the passive one, which is worth stating because it reads like an active
+  // module: it carries no duration, no cycle and no cap cost, so it has never had an active state in
+  // the module menu either.
+  const shapes = [
+    ['Heavy Neutron Blaster II', 'weapon', 4],
+    ['Capital Gas Compressor I', 'module', 3],
+    ['Damage Control II', 'module', 2],
+    ['Small Core Defense Field Extender I', 'rig', 1],
+  ];
+  for (const [name, type, want] of shapes)
+    check('gesture', `${name}: ${want} legal state(s)`, validStatesFor(modOf(name, type)).length, want, 0);
+
+  // TOTALITY. Every (module, state, gesture) triple resolves to a legal state or to a refusal.
+  let illegal = 0, transitions = 0;
+  for (const [name, type] of shapes) {
+    const states = validStatesFor(modOf(name, type));
+    for (const cur of states) for (const g of GESTURES) {
+      const next = gestureTarget(states, cur, g);
+      if (next === null) continue;
+      transitions++;
+      if (!states.includes(next)) illegal++;
+    }
+  }
+  check('gesture', 'no gesture reaches an illegal state', illegal, 0, 0);
+  check('gesture', 'the gestures do something', transitions > 0 ? 1 : 0, 1, 0);
+
+  // REACHABILITY. Walk the gesture graph from every legal state and require it to cover the rest of
+  // them. What this catches is a SINK — a state with no way out — which is the failure that would
+  // force you back into the module menu. `offline` is the state at risk: it has two exits (hold
+  // restores it, tap runs it), so no single simplification strands you there, but a handler written
+  // as "hold always offlines" plus "tap only toggles a running module" does, and that pairing is a
+  // coherent enough design to be worth a guard.
+  let unreachable = 0;
+  for (const [name, type] of shapes) {
+    const states = validStatesFor(modOf(name, type));
+    for (const start of states) {
+      const seen = new Set([start]), queue = [start];
+      while (queue.length) {
+        const cur = queue.shift();
+        for (const g of GESTURES) {
+          const next = gestureTarget(states, cur, g);
+          if (next !== null && !seen.has(next)) { seen.add(next); queue.push(next); }
+        }
+      }
+      unreachable += states.filter((s) => !seen.has(s)).length;
+    }
+  }
+  check('gesture', 'every state is reachable from every other', unreachable, 0, 0);
+
+  // The specific mapping the gestures were asked for, on a full four-state module.
+  const full = validStatesFor(modOf('Heavy Neutron Blaster II', 'weapon'));
+  check('gesture', 'tap runs an online module', gestureTarget(full, 'online', 'tap'), 'active', 0);
+  check('gesture', 'tap stops an active module', gestureTarget(full, 'active', 'tap'), 'online', 0);
+  // Stopping an overheated module goes straight to online rather than stepping down through active:
+  // one tap means stop, and having to tap twice to stop something would be the surprise.
+  check('gesture', 'tap stops an overheated module outright', gestureTarget(full, 'overheated', 'tap'), 'online', 0);
+  check('gesture', 'double-tap overheats', gestureTarget(full, 'active', 'double'), 'overheated', 0);
+  check('gesture', 'hold offlines', gestureTarget(full, 'active', 'hold'), 'offline', 0);
+  check('gesture', 'hold again restores it', gestureTarget(full, 'offline', 'hold'), 'online', 0);
+
+  // A passive module has no active state, so tap is its on/off switch instead of a dead gesture —
+  // and double-tap, which it cannot honour, refuses rather than falling back to something else.
+  const passive = ['offline', 'online'];
+  check('gesture', 'tap toggles a passive module on', gestureTarget(passive, 'offline', 'tap'), 'online', 0);
+  check('gesture', 'tap toggles a passive module off', gestureTarget(passive, 'online', 'tap'), 'offline', 0);
+  check('gesture', 'a passive module refuses overheat', gestureTarget(passive, 'online', 'double') === null ? 1 : 0, 1, 0);
+
+  // A rig has exactly one state, so all three gestures must refuse. Silently doing nothing here is
+  // what makes a control feel broken, so the caller needs the null to buzz instead.
+  const rig = validStatesFor(modOf('Small Core Defense Field Extender I', 'rig'));
+  check('gesture', 'a rig refuses every gesture',
+    GESTURES.filter((g) => gestureTarget(rig, 'online', g) === null).length, 3, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
