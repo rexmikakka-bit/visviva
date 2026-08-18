@@ -607,16 +607,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
 
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
-    // These three were icon-only, and two of the three glyphs are guesses: a pencil could mean
-    // "rename" or "edit the fit", and a clipboard could mean copy, paste or export. `title` is the
-    // usual answer and does nothing at all on touch — there is no hover — so on a phone the only way
-    // to learn them was to tap one and find out, which for the third is destructive. A micro-label
-    // is what the app's own bottom nav already does (icon over "Fittings", "Cargo", "Drones"), so
-    // this is the established idiom here rather than a new one.
-    const rowBtn=(border,color)=>({width:42,borderRadius:6,background:C.surfaceAlt,border,color,cursor:"pointer",
-      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
-      padding:"4px 0",flexShrink:0,lineHeight:1});
-    const rowBtnCap={fontSize:8,fontWeight:700,letterSpacing:.2,textTransform:"uppercase"};
+    const rowBtn=(border,color)=>({width:36,height:36,borderRadius:6,background:C.surfaceAlt,border,color,cursor:"pointer",
+      display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,lineHeight:1});
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>setView("browse")} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
@@ -632,28 +624,29 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
               :<div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fit.name}</div>
             }
             <div style={{fontSize:11,color:C.textMute,marginTop:2}}>Modified {fit.modified}</div>
-            {/* The tag row doubles as the control that opens the tag sheet, so tagging needs no
-                button of its own. `+ Tag` is what makes it discoverable when the fit has none —
-                an empty row would be invisible. */}
-            <div onClick={e=>{e.stopPropagation();setTagSheet({ship:selectedShip,fitId:fit.id});}}
-              style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6,cursor:"pointer"}}>
+            {/* Only the `+ Tag` chip opens the tag sheet — the row itself used to carry that onClick,
+                which (being a block-level flex container) covered the row's full width, not just the
+                chips in it, and ate clicks meant for opening the fit. An existing tag is no longer
+                itself clickable; `+`/`+ Tag` is the one control for the sheet. */}
+            <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
               {tagsOf(fit).map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}
-              <TagChip name={tagsOf(fit).length?"+":"+ Tag"} color={C.textMid} dim/>
+              <TagChip name={tagsOf(fit).length?"+":"+ Tag"} color={C.textMid} dim
+                onClick={e=>{e.stopPropagation();setTagSheet({ship:selectedShip,fitId:fit.id});}}/>
             </div>
           </div>
           <button onClick={e=>{e.stopPropagation();setEditingFitId(fit.id);setEditName(fit.name);}}
             title="Rename fit" aria-label={`Rename ${fit.name}`}
             style={{...rowBtn(`1px solid ${editingFitId===fit.id?C.accentBorder:C.border}`,editingFitId===fit.id?C.accent:C.textMid),
                     background:editingFitId===fit.id?C.accentLight:C.surfaceAlt}}>
-            <span style={{fontSize:13}}>&#9998;</span><span style={rowBtnCap}>Rename</span></button>
+            <span style={{fontSize:14}}>&#9998;</span></button>
           <button onClick={e=>{e.stopPropagation();openCopyOfFit(selectedShip,fit.name);}}
             title="Open a copy" aria-label={`Open a copy of ${fit.name}`}
             style={rowBtn(`1px solid ${C.border}`,C.textMid)}>
-            <span style={{fontSize:12}}>&#128203;</span><span style={rowBtnCap}>Copy</span></button>
+            <span style={{fontSize:13}}>&#128203;</span></button>
           <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`))deleteFit(selectedShip,fit);}}
             title="Delete fit" aria-label={`Delete ${fit.name}`}
             style={{...rowBtn("1px solid rgba(239,68,68,.25)",C.danger),background:"rgba(239,68,68,.08)"}}>
-            <span style={{fontSize:15}}>&times;</span><span style={rowBtnCap}>Delete</span></button>
+            <span style={{fontSize:17}}>&times;</span></button>
         </div>))}
       </div>
       {/* Re-resolved from fitsDB every render rather than captured when the sheet opened, so the
