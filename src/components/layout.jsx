@@ -98,7 +98,7 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
       <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       <button onClick={()=>{if(onNewFit)onNewFit();onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
         <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:"&#10133;"}}/>
-        <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Pick a hull and start fresh</div></div>
+        <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
       </button>
       {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImport();onClose();}else if(item.action==="export"){if(onExport)onExport();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else if(item.action==="feedback"){if(onFeedback)onFeedback();onClose();}else if(item.action==="optimizePrice"){if(onOptimizePrice)onOptimizePrice();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
@@ -222,7 +222,11 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
                   style={{borderRadius:collapsed?8:11,display:"block"}}/>
           }
         </button>
-        <button onClick={onHamburger} style={{width:collapsed?32:40,height:collapsed?32:40,borderRadius:9,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
+        {/* No surface or border: the button beside it is a hull PORTRAIT, and giving both the same
+            square chrome made the menu read as a second image slot. The glyph carries itself at this
+            size. The box keeps its dimensions even though nothing draws it — that is the tap target,
+            and shrinking it to the glyph's ink would put a 24px control at the edge of the screen. */}
+        <button onClick={onHamburger} style={{width:collapsed?32:40,height:collapsed?32:40,transition:"width .2s ease, height .2s ease, font-size .2s ease",background:"none",border:"none",padding:0,color:C.text,fontSize:collapsed?26:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
       </div>
     </div>
   </div>);

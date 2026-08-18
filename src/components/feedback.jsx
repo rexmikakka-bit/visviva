@@ -22,7 +22,6 @@ function fitAsEFT(activeFit, slots, implants, boosters) {
 }
 
 export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
-  const [kind, setKind] = useState("bug");
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [includeFit, setIncludeFit] = useState(!!activeFit?.ship);
@@ -41,11 +40,14 @@ export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
     return lines.join("\n");
   };
 
+  // No bug/idea split: both kinds opened the same issue on the same repo and differed only by
+  // label, so the choice asked the reporter to categorise their own report before they had written
+  // it — and got it wrong often enough to be worth nothing. Triage reads the text anyway.
   const issueURL = () => {
     const params = new URLSearchParams({
-      title: title.trim() || (kind === "bug" ? "Bug report" : "Feedback"),
+      title: title.trim() || "Feedback",
       body: buildBody(),
-      labels: kind === "bug" ? "bug,user-report" : "enhancement,user-report",
+      labels: "user-report",
     });
     return `${REPO_URL}/issues/new?${params.toString()}`;
   };
@@ -77,18 +79,10 @@ export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
           Opens a pre-filled GitHub issue on Axis's repo. You review it there before it's submitted — nothing is sent automatically.
         </div>
 
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          {["bug","idea"].map(k=>(
-            <button key={k} onClick={()=>setKind(k)} style={{flex:1,padding:"9px 0",borderRadius:8,border:`1px solid ${kind===k?C.accentBorder:C.border}`,background:kind===k?C.accentLight:"transparent",cursor:"pointer",fontSize:12,fontWeight:600,color:kind===k?C.accent:C.textMid}}>
-              {k==="bug"?"\u{1F41E} Bug":"\u{1F4A1} Idea"}
-            </button>
-          ))}
-        </div>
-
-        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={kind==="bug"?'Short summary, e.g. "RAH split wrong on Astarte"':"Short summary of your idea"}
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder='Short summary, e.g. "RAH split wrong on Astarte"'
           style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,marginBottom:8}}/>
 
-        <textarea value={details} onChange={e=>setDetails(e.target.value)} placeholder="What happened? What did you expect instead?" rows={5}
+        <textarea value={details} onChange={e=>setDetails(e.target.value)} placeholder="What happened, and what did you expect instead? Ideas and requests are welcome here too." rows={5}
           style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,fontFamily:"inherit",resize:"vertical",marginBottom:10}}/>
 
         {activeFit?.ship&&(
