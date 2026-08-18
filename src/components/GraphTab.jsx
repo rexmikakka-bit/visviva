@@ -117,32 +117,44 @@ function generateCurve(catKey,yKey,xKey,params={}){
     distMaxKm = distMaxKm <= 20 ? Math.ceil(distMaxKm) : distMaxKm <= 60 ? Math.ceil(distMaxKm/5)*5 : Math.ceil(distMaxKm/10)*10;
     distMaxKm = dom(distMaxKm);
     // Per-weapon applied multiplier at an engagement (tracking/range/application).
-    const weaponMult = (w, distM, tgtSig, tgtSpeed) => {
+    //
+    // `perfect` asks the same question with the APPLICATION terms removed — a stationary attacker
+    // against a stationary target of effectively infinite signature — which is what the ghost line
+    // draws. RANGE is deliberately left in: a turret sitting past falloff is not missing because of
+    // transversal, and a ceiling that ignored range would promise damage no amount of flying can
+    // recover. The ideal inputs are fed through the same math rather than short-circuited to 1, for
+    // the same reason IDEAL_SIG exists at all (see its comment).
+    const weaponMult = (w, distM, tgtSig, tgtSpeed, perfect) => {
         if (w.kind === "turret") {
-          const cth = calcTurretCTH({ atkSpeed, atkAngle, atkRadius: shipRadius,
+          const cth = calcTurretCTH({ atkSpeed: perfect?0:atkSpeed, atkAngle, atkRadius: shipRadius,
             optimal: w.optimal, falloff: w.falloff, tracking: w.tracking,
             optimalSigRadius: w.optimalSigRadius, distance: distM,
-            tgtSpeed, tgtAngle, tgtRadius, tgtSig });
+            tgtSpeed: perfect?0:tgtSpeed, tgtAngle, tgtRadius, tgtSig: perfect?IDEAL_SIG:tgtSig });
           return calcTurretMult(cth);
         } else if (w.kind === "missile") {
           const df = distM <= w.lowerRange ? 1 : (distM <= w.higherRange ? w.higherChance : 0);
-          return df * calcMissileFactor(w.explosionRadius, w.explosionVelocity, w.aoeDamageReductionFactor, tgtSpeed, tgtSig);
+          return df * calcMissileFactor(w.explosionRadius, w.explosionVelocity, w.aoeDamageReductionFactor,
+                                        perfect?0:tgtSpeed, perfect?IDEAL_SIG:tgtSig);
         } else if (w.kind === "drone") {
           return distM <= (w.controlRange ?? Infinity) ? 1 : 0;
         }
         return 1;
     };
     // Compute total applied DPS (or volley) at a given engagement.
-    const applied = (distM, tgtSig, tgtSpeed) => {
+    const applied = (distM, tgtSig, tgtSpeed, perfect) => {
       let total = 0;
       for (const w of weapons) {
         const _v = w.volleyEff ?? w.volley;
         const vol = _v.em + _v.th + _v.kin + _v.exp;
         const per = wantVolley ? vol : vol / w.cycleS;
-        total += per * weaponMult(w, distM, tgtSig, tgtSpeed);
+        total += per * weaponMult(w, distM, tgtSig, tgtSpeed, perfect);
       }
       return total;
     };
+    // Every damage point carries TWO y values: what lands against the target being simulated, and
+    // what would land with application perfect. Both come from one call site so the ghost can never
+    // sample an x the real line didn't.
+    const both = (distM, tgtSig, tgtSpeed) => [applied(distM,tgtSig,tgtSpeed), applied(distM,tgtSig,tgtSpeed,true)];
     // Every volley landed within `TMAX` seconds at one engagement distance, as [t, damage] pairs.
     // Both the time axis (which draws them as a staircase) and the distance axis (which sums them)
     // go through this, so the two can never disagree about what "damage inflicted" means.
@@ -150,8 +162,12 @@ function generateCurve(catKey,yKey,xKey,params={}){
       const evts=[];
       for (const w of weapons){
         const v=w.volleyEff??w.volley;
-        const base=(v.em+v.th+v.kin+v.exp)*weaponMult(w,distM,sig,vel);
-        if(!(base>0)||!(w.cycleS>0))continue;
+        const raw=v.em+v.th+v.kin+v.exp;
+        const base=raw*weaponMult(w,distM,sig,vel), ideal=raw*weaponMult(w,distM,sig,vel,true);
+        // Kept if EITHER column lands, so a weapon the target is currently outrunning still
+        // contributes to the ghost staircase — and both staircases keep the same step positions,
+        // which they would not if each built its own event list.
+        if(!(base>0||ideal>0)||!(w.cycleS>0))continue;
         // Entropic disintegrators ramp. eos's calculateSpoolup (SpoolType.CYCLES) is the authority:
         // after `cycles` COMPLETED cycles the bonus is min(max, cycles * step), so the FIRST shot
         // lands with none of it and the cap arrives on shot ceil(max/step). A Heavy Entropic
@@ -165,7 +181,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
         const spools=w.spoolMax>0&&w.spoolPerCycle>0;
         let t=0, shots=0, cycles=0, guard=0;
         while (t<=TMAX+1e-9 && guard++<100000){
-          evts.push([t, base*(spools?1+Math.min(w.spoolMax,cycles*w.spoolPerCycle):1)]);
+          const sp=spools?1+Math.min(w.spoolMax,cycles*w.spoolPerCycle):1;
+          evts.push([t, base*sp, ideal*sp]);
           shots++; cycles++;
           if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + w.reloadS; }
           else t += w.cycleS;
@@ -182,9 +199,10 @@ function generateCurve(catKey,yKey,xKey,params={}){
       // window, at each range: "how much do I actually land in two minutes at X km".
       const TMAX=dom(120);
       for (let km=0; km<=distMaxKm+1e-9; km+=step){
-        pts.push([km, yKey==="inflicted"
-          ? damageEvents(TMAX, km*1000, profSig, profVel).reduce((s,e)=>s+e[1],0)
-          : applied(km*1000, profSig, profVel)]);
+        if (yKey==="inflicted"){
+          const ev=damageEvents(TMAX, km*1000, profSig, profVel);
+          pts.push([km, ev.reduce((s,e)=>s+e[1],0), ev.reduce((s,e)=>s+e[2],0)]);
+        } else pts.push([km, ...both(km*1000, profSig, profVel)]);
       }
       xMax=distMaxKm;
       yMax=yKey==="inflicted" ? (Math.max(...pts.map(p=>p[1]))||100)*1.1 : (wantVolley?baseVolley:baseDps)*1.15;
@@ -195,21 +213,21 @@ function generateCurve(catKey,yKey,xKey,params={}){
         // pausing for reload after each clip of numShots (so the staircase flattens during reload).
         const TMAX=dom(120);
         const evts = damageEvents(TMAX, 0, profSig, profVel);
-        let acc=0; pts.push([0,0]);
-        for (const [t,d] of evts){ pts.push([t,acc]); acc+=d; pts.push([t,acc]); }   // step then jump
-        pts.push([TMAX,acc]);
+        let acc=0, gacc=0; pts.push([0,0,0]);
+        for (const [t,d,g] of evts){ pts.push([t,acc,gacc]); acc+=d; gacc+=g; pts.push([t,acc,gacc]); }   // step then jump
+        pts.push([TMAX,acc,gacc]);
         xMax=TMAX; yMax=acc*1.05||100;
       } else {
-        const eff=applied(0,profSig,profVel);
+        const [eff,effIdeal]=both(0,profSig,profVel);
         const tEnd=dom(120), tStep=tEnd/480;
-        for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff]);
+        for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff,effIdeal]);
         xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
       }
     }
-    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, applied(engDist, profSig, v)]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, applied(engDist, profSig, vmax*p/100)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, applied(engDist, sg, profVel)]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, applied(engDist, profSig*p/100, profVel)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...both(engDist, profSig, v)]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig, vmax*p/100)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, ...both(engDist, sg, profVel)]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig*p/100, profVel)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
   }else if(catKey==="ewar"){
     const P=params.ownProj||{};
     const rf=(o,f,d)=>calcRangeFactor(o,f,d,true);
@@ -352,7 +370,9 @@ function generateCurve(catKey,yKey,xKey,params={}){
     for(let s=10;s<=sEnd+1e-9;s+=sStep){const t=sr>0?Math.min(40000/sr/Math.pow(Math.asinh(s),2),1800):0;pts.push([s,t]);}
     xMax=sEnd;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):10)*1.15||10;
   }
-  if(pts.length){const dm=Math.max(...pts.map(p=>p[1]));if(!yMax||dm>yMax)yMax=dm*1.1;}
+  // The ghost column counts toward the axis fit, or the ceiling it draws gets clipped off the top of
+  // the plot at exactly the engagements where the gap is worth seeing.
+  if(pts.length){const dm=Math.max(...pts.map(p=>Math.max(p[1],p[2]??0)));if(!yMax||dm>yMax)yMax=dm*1.1;}
   return{pts,xMax:xMax??100,yMax:yMax??100};
 }
 
@@ -370,6 +390,12 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
   const yT=[0,.25,.5,.75,1].map(f=>yMax*f),xT=[0,.25,.5,.75,1].map(f=>xMax*f);
   const lp=pts.map(([x,y],i)=>`${i===0?"M":"L"}${toX(x).toFixed(1)},${toY(Math.max(0,y)).toFixed(1)}`).join(" ");
   const ap=lp+` L${toX(pts[pts.length-1][0])},${toY(0)} L${toX(pts[0][0])},${toY(0)} Z`;
+  // The perfect-application ceiling, drawn behind the real curve wherever the two differ. Only the
+  // damage curves carry a third column, and only a non-ideal target makes it diverge, so the test is
+  // "is there a gap" rather than a flag threaded down from the target controls: against a stationary
+  // infinite-sig target the ghost sits exactly on the line and drawing it would just fatten it.
+  const hasGhost=pts.some(p=>p.length>2&&p[2]>p[1]*1.005+1e-9);
+  const gp=hasGhost?pts.map(([x,,y],i)=>`${i===0?"M":"L"}${toX(x).toFixed(1)},${toY(Math.max(0,y)).toFixed(1)}`).join(" "):null;
   const gId="g"+color.replace(/[^a-zA-Z0-9]/g,"");
   // Pointer x -> curve x, or null when the drag leaves the plot box (which is how you clear it).
   const xFromClient=(clientX,rect)=>{const scaleX=W/rect.width,svgX=(clientX-rect.left)*scaleX;
@@ -393,6 +419,7 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
     {yT.map((v,i)=><line key={i} x1={PL} y1={toY(v)} x2={W-PR} y2={toY(v)} stroke={C.border} strokeWidth="1"/>)}
     {xT.map((v,i)=><line key={i} x1={toX(v)} y1={PT} x2={toX(v)} y2={PT+gH} stroke={C.border} strokeWidth="1"/>)}
     <g clipPath={`url(#${gId}clip)`}>
+      {gp&&<path d={gp} fill="none" stroke={color} strokeWidth="1.25" strokeDasharray="4,3" opacity=".3" strokeLinejoin="round" strokeLinecap="round"/>}
       <path d={ap} fill={`url(#${gId})`}/><path d={lp} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
     </g>
     {cursorPx!=null&&cursorYVal!=null&&(<g><line x1={cursorPx} y1={PT} x2={cursorPx} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorPx} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
@@ -608,16 +635,21 @@ function loadGraphPrefs(){
 // and that is what makes the cross-fit comparison work: switching fit tabs keeps GraphTab mounted
 // and swaps the curve underneath, so the same stored x re-reads at the new fit's DPS. A pixel would
 // have meant the same thing only by accident, and would have moved under a zoom change.
-function interpCurveAt(pts,xVal){
+//
+// `col` picks which y column to read: 1 is the plotted curve, 2 the damage graphs' perfect-application
+// ghost. Reading both through one function is what keeps the headline's "% of perfect" honest — it is
+// two reads of the same interpolation at the same x, not a second estimate.
+function interpCurveAt(pts,xVal,col=1){
   if(!pts?.length||xVal==null)return null;
-  if(xVal<=pts[0][0])return pts[0][1];
+  if(pts[0][col]==null)return null;
+  if(xVal<=pts[0][0])return pts[0][col];
   for(let i=1;i<pts.length;i++){
     if(pts[i][0]>=xVal){
-      const[x0,y0]=pts[i-1],[x1,y1]=pts[i],t=x1===x0?0:(xVal-x0)/(x1-x0);
-      return y0+(y1-y0)*t;
+      const p0=pts[i-1],p1=pts[i],t=p1[0]===p0[0]?0:(xVal-p0[0])/(p1[0]-p0[0]);
+      return p0[col]+(p1[col]-p0[col])*t;
     }
   }
-  return pts[pts.length-1][1];
+  return pts[pts.length-1][col];
 }
 
 // tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
@@ -700,7 +732,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
-  const baseHeadline=pts.length?pts[Math.floor(pts.length*.05)][1]:null;
+  const _baseIdx=Math.floor(pts.length*.05);
+  const baseHeadline=pts.length?pts[_baseIdx][1]:null;
   // A stored x can fall outside the current domain (a zoom in, or an axis that runs shorter on this
   // fit). Treat that as "no selection" rather than pinning the readout to the edge — but keep the
   // value, so zooming back out or switching to a longer-ranged fit restores the same point.
@@ -708,6 +741,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const cursorY=cursorLive?interpCurveAt(pts,cursorX):null;
   const displayVal=cursorY!=null?cursorY:baseHeadline;
   const displayX=cursorY!=null?cursorX:null;
+  // What the same point would be worth with application perfect, as a share. Shown only when there is
+  // a real gap — against an ideal target the two are the same number and the chip would be noise.
+  const displayGhost=pts.length?(cursorY!=null?interpCurveAt(pts,cursorX,2):pts[_baseIdx][2]):null;
+  const appliedPct=(displayGhost>0&&displayVal!=null&&displayGhost>displayVal*1.005)?Math.round(displayVal/displayGhost*100):null;
   const fmt=v=>v==null?"--":v>=10000?`${(v/1000).toFixed(1)}k`:v>=100?v.toFixed(0):v.toFixed(1);
   return(<div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
@@ -735,7 +772,11 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       })}
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-      <div><span style={{fontSize:22,fontWeight:800,color:cat.color}}>{fmt(displayVal)}</span><span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span></div>
+      <div>
+        <span style={{fontSize:22,fontWeight:800,color:cat.color}}>{fmt(displayVal)}</span>
+        <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span>
+        {appliedPct!=null&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct}%</div>}
+      </div>
       <div style={{textAlign:"right"}}>
         {displayX!=null&&<div style={{fontSize:11,color:C.textMute}}>@ <span style={{color:C.text,fontWeight:600}}>{fmt(displayX)}</span> {xAxis?.label?.split(",")[0]}</div>}
         {(()=>{ if(catKey!=="ewar"&&catKey!=="reps") return null;
