@@ -251,9 +251,17 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
    also owns the drag-to-dismiss offset. */
 @keyframes vv-sheet-up{from{transform:translateY(100%)}to{transform:translateY(0)}}
 .vv-sheet-in{animation:vv-sheet-up .22s cubic-bezier(.22,.61,.36,1)}
+/* The nav drawer, same two-part shape as the sheet: a keyframe for entry (nothing to hang a
+   transition off at mount time) and an inline transform for exit, which is the half that has to be
+   driven by state so the drawer can finish leaving before it unmounts. These classes carry ONLY the
+   animation, so dropping one to run the exit takes no layout with it. */
+@keyframes vv-drawer-in{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+@keyframes vv-scrim-in{from{opacity:0}to{opacity:1}}
+.vv-drawer-in{animation:vv-drawer-in .22s cubic-bezier(.22,.61,.36,1)}
+.vv-scrim-in{animation:vv-scrim-in .22s ease}
 @media (prefers-reduced-motion:reduce){
   .press:active{transform:none}
-  .vv-in,.vv-sheet-in{animation:none}
+  .vv-in,.vv-sheet-in,.vv-drawer-in,.vv-scrim-in{animation:none}
 }
 .vv-from-right{animation:vv-from-right .2s cubic-bezier(.22,.61,.36,1)}
 .vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}

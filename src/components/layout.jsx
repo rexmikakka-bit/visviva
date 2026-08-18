@@ -88,19 +88,38 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
   );
 }
 
+// Kept in step with the .22s on .vv-drawer-in / .vv-scrim-in in GLOBAL_CSS.
+const DRAWER_MS=220;
+
 // "New Fit" leads, and is the only entry that starts something rather than acting on what is
 // already open — so it gets the accent treatment instead of blending into the list. It routes to
 // the ship browser rather than creating a fit outright: a fit needs a hull, and the menu is
 // reachable from tabs where no hull is selected.
 export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice,onNewFit}){
-  return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={onClose}>
-    <div style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
-      <div style={{padding:"20px 16px 12px",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
-      <button onClick={()=>{if(onNewFit)onNewFit();onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
+  // Close is DEFERRED so the drawer can slide back out — the caller unmounts us the moment onClose
+  // runs. The picked item's own action is deferred with it rather than fired immediately: most of
+  // these open a sheet or a full-screen overlay, and doing that first puts it on screen behind a
+  // drawer that is still moving.
+  const [closing,setClosing]=useState(false);
+  const dismiss=(then)=>{ if(closing)return; setClosing(true); setTimeout(()=>{then?.();onClose();},DRAWER_MS); };
+  return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={()=>dismiss()}>
+    {/* The drawer used to slide over undimmed content, which left the app behind it looking live
+        and tappable when it isn't. The scrim also gives the exit something to do besides the panel
+        itself, so closing reads as one movement rather than a slide plus a cut. */}
+    <div className={closing?undefined:"vv-scrim-in"}
+         style={{position:"absolute",inset:0,background:"rgba(0,0,0,.5)",opacity:closing?0:1,transition:`opacity ${DRAWER_MS}ms ease`}}/>
+    <div className={closing?undefined:"vv-drawer-in"}
+         style={{position:"absolute",top:0,left:0,bottom:0,width:260,background:C.surface,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",boxShadow:"4px 0 24px rgba(0,0,0,.5)",overflowY:"auto",
+                 transform:closing?"translateX(-100%)":"none",transition:`transform ${DRAWER_MS}ms cubic-bezier(.22,.61,.36,1)`}} onClick={e=>e.stopPropagation()}>
+      {/* Same treatment as AppHeader: the drawer's surface runs to the physical top of the screen,
+          but its title is inset past the status bar. Without this the wordmark sat under the iOS
+          clock. env() is 0 on Android and the web, so the 20px is what those still get. */}
+      <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <button onClick={()=>dismiss(onNewFit)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
         <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:"&#10133;"}}/>
         <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
       </button>
-      {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>{if(item.action==="settings"){onOpenSettings();onClose();}else if(item.action==="import"){onImport();onClose();}else if(item.action==="export"){if(onExport)onExport();onClose();}else if(item.action==="snapshot"){if(onSnapshot)onSnapshot();onClose();}else if(item.action==="feedback"){if(onFeedback)onFeedback();onClose();}else if(item.action==="optimizePrice"){if(onOptimizePrice)onOptimizePrice();onClose();}else onClose();}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }
