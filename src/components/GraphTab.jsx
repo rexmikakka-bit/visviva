@@ -634,20 +634,24 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label}</button>
       ))}
       {targetProfile==="custom"&&<span style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>Custom</span>}
-      {/* A TOGGLE, not another profile — hence the separator and the check, so it doesn't read as a
-          fifth mutually-exclusive option. Dimmed (not disabled) where the current profile has no MWD
+      {/* A TOGGLE, not another profile — hence the separator, so it doesn't read as a fifth
+          mutually-exclusive option. Dimmed (not disabled) where the current profile has no MWD
           variant: the setting still holds for the next profile picked, and disabling it would make
-          the control look broken on the Ideal profile. */}
+          the control look broken on the Ideal profile.
+          Its state is carried by the accent fill alone. A check mark used to sit in front of the
+          label, which made the button wider when on — enough to wrap the whole row onto a second
+          line on a phone, so turning MWD on moved the control out from under the thumb that had
+          just pressed it. aria-pressed still carries the state where the colour cannot. */}
       <span style={{width:1,alignSelf:"stretch",background:C.border,margin:"0 2px"}}/>
       <button onClick={toggleMwd} aria-pressed={targetMwd}
         title={mwdApplies
           ? "Target has its microwarpdrive running: much larger signature (easier to hit and to apply full missile damage) but much faster (harder for turrets to track)"
           : "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship"}
-        style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
+        style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
                 opacity:mwdApplies?1:0.45,
                 background:targetMwd?C.accentLight:C.surface,border:`1px solid ${targetMwd?C.accentBorder:C.border}`,
                 color:targetMwd?C.accent:C.textMid}}>
-        {targetMwd&&<span style={{fontSize:9}}>✓</span>}MWD
+        MWD
       </button>
     </div>
     {/* Target RESISTS — how much of your damage actually lands — are chosen ONCE, in Stats >
