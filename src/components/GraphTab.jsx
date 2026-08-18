@@ -684,8 +684,7 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       </label>
     </div>
     <div style={{fontSize:10,color:C.textMute,marginTop:-6,marginBottom:12}}>Press and slide either cell sideways to sweep it and watch the curve move.</div>
-    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>Flight Vectors</div>
-    <div style={{fontSize:10,color:C.textMute,marginBottom:8}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
+    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Flight Vectors</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
       {/* NOT `selfMaxVel||500` — 0 is falsy, and 0 is exactly the value a sieged or bastioned hull
           reports. The caller already ends its own fallback chain with 500 for the genuinely-unknown
@@ -701,6 +700,9 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       </div>
       <VectorCompass label="Target" value={targetAngle} velocity={targetVel} maxVelocity={Math.max(targetVelMax,1)} onChange={setTargetAngle} onVelocityChange={setTargetVel}/>
     </div>
+    {/* Below the compasses, not above: this is a legend for something you have already found, and
+        anyone who knows how the wheels work had to scroll past it to reach them every time. */}
+    <div style={{fontSize:10,color:C.textMute,marginTop:10}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
   </div>);
 }
 
