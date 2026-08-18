@@ -243,15 +243,6 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
         // total<=0 can't be scaled against, so treat any usage there as fully over.
         const overFactor=res.total>0?Math.min(Math.max(rawPct-100,0)/10,1):1;  // 0 = just over, 1 = 110%+
         const overColor=`hsl(${Math.round(38*(1-overFactor))},${Math.round(92-8*overFactor)}%,${Math.round(50+10*overFactor)}%)`;
-        // Nearly full, but not yet over. A fit at 98% looked identical to one at 40%, so the module
-        // that WON'T fit was always a surprise — you found out by adding it and watching the strip go
-        // red. `warn` has sat on these rows since they were written and was never read by anything.
-        // C.warning is exactly where overColor starts (hsl(38,92%,50%) IS #f59e0b), so this extends
-        // the existing ramp downward instead of introducing a second signal: theme text up to 95%,
-        // amber from there, reddening past 110%. The BAR keeps its resource colour throughout — see
-        // above, a bar that changes hue says "something is wrong" without saying which of the three.
-        const nearFull=!over&&res.total>0&&rawPct>=res.warn;
-        const usedColor=over?overColor:nearFull?C.warning:C.text;
         return(
           <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
                title={`${res.label}: ${fmtRes(res.used)} / ${fmtRes(res.total)} ${res.unit} — tap to switch readout`}
@@ -265,11 +256,11 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
                   and tabular-nums stops the digits jittering as they change under a drag. */}
               {showRemaining
                 ? <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
-                    <span style={{fontWeight:700,color:usedColor}}>{fmtShort(Math.abs(rem))}</span>
+                    <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(Math.abs(rem))}</span>
                     <span style={{fontSize:10,color:over?overColor:C.textMid}}> {over?"over":"left"}</span>
                   </span>
                 : <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
-                    <span style={{fontWeight:700,color:usedColor}}>{fmtShort(res.used)}</span>
+                    <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(res.used)}</span>
                     <span style={{fontSize:10,color:C.textMid}}>/{fmtShort(res.total)}</span>
                   </span>}
             </div>
