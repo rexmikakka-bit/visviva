@@ -521,6 +521,86 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   </div>);
 }
 
+// How far the finger must travel before a press on a number cell stops being a tap and becomes a
+// scrub. Small enough that the gesture feels immediate, large enough that a stationary tap meant for
+// the keyboard never loses a digit to a stray pixel.
+const SCRUB_ARM_PX = 4;
+
+// One pixel of travel is worth one STEP, sized from the value the drag started on. A signature of 40 m
+// and a speed of 3000 m/s then both sweep something useful across a thumb's width without a per-field
+// range table, and the step lands on a readable 1/2/5 rather than a fraction.
+//
+// It is computed once per drag and held. Recomputing it as the number grows sounds better and is
+// worse: the gesture becomes hysteretic, so sliding out and back does not return the value you
+// started on — which is the exact thing that makes a scrubber feel broken rather than imprecise.
+function scrubStep(v){
+  const raw = Math.max(Math.abs(v), 1) / 60;
+  const pow = 10 ** Math.floor(Math.log10(raw));
+  const n = raw / pow;
+  return Math.max(1, (n<1.5?1:n<3.5?2:n<7.5?5:10) * pow);
+}
+
+// A number cell you can either type into or press-and-slide, the way the iPhone camera's zoom
+// buttons work. The graph redraws on every step, so sweeping the cell is a live simulation of the
+// target getting bigger or faster rather than a series of guesses typed one at a time.
+//
+// Typing is the fallback, not the casualty: the drag only takes over once the finger has moved past
+// SCRUB_ARM_PX, so a plain tap still focuses the field. `anchor` is where a scrub starts from when
+// the field holds no finite number to slide from (signature's ∞) — grabbing it is already a
+// statement that you want a real value.
+function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title}){
+  const drag = useRef(null);
+  const suppressClick = useRef(false);
+  const inputRef = useRef(null);
+  const [scrubbing,setScrubbing] = useState(false);
+
+  const onPointerDown = e => {
+    drag.current = { x:e.clientX, start:Number.isFinite(value)?value:anchor, armed:false, id:e.pointerId, step:1 };
+  };
+  const onPointerMove = e => {
+    const d = drag.current; if(!d) return;
+    const dx = e.clientX - d.x;
+    if(!d.armed){
+      if(Math.abs(dx) < SCRUB_ARM_PX) return;
+      d.armed = true;
+      d.step = scrubStep(d.start);
+      // Capture keeps the drag alive once the finger leaves the 58px cell, which it does immediately.
+      try{ e.currentTarget.setPointerCapture(d.id); }catch{}
+      // A scrub is not a text edit. Left focused, the mobile keyboard slides up over the graph the
+      // gesture exists to watch.
+      inputRef.current?.blur();
+      setScrubbing(true);
+      haptic();
+    }
+    e.stopPropagation();
+    onScrub(Math.max(0, Math.round(d.start + dx*d.step)));
+  };
+  const endDrag = e => {
+    const d = drag.current; if(!d) return;
+    if(d.armed){
+      try{ e.currentTarget.releasePointerCapture(d.id); }catch{}
+      setScrubbing(false);
+      suppressClick.current = true;   // the click that closes a drag must not then open the keyboard
+    }
+    drag.current = null;
+  };
+  // Same defence VectorCompass documents: any horizontal movement here must never reach the
+  // Fit/Stats/Graph swipe handler on an ancestor, or scrubbing flicks you to another sub-tab.
+  const swallowTouch = e => e.stopPropagation();
+
+  return (
+    <input ref={inputRef} type="number" inputMode="numeric" value={display} placeholder={placeholder} title={title}
+      onChange={onType}
+      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+      onTouchStart={swallowTouch} onTouchMove={swallowTouch}
+      onClick={e=>{ if(suppressClick.current){ suppressClick.current=false; e.preventDefault(); inputRef.current?.blur(); } }}
+      // pan-y, not none: the cell sits in a scrolling panel, so vertical drags must still scroll the
+      // page. Only the horizontal axis is claimed, which is the only one being read.
+      style={{...style, touchAction:"pan-y", cursor:"ew-resize",
+              ...(scrubbing?{border:`1px solid ${C.accent}`,color:C.accent}:null)}}/>
+  );
+}
+
 function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
@@ -538,6 +618,9 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   const mwdApplies=TARGET_PROFILES[targetProfile]?.mwdSig!=null;
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
   const setSpeed=(v)=>{const n=Math.max(0,Number(v)||0);setTargetVel(n);if(n>0)setTargetVelMax(n);setTargetProfile("custom");};
+  // The scrub's numeric path into the same two writes typing does. It cannot produce the empty string
+  // that means ∞, so it never needs that branch.
+  const setSig=(n)=>{setTgtSig(Math.max(0,n));setTargetProfile("custom");};
   // An infinite sig shows as an empty field with an "∞" placeholder rather than "1000000000",
   // which is the number but not the meaning. Clearing the field puts it back to infinite.
   const sigVal = (tgtSig==null||tgtSig>=IDEAL_SIG) ? "" : Math.round(tgtSig);
@@ -584,15 +667,23 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
         Sig radius
-        <input type="number" inputMode="numeric" value={sigVal} placeholder="∞" onChange={e=>{const v=e.target.value;setTgtSig(v===""?IDEAL_SIG:Math.max(0,Number(v)));setTargetProfile("custom");}} style={inputStyle}/>
+        {/* Anchored at 1000 m when the field reads ∞: a scrub has to start from a real number, and the
+            top of the sensible range is where a drag downward into ship-sized signatures begins. */}
+        <ScrubField value={tgtSig>=IDEAL_SIG?null:tgtSig} display={sigVal} placeholder="∞" anchor={1000}
+          title="Type a signature, or press and slide sideways to sweep it"
+          onType={e=>{const v=e.target.value;setTgtSig(v===""?IDEAL_SIG:Math.max(0,Number(v)));setTargetProfile("custom");}}
+          onScrub={n=>setSig(n)} style={inputStyle}/>
         <span style={{fontSize:10,color:C.textMute}}>m</span>
       </label>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
         Speed
-        <input type="number" inputMode="numeric" value={Math.round(targetVel)} onChange={e=>setSpeed(e.target.value)} style={inputStyle}/>
+        <ScrubField value={targetVel} display={Math.round(targetVel)} anchor={0}
+          title="Type a speed, or press and slide sideways to sweep it"
+          onType={e=>setSpeed(e.target.value)} onScrub={setSpeed} style={inputStyle}/>
         <span style={{fontSize:10,color:C.textMute}}>m/s</span>
       </label>
     </div>
+    <div style={{fontSize:10,color:C.textMute,marginTop:-6,marginBottom:12}}>Press and slide either cell sideways to sweep it and watch the curve move.</div>
     <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:6}}>Flight Vectors</div>
     <div style={{fontSize:10,color:C.textMute,marginBottom:8}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
