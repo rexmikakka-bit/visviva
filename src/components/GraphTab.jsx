@@ -683,7 +683,6 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         <span style={{fontSize:10,color:C.textMute}}>m/s</span>
       </label>
     </div>
-    <div style={{fontSize:10,color:C.textMute,marginTop:-6,marginBottom:12}}>Press and slide either cell sideways to sweep it and watch the curve move.</div>
     <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Flight Vectors</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
       {/* NOT `selfMaxVel||500` — 0 is falsy, and 0 is exactly the value a sieged or bastioned hull
