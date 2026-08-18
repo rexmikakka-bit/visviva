@@ -801,7 +801,10 @@ const RES_INK = { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig };
 
 function FitCost({item, size=11}) {
   const {cpu,pg,calib} = fitCostParts(item);
-  const g = Math.round(size * 0.95);
+  // Same glyph size FitCostDelta uses in the Variations tab (no size*0.95 shrink) — at ~10px the
+  // CPU chip's corner pins were fine enough to disappear into a blob, reading as an unrelated diamond
+  // rather than the same icon shown one tab over.
+  const g = size;
   // The cell carries the hue, the glyphs are currentColor, and the number overrides back to a
   // neutral — so tinted icon against bright neutral digits, which is what makes the pair legible
   // rather than one small blur. Numbers sit at textMid, not textMute: the old #55555f was ~2.4:1
@@ -856,7 +859,16 @@ function DeltaMark({dir, text, better}) {
 // simply did not make the six-row cut.
 // `baseTypeID` null = this IS the fitted module: show the values as a reference, with nothing to
 // compare them against.
-function FitCostDelta({typeID, baseTypeID}) {
+//
+// `resourceHeadroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}} for the fit
+// this module sits in. When given (and this isn't the fitted-module reference row), each figure's
+// number tints red if the SWAP wouldn't fit (stays the normal colour if it would) — the glyph is
+// left alone so the icon's own colour keeps meaning "this is PG/CPU/calibration", not "fits/doesn't".
+// Rest of the fit's usage is `used - base` (backing the fitted module out), so
+// `val <= total - (used - base)` is "yes, room for it". Deliberately base-attribute arithmetic, same
+// as the delta above it — not a claim that this matches the engine's skill-adjusted cost to the tf,
+// just whether the swap is in the right ballpark.
+function FitCostDelta({typeID, baseTypeID, resourceHeadroom}) {
   const v = fitCostParts({typeID});
   const b = baseTypeID != null ? fitCostParts({typeID: baseTypeID}) : v;
   const g = 11;
@@ -867,10 +879,14 @@ function FitCostDelta({typeID, baseTypeID}) {
   const num  = {color:C.text,fontWeight:700};
   const part = (key, Glyph, val, base, unit) => {
     const d = val - base;
+    const hr = resourceHeadroom?.[key];
+    const fits = (hr && baseTypeID != null)
+      ? val <= (hr.total ?? 0) - (hr.used ?? 0) + base + 1e-6
+      : null;
     return (
-      <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}`}>
+      <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}${fits == null ? '' : fits ? ' — fits' : " — won't fit"}`}>
         <span style={{display:"inline-flex",alignItems:"center",gap:3.5}}>
-          <Glyph size={g}/><span style={num}>{fmtResource(val)}</span>
+          <Glyph size={g}/><span style={fits===false?{...num,color:C.danger}:num}>{fmtResource(val)}</span>
         </span>
         {/* Fitting cost is always lower-is-better, whatever the attribute's own highIsGood says —
             but that belongs in the COLOUR. The arrow tracks the number, so cheaper is ▼ and green. */}
@@ -886,7 +902,7 @@ function FitCostDelta({typeID, baseTypeID}) {
   return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
 }
 
-function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
+function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
   const [sortBy, setSortBy] = useState('price');
@@ -964,7 +980,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly}) {
             {/* Fitting cost leads, on its own line: it is the constraint, not one attribute among
                 several. Shown on every row including the fitted one, where it reads as a reference
                 value with no delta beside it. */}
-            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID}/>
+            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID} resourceHeadroom={resourceHeadroom}/>
             {/* Only the attributes that DIFFER across this variant set, as deltas. `better` is null
                 for an unchanged value, and those stay neutral — no change is not an improvement. */}
             {!r.isBaseline&&r.stats.some(hasDelta)&&(
@@ -1303,7 +1319,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   </div>);
 }
 
-function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0}){
+function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -1417,7 +1433,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           ))}
         </div>)}
         {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
-        {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} onSwap={v=>{
+        {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
           let nc=mod.charges;
           if(mod.ammo&&v.typeID){
