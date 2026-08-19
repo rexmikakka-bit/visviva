@@ -576,18 +576,27 @@ function scrubStep(v){
 // SCRUB_ARM_PX, so a plain tap still focuses the field. `anchor` is where a scrub starts from when
 // the field holds no finite number to slide from (signature's ∞) — grabbing it is already a
 // statement that you want a real value.
+// ⚠️ The gesture is NOT bound to the <input>. It lives on a transparent overlay sitting on top of it,
+// because on iOS an <input> is the one element whose horizontal drag is already spoken for. WebKit's
+// text-selection recognizer claims the touch (highlight + magnifier) and, having claimed it, fires
+// `pointercancel` — so the scrub armed, moved a few digits and died. Reacting to that after the fact
+// is not possible: touch-action and user-select are read at touchstart, so flipping `.no-select` at
+// the 4px arm threshold is always too late, user-select is ignored on form controls anyway, and React
+// registers `touchmove` PASSIVELY at the root so no handler here can preventDefault the native
+// behaviour. A plain <div> has none of that machinery, so the gesture simply never gets taken away.
+//
+// The input stays mounted underneath and keeps every typing affordance; the overlay is removed while
+// the field is focused so the caret, keyboard and desktop spinners work normally.
 function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title}){
   const drag = useRef(null);
   const suppressClick = useRef(false);
   const inputRef = useRef(null);
   const [scrubbing,setScrubbing] = useState(false);
+  const [typing,setTyping] = useState(false);
 
-  // A slide across a number cell is a gesture, not a text edit — but the browser has already begun a
-  // selection by the time we know that, and blurring the field only ends the part of it inside the
-  // field: the drag then keeps extending a selection across the labels behind it, which on iOS also
-  // raises the magnifier. So the whole document is made unselectable for the duration and whatever
-  // was highlighted in the first few pixels is dropped. `.no-select` is the class every other
-  // draggable surface here uses (it carries the -webkit- prefixes WebKit needs).
+  // Belt-and-braces against a selection started elsewhere being extended across the labels behind the
+  // cell. `.no-select` is the class every other draggable surface here uses (it carries the -webkit-
+  // prefixes WebKit needs).
   const lockSelection = on => {
     document.body.classList.toggle("no-select", on);
     if(on) window.getSelection?.()?.removeAllRanges();
@@ -596,6 +605,10 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   useEffect(()=>()=>lockSelection(false),[]);
 
   const onPointerDown = e => {
+    // Clear here rather than trusting the click to consume it: a drag released far from the cell
+    // (which is every drag, given pointer capture) may never produce a click at all on touch, and a
+    // flag left set would silently swallow the NEXT genuine tap. A fresh press is always a clean start.
+    suppressClick.current = false;
     drag.current = { x:e.clientX, start:Number.isFinite(value)?value:anchor, armed:false, id:e.pointerId, step:1 };
   };
   const onPointerMove = e => {
@@ -607,9 +620,6 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
       d.step = scrubStep(d.start);
       // Capture keeps the drag alive once the finger leaves the 58px cell, which it does immediately.
       try{ e.currentTarget.setPointerCapture(d.id); }catch{}
-      // A scrub is not a text edit. Left focused, the mobile keyboard slides up over the graph the
-      // gesture exists to watch.
-      inputRef.current?.blur();
       lockSelection(true);
       setScrubbing(true);
       haptic();
@@ -634,20 +644,31 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   const swallowTouch = e => e.stopPropagation();
 
   return (
-    <input ref={inputRef} type="number" inputMode="numeric" value={display} placeholder={placeholder} title={title}
-      onChange={onType}
-      onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
-      // Losing the capture is the backstop release. A pointerup that never arrives (the element
-      // re-rendered out from under the gesture, the OS took the pointer) would otherwise strand the
-      // whole page unselectable, which outlives the graph the drag was for.
-      onLostPointerCapture={endDrag}
-      onTouchStart={swallowTouch} onTouchMove={swallowTouch} onTouchEnd={swallowTouch}
-      onDragStart={e=>e.preventDefault()}
-      onClick={e=>{ if(suppressClick.current){ suppressClick.current=false; e.preventDefault(); inputRef.current?.blur(); } }}
-      // pan-y, not none: the cell sits in a scrolling panel, so vertical drags must still scroll the
-      // page. Only the horizontal axis is claimed, which is the only one being read.
-      style={{...style, touchAction:"pan-y", cursor:"ew-resize",
-              ...(scrubbing?{border:`1px solid ${C.accent}`,color:C.accent}:null)}}/>
+    <span style={{position:"relative",display:"inline-flex"}}>
+      <input ref={inputRef} type="number" inputMode="numeric" value={display} placeholder={placeholder} title={title}
+        onChange={onType} onFocus={()=>setTyping(true)} onBlur={()=>setTyping(false)}
+        style={{...style, ...(scrubbing?{border:`1px solid ${C.accent}`,color:C.accent}:null)}}/>
+      {!typing && <div
+        onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag}
+        // Losing the capture is the backstop release. A pointerup that never arrives (the element
+        // re-rendered out from under the gesture, the OS took the pointer) would otherwise strand the
+        // whole page unselectable, which outlives the graph the drag was for.
+        onLostPointerCapture={endDrag}
+        onTouchStart={swallowTouch} onTouchMove={swallowTouch} onTouchEnd={swallowTouch}
+        // preventDefault unconditionally: these cells sit inside a <label>, whose default click action
+        // is to forward activation to the input — which would refocus it the instant a drag ended.
+        // Focus is therefore granted explicitly, only for a press that never became a scrub.
+        onClick={e=>{ e.preventDefault();
+                      if(suppressClick.current){ suppressClick.current=false; return; }
+                      inputRef.current?.focus(); }}
+        title={title}
+        // none, not pan-y: leaving the vertical axis to the scroller lets it claim a thumb-swipe that
+        // drifts a few pixels off horizontal and cancel the pointer mid-scrub. The cost is that these
+        // two 58px cells can't be used to start a page scroll, which is the normal bargain for a
+        // slider-shaped control.
+        style={{position:"absolute",inset:0,borderRadius:5,cursor:"ew-resize",
+                touchAction:"none",userSelect:"none",WebkitUserSelect:"none",WebkitTouchCallout:"none"}}/>}
+    </span>
   );
 }
 
