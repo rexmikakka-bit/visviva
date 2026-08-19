@@ -256,13 +256,18 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // ── Drag-to-reorder (pointer events: works for both touch and mouse) ──────
   // Reorders by DISPLAY ROW (grouped rows move as a unit), then rebuilds the raw
   // slot array from the new row order via each row's groupIds.
+  //
+  // A straight SWAP of the two rows, not a splice-and-reinsert shift: dragging a module onto an
+  // empty slot used to shift every row between the two positions along by one and leave the empty
+  // slot's OLD spot vacated somewhere else in the middle of the list — surprising, since nothing in
+  // between was touched. Swapping means "these two slots trade places," full stop, which matches
+  // what dragging one thing onto another physically looks like.
   const reorderRows=(secKey,fromIdx,toIdx)=>{
     setSlots(prev=>{
       const rows=computeDisplayRows(prev[secKey],secKey,grouped);
       if(fromIdx<0||toIdx<0||fromIdx>=rows.length||toIdx>=rows.length||fromIdx===toIdx)return prev;
       const newRows=[...rows];
-      const[mv]=newRows.splice(fromIdx,1);
-      newRows.splice(toIdx,0,mv);
+      [newRows[fromIdx],newRows[toIdx]]=[newRows[toIdx],newRows[fromIdx]];
       const byId=new Map(prev[secKey].map(m=>[m.id,m]));
       return{...prev,[secKey]:newRows.flatMap(r=>r.groupIds.map(id=>byId.get(id)).filter(Boolean))};
     });
