@@ -1,10 +1,10 @@
-// Fill these in once an ESI application is registered at
-// https://developers.eveonline.com/applications — Application Type "Authentication & API
-// Access", connection type "Public Client / PKCE" (this app has no backend, so it cannot hold
-// a client secret; PKCE is the flow designed for exactly that case).
+// Mirrors the application registered at https://developers.eveonline.com/applications —
+// Application Type "Authentication & API Access", connection type "Public Client / PKCE" (this app
+// has no backend, so it cannot hold a client secret; PKCE is the flow designed for exactly that case).
 //
-// Register BOTH callback URLs below as "Callback URL" entries on the application (ESI SSO
-// rejects any redirect_uri that isn't an exact match to one you registered).
+// BOTH callback URLs below are registered as "Callback URL" entries on that application, and ESI SSO
+// rejects any redirect_uri that isn't an exact match to one of them — so these constants are not
+// free to change on their own.
 
 // The application's Client ID. Safe to commit to a PUBLIC repo, and it has to be: in a PKCE flow
 // the client id is sent in the clear on the authorize URL, so it is public by design. It identifies

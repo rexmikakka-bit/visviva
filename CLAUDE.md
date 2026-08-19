@@ -22,7 +22,8 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 ## Before you change anything
 
 ```bash
-node src/regression.test.mjs      # must print "ALL N REGRESSION CHECKS PASSED" (currently 299)
+npm run verify                    # the real gate: lint + imports + build + offline + effect coverage + regression
+node src/regression.test.mjs      # just the suite — must print "ALL N REGRESSION CHECKS PASSED" (currently 594)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -37,10 +38,10 @@ CI runs this on every PR (`.github/workflows/regression.yml`).
 
 | File | Role |
 | --- | --- |
-| `src/dogma-engine.js` | The dogma engine: attribute pools, stacking penalties, effect dispatch, custom handlers. ~1000 lines. |
+| `src/dogma-engine.js` | The dogma engine: attribute pools, stacking penalties, effect dispatch, custom handlers. ~1570 lines. |
 | `src/dogma-engine-init.js` | Loads the dogma bundles and calls `initEngine()`. Works in **both** Vite and Node. |
 | `src/calc.js` | Turns a fit + engine output into displayed stats (DPS, tank, cap, resists, graph data). |
-| `src/App.jsx` | State, effects and composition only (~580 lines). The views live in `src/components/`. |
+| `src/App.jsx` | State, effects and composition only (~620 lines). The views live in `src/components/`. |
 | `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
 | `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
 | `src/lib/ship-taxonomy.js` | The nested ship-browser menu (Battleships > Faction Battleships > Pirate Faction). Pure + derived — see "ship browser taxonomy" below. |
@@ -569,24 +570,21 @@ and skips anything already applied by the effect pass. The old hardcoded list wa
 the phantom boosters (whose effects were empty); against clean data every non-resist entry
 double-applied, which is what pushed the Astarte's scan resolution from 306 to 312.
 
---- | --- | --- | --- |
-| Asklepian | `armorRepairBonus` → `armorDamageAmount` | `1.1^5 = 1.6105` (Alpha–Epsilon only, **excludes Omega**) | Astarte repairer = **1132 HP/cycle** in pyfa (ours 1134.18 @ 9000 ms) |
-| Nirvana | `shieldHpBonus` → `shieldCapacity` | `1.1^5 × 1.25 = 2.0131` (**includes Omega**) | Minokawa = **3.26M EHP** in pyfa (ours 3,256,400) |
+### ⚠️ The Asklepian "excludes Omega" rule is DEAD — don't restore it from an old commit
 
-Both are independently confirmed against a pyfa measurement. Unifying them breaks one of them:
-using the full product for Asklepian moves the Astarte's tank from 1671 to 1768 (pyfa: 1668.3).
+This file used to carry a table asserting that Asklepian amplified with `1.1^5 = 1.6105`
+(Alpha–Epsilon only) against Nirvana's full `1.1^5 × 1.25 = 2.0131`, plus a warning not to unify the
+two handlers. **That is obsolete** and is kept here only as a tombstone, because the reasoning was
+persuasive and someone digging through history will find it and be tempted.
 
-Theories tested and **rejected**: the stacking flag of the target attribute (`armorDamageAmount` is
-stackable=0, `shieldCapacity` is stackable=1) predicts 1152.9, not 1132; penalising the set multiplier
-itself predicts 3.06M for the Minokawa, not 3.26M.
+The asymmetry was never real — it was compensating for the phantom `Republic Defense Booster II`
+described above. With the phantom pruned, **every** set uses the full product including Omega, and
+`dogma-engine.js` computes `setProduct` over all set members for both. (The `repMembers` filter still
+in the Asklepian handler is not that rule: Omega's own `armorRepairBonus` is 0, so it contributes
+nothing to amplify either way. It selects which members' bonuses get scaled, not what the product is.)
 
-Best current explanation: this is a **pyfa implementation quirk**, not EVE truth — pyfa hand-codes
-these set effects in Python, and CCP's dogma for the two sets is identical, so in-game EVE probably
-applies the full product to both. We match pyfa because pyfa is our reference. If you ever decide to
-prefer EVE-truth over pyfa-truth, drop the `repMembers` filter in the Asklepian handler and expect the
-Astarte's tank to rise to ~1768.
-
-**A future agent will be tempted to "helpfully" unify these two handlers. Don't.**
+The live values are in the "Implant SETS — FIVE exist" section above. Two errors were cancelling;
+see that section for the general lesson.
 
 ---
 
@@ -610,7 +608,7 @@ Astarte's tank to rise to ~1768.
   ```bash
   python scripts/build-bundle.py --dry-run   # report what would change
   python scripts/build-bundle.py             # write the bundles
-  npm test                                   # 25 pyfa checks MUST still pass
+  npm test                                   # the full regression suite MUST still pass
   ```
 
   It needs pyfa's `eve.db` (auto-detected in `Pyfa-master/`, or pass `--db`). Regeneration is
@@ -633,10 +631,10 @@ Astarte's tank to rise to ~1768.
   handler in `dogma-engine.js`. Only ONE hand patch remains: **effect 12887**, which CCP ships with an
   empty modifier list.
 
-- **The `App.jsx` split already happened.** It was ~4,400 lines; it is now 583 and holds state,
+- **The `App.jsx` split already happened.** It was ~4,400 lines; it is now ~620 and holds state,
   effects and composition only. The UI lives in `src/components/` (`ui.jsx`, `tabs.jsx`,
   `GraphTab.jsx`, `snapshot.jsx`, `effects.jsx`, `FittingsScreen.jsx`, …) and `src/lib/`. Do not
-  reintroduce view code into `App.jsx`. `calc.js` (3,265) and `ui.jsx` (1,517) are now the two
+  reintroduce view code into `App.jsx`. `calc.js` (~3,260) and `ui.jsx` (~1,610) are now the two
   files most likely to conflict.
 
 - **Prefer targeted diffs over whole-file rewrites.** An agent handing back a whole file silently
@@ -820,18 +818,19 @@ asking *which side is missing the effect* — run `node scripts/pyfa-effect.mjs 
 
 ---
 
-## ESI connectivity (skills sync, in-game fit import/export — BUILT, 2026-07-31)
+## ESI connectivity (skills sync, in-game fit import/export — LIVE since 2026-08-09)
 
 Character login (EVE SSO + PKCE), skill sync, and importing/exporting fits directly against a
-character's in-game saved fittings. Fully implemented and unit-verified against fixture data; the
-one thing that cannot be tested yet is a live login, because no ESI application is registered.
-**One remaining step before this is live** — see "To go live" below.
+character's in-game saved fittings. The ESI application is registered and `ESI_CLIENT_ID` is
+populated; a real login was exercised end-to-end on a device build, which confirmed the one thing
+fixtures could never cover — that `login.eveonline.com`'s token endpoint answers over Capacitor's
+native networking. Nothing here is pending.
 
 ### Files
 
 | File | Role |
 | --- | --- |
-| `src/esi-config.js` | The only file that needs real values. `ESI_CLIENT_ID` is empty until an app is registered. |
+| `src/esi-config.js` | Client ID, both callback URLs, requested scopes. The client ID is public by design in a PKCE flow — there is no secret here and there must never be one. |
 | `src/lib/esi.js` | OAuth2+PKCE login, token storage/refresh, authenticated ESI GET/POST, skill-id → app-skill mapping. |
 | `src/lib/esi-fits.js` | ESI saved-fitting JSON ⇄ this app's slot model, both directions. |
 | `src/components/esi-ui.jsx` | Character login/switcher (Settings → ESI), Import-from-EVE and Export-to-EVE modals (hamburger menu). |
@@ -904,19 +903,18 @@ round-trip precision ESI itself doesn't support.
   config both compile in and show up correctly in a built debug APK (checked with `aapt2 dump
   xmltree` and by reading the synced `android/app/src/main/assets/capacitor.config.json`).
 
-### To go live
+### The registered application (things that break login if changed)
 
-1. Register an application at developers.eveonline.com — Application Type "Authentication & API
-   Access", connection type public/PKCE. Register **both** callback URLs (the web origin and
-   `eveauth-visviva://auth-callback`) as Callback URLs on the application, or ESI SSO rejects the redirect.
-2. Paste the resulting Client ID into `ESI_CLIENT_ID` in `src/esi-config.js`. That's the only
-   required edit — everything else reads from that file.
-3. Live-test the actual login button once, on a debug build (emulator or device — `npm run
-   android:build`), which is what exercises the one thing that couldn't be verified offline: whether
-   `login.eveonline.com`'s token endpoint behaves the way `esi.js` assumes over native networking.
-   If it doesn't, the fix is scoped to `tokenRequest()` in `esi.js` only.
-4. Everything downstream of a successful login (skill sync, import, export) is already
-   fixture-verified and should work unchanged.
+The app is registered at developers.eveonline.com as Application Type "Authentication & API Access",
+public client / PKCE. Two of its settings are mirrored in this repo and must stay in sync with it:
+
+- **Both callback URLs** — the web origin and `eveauth-visviva://auth-callback` — are registered
+  there. ESI SSO matches `redirect_uri` exactly, so a URL the application does not list is rejected
+  outright. This is one of the three reasons the `visviva` name is frozen (see the top of this file).
+- **Scopes** are fixed at grant time. Adding one to `ESI_SCOPES` does not retroactively extend
+  existing tokens, so every already-logged-in character has to log in again to pick it up.
+
+Changing the client ID or either callback is a re-registration, not an edit.
 
 ---
 

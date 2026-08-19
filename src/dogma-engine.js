@@ -1385,11 +1385,11 @@ export class Fit {
     {
       const members = imp.filter(i => 'implantSetSerpentis2' in (i._td?.a ?? {}));
       if (members.length >= 2) {
-        // The set product amplifying the LOCAL armor-rep bonus is the product of implantSetSerpentis2
-        // over the rep-bonus-carrying members (Alpha–Epsilon, ×1.1 each → 1.1^5 ≈ 1.6105 for a full
-        // set). The Omega completion implant (armorRepairBonus = 0, implantSetSerpentis2 = 1.25) does
-        // NOT amplify the local armor-repair amount in pyfa (verified vs v2.67.0), so it's excluded by
-        // filtering on a nonzero armorRepairBonus.
+        // setProduct spans ALL members, Omega included (×1.1 each plus Omega's ×1.25 → 2.0131 for a
+        // full set), same as every other set. `repMembers` is NOT an exclusion rule — it picks whose
+        // bonus gets scaled, and Omega carries armorRepairBonus = 0 so it has nothing to contribute
+        // either way. This file's history has an "Asklepian excludes Omega" story attached to these
+        // two lines; it was compensating for a phantom type and is dead. See CLAUDE.md.
         const repMembers = members.filter(i => (i.getBase('armorRepairBonus') ?? 0) > 0);
         const setProduct = members.reduce((p, i) => p * (i.getBase('implantSetSerpentis2') ?? 1), 1);
         if (setProduct > 1) {
@@ -1411,10 +1411,8 @@ export class Fit {
     // ran at BASE value. The set multiplier (Effect8013, ImplantSetNirvana PreMul on attr3015,
     // domain=charID) is dispatcher-skipped, so amplify here, exactly as for the other sets.
     //
-    // Unlike Asklepian, the FULL set product INCLUDING Omega applies here (1.1^5 x 1.25 = 2.0131,
-    // verified against pyfa v2.67.0: a Minokawa lands on 3.26M EHP with it, 3.11M without). The
-    // relevant difference is the target attribute: Nirvana feeds shieldCapacity (stackable), while
-    // Asklepian feeds armorDamageAmount (stacking-penalised) — see the note in 5d.
+    // The FULL set product INCLUDING Omega applies (1.1^5 x 1.25 = 2.0131, verified against pyfa: a
+    // Minokawa lands on 3.26M EHP with it, 3.11M without) — as it does for every set, 5d included.
     {
       const members = imp.filter(i => 'ImplantSetNirvana' in (i._td?.a ?? {}));
       if (members.length >= 2) {
