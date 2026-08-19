@@ -126,7 +126,7 @@ function attrsOf(typeID) {
  */
 // 6, not 5: most boosters carry four side effects plus a bonus and a chance, and at 5 one of
 // them fell off the end exactly when you were comparing grades of the same drug.
-export function differingAttributes(typeIDs, { limit = 6 } = {}) {
+export function differingAttributes(typeIDs, { limit = 6, extraAttrs = null } = {}) {
   const ids = [...new Set(typeIDs.filter(Boolean))];
   if (ids.length < 2) return [];
   // Subsystems get an ALLOWLIST rather than the usual exclusions — see SUBSYSTEM_FITTING_ATTRS. The
@@ -134,7 +134,10 @@ export function differingAttributes(typeIDs, { limit = 6 } = {}) {
   // and truncating at six could hide a slot change, which is the most important row here.
   const subsystemMode = ids.every(isSubsystem);
   const cap = subsystemMode ? Math.max(limit, SUBSYSTEM_FITTING_ATTRS.size) : limit;
-  const maps = ids.map(attrsOf);
+  // `extraAttrs` is the MUTATED baseline (see compareRows). It scores as one more candidate so that
+  // a rolled attribute still surfaces when every stock variant in the family agrees on it — which is
+  // the common case for the attributes mutaplasmids touch, and would otherwise hide the roll itself.
+  const maps = extraAttrs ? [...ids.map(attrsOf), extraAttrs] : ids.map(attrsOf);
   const keys = new Set();
   for (const m of maps) for (const k of Object.keys(m)) {
     if (subsystemMode) { if (SUBSYSTEM_FITTING_ATTRS.has(k)) keys.add(k); continue; }
@@ -328,12 +331,22 @@ function directionOf(k, v, b, typeID) {
  *
  * `better` is null when the direction is meaningless — an unchanged value, or an attribute CCP has
  * no opinion about. The UI must not colour those; "no change" is not an improvement.
+ *
+ * `baselineMutations` is an abyssal module's roll, `{attrName: value}` exactly as the engine takes
+ * it (a base-value override, see Fit.addModule). An abyssal module keeps its BASE typeID, so without
+ * this the deltas are measured against the unrolled item — which is the one number the user already
+ * knows is wrong. The rolled row is still `isBaseline`, and its own `stats` come out as zero deltas.
  */
-export function compareRows(typeIDs, baselineTypeID, { limit = 6 } = {}) {
-  const keys = differingAttributes(typeIDs, { limit });
-  const base = attrsOf(baselineTypeID);
+export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutations = null } = {}) {
+  const rolled = baselineMutations && Object.keys(baselineMutations).length
+    ? { ...attrsOf(baselineTypeID), ...baselineMutations } : null;
+  const keys = differingAttributes(typeIDs, { limit, extraAttrs: rolled });
+  const base = rolled ?? attrsOf(baselineTypeID);
   return [...new Set(typeIDs.filter(Boolean))].map(typeID => {
-    const a = attrsOf(typeID);
+    const isBaseline = String(typeID) === String(baselineTypeID);
+    // The baseline row must read back its OWN rolled values, or the fitted module appears to differ
+    // from itself by exactly the roll.
+    const a = (isBaseline && rolled) ? rolled : attrsOf(typeID);
     const stats = keys.map(k => {
       const v = typeof a[k] === 'number' ? a[k] : null;
       const b = typeof base[k] === 'number' ? base[k] : null;
@@ -344,7 +357,7 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6 } = {}) {
       const better = (delta == null || delta === 0) ? null : directionOf(k, v, b, typeID);
       return { key: k, value: v, delta, pct, better };
     });
-    return { typeID, isBaseline: String(typeID) === String(baselineTypeID), stats };
+    return { typeID, isBaseline, stats };
   });
 }
 

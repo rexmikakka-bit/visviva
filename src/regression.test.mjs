@@ -30,7 +30,7 @@ import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromE
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
-import { REAL_MODULE_BROWSER, gestureTarget, validStatesFor } from './lib/core.js';
+import { REAL_MODULE_BROWSER, gestureTarget, validStatesFor, variantsOf } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -1592,6 +1592,31 @@ Agency 'Overclocker' SB7 Dose III
   const vig = compareRows(burst, burst[0]).find(r => r.typeID === burst[2]);
   check('cmp', 'Vigilant burst reaches 3 km further', vig.stats.find(s => s.key === 'maxRange').delta, 3000, 1e-9);
   check('cmp', 'longer burst range reads better', vig.stats.find(s => s.key === 'maxRange').better ? 1 : 0, 1, 0);
+
+  // ── An ABYSSAL baseline is compared on its ROLL, not the base item ────────────────────────
+  // A mutated module keeps its base typeID, so `compareRows(vars, typeID)` silently measured every
+  // delta against the unrolled Stasis Webifier II — the one set of numbers the user already knows
+  // does not describe what is fitted. Stock SW II is 10 km / -60; this roll is 14.2 km / -63.2.
+  const webVars = variantsOf(tid('Stasis Webifier II')).map(v => v.typeID).filter(Boolean);
+  const roll = { speedFactor: -63.2, maxRange: 14200 };
+  const rolled = compareRows(webVars, tid('Stasis Webifier II'), { baselineMutations: roll });
+  const swI = rolled.find(r => r.typeID === tid('Stasis Webifier I'));
+  check('cmp', 'range delta is vs the ROLL, not the base item', swI.stats.find(s => s.key === 'maxRange').delta, -4200, 1e-9);
+  check('cmp', 'web strength delta is vs the ROLL', swI.stats.find(s => s.key === 'speedFactor').delta, 13.2, 1e-6);
+  // Without this the fitted module appears to differ from ITSELF by exactly the roll.
+  check('cmp', 'the rolled row reads zero deltas against itself',
+        rolled.find(r => r.isBaseline).stats.every(s => s.delta === 0) ? 1 : 0, 1, 0);
+  check('cmp', 'the rolled row reports its rolled value',
+        rolled.find(r => r.isBaseline).stats.find(s => s.key === 'maxRange').value, 14200, 1e-9);
+  // A rolled attribute the whole family AGREES on (every webifier cycles in 5000 ms) is still a
+  // real difference now, so it has to reach the displayed list — which it only can if the mutated
+  // baseline scores as a candidate in differingAttributes.
+  const durRoll = compareRows(webVars, tid('Stasis Webifier II'), { baselineMutations: { duration: 4200 } });
+  check('cmp', 'a rolled attribute constant across the family still shows',
+        durRoll.find(r => r.typeID === tid('Stasis Webifier I')).stats.find(s => s.key === 'duration')?.delta, 800, 1e-9);
+  // Unmutated behaviour must be untouched: no roll, no extra candidate, same three attributes.
+  check('cmp', 'no roll leaves the comparison exactly as before',
+        differingAttributes(webVars).join(',') === 'capacitorNeed,maxRange,speedFactor' ? 1 : 0, 1, 0);
 }
 
 // 13l. COMMAND BURSTS FROM A LINK FIT - whose skills fly the booster?

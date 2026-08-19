@@ -917,7 +917,7 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom}) {
   return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
 }
 
-function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom}) {
+function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
   const [sortBy, setSortBy] = useState('price');
@@ -942,11 +942,17 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
 
   if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No variation data available.</div>;
 
-  // Deltas are measured against the module ACTUALLY FITTED, so every number answers "what do I gain
-  // or give up by switching to this" rather than "what is this in the abstract".
-  const rows = sortCompareRows(compareRows(vars.map(v=>v.typeID), typeID), {by:sortBy, dir:sortDir, prices});
+  // Deltas are measured against the module ACTUALLY FITTED — including its abyssal roll, since an
+  // abyssal module keeps its base typeID and comparing against the unrolled item answers a question
+  // nobody asked.
+  const abyssal = !!baseMutations && Object.keys(baseMutations).length > 0;
+  const rows = sortCompareRows(compareRows(vars.map(v=>v.typeID), typeID, {baselineMutations:baseMutations}),
+                               {by:sortBy, dir:sortDir, prices});
   const byID = new Map(vars.map(v=>[String(v.typeID), v]));
-  const basePrice = prices?.get(Number(typeID));
+  // An abyssal module has no market price — its worth is the roll, which spans orders of magnitude
+  // on contracts. The base item's Jita price is not a stand-in for it, so there is nothing honest to
+  // subtract and the price delta is suppressed rather than guessed at.
+  const basePrice = abyssal ? null : prices?.get(Number(typeID));
 
   const Sort = ({k,label}) => {
     const on=sortBy===k;
@@ -965,12 +971,14 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:'6px 0 9px'}}>
-        <span style={{fontSize:10,color:C.textMute}}>{vars.length} variants · vs fitted</span>
+        <span style={{fontSize:10,color:C.textMute}}>{vars.length} variants · vs fitted{abyssal&&' roll'}</span>
         <div style={{display:"flex",gap:5}}><Sort k="price" label="Price"/><Sort k="meta" label="Meta Level"/></div>
       </div>
       {rows.map(r => {
         const v = byID.get(String(r.typeID)); if(!v) return null;
-        const price = prices?.get(Number(r.typeID));
+        // The fitted abyssal row's own "price" would be the base item's — the one number that is
+        // certainly not what this module is worth.
+        const price = (abyssal&&r.isBaseline)?null:prices?.get(Number(r.typeID));
         const dPrice = (price!=null&&basePrice!=null)?price-basePrice:null;
         return (
           <div key={r.typeID} onClick={()=>{if(!readOnly&&!r.isBaseline)onSwap(v);}}
@@ -985,7 +993,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                 </div>
                 {/* Price and its delta lead, because that is the axis this view exists to serve. */}
                 <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
-                  <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:'no price'}</span>
+                  <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:(abyssal&&r.isBaseline)?'value varies':'no price'}</span>
                   {dPrice!=null&&dPrice!==0&&
                     <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
                 </div>
@@ -1486,7 +1494,8 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           </div>);
         })()}
         {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
-        {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom} onSwap={v=>{
+        {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
+                                baseMutations={mod.mutaplasmid?mod.mutations:null} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
           let nc=mod.charges;
           if(mod.ammo&&v.typeID){
