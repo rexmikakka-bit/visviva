@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -915,6 +915,27 @@ function check(group, label, actual, expected, tol = 0.005) {
   // The ship itself contributes requirements too (Caldari Cruiser I for a Caracal).
   const noHull = checkFitSkills(caracal, { high: [], mid: [], low: [], rigs: [] }, [], [], { caldariCruiser: 0 });
   check('skills', 'hull requirement counted', noHull.missing.some(m => m.name === 'Caldari Cruiser') ? 1 : 0, 1, 0);
+
+  // ── per-item gap, for the red book on a browser row ───────────────────────
+  // The browsers mark ONE item at a time, so this is deliberately not the fit-level check: it must
+  // not inherit a requirement from a charge the row knows nothing about. A Heavy Missile Launcher II
+  // needs Missile Launcher Operation IV; the Scourge Fury ammo that pushes the FIT to V is a
+  // separate row with its own mark.
+  const hmlTid = tid('Heavy Missile Launcher II');
+  const furyTid = tid('Scourge Fury Heavy Missile');
+  check('skills', 'item gap: none at all V', itemSkillGap(hmlTid, {}).length, 0, 0);
+  check('skills', 'item gap: launcher needs IV, not the ammo V',
+        itemSkillGap(hmlTid, { missileLaunchers: 3 }).find(g => g.name === 'Missile Launcher Operation')?.required, 4, 0);
+  check('skills', 'item gap: ammo asks V on its own row',
+        itemSkillGap(furyTid, { missileLaunchers: 4 }).find(g => g.name === 'Missile Launcher Operation')?.required, 5, 0);
+  check('skills', 'item gap: launcher clear at IV', itemSkillGap(hmlTid, { missileLaunchers: 4 }).length, 0, 0);
+  check('skills', 'item gap: reports the level held',
+        itemSkillGap(hmlTid, { missileLaunchers: 1 })[0]?.have, 1, 0);
+  // An unset skill counts as V here too, so a fresh install shows no red books anywhere.
+  check('skills', 'item gap: unset counts as V', itemSkillGap(furyTid, null).length, 0, 0);
+  // Marking is driven by typeID, and every browser passes one straight from its row data. A row
+  // with no typeID (an abyssal paste, a name-only implant) must render nothing rather than throw.
+  check('skills', 'item gap: unknown type is silent', itemSkillGap(0, { missileLaunchers: 0 }).length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

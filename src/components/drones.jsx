@@ -4,6 +4,7 @@ import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, AccordionSection, ItemDetailSheet } from "./ui.jsx";
 import { REAL_DRONE_BROWSER, FIGHTER_CATALOG } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
+import { SkillMark } from "./skill-mark.jsx";
 
 export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   const[search,setSearch]=useState("");
@@ -19,6 +20,7 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}>
           {d.typeID&&<img className="eve-icon" src={eveIcon(d.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.display="none";}}/>}
           <span style={{fontSize:14,fontWeight:600,color:already?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{d.name}</span>
+          <SkillMark typeID={d.typeID}/>
           <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 6px",flexShrink:0}}>{d.meta}</span>
         </div>
         <div style={{display:"flex",gap:10,fontSize:11,color:C.textMute}}>
@@ -93,6 +95,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <SkillMark typeID={f.typeID}/>
               <span style={{fontSize:10,fontWeight:800,color:tierColor[f.tier]||C.textMid,background:`${tierColor[f.tier]||C.textMid}22`,borderRadius:4,padding:"2px 7px"}}>{f.tier}</span>
               <span style={{color:C.high,fontSize:18}}>+</span>
             </div>

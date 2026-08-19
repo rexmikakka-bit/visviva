@@ -15,6 +15,7 @@ import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
 import { compareRows, sortCompareRows } from "../lib/compare.js";
+import { SkillMark } from "./skill-mark.jsx";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -319,6 +320,7 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
                 <div style={{fontSize:13,fontWeight:600,color:on?C.accent:C.text}}>{shortName}</div>
                 <div style={{fontSize:10,color:C.textMute}}>{group} Subsystem</div>
               </div>
+              <SkillMark typeID={opt.typeID}/>
               {on&&<span style={{fontSize:11,color:C.accent,fontWeight:700}}>✓</span>}
             </div>);
           })}
@@ -427,6 +429,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+          <SkillMark typeID={mod.typeID}/>
           <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
           {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setInfoItem(mod);}}/>}
         </div>
@@ -1461,6 +1464,10 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
                   <div style={{fontSize:13,fontWeight:600,color:loaded?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.family}</div>
                   {loaded&&<div style={{fontSize:10,color:C.textMute,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{loaded.name}</div>}
                 </div>
+                {/* Only a lone-item family IS a charge; a multi-item family is a category, and its
+                    members can differ in what they need (a T2 variant needs a specialization the
+                    T1 next to it doesn't), so those get marked per-variant one level down. */}
+                {g.items.length===1&&<SkillMark typeID={rep?.typeID}/>}
                 {repMeta&&<span style={{fontSize:10,color:META_COLORS[repMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700,flexShrink:0}}>{repMeta}</span>}
                 {g.items.length>1
                   ?<span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
@@ -1485,6 +1492,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
                   {a.capBonus!=null&&<div style={{fontSize:10,color:C.rig,marginTop:2}}>+{a.capBonus} GJ</div>}
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+                  <SkillMark typeID={a.typeID}/>
                   {aMeta&&<span style={{fontSize:10,color:META_COLORS[aMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700}}>{aMeta}</span>}
                   {on&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
                   {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}

@@ -6,6 +6,7 @@ import { haptic, implantSetMembers, implantData } from "../lib/core.js";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
+import { SkillMark } from "./skill-mark.jsx";
 
 // "Deadeye (Missile Bombardment)" -> "Missile Bombardment". The leading word is the hardwiring's
 // brand nickname (Deadeye, Snapshot, Squire, ...), which tells you nothing about what the implant
@@ -98,6 +99,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+        <SkillMark typeID={item.typeID}/>
         {set&&<button onClick={e=>{e.stopPropagation();haptic();onSelectSet(set);onClose();}}
           title={`Fit all ${set.members.length} ${set.setName} implants`}
           style={{padding:"4px 9px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer",

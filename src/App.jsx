@@ -16,6 +16,7 @@ import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, Skil
 import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import { FitTabs } from "./components/FitTabs.jsx";
+import { SkillsProvider } from "./components/skill-mark.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import * as esi from "./lib/esi.js";
 
@@ -559,7 +560,8 @@ export default function App(){
   // children below finally have a bounded height and each screen's own overflowY:auto region takes
   // over. With minHeight the column just grew and the DOCUMENT scrolled, which is what dragged the
   // bottom nav off the bottom of the screen.
-  return(<div className="app-shell" style={{background:C.bg,display:"flex",justifyContent:"center"}}>
+  return(<SkillsProvider value={skills}>
+  <div className="app-shell" style={{background:C.bg,display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
     <div className="app-col" style={{height:"100%",display:"flex",flexDirection:"column",background:C.bg}}>
       {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
@@ -607,5 +609,6 @@ export default function App(){
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}
     {showEsiExport&&<EsiExportModal activeFit={activeFit} slots={slots} drones={drones} cargoItems={cargoItems} fighters={fighters} implants={implants} boosters={boosters} onClose={()=>setShowEsiExport(false)}/>}
-  </div>);
+  </div>
+  </SkillsProvider>);
 }

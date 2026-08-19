@@ -472,6 +472,23 @@ export function requiredSkillsFor(typeID) {
 }
 
 /**
+ * Which skills ONE item requires but the character lacks, as [{key,name,group,required,have}].
+ * Same conventions as checkFitSkills: unset skills count as level V, and a requirement naming a
+ * skill outside SKILL_CATALOG is skipped rather than reported (we cannot judge what we cannot name).
+ * Direct requirements only — a skill's own prerequisites are not walked, matching the fit-level check.
+ */
+export function itemSkillGap(typeID, skills = null) {
+  const out = [];
+  for (const { typeID: sk, level } of requiredSkillsFor(typeID)) {
+    const entry = SKILL_BY_TYPEID.get(sk);
+    if (!entry) continue;
+    const have = skills?.[entry.key] ?? 5;
+    if (have < level) out.push({ key: entry.key, name: entry.name, group: entry.group, required: level, have });
+  }
+  return out;
+}
+
+/**
  * Which skills a fit needs but the character lacks.
  * Unset skills count as level V — the same convention calcFitStats uses, so a fresh install with
  * no skills configured reads as flyable rather than showing every fit as broken.
