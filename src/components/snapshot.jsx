@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
+import { mutaplasmidName } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
@@ -172,10 +173,22 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────────
+// An abyssal module keeps its BASE name, so nothing in the row would otherwise reveal that its
+// numbers came from a roll. The mutaplasmid's leading word is its grade — except for the Glorified
+// tier, whose names read "Glorified <grade> …", so both words matter and only the second is short
+// enough to sit in a badge.
+function abyssalGrade(mutaID) {
+  if (!mutaID) return null;
+  const w = (mutaplasmidName(mutaID) ?? "").split(" ");
+  if (w[0] === "Glorified") return w[1] ? `G. ${w[1]}` : "G. Abyssal";
+  return w[0] || "Abyssal";
+}
+
 function ModRow({ m, meta, n }) {
   const st = m.state || "online";
   const bl = st === "active" ? T.good : st === "overheated" ? T.overheat : st === "offline" ? T.dim : T.onl;
   const hasRight = m.ammo || meta.clip != null || meta.rng || meta.trk != null || meta.rah || st === "overheated";
+  const grade = abyssalGrade(m.mutaplasmid);
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 9, padding: "3px 0 3px 10px",
@@ -186,6 +199,13 @@ function ModRow({ m, meta, n }) {
                      fontSize: 14, fontWeight: 500, color: st === "offline" ? T.muted : T.text }}>
         {n > 1 && <b style={{ color: T.muted, fontWeight: 700 }}>{n}× </b>}{m.name}
       </span>
+      {grade && (
+        <span style={{ flexShrink: 0, fontSize: 9.5, lineHeight: 1, fontWeight: 800, letterSpacing: ".4px",
+                       textTransform: "uppercase", color: T.bad, background: "rgba(224,88,79,.12)",
+                       border: "1px solid rgba(224,88,79,.28)", borderRadius: 4, padding: "3px 5px", whiteSpace: "nowrap" }}>
+          ▲ {grade}
+        </span>
+      )}
       {hasRight && (
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
           {m.ammo && <span style={{ fontSize: 12, color: T.accent, fontWeight: 500, whiteSpace: "nowrap" }}>{m.ammo}</span>}
