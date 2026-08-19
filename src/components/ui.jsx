@@ -367,7 +367,22 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
     const keep=m=>{const rs=TYPES[String(m.typeID)]?.a?.rigSize;return rs==null||rs===hullRigSize;};
     const prune=ns=>ns.map(n=>({...n,mods:(n.mods??[]).filter(keep),children:prune(n.children??[])}))
                       .filter(n=>n.mods.length||n.children.length);
-    return prune(baseTree);
+    // The prune above only ever leaves ONE size branch alive under a category ("Armor Rigs" >
+    // "Small Armor Rigs" survives, Medium/Large don't) — CCP's market tree still nests that single
+    // survivor a level deep, which is a tap with nothing to choose between. Splice it out: a node
+    // with no mods of its own and exactly one surviving child named "<Size> <this node's name>"
+    // hoists that child's contents up to sit directly under the category.
+    const SIZE_PREFIX=/^(Small|Medium|Large|X-Large)\s+/;
+    const collapse=n=>{
+      const children=(n.children??[]).map(collapse);
+      if((n.mods?.length??0)===0&&children.length===1){
+        const c=children[0];
+        if(SIZE_PREFIX.test(c.name)&&c.name.replace(SIZE_PREFIX,'')===n.name)
+          return{...n,mods:c.mods,children:c.children,iconTid:n.iconTid??c.iconTid};
+      }
+      return{...n,children};
+    };
+    return prune(baseTree).map(collapse);
   },[baseTree,slotType,hullRigSize]);
 
   const currentLevel=(()=>{
@@ -1323,6 +1338,14 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
+  // Ammo picker is a two-step drill-down (family, e.g. "Multifrequency S" -> variant, e.g. "Imperial
+  // Navy Multifrequency S") rather than one long list of every tier/faction line at once — mirrors
+  // the module browser's own category drill-down. Opens straight to the loaded ammo's family, so
+  // swapping T2 for a navy/pirate line of the SAME family (the common case) is still one tap.
+  const[chargeFamily,setChargeFamily]=useState(()=>{
+    if(!mod.ammo)return null;
+    return groupChargesForBrowser(getCompatibleCharges(mod)).find(g=>g.items.some(i=>i.name===mod.ammo))?.family??null;
+  });
   const[rahQuery,setRahQuery]=useState("");
   const[rahOpen,setRahOpen]=useState(false);
   const _modTakesCharges=moduleTakesCharges(mod.typeID,mod.name);
@@ -1400,38 +1423,68 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
           {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Duplicate to Next Empty Slot</button>}
           <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>Remove Module</button>
         </div>)}
-        {tab==="charge"&&(mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)&&(<div>
-          <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Select charge - applies to all grouped turrets</div>
-          {/* Grouped by ammo family, families ordered shortest-range first, and within a family
-              T1 → T2 → navy faction → pirate faction. See groupChargesForBrowser. */}
-          {groupChargesForBrowser(getCompatibleCharges(mod)).map(g=>(
-            <div key={g.family} style={{marginBottom:10}}>
-              {/* ALWAYS render the header, even for a one-item family. Skipping it to save a row
-                  made those items look like members of the section above — Civilian Blaster Charge
-                  and friends are their own families, but appeared to be filed under Ultraviolet.
-                  A header that repeats its single item is redundant; one that lies is worse. */}
-              <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"2px 2px 5px"}}>{g.family}</div>
-              {g.items.map(a=>{
-                const on=mod.ammo===a.name;
-                const aMeta=metaOf(a.typeID,null);
-                return(<div key={a.typeID??a.name} style={{display:"flex",alignItems:"center",padding:"10px 12px",background:on?C.accentLight:C.surface,border:`1px solid ${on?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6}}>
-                  <div onClick={()=>{const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];const modCap=modTd?.attrs?.capacity??0;const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});}} style={{flex:1,minWidth:0,cursor:"pointer"}}>
-                    <div style={{fontSize:13,fontWeight:600,color:on?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
-                    {/* Cap boosters are the one charge whose headline number is worth a subtitle.
-                        Everything else used to read "N dmg/shot" or, for the likes of Nanite Repair
-                        Paste, the actively unhelpful "No data" — both gone. */}
-                    {a.capBonus!=null&&<div style={{fontSize:10,color:C.rig,marginTop:2}}>+{a.capBonus} GJ</div>}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
-                    {aMeta&&<span style={{fontSize:10,color:META_COLORS[aMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700}}>{aMeta}</span>}
-                    {on&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
-                    {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
-                  </div>
-                </div>);
-              })}
+        {tab==="charge"&&(mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)&&(()=>{
+          const groups=groupChargesForBrowser(getCompatibleCharges(mod));
+          const equip=a=>{
+            const chargeVol=a.volume??(a.typeID?(TYPES[a.typeID]?.attrs?.volume??1):1);
+            const modTd=TYPES[mod.typeID]??TYPES[String(mod.typeID)];
+            const modCap=modTd?.attrs?.capacity??0;
+            const nc=modCap>0&&chargeVol>0?Math.floor(modCap/chargeVol):undefined;
+            onUpdateMod({...mod,ammo:a.name,charges:nc,maxCharges:nc});
+          };
+          const activeGroup=chargeFamily!=null?groups.find(g=>g.family===chargeFamily):null;
+          if(!activeGroup)return(<div>
+            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Select charge - applies to all grouped turrets</div>
+            {/* Families ordered shortest-range first (see groupChargesForBrowser); a lone-item
+                family (Civilian charges, most cap boosters) equips straight away instead of
+                drilling into a submenu with only one thing in it. */}
+            {groups.map(g=>{
+              const loaded=g.items.find(a=>a.name===mod.ammo);
+              const rep=g.items[0];
+              // A single-item family (Void S, Gleam, ...) has one meta for the whole row; a
+              // multi-item family (Antimatter Charge S) mixes T1/T2/Faction inside it, so only
+              // badge the lone-item case here - the mixed case shows its badges per-variant below.
+              const repMeta=g.items.length===1?metaOf(rep?.typeID,null):null;
+              return(<div key={g.family} onClick={()=>{if(g.items.length===1)equip(g.items[0]);else setChargeFamily(g.family);}} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 12px",background:loaded?C.accentLight:C.surface,border:`1px solid ${loaded?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6,cursor:"pointer"}}>
+                <div style={{width:26,height:26,flexShrink:0}}>
+                  {rep?.typeID&&<img className="eve-icon" src={eveIcon(rep.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:loaded?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.family}</div>
+                  {loaded&&<div style={{fontSize:10,color:C.textMute,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{loaded.name}</div>}
+                </div>
+                {repMeta&&<span style={{fontSize:10,color:META_COLORS[repMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700,flexShrink:0}}>{repMeta}</span>}
+                {g.items.length>1
+                  ?<span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
+                  :loaded&&<span style={{color:C.accent,fontSize:12,fontWeight:700,flexShrink:0}}>✓</span>}
+              </div>);
+            })}
+          </div>);
+          return(<div>
+            <div onClick={()=>setChargeFamily(null)} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,cursor:"pointer"}}>
+              <span style={{color:C.accent,fontSize:14,fontWeight:700}}>&#8249; Back</span>
+              <span style={{fontSize:11,color:C.textMute}}>{activeGroup.family}</span>
             </div>
-          ))}
-        </div>)}
+            {activeGroup.items.map(a=>{
+              const on=mod.ammo===a.name;
+              const aMeta=metaOf(a.typeID,null);
+              return(<div key={a.typeID??a.name} style={{display:"flex",alignItems:"center",padding:"10px 12px",background:on?C.accentLight:C.surface,border:`1px solid ${on?C.accentBorder:C.border}`,borderRadius:8,marginBottom:6}}>
+                <div onClick={()=>equip(a)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
+                  <div style={{fontSize:13,fontWeight:600,color:on?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{a.name}</div>
+                  {/* Cap boosters are the one charge whose headline number is worth a subtitle.
+                      Everything else used to read "N dmg/shot" or, for the likes of Nanite Repair
+                      Paste, the actively unhelpful "No data" — both gone. */}
+                  {a.capBonus!=null&&<div style={{fontSize:10,color:C.rig,marginTop:2}}>+{a.capBonus} GJ</div>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+                  {aMeta&&<span style={{fontSize:10,color:META_COLORS[aMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700}}>{aMeta}</span>}
+                  {on&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
+                  {a.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(a.typeID);}}/>}
+                </div>
+              </div>);
+            })}
+          </div>);
+        })()}
         {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
