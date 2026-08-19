@@ -632,9 +632,14 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     const rowBtn=(border,color)=>({width:36,height:36,borderRadius:6,background:C.surfaceAlt,border,color,cursor:"pointer",
       display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,lineHeight:1});
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>setView("browse")} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
-        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1}}>{selectedShip}</span>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        {/* The ship's fit list is one more level of the browse hierarchy, so it gets the same two
+            arrows. Back keeps browsePath, landing you among this hull's siblings. */}
+        {browsePath.length>0&&(
+          <button onClick={()=>{setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
+        )}
+        <button onClick={()=>{setView("browse");haptic("light");}} className="press" aria-label="Back one level" title="Back one level" style={_navBtn}><BackArrow/></button>
+        <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedShip}</span>
         <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:12}}>
