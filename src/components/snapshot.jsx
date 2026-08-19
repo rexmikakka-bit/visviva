@@ -3,7 +3,7 @@ import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
-import { mutaplasmidName } from "../lib/eft-export.js";
+import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
@@ -173,17 +173,6 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────────
-// An abyssal module keeps its BASE name, so nothing in the row would otherwise reveal that its
-// numbers came from a roll. The mutaplasmid's leading word is its grade — except for the Glorified
-// tier, whose names read "Glorified <grade> …", so both words matter and only the second is short
-// enough to sit in a badge.
-function abyssalGrade(mutaID) {
-  if (!mutaID) return null;
-  const w = (mutaplasmidName(mutaID) ?? "").split(" ");
-  if (w[0] === "Glorified") return w[1] ? `G. ${w[1]}` : "G. Abyssal";
-  return w[0] || "Abyssal";
-}
-
 function ModRow({ m, meta, n }) {
   const st = m.state || "online";
   const bl = st === "active" ? T.good : st === "overheated" ? T.overheat : st === "offline" ? T.dim : T.onl;

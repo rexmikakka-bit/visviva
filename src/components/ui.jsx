@@ -15,6 +15,7 @@ import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
 import { compareRows, sortCompareRows } from "../lib/compare.js";
+import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
@@ -762,11 +763,15 @@ function ModuleInfoTab({typeID, mod}) {
 
 // Shared by the module browser, the structure module browser and the Variations tab, so the three
 // never drift apart.
-function fitCostParts(item) {
+// `mutations` (optional) is an abyssal roll, keyed by ENGINE attribute name — so powergrid arrives as
+// `power`, not `pg`. It wins outright: an abyssal module keeps its base typeID, so the type's own cpu
+// and power are the pre-roll figures and would otherwise be the only ones this ever sees.
+// Mutaplasmids don't touch calibration (they only exist for non-rig modules), so `calib` is untouched.
+function fitCostParts(item, mutations) {
   const a = TYPES[item?.typeID]?.attrs ?? TYPES[item?.typeID]?.a ?? {};
   return {
-    cpu:   item?.cpu   ?? a.cpu   ?? a['50'] ?? 0,
-    pg:    item?.pg    ?? a.power ?? a['30'] ?? 0,
+    cpu:   mutations?.cpu   ?? item?.cpu   ?? a.cpu   ?? a['50'] ?? 0,
+    pg:    mutations?.power ?? item?.pg    ?? a.power ?? a['30'] ?? 0,
     calib: item?.calib ?? a.upgradeCost ?? a['1153'] ?? null,
   };
 }
@@ -886,9 +891,13 @@ function DeltaMark({dir, text, better}) {
 // `val <= total - (used - base)` is "yes, room for it". Deliberately base-attribute arithmetic, same
 // as the delta above it — not a claim that this matches the engine's skill-adjusted cost to the tf,
 // just whether the swap is in the right ballpark.
-function FitCostDelta({typeID, baseTypeID, resourceHeadroom}) {
-  const v = fitCostParts({typeID});
-  const b = baseTypeID != null ? fitCostParts({typeID: baseTypeID}) : v;
+//
+// `mutations` (optional): the FITTED module's abyssal roll. It describes the module every row is
+// measured against, so it applies to `b` on every variant row, and to `v` only on the fitted module's
+// own row — a variant is an unrolled item.
+function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
+  const v = fitCostParts({typeID}, baseTypeID == null ? mutations : null);
+  const b = baseTypeID != null ? fitCostParts({typeID: baseTypeID}, mutations) : v;
   const g = 11;
   // Inner span: glyph + number only — no DeltaMark inside the flex row so the delta gets the
   // same 3px gap (DeltaMark's own marginLeft) as it does next to the attribute list values.
@@ -920,7 +929,7 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom}) {
   return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
 }
 
-function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations}) {
+function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
   const [sortBy, setSortBy] = useState('price');
@@ -956,6 +965,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   // on contracts. The base item's Jita price is not a stand-in for it, so there is nothing honest to
   // subtract and the price delta is suppressed rather than guessed at.
   const basePrice = abyssal ? null : prices?.get(Number(typeID));
+  const grade = abyssalGrade(baseMutaplasmid);
 
   const Sort = ({k,label}) => {
     const on=sortBy===k;
@@ -996,7 +1006,14 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                 </div>
                 {/* Price and its delta lead, because that is the axis this view exists to serve. */}
                 <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
-                  <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:(abyssal&&r.isBaseline)?'value varies':'no price'}</span>
+                  {/* The fitted abyssal row has no price to show, so it carries the same red grade
+                      badge the snapshot card uses — which says WHY there is no number, and names the
+                      mutaplasmid, rather than leaving the row to read as missing data. */}
+                  {(abyssal&&r.isBaseline&&grade)
+                    ? <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
+                                    color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
+                                    borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>
+                    : <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:'no price'}</span>}
                   {dPrice!=null&&dPrice!==0&&
                     <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
                 </div>
@@ -1006,7 +1023,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
             {/* Fitting cost leads, on its own line: it is the constraint, not one attribute among
                 several. Shown on every row including the fitted one, where it reads as a reference
                 value with no delta beside it. */}
-            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID} resourceHeadroom={resourceHeadroom}/>
+            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID} resourceHeadroom={resourceHeadroom} mutations={baseMutations}/>
             {/* Only the attributes that DIFFER across this variant set, as deltas. `better` is null
                 for an unchanged value, and those stay neutral — no change is not an improvement. */}
             {!r.isBaseline&&r.stats.some(hasDelta)&&(
@@ -1503,7 +1520,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
         })()}
         {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
-                                baseMutations={mod.mutaplasmid?mod.mutations:null} onSwap={v=>{
+                                baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
           let nc=mod.charges;
           if(mod.ammo&&v.typeID){

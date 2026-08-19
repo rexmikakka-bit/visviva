@@ -30,6 +30,17 @@ export function mutaplasmidName(mutaID) {
   return mutaplasmidData?.[mutaID]?.n ?? mutaplasmidData?.[String(mutaID)]?.n ?? null;
 }
 
+// An abyssal module keeps its BASE name, so nothing in a list row would otherwise reveal that its
+// numbers came from a roll. The mutaplasmid's leading word is its grade — except for the Glorified
+// tier, whose names read "Glorified <grade> …", so both words matter and only the second is short
+// enough to sit in a badge.
+export function abyssalGrade(mutaID) {
+  if (!mutaID) return null;
+  const w = (mutaplasmidName(mutaID) ?? "").split(" ");
+  if (w[0] === "Glorified") return w[1] ? `G. ${w[1]}` : "G. Abyssal";
+  return w[0] || "Abyssal";
+}
+
 // EFT is a sequence of SECTIONS separated by two blank lines, each of which may hold sub-sections
 // separated by one: modules (one sub-section per rack), drones + fighters, implants + boosters,
 // cargo, and last the mutated-module details.
