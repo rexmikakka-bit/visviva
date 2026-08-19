@@ -19,6 +19,18 @@ import { GraphTab } from "./GraphTab.jsx";
 // on first render, and no-undef cannot see it.
 const _SUBTABS=["Fit","Stats","Graph"];
 
+// Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
+// player) because the shapes read as "back" and "back to the start" without a label to explain them.
+const _navBtn={width:36,height:36,borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,
+  color:C.accent,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0};
+const BackArrow=()=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d="M15.5 4.5 8 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+</svg>);
+const BackToStartArrow=()=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d="M17.5 4.5 10 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+  <path d="M6 4.5v15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+</svg>);
+
 export function ActiveFitBar({activeFit,onReturn}){
   if(!activeFit)return null;
   const ship=lookupShip(activeFit.ship);
@@ -446,11 +458,17 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const browseShips=browseNode?.ships??null;
   const enterNode=label=>{setBrowsePath(p=>[...p,label]);haptic("light");};
   const leaveNode=()=>{setBrowsePath(p=>p.slice(0,-1));haptic("light");};
+  const resetNode=()=>{setBrowsePath([]);haptic("light");};
 
   if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     {browsePath.length>0&&(
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={leaveNode} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>Back</button>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        {/* pyfa's order, back-to-start first. One level down it would do exactly what Back does,
+            so it only earns its space deeper in. */}
+        {browsePath.length>1&&(
+          <button onClick={resetNode} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
+        )}
+        <button onClick={leaveNode} className="press" aria-label="Back one level" title="Back one level" style={_navBtn}><BackArrow/></button>
         <img src={(raceIcons??{})[String(browseNode?.raceID)]??shipSmallIcon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{browsePath[browsePath.length-1]}</div>
