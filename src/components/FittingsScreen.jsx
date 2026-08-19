@@ -269,7 +269,7 @@ export function ShipInfoSheet({ship, onClose}) {
   );
 }
 
-export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -509,7 +509,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       {searchResults&&(<>
         <div style={{fontSize:11,color:C.textMute,marginBottom:8}}>{searchResults.length} result{searchResults.length!==1?"s":""} for "{search}"</div>
         {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No ships or fits found</div>}
-        {searchResults.map((rr,i)=>(<div key={i} onClick={()=>{setSelectedShip(rr.ship);setView(rr.type==="fit"?"active":"fits");if(rr.type==="fit")loadFit(rr.ship,rr.fitName);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
+        {searchResults.map((rr,i)=>(<div key={i} onClick={()=>{if(rr.type!=="fit"&&newFitIntent){setNewFitIntent?.(false);createNewFit(rr.ship);return;}setSelectedShip(rr.ship);setView(rr.type==="fit"?"active":"fits");if(rr.type==="fit")loadFit(rr.ship,rr.fitName);}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
           <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.type==="fit"?rr.fitName:rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.ship} / {rr.hull} / {rr.race}</div>
             {rr.tags?.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:3}}>{rr.tags.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}</div>}
@@ -538,7 +538,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       {!searchResults&&browseShips&&browseShips.map(s=>{
         const sfits=(fitsDB[s.name]||[]);
         return(<div key={s.typeID} style={{marginBottom:4}}>
-          <div onClick={()=>{setSelectedShip(s.name);setView('fits');}} className="press no-select" style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
+          <div onClick={()=>{if(newFitIntent){setNewFitIntent?.(false);createNewFit(s.name);return;}setSelectedShip(s.name);setView('fits');}} className="press no-select" style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
             <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{display:'flex',alignItems:'center',gap:5}}>
@@ -568,8 +568,10 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     const tagged=selectedTag?fitsWithTag(fitsDB,selectedTag):[];
     const color=colorForTag(selectedTag,tagColors);
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>{setTagEditing(false);setView("browse");}} className="press" style={{background:"none",border:"none",color:C.accent,fontSize:13,cursor:"pointer",fontWeight:600,padding:0}}>All Fits</button>
+      <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        {/* A tag cuts across the hull tree rather than sitting in it, so there is no "one level up"
+            to offer — only the way out. */}
+        <button onClick={()=>{setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
         <span style={{width:9,height:9,borderRadius:99,background:color,flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedTag}</div>
