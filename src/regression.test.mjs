@@ -2346,6 +2346,53 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 13m. MISSILE GUIDANCE COMPUTERS/ENHANCERS — the bonus must be read ENGINE-COMPUTED
+//      Issue #46: a heated MGC changed nothing. The range block built its stacking pool from
+//      `TYPES[typeID].attrs`, freezing missileVelocityBonus/explosionDelayBonus at the base 5.5 —
+//      so the overheat boost (+15%, effect 6144) was invisible, and the loaded script had to be
+//      re-applied by hand. Same read also dropped ENHANCERS entirely: an MGE carries no duration,
+//      cap cost or heat damage, so it can never be 'active', and the pool required isActive().
+//      pyfa reads both back with getModifiedItemAttr, so reading the engine value fixes both and
+//      makes the manual script maths unnecessary.
+//      Baselines are eos's own `module.maxRange` (scripts/oracle), all skills V.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMISSILE GUIDANCE (issue #46)');
+  const jack = { typeID: tid('Jackdaw'), name: 'Jackdaw' };
+  const mgc = (state) => M('Missile Guidance Computer II', state, 'Missile Range Script');
+  // Velocity, not `optimal`: range is stored quantized to 0.1 km, which at ~30 km is a 0.16%
+  // step — looser than the tolerance needed to pin these apart. Velocity and flight time are the
+  // quantities the pool actually feeds, and they are whole numbers.
+  const missile = (mid, low) => {
+    const cs = calcFitStats(jack, {
+      high: Array.from({ length: 5 }, () => M('Light Missile Launcher II', 'active', 'Mjolnir Fury Light Missile')),
+      mid, low, rigs: [],
+    }, [], null, {});
+    for (const st of cs.slotEngineStats.values()) if (st.isMissile) return st;
+    return {};
+  };
+  const TOL = 1e-4;
+  const bare = missile([], []);
+  check('mgc', 'bare Jackdaw missile velocity (eos 5625.00)', bare.velocity, 5625, TOL);
+  check('mgc', 'bare Jackdaw flight time ms (eos 5625.00)', bare.flightTime, 5625, TOL);
+  const mge = missile([], [M('Missile Guidance Enhancer II', 'online')]);
+  check('mgc', 'MGE II online applies at all: velocity (eos 5962.50)', mge.velocity, 5963, TOL);
+  check('mgc', 'MGE II online applies at all: flight ms (eos 5962.50)', mge.flightTime, 5963, TOL);
+  const hot = missile([mgc('overheated'), mgc('overheated')], []);
+  const cold = missile([mgc('active'), mgc('active')], []);
+  check('mgc', '2x MGC II + range script, active (eos 6840.67)', cold.velocity, 6841, TOL);
+  check('mgc', '2x MGC II + range script, OVERHEATED (eos 7033.23)', hot.velocity, 7033, TOL);
+  check('mgc', 'overheated flight time ms (eos 7033.23)', hot.flightTime, 7033, TOL);
+  // The reported symptom was that the two were EQUAL, so assert the inequality directly rather
+  // than relying on the absolute baselines alone.
+  check('mgc', 'overheating an MGC actually extends range', hot.velocity > cold.velocity ? 1 : 0, 1, 0);
+  // The Precision Script zeroes the range bonus rather than reversing it, overheated or not.
+  const prec = (state) => M('Missile Guidance Computer II', state, 'Missile Precision Script');
+  check('mgc', 'precision script leaves velocity at the bare value',
+        missile([prec('overheated'), prec('overheated')], []).velocity, 5625, TOL);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 15. MINING YIELD — every figure below is eos's, to full float precision (scripts/oracle,
 //     `fit.minerYield` / `fit.droneYield` / `fit.minerDrain` / `fit.droneDrain`).
 //

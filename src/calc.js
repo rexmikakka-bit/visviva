@@ -2220,8 +2220,6 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         //   • Sharpshooter mode velocity (modeMaxRangePostDiv): UNPENALIZED
         //   • Implants (Toxot +8% flight via maxFlightTimeBonus): UNPENALIZED
         //   • MGC modules + rigs: share ONE stacking-penalized pool per attribute (vel pool, flight pool)
-        //   • MGC bonus is DOUBLED by the Range Script (missileVelocityBonus/explosionDelayBonus 5.5 → 11),
-        //     and zeroed/negated by the Precision Script.
         // Verified: 2×MGC(range script) + 2×Hydraulic → vel 14474 (pyfa 14471);
         //           2×MGC(range script) + Rocket Fuel → flight 8135ms (pyfa 8130).
         const chTidR = chTid;
@@ -2240,21 +2238,22 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         // Build the shared penalized pools (MGC modules + rigs together).
         const velPool = [], flightPool = [];
         for (const { slot: s2, fitItem: fi2 } of modItems) {
-          if (!fi2 || !isActive(s2.state)) continue;
+          if (!fi2) continue;
           const g2 = fi2.groupName ?? '';
-          if (g2 !== 'Missile Guidance Computer' && g2 !== 'Missile Guidance Enhancer') continue;
-          const a2 = TYPES[fi2.typeID]?.attrs ?? {};
-          let vB = a2.missileVelocityBonus ?? 0;   // 5.5 for MGC II
-          let fB = a2.explosionDelayBonus ?? 0;    // 5.5 for MGC II
-          // Script (Computer only): *BonusBonus multiplies the bonus magnitude. Range +100 → ×2; Precision −100 → 0.
-          if (g2 === 'Missile Guidance Computer' && s2.ammo) {
-            const scTid = typeIDByName(s2.ammo) ?? tidByName(s2.ammo);
-            const scA = scTid ? (TYPES[scTid]?.attrs ?? {}) : {};
-            const vBB = scA.missileVelocityBonusBonus; // -100 (precision) or +100 (range)
-            const fBB = scA.explosionDelayBonusBonus;
-            if (vBB != null) vB *= 1 + vBB / 100;
-            if (fBB != null) fB *= 1 + fBB / 100;
-          }
+          const isMGC = g2 === 'Missile Guidance Computer';
+          const isMGE = g2 === 'Missile Guidance Enhancer';
+          if (!isMGC && !isMGE) continue;
+          // A Computer activates (eos Effect6135 is type='active'); an Enhancer is passive (Effect6110,
+          // type='passive'). An Enhancer carries no duration, cap cost or heat damage, so `validStatesFor`
+          // never offers it anything above 'online' — testing isActive() on it dropped its bonus entirely.
+          if (!(isMGC ? isActive(s2.state) : isOnline(s2.state))) continue;
+          // Engine-computed, NOT raw TYPES[...].attrs. Both the loaded script (×2 for Range, ×0 for
+          // Precision, effects 6130/6131) and the overheat bonus (+15%, effect 6144) are ordinary
+          // unpenalised boosts the engine already applies to these two attributes ON THE MODULE, and
+          // pyfa reads them back the same way (getModifiedItemAttr). Reading the type data froze them
+          // at the base 5.5, so a heated MGC changed nothing at all — issue #46.
+          const vB = fi2.get('missileVelocityBonus') ?? 0;
+          const fB = fi2.get('explosionDelayBonus') ?? 0;
           if (vB > 0) velPool.push(vB);
           if (fB > 0) flightPool.push(fB);
         }
