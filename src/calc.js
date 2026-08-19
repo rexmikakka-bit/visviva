@@ -378,19 +378,30 @@ function getNameIdx() {
 export function tidByName(name) { return getNameIdx()[name] ?? null; }
 
 // ── Skill catalog + fit skill requirements ──────────────────────────────────
-// Two DIFFERENT sets of skills matter, and conflating them is the trap here:
+// THREE DIFFERENT sets of skills matter, and conflating them is the trap here:
 //   • the ones the dogma engine reads (SKILL_DEFAULTS, ~167) — these change your numbers;
 //   • the ones fittable items name as REQUIREMENTS (~316 more) — these decide whether you can
 //     fly the fit at all. A rig requires Jury Rigging, which no engine effect reads; a Caracal
 //     requires Caldari Cruiser. Neither was in SKILL_DEFAULTS, so a requirement check built only
 //     from that set would call almost every fit flyable.
+//   • the ones that are NEITHER, yet still modify something a fit carries (~30) — Thermodynamics,
+//     Fuel Conservation, Guided Missile Precision, the EWAR strength skills. Nothing requires them
+//     and the curated list missed them, so they sat outside the catalog entirely; because
+//     calcFitStats fills every unlisted skill at V, they were pinned at V for every character.
 // The catalog is the union, keyed by the existing camelCase key where one exists and by a
-// camelised type name otherwise (verified collision-free across all 357).
+// camelised type name otherwise (the suite asserts the keys stay collision-free).
 const REQ_SKILL_SLOTS = [1, 2, 3, 4, 5, 6];
 const _camelSkillKey = s => String(s).replace(/[^A-Za-z0-9 ]/g, ' ').split(/\s+/).filter(Boolean)
   .map((w, i) => i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase()).join('');
-// Categories that can appear on a fit and therefore contribute skill requirements.
-const FITTABLE_CATS = new Set([6, 7, 8, 18, 32, 65, 66, 87]);
+// Categories that can appear on a fit and therefore contribute skill requirements. 20 is Implant,
+// which covers boosters too — an implant requires Cybernetics and a booster requires Biology, and
+// leaving the category out meant neither skill existed anywhere the user could set it.
+const FITTABLE_CATS = new Set([6, 7, 8, 18, 20, 32, 65, 66, 87]);
+const SKILL_CAT = 16;
+// Every skill carries a self-modifier that computes its own bonus attribute from skillLevel. That
+// says nothing about what the skill then goes on to modify, so it must not count as evidence of
+// relevance. Same predicate the engine uses to recognise a self-modifier.
+const _isSelfMod = m => m.domain === 'itemID' || m.domain === 'self' || m.domain == null;
 
 export const SKILL_CATALOG = (() => {
   const keyByTid = new Map();
@@ -399,10 +410,24 @@ export const SKILL_CATALOG = (() => {
     if (tid) keyByTid.set(Number(tid), k);
   }
   const tids = new Set(keyByTid.keys());
+  const fitAttrIDs = new Set();
   for (const t of Object.values(TYPES)) {
     if (!FITTABLE_CATS.has(t.c ?? t.category)) continue;
     const a = t.a ?? t.attrs ?? {};
     for (const i of REQ_SKILL_SLOTS) { const s = a['requiredSkill' + i]; if (s) tids.add(Number(s)); }
+    for (const k of Object.keys(a)) { const id = AID[k]; if (id) fitAttrIDs.add(id); }
+  }
+  // Third source: skills that nothing fittable REQUIRES and SKILL_DEFAULTS never listed, but whose
+  // effects still land on an attribute a fit carries — Thermodynamics, Fuel Conservation, Guided
+  // Missile Precision, the EWAR strength skills. calcFitStats trains every skill it was not handed
+  // at V, so a skill missing from the catalog is one that no preset and no ESI sync can lower: it
+  // silently stays maxed. Derived from the effect data rather than hand-listed, so that a skill CCP
+  // adds in a later build is picked up by a bundle regen instead of by someone noticing.
+  for (const [tid, t] of Object.entries(TYPES)) {
+    if ((t.c ?? t.category) !== SKILL_CAT || tids.has(Number(tid))) continue;
+    const touchesAFit = (t.e ?? []).some(e => (EFFECTS_DATA[String(e)]?.m ?? [])
+      .some(m => !_isSelfMod(m) && fitAttrIDs.has(m.modifiedAttributeID)));
+    if (touchesAFit) tids.add(Number(tid));
   }
   const out = [];
   for (const tid of tids) {

@@ -918,6 +918,66 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12a. UNTRAINED SKILLS — everything below V. Two independent faults, both invisible at all skills
+//      V, which is why the other 557 checks never saw them.
+//
+//   (a) The catalog only held skills that SKILL_DEFAULTS listed or that something names as a
+//       requirement. ~30 more modify a fit without either — Thermodynamics, Fuel Conservation,
+//       Guided Missile Precision, Advanced Armor Layering, the EWAR strength skills. calcFitStats
+//       trains every skill it is not handed at V, so a skill outside the catalog could not be
+//       lowered by any means: no preset, no ESI sync, no Settings row. It was pinned at V.
+//   (b) `_applyEffect` substituted an attribute's DEFAULT whenever the source attribute read 0,
+//       because the presence test used the numeric ID against a name-keyed table and so never
+//       matched. An untrained Caldari Cruiser zeroes the Caracal's shipBonusCC — whose default is
+//       +5 — so the launcher picked up a 5% rate-of-fire PENALTY out of nowhere.
+//
+// The all-zero numbers are eos's, via `scripts/oracle/_zero.py` (a Character at level 0). Before
+// (b) was fixed the Caracal read 17.63 weapon DPS against eos's 16.75 with volley matching exactly
+// — the classic "the divisor is wrong" signature.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nUNTRAINED SKILLS');
+  const caracal = { typeID: tid('Caracal'), name: 'Caracal' };
+  const abFit    = { high: [], mid: [M('10MN Afterburner II', 'active')], low: [], rigs: [] };
+  const plateFit = { high: [], mid: [], low: [M('1600mm Steel Plates II', 'online')], rigs: [] };
+  const hmlFit   = { high: [M('Heavy Missile Launcher II', 'active', 'Scourge Fury Heavy Missile')],
+                     mid: [], low: [], rigs: [] };
+
+  // Skills that reach the engine but that nothing requires. Naming them explicitly is what stops
+  // someone "simplifying" the derivation back to SKILL_DEFAULTS ∪ requirements.
+  for (const n of ['Thermodynamics', 'Fuel Conservation', 'Guided Missile Precision',
+                   'Advanced Armor Layering', 'Cybernetics', 'Biology'])
+    check('untrained', `${n} is settable`, SKILL_CATALOG.some(e => e.name === n) ? 1 : 0, 1, 0);
+  // ...and the other half of the rule: a skill that touches no fit attribute stays OUT. Admitting
+  // every category-16 type would pass the checks above while burying the panel in trade skills.
+  for (const n of ['Trade', 'Reprocessing', 'Accounting'])
+    check('untrained', `${n} stays out of the catalog`, SKILL_CATALOG.some(e => e.name === n) ? 1 : 0, 0, 0);
+
+  // Teeth for (a): both of these read the all-V number until the skill becomes settable.
+  check('untrained', 'Fuel Conservation V: AB cap drain',
+        calcFitStats(caracal, abFit, [], {}, {}).capDrainPS, 3, 1e-5);
+  check('untrained', 'Fuel Conservation 0 doubles it',
+        calcFitStats(caracal, abFit, [], { fuelConservation: 0 }, {}).capDrainPS, 6, 1e-5);
+  check('untrained', 'Armor Layering V: plated mass',
+        calcFitStats(caracal, plateFit, [], {}, {}).mass, 14441250, 1e-5);
+  check('untrained', 'Advanced Armor Layering 0 adds the rest',
+        calcFitStats(caracal, plateFit, [], { armorLayering: 0, advancedArmorLayering: 0 }, {}).mass,
+        15660000, 1e-5);
+
+  // Teeth for (b), and for the two together: a wholly untrained character must match eos exactly.
+  const ZERO = Object.fromEntries(SKILL_CATALOG.map(e => [e.key, 0]));
+  const hz = calcFitStats(caracal, hmlFit, [], ZERO, {});
+  check('untrained', 'zero-skill weapon DPS (eos)', hz.weaponDps?.total, 16.75, 1e-5);
+  check('untrained', 'zero-skill mass (eos)', hz.mass, 11910000, 1e-5);
+  check('untrained', 'zero-skill shield HP (eos)', hz.shieldHP, 1700, 1e-5);
+  check('untrained', 'zero-skill EHP (eos)', hz.totalEHP, 6212.157602790644, 1e-5);
+  const pz = calcFitStats(caracal, plateFit, [], ZERO, {});
+  check('untrained', 'zero-skill plated mass (eos)', pz.mass, 15660000, 1e-5);
+  check('untrained', 'zero-skill plated armor HP (eos)', pz.armorHP, 6000, 1e-5);
+  check('untrained', 'zero-skill plated EHP (eos)', pz.totalEHP, 13323.268713901754, 1e-5);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 12b. T3 DESTROYER TACTICAL MODES — Skua and Anhinga.
 //
 // All 18 tactical modes are published=0, and build-bundle.py filtered fit_types on published, so

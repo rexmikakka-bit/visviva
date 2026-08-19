@@ -502,8 +502,13 @@ export class Fit {
     // attributes (shieldCapacity/armorHP/hp) the way Hull Upgrades/Shield Management/Mechanics do
     // for a ship — a structure isn't personally piloted, so that specific case (ItemModifier,
     // domain=shipID, source=a skill) is blocked in _applyEffect below, not here.
+    // An UNTRAINED skill still has to run. Its prescale effect is what turns a hull's raw per-level
+    // bonus attribute into the trained value (Effect520: shipBonusCC ×= skillLevel), so skipping the
+    // skill leaves the attribute at its raw per-level figure and the hull effect then applies it as
+    // though the skill were at I. A Caracal with Caldari Cruiser untrained read an 11.4 s launcher
+    // cycle against eos's 12.0 s — a phantom 5% rate-of-fire bonus. Level 0 zeroes every bonus
+    // attribute instead, which is what eos does (it carries a Skill object at every level).
     for (const [skillName, level] of Object.entries(this._skills)) {
-      if (level <= 0) continue;
       let skillItem = this._skillItems[skillName];
       if (!skillItem) {
         const tid = TYPE_BY_NAME[skillName];
@@ -834,7 +839,13 @@ export class Fit {
       // Use src.get() so that prior skill/module reductions to the source attr are applied.
       // e.g. Shield Rigging V reduces drawback via _mul before Effect2716 reads it.
       let rawVal = src.get ? src.get(String(srcAttr)) : src.attrs.getBase(srcAttr);
-      if ((rawVal === 0 || rawVal == null) && !(srcAttr in (src._td?.a ?? {}))) {
+      // An attribute the source doesn't carry reads as the attribute's DEFAULT, not 0 — but the
+      // presence test has to be by NAME, because `_td.a` is name-keyed and a numeric ID is never
+      // `in` it. Testing by ID made the branch fire for every source attribute that legitimately
+      // computed to zero, substituting the default: an untrained Caldari Cruiser zeroes the
+      // Caracal's shipBonusCC, whose default is +5, and the launcher gained a 5% rate-of-fire
+      // PENALTY. Invisible at all skills V, where a bonus attribute is never exactly zero.
+      if ((rawVal === 0 || rawVal == null) && !(attrName(srcAttr) in (src._td?.a ?? {}))) {
         rawVal = attrDefault(srcAttr);
       }
       // For skill effects: multiply rawVal by skill level when the attr hasn't been
