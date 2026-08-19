@@ -383,7 +383,14 @@ function generateCurve(catKey,yKey,xKey,params={}){
 //     Drag off either edge of the plot to clear, or reset a zoom / change an axis.
 //   * it is an x VALUE, so it re-reads correctly after a zoom or a switch to another fit's curve.
 function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
-  const W=280,H=140,PL=36,PB=20,PT=6,PR=8,gW=W-PL-PR,gH=H-PB-PT;
+  // W wider than a naive "fill the box" guess: the SVG's box height is fixed (H+18) but its CSS width
+  // is 100% of whatever card it sits in, so with the old W=280 (a viewBox aspect narrower than any
+  // phone's actual card) preserveAspectRatio="meet" scaled to the HEIGHT and centered the content,
+  // leaving ~65px of dead margin on each side on a 430pt-wide device. 340 is chosen to stay under the
+  // narrowest iPhone's card width (~355pt after the 20px padding on an SE) so it never flips to the
+  // opposite failure — scaling to fit WIDTH instead and letterboxing the height — while still cutting
+  // the wasted margin roughly in half on wider phones.
+  const W=340,H=140,PL=36,PB=20,PT=6,PR=8,gW=W-PL-PR,gH=H-PB-PT;
   const toX=x=>PL+(x/xMax)*gW,toY=y=>PT+gH-(y/yMax)*gH;
   if(!pts||!pts.length)return null;
   const fmt=v=>v>=10000?`${(v/1000).toFixed(0)}k`:v>=1000?`${(v/1000).toFixed(1)}k`:parseFloat(v.toPrecision(3)).toString();
@@ -430,7 +437,14 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
   </svg>);
 }
 
-function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChange}){
+// Screen angle (atan2 convention: 0=East, 90=South, 180=West, -90/270=North) that a heading of
+// 0 deg (value=0, "pointing straight at the enemy") is drawn at. Each compass picks where its own
+// enemy marker sits — see VectorCompass's `enemyPos` prop — and this is what maps the physics
+// value (unaffected by any of this — see the sin() in transversalSpeed) onto that screen position.
+const ENEMY_SCREEN_ANGLE={N:-90,E:0,S:90,W:180};
+const COMPASS_DIRS=["N","NE","E","SE","S","SW","W","NW"];
+
+function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChange,enemyPos}){
   const cx=45,cy=45,rMax=34;
   // A maxVelocity of 0 means IMMOBILISED — a sieged dread, a bastioned marauder — not "unknown".
   // This used to fall back to 500 the same way the caller did, so the Your Ship wheel happily
@@ -440,9 +454,17 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   const immobile=!(maxVelocity>0);
   const safeMV=immobile?1:maxVelocity;   // divide-by-zero guard only; nothing can move anyway
   const velFrac=immobile?0:Math.min((velocity??0)/safeMV,1);
-  const r=velFrac<0.05?5:rMax*velFrac;
-  const rad=(value-90)*Math.PI/180,nx=cx+r*Math.cos(rad),ny=cy+r*Math.sin(rad);
-  const dirs=["N","NE","E","SE","S","SW","W","NW"],cardinal=dirs[Math.round(value/45)%8];
+  // No minimum radius: at velFrac=0 this lands exactly on (cx,cy), so a zeroed "Your Ship" wheel
+  // and a zeroed "Target" wheel land on the identical center point instead of each drifting a few
+  // px toward wherever that wheel's own enemyPos happens to be.
+  const r=rMax*velFrac;
+  const atZero=r<0.5;
+  const offsetDeg=ENEMY_SCREEN_ANGLE[enemyPos];
+  const theta=value+offsetDeg;   // screen angle of the drawn arrow
+  const rad=theta*Math.PI/180,nx=cx+r*Math.cos(rad),ny=cy+r*Math.sin(rad);
+  // Same offset applied to the readout letter, so "45deg NE" always names the arrow's actual
+  // screen direction — not a direction fixed to wherever the enemy happens to sit on this wheel.
+  const cardinal=COMPASS_DIRS[((Math.round((theta+90)/45)%8)+8)%8];
 
   function handlePt(clientX,clientY,rect){
     if(immobile)return;
@@ -450,12 +472,13 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
     const dx=(clientX-rect.left)/scale-cx;
     const dy=(clientY-rect.top)/scale-cy;
     const dist=Math.sqrt(dx*dx+dy*dy);
-    const angle=Math.round((Math.atan2(dy,dx)*180/Math.PI+90+360)%360);
+    const angle=Math.round((((Math.atan2(dy,dx)*180/Math.PI)-offsetDeg)%360+360)%360);
     const newVelFrac=Math.min(dist/rMax,1);
     onChange(angle);
     onVelocityChange&&onVelocityChange(Math.round(newVelFrac*safeMV));
   }
-  // Double-tap / double-click a compass to park it: heading 0 (straight at the enemy), speed 0.
+  // Double-tap / double-click a compass to park it: heading 0 (straight toward wherever this
+  // compass's enemy marker sits), speed 0.
   // The first tap of a double still moves the vector — harmless, since the reset lands on top of it
   // and the alternative is delaying every single tap by the double-tap window just to find out.
   const reset=()=>{if(immobile)return;onChange(0);onVelocityChange&&onVelocityChange(0);};
@@ -495,22 +518,27 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
 
   return(<div className="no-select" style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
     <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{label}</span>
-    {/* Same reason as the chart: this one is dragged too, and its label/readout sit right under
-        the finger. */}
     <svg className="no-select" width={90} height={90} style={{cursor:immobile?"not-allowed":"crosshair",touchAction:"none",opacity:immobile?0.4:1}}
          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
          onTouchStart={swallowTouch} onTouchMove={swallowTouch}>
       <circle cx={cx} cy={cy} r={rMax+6} fill={C.surfaceAlt} stroke={C.border} strokeWidth="1"/>
       {[0.25,0.5,0.75,1.0].map(f=><circle key={f} cx={cx} cy={cy} r={rMax*f} fill="none" stroke={C.borderStrong} strokeWidth="0.5" strokeDasharray={f===1?"none":"2,4"}/>)}
-      <line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,2"/>
-      <circle cx={nx} cy={ny} r={4} fill={C.accent} stroke={C.surface} strokeWidth="1.5"/>
-      <circle cx={cx} cy={cy} r={3} fill={C.textMid}/>
-      {/* Enemy sits at the top (North) — up/down = toward/away, left/right = across */}
-      <g>
-        <circle cx={cx} cy={cy-rMax-9} r={3.2} fill={C.danger}/>
-        <text x={cx} y={cy-rMax-13} textAnchor="middle" fill={C.danger} fontSize="6" fontFamily="sans-serif">enemy</text>
-      </g>
-      {[["S",cx,cy+rMax+13],["W",cx-rMax-10,cy+4],["E",cx+rMax+10,cy+4]].map(([l,x,y])=>(
+      {/* Below the deadzone, both wheels render an identical hollow ring dead-center rather than a
+          filled dot nudged a few px toward wherever THIS wheel's own enemyPos happens to be — a
+          zeroed Your Ship and a zeroed Target used to visibly disagree on where "zero" was. */}
+      {atZero
+        ?<circle cx={cx} cy={cy} r={5} fill="none" stroke={C.accent} strokeWidth="1.5"/>
+        :<><line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,2"/>
+           <circle cx={nx} cy={ny} r={4} fill={C.accent} stroke={C.surface} strokeWidth="1.5"/></>}
+      <circle cx={cx} cy={cy} r={2.5} fill={C.textMid}/>
+      {/* The enemy marker is a plain dot, no label, sitting wherever `enemyPos` says — right for
+          Your Ship, left for Target (see TargetControls) — so pointing both wheels at 0deg
+          literally points them at each other. All four cardinal points still get their letter. */}
+      {enemyPos==="N"&&<circle cx={cx} cy={cy-rMax-9} r={3.2} fill={C.danger}/>}
+      {enemyPos==="S"&&<circle cx={cx} cy={cy+rMax+9} r={3.2} fill={C.danger}/>}
+      {enemyPos==="E"&&<circle cx={cx+rMax+9} cy={cy} r={3.2} fill={C.danger}/>}
+      {enemyPos==="W"&&<circle cx={cx-rMax-9} cy={cy} r={3.2} fill={C.danger}/>}
+      {[["N",cx,cy-rMax-13],["S",cx,cy+rMax+13],["W",cx-rMax-10,cy+4],["E",cx+rMax+10,cy+4]].map(([l,x,y])=>(
         <text key={l} x={x} y={y} textAnchor="middle" fill={C.textMute} fontSize="7" fontFamily="sans-serif">{l}</text>
       ))}
     </svg>
@@ -655,7 +683,6 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       {Object.entries(TARGET_PROFILES).filter(([k])=>k!=="fit").map(([key,p])=>(
         <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label}</button>
       ))}
-      {targetProfile==="custom"&&<span style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>Custom</span>}
       {/* A TOGGLE, not another profile — hence the separator, so it doesn't read as a fifth
           mutually-exclusive option. Dimmed (not disabled) where the current profile has no MWD
           variant: the setting still holds for the next profile picked, and disabling it would make
@@ -714,7 +741,7 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       {/* NOT `selfMaxVel||500` — 0 is falsy, and 0 is exactly the value a sieged or bastioned hull
           reports. The caller already ends its own fallback chain with 500 for the genuinely-unknown
           case, so passing the number straight through is what lets 0 mean immobilised. */}
-      <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel}/>
+      <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel} enemyPos="E"/>
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
         <div style={{width:1,height:18,background:C.border}}/>
         <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center"}}>
@@ -723,11 +750,8 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         </div>
         <div style={{width:1,height:18,background:C.border}}/>
       </div>
-      <VectorCompass label="Target" value={targetAngle} velocity={targetVel} maxVelocity={Math.max(targetVelMax,1)} onChange={setTargetAngle} onVelocityChange={setTargetVel}/>
+      <VectorCompass label="Target" value={targetAngle} velocity={targetVel} maxVelocity={Math.max(targetVelMax,1)} onChange={setTargetAngle} onVelocityChange={setTargetVel} enemyPos="W"/>
     </div>
-    {/* Below the compasses, not above: this is a legend for something you have already found, and
-        anyone who knows how the wheels work had to scroll past it to reach them every time. */}
-    <div style={{fontSize:10,color:C.textMute,marginTop:10}}>The enemy sits at the top of each compass. Up/down = toward/away (low transversal); left/right = across (high transversal). Double-tap a compass to reset it to 0 deg / 0 m/s.</div>
   </div>);
 }
 
@@ -802,15 +826,31 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // Axis scale (zoom). 1 = auto-fit range from generateCurve; >1 zooms in (smaller max),
   // <1 zooms out (larger max). Applied to the auto max, so it survives fit/axis changes.
   const[xZoom,setXZoom]=useState(()=>gp('xZoom',1)),[yZoom,setYZoom]=useState(()=>gp('yZoom',1));
+  // Drag state for the axis-zoom readout's scrub gesture, keyed by axis so X and Y don't share one
+  // in-flight gesture. Refs, not state — a drag reads/writes every pointermove and a ref update
+  // doesn't re-render, same reasoning as ScrubField's `drag`/`suppressClick`.
+  const zoomDrag=useRef({}),zoomSuppressClick=useRef({});
+  const[zoomScrubAxis,setZoomScrubAxis]=useState(null);
   // One write whenever any of it changes. Cheap, and it means leaving by ANY route (swipe, tab bar,
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
       {catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX}));}catch{}
   },[catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX]);
+  // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
+  // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
+  // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
   const ZOOM_STEPS=[0.5,0.75,1,1.5,2,3,4,6,8,12,16];
-  const stepZoom=(z,dir)=>{const i=ZOOM_STEPS.findIndex(v=>Math.abs(v-z)<1e-9);
-    const ni=Math.max(0,Math.min(ZOOM_STEPS.length-1,(i<0?2:i)+dir));return ZOOM_STEPS[ni];};
+  const ZOOM_MIN=ZOOM_STEPS[0],ZOOM_MAX=ZOOM_STEPS[ZOOM_STEPS.length-1];
+  const stepZoom=(z,dir)=>dir>0
+    ? (ZOOM_STEPS.find(v=>v>z+1e-9) ?? ZOOM_MAX)
+    : ([...ZOOM_STEPS].reverse().find(v=>v<z-1e-9) ?? ZOOM_MIN);
+  // A scrubbed zoom is any real number in range, so it needs a readable multiplier: 0.62× / 1.4× / 12×.
+  const fmtZoom=v=>v>=10?v.toFixed(0):v>=1?v.toFixed(1):v.toFixed(2);
+  // Auto-fit is a value, not a flag, and a continuous drag lands exactly on 1.0 only by luck — so
+  // "is this axis auto-fitted" is a tolerance test, and the drag snaps into 1× within a small band
+  // so the auto-fit anchor is still reachable by sliding rather than only by tapping reset.
+  const isAutoZoom=v=>Math.abs(v-1)<1e-9;
   const cat=GRAPH_CONFIG.find(c=>c.key===catKey);
   // Axis choice is remembered PER CATEGORY. This used to reset both axes to the category's first
   // entry on every switch, so Damage/Time silently became Damage/Distance the moment you looked at
@@ -873,19 +913,71 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
       <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
       <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
-      {/* Axis scale (zoom): − widens the visible range, + zooms in. Tap the readout to reset to auto-fit. */}
+      {/* Axis scale (zoom): − shrinks the displayed max, + grows it — the naive, "smaller number"
+          reading of the sign, not the zoom-level's own (max=autoMax/zoom, so shrinking the number
+          means INCREASING zoom). The readout between them is a continuous scrub: press and drag
+          horizontally to sweep the axis smoothly, same gesture ScrubField uses for the target
+          sig/speed fields. A plain tap (no drag past SCRUB_ARM_PX) resets to auto-fit instead. */}
       {[{ax:"Y",zoom:yZoom,setZoom:setYZoom,max:yMax},{ax:"X",zoom:xZoom,setZoom:setXZoom,max:xMax}].map(z=>{
-        const atMin=z.zoom<=ZOOM_STEPS[0]+1e-9, atMax=z.zoom>=ZOOM_STEPS[ZOOM_STEPS.length-1]-1e-9;
+        const atMin=z.zoom<=ZOOM_MIN+1e-9, atMax=z.zoom>=ZOOM_MAX-1e-9;
         const btn=(dis)=>({flex:"0 0 26px",padding:"4px 0",borderRadius:6,fontSize:13,fontWeight:700,lineHeight:1,
           cursor:dis?"default":"pointer",background:C.surface,border:`1px solid ${C.border}`,color:dis?C.textMute:C.textMid,opacity:dis?.4:1});
+        const scrubbing=zoomScrubAxis===z.ax;
+        const isAuto=isAutoZoom(z.zoom);
+        const onPointerDown=e=>{
+          zoomDrag.current[z.ax]={x:e.clientX,startZoom:z.zoom,armed:false,id:e.pointerId};
+        };
+        const onPointerMove=e=>{
+          const d=zoomDrag.current[z.ax]; if(!d) return;
+          const dx=e.clientX-d.x;
+          if(!d.armed){
+            if(Math.abs(dx)<SCRUB_ARM_PX) return;
+            d.armed=true;
+            try{e.currentTarget.setPointerCapture(d.id);}catch{}
+            document.body.classList.toggle("no-select",true);
+            window.getSelection?.()?.removeAllRanges();
+            setZoomScrubAxis(z.ax);
+            haptic();
+          }
+          e.stopPropagation();
+          // GEOMETRIC, not linear: zoom is a multiplier, so a fixed pixel distance has to mean a fixed
+          // RATIO or the drag crawls at 0.5× and rockets past 8×. 44px per doubling puts the whole
+          // 0.5–16× range in a ~220px sweep, which is what the old step-per-22px drag spanned.
+          // Right = grow the number = smaller zoom, the same sign flip as the +/− buttons beside it.
+          const raw=d.startZoom*Math.pow(2,-dx/44);
+          // Detent: 1× is the one value worth landing on exactly (it's auto-fit), and a continuous
+          // drag would otherwise only ever pass near it. The band is 0.05 to match what fmtZoom can
+          // actually show — anything inside it rounds to "1.0×", so without the snap the readout
+          // would claim 1.0× while the axis was still scaled, which is the confusing half-state.
+          // ~3px of travel: catchable with a thumb, not enough to feel like the drag sticks.
+          const snapped=Math.abs(raw-1)<0.05?1:raw;
+          z.setZoom(Math.max(ZOOM_MIN,Math.min(ZOOM_MAX,snapped)));
+        };
+        const endDrag=e=>{
+          const d=zoomDrag.current[z.ax]; if(!d) return;
+          if(d.armed){
+            try{e.currentTarget.releasePointerCapture(d.id);}catch{}
+            document.body.classList.toggle("no-select",false);
+            setZoomScrubAxis(null);
+            zoomSuppressClick.current[z.ax]=true;
+          }
+          zoomDrag.current[z.ax]=null;
+        };
+        const swallowTouch=e=>e.stopPropagation();
         return(<div key={z.ax} style={{display:"flex",alignItems:"center",gap:4}}>
-          <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>−</button>
-          <button onClick={()=>{z.setZoom(1);}} title="Reset to auto-fit"
-            style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:z.zoom===1?C.surface:`${cat.color}22`,
-              border:`1px solid ${z.zoom===1?C.border:cat.color}`,color:z.zoom===1?C.textMute:cat.color,whiteSpace:"nowrap",overflow:"hidden"}}>
-            {z.ax} {fmt(z.max)}{z.zoom!==1?` · ${z.zoom}×`:""}
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,1));}} disabled={atMax} style={btn(atMax)}>−</button>
+          <button
+            onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={endDrag} onPointerCancel={endDrag} onLostPointerCapture={endDrag}
+            onTouchStart={swallowTouch} onTouchMove={swallowTouch} onTouchEnd={swallowTouch}
+            onDragStart={e=>e.preventDefault()}
+            onClick={()=>{ if(zoomSuppressClick.current[z.ax]){zoomSuppressClick.current[z.ax]=false;return;} z.setZoom(1); }}
+            title="Drag to scrub, tap to reset to auto-fit"
+            style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"ew-resize",touchAction:"pan-y",
+              background:isAuto?C.surface:`${cat.color}22`,
+              border:`1px solid ${scrubbing?C.accent:(isAuto?C.border:cat.color)}`,color:scrubbing?C.accent:(isAuto?C.textMute:cat.color),whiteSpace:"nowrap",overflow:"hidden"}}>
+            {z.ax} {fmt(z.max)}{isAuto?"":` · ${fmtZoom(z.zoom)}×`}
           </button>
-          <button onClick={()=>{z.setZoom(v=>stepZoom(v,1));}} disabled={atMax} style={btn(atMax)}>+</button>
+          <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>+</button>
         </div>);
       })}
     </div>
