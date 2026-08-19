@@ -221,7 +221,11 @@ export function ShipInfoSheet({ship, onClose}) {
             </button>
           ))}
         </div>
-        <div style={{flex:1,overflowY:'auto',padding:'14px 16px'}}>
+        {/* The bottom inset is on the SCROLL container, not the sheet: this sheet is hand-rolled and
+            sits flush on the bottom edge, so without it the last line of a description ends up under
+            the home indicator and inside the screen's curved corners. Padding here scrolls with the
+            content, so that line can be brought clear rather than merely being given a smaller box. */}
+        <div style={{flex:1,overflowY:'auto',padding:'14px 16px calc(28px + env(safe-area-inset-bottom, 0px))'}}>
           {tab==='traits' && <TraitsPanel typeID={ship?.typeID}/>}
           {/* pre-wrap: CCP's descriptions are multi-paragraph, separated by blank lines; without
               it they collapse into one undifferentiated wall of text. */}
