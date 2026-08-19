@@ -25,4 +25,10 @@ const META_COLORS={T1:"#94a3b8",T2:"#f5a524",Storyline:"#a3e635",Faction:"#22c55
                    Deadspace:"#3b82f6",Officer:"#a855f7",T3:"#2dd4bf",Abyssal:"#f472b6",
                    Premium:"#a855f7",Limited:"#f5a524"};
 const META_ORDER={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,T3:6,Abyssal:7,Premium:8,Limited:9};
-export { META_BY_MG, metaOf, META_COLORS, META_ORDER };
+// Deliberately NOT META_ORDER. META_ORDER is the canonical tier sequence (T1 first) and still drives
+// ammo and the meta pills; wherever you are CHOOSING what to fit — the module browser and the module
+// search — T2 leads, because it is the default choice far more often than T1. The T1 module is
+// usually the fallback, not the starting point.
+const BROWSER_META_ORDER={T2:0,T1:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,T3:6,Abyssal:7,Premium:8,Limited:9};
+const browserMetaRank=(typeID,fallback)=>BROWSER_META_ORDER[metaOf(typeID,fallback)]??99;
+export { META_BY_MG, metaOf, META_COLORS, META_ORDER, BROWSER_META_ORDER, browserMetaRank };

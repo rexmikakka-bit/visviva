@@ -268,7 +268,7 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 @media (prefers-reduced-motion:reduce){.vv-from-right,.vv-from-left{animation:none}}
 `;
 import { C } from "../theme.js";
-import { metaOf, META_COLORS, META_ORDER } from "./meta.js";
+import { metaOf, META_COLORS, META_ORDER, browserMetaRank } from "./meta.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";
 const DMG={
   em: {label:"EM",  color:"#60a5fa"},
@@ -773,11 +773,6 @@ function buildModuleBrowser(slotType){
     if(!byMG[m.marketGroupID])byMG[m.marketGroupID]=[];
     byMG[m.marketGroupID].push(m);
   }
-  // Browser ordering, which is deliberately NOT META_ORDER. META_ORDER is the canonical tier
-  // sequence (T1 first) and still drives ammo and the meta pills; here T2 leads, because in the
-  // module browser you are choosing what to FIT, and T2 is the default choice far more often than
-  // T1 — the T1 module is usually the fallback, not the starting point.
-  const BROWSER_META_ORDER={T2:0,T1:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,T3:6,Abyssal:7,Premium:8,Limited:9};
   // Ancillary repairers/boosters lead their category. They are a different thing from the plain
   // module next to them — charge-fed, burst tank — and are usually what someone opening "Shield
   // Boosters" is actually after, but sort into the middle of the alphabet.
@@ -785,7 +780,7 @@ function buildModuleBrowser(slotType){
   for(const k of Object.keys(byMG)){
     byMG[k].sort((a,b)=>
       (isAncillary(b)?1:0)-(isAncillary(a)?1:0)
-      ||(BROWSER_META_ORDER[metaOf(a.typeID,a.meta)]??99)-(BROWSER_META_ORDER[metaOf(b.typeID,b.meta)]??99)
+      ||browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)
       ||a.name.localeCompare(b.name));
   }
   function buildNode(mgId){
@@ -1138,6 +1133,50 @@ const REAL_CHARGE_BROWSER=buildChargeBrowser();
 const REAL_DRONE_BROWSER=buildDroneBrowser();
 const REAL_MODULE_BROWSER={high:buildModuleBrowser("high"),mid:buildModuleBrowser("mid"),low:buildModuleBrowser("low"),rigs:buildModuleBrowser("rigs")};
 
+// Fittable modules the browser tree cannot show. The tree is CCP's MARKET tree, so a module CCP does
+// not sell has no node to live under and simply isn't in it — correct for browsing, but it also left
+// them unsearchable, i.e. unreachable: every "Civilian" rookie-ship item bar the four that are on the
+// market, the four navy Bastion modules, the officer "…'s Modified" drops, the Integrated Sensor
+// Array, the Mining Foreman Links. parseEFT already accepts all of them (guessSlotFromDogma), so a
+// pasted fit could hold a module the app gave you no way to add yourself.
+//
+// The test is membership of the built TREE, not of modulesData. Those are not the same set and the
+// difference is not empty: the Festival and Display Launchers ARE in modulesData, but their market
+// group hangs outside the Ship Equipment root the browser walks from, so they never reach a node.
+//
+// Abyssal base types are deliberately excluded, and they are the bulk of what's left out (81 of 141):
+// a mutated module is reached by rolling a mutaplasmid onto its SOURCE module, and the bare base type
+// carries no rolled attributes — offering it would add a statless item to the list.
+//
+// The slot must come from a real slot effect. guessSlotFromDogma defaults to "high" for anything with
+// none, which is the right call for a named module off an EFT paste but wrong for a sweep over every
+// type in the category: it would rake unfittable junk into the high-slot list.
+const SLOT_EFFECT_IDS=[2663,6306,12,13,11];
+const IN_MODULE_TREE=(()=>{
+  const seen=new Set();
+  const walk=ns=>{for(const n of ns){for(const m of (n.mods??[]))seen.add(m.typeID);walk(n.children??[]);}};
+  for(const t of Object.values(REAL_MODULE_BROWSER))walk(t);
+  return seen;
+})();
+function buildOffMarketModules(slotType){
+  const out=[];
+  for(const[tid,t]of Object.entries(TYPES)){
+    const id=Number(tid);
+    if((t.c??t.category)!==7||!t.n||IN_MODULE_TREE.has(id))continue;
+    const e=t.e??t.effectIDs??[];
+    if(!SLOT_EFFECT_IDS.some(x=>e.includes(x)))continue;
+    if(guessSlotFromDogma(id)!==slotType)continue;
+    const meta=metaOf(id,null);
+    if(meta==='Abyssal')continue;
+    const a=t.attrs??t.a??{};
+    out.push({name:t.n,typeID:id,meta,cpu:a.cpu??a['50']??0,pg:a.power??a['30']??0,
+              calib:a.upgradeCost??a['1153']??null});
+  }
+  return out.sort((a,b)=>browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)||a.name.localeCompare(b.name));
+}
+const OFF_MARKET_MODULES={high:buildOffMarketModules("high"),mid:buildOffMarketModules("mid"),
+                          low:buildOffMarketModules("low"),rigs:buildOffMarketModules("rig")};
+
 // Structure (citadel/engineering complex/refinery) modules aren't in modulesData at all — this app
 // was ship-only until structure support was added, and there's no equivalent precomputed cache for
 // them. Built straight from TYPES instead: category 66 = "Structure Module" (the structure
@@ -1160,7 +1199,7 @@ function buildStructureModuleBrowser(slotType){
   }
   return Object.entries(byGroup).sort(([a],[b])=>a.localeCompare(b)).map(([gn,mods])=>({
     id:gn,name:gn,children:[],
-    mods:mods.sort((a,b)=>(META_ORDER[a.meta]??99)-(META_ORDER[b.meta]??99)||a.name.localeCompare(b.name)),
+    mods:mods.sort((a,b)=>browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)||a.name.localeCompare(b.name)),
   }));
 }
 const REAL_STRUCTURE_MODULE_BROWSER={high:buildStructureModuleBrowser("high"),mid:buildStructureModuleBrowser("mid"),low:buildStructureModuleBrowser("low"),rigs:buildStructureModuleBrowser("rig"),services:buildStructureModuleBrowser("service")};
@@ -1218,4 +1257,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, navIcons, optimizeSlotPrice, parseEFT, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

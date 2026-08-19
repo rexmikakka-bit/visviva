@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
-import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -400,10 +400,17 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
 
   const countAll=n=>n.mods.length+n.children.reduce((s,c)=>s+countAll(c),0);
 
+  // The SEARCH corpus is the tree plus the modules CCP does not sell. Those have no market group and
+  // so no node to browse to, but they are ordinary fittable items and search is the only way to reach
+  // them — a Civilian Light Missile Launcher was unreachable except by pasting EFT.
   const allMods=(()=>{
     const out=[];
     function collect(n){n.mods.forEach(m=>out.push(m));n.children.forEach(collect);}
     tree.forEach(collect);
+    if(!isStructure)
+      for(const m of OFF_MARKET_MODULES[slotType]??[])
+        if(slotType!=="rigs"||hullRigSize==null||(TYPES[String(m.typeID)]?.a?.rigSize??hullRigSize)===hullRigSize)
+          out.push(m);
     return out;
   })();
   const searchResults=search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null;

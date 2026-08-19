@@ -3,6 +3,9 @@
 // jargonSearch() splits the query on spaces; each token that matches a key is
 // expanded to its patterns. A module passes if it satisfies every token.
 
+import { browserMetaRank } from './meta.js';
+import { TYPES } from '../calc.js';
+
 const J = (/** @type {string[]} */ ...pats) => pats.map(p => new RegExp(p, 'i'));
 
 export const JARGON = {
@@ -232,10 +235,14 @@ export const JARGON = {
   infinipoint: J('infinipoint', 'warp disruption field generator', '^focused warp disruption script', '^focused warp scrambling script'),
   infiniscram: J('infiniscram', 'warp disruption field generator', '^focused warp disruption script', '^focused warp scrambling script'),
   bubble:    J('bubble', 'interdiction sphere launcher', 'warp disrupt probe', 'warp disruption field generator', 'warp disruption (.+ )?projector', 'mobile (.+ )?warp disruptor'),
-  webifier:  J('webifier', 'grappler', 'sw-\\d00'),
+  // "web" and "webifier" deliberately do NOT expand to grapplers, though pyfa's table does. A
+  // grappler is a different module — short-range, sig-scaled, capital-only in practice — and its
+  // expansion outscored the literal hit, so every search for "web" led with grapplers instead of
+  // the webifiers actually being looked for. `sg`/`sw` still reach them.
+  webifier:  J('webifier', 'sw-\\d00'),
   wub:       J('wub', 'stasis webification probe', 'interdiction sphere launcher'),
   wubble:    J('wubble', 'stasis webification probe', 'interdiction sphere launcher'),
-  web:       J('web', 'grappler', 'sw-\\d00'),
+  web:       J('web', 'sw-\\d00'),
   sw:        J('sw', 'stasis webifier', 'stasis grappler'),
   sg:        J('sg', 'stasis grappler'),
 
@@ -443,7 +450,39 @@ export function nameMatchesQuery(name, query) {
 }
 
 // Returns mods matching the query, MOST RELEVANT FIRST, or null if the query is empty.
+//
+// Modules are ranked in two stages rather than one, because a flat relevance sort interleaves things
+// that are not alternatives to each other: "tracking" gave Tracking Computer II, Tracking Disruptor
+// II, Tracking Computer I, Tracking Disruptor I — the two metas of the same module split apart by an
+// unrelated one. So results are blocked by CCP's dogma GROUP (all the tracking computers, then all
+// the disruptors), and only inside a block does meta order apply.
+//
+// A block is placed by its single best hit, so the module you searched for still leads: the Tracking
+// Computer group wins on its 800 (name-prefix) hit even though most of its faction members score 600,
+// and the Omnidirectional links stay below it. Grouping by the dogma group rather than by market node
+// is what lets an off-market module (a Civilian launcher, a navy Bastion) sort with its siblings —
+// it has no market node at all.
+const groupKeyOf = (m) => TYPES[m.typeID]?.gn ?? TYPES[m.typeID]?.groupName ?? m.name;
+
 export function jargonSearch(query, mods) {
   if (!String(query ?? "").trim()) return null;
-  return rankByRelevance(mods.filter((m) => nameMatchesQuery(m.name, query)), query, (m) => m.name);
+  const hits = mods.filter((m) => nameMatchesQuery(m.name, query))
+                   .map((m, i) => ({ m, i, s: searchScore(m.name, query), g: groupKeyOf(m) }));
+  const best = new Map();
+  for (const h of hits) {
+    const cur = best.get(h.g);
+    if (!cur || h.s > cur.s || (h.s === cur.s && h.m.name.length < cur.m.name.length)) best.set(h.g, h);
+  }
+  const groupRank = new Map(
+    [...best.values()]
+      .sort((a, b) => b.s - a.s || a.m.name.length - b.m.name.length || a.i - b.i)
+      .map((h, rank) => [h.g, rank]));
+  return hits
+    .sort((a, b) =>
+      groupRank.get(a.g) - groupRank.get(b.g)
+      || browserMetaRank(a.m.typeID, a.m.meta) - browserMetaRank(b.m.typeID, b.m.meta)
+      || b.s - a.s
+      || a.m.name.length - b.m.name.length
+      || a.i - b.i)
+    .map((h) => h.m);
 }

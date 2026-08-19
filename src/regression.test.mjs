@@ -30,7 +30,8 @@ import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromE
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
-import { REAL_MODULE_BROWSER, gestureTarget, validStatesFor, variantsOf } from './lib/core.js';
+import { browserMetaRank, metaOf } from './lib/meta.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2730,32 +2731,87 @@ Republic Fleet Command Mindlink`;
 //     autocannon, and the letters "ac" appear only in unrelated names like "…Acquisition".
 //     Positions, not scores, are asserted: the score tiers are an implementation detail, "the thing
 //     you searched for is at the top" is the contract.
+//
+//     Within one relevance tier the order is the module BROWSER's meta order (T2, T1, Storyline,
+//     Faction, Deadspace, Officer), not name length. Length was a proxy for it and interleaved the
+//     tiers — a search for "web" ran T1, T2, T1, Faction, Faction, T1 because "Civilian Stasis
+//     Webifier" is shorter than "Dark Blood Stasis Webifier". So the "leads with" checks below name
+//     the T2 variant: that is the module you are usually reaching for, and it is the same item the
+//     tree would have put first had you navigated to it instead.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nSEARCH');
+  // The corpus the search box actually sees: the market tree PLUS the modules CCP does not sell,
+  // which have no market node to hang under. Mirrors `allMods` in ui.jsx.
   const modsIn = (slot) => {
     const out = [];
     (function walk(ns) { for (const n of ns) { for (const m of (n.mods ?? [])) out.push(m); walk(n.children ?? []); } })(REAL_MODULE_BROWSER[slot] ?? []);
-    return out;
+    return out.concat(OFF_MARKET_MODULES[slot] ?? []);
   };
   const rankOf = (slot, query, re) => (jargonSearch(query, modsIn(slot)) ?? []).findIndex((m) => re.test(m.name)) + 1;  // 1-based, 0 = absent
 
   // The two cases that prompted this. Both were reproduced against the real browser lists first:
   // "tracking" put Tracking Computer below ten Omni links, and "te" did not return the Enhancer.
-  check('search', '"tracking" leads with the Tracking Computer', rankOf('mid', 'tracking', /^Tracking Computer I$/), 1, 0);
+  check('search', '"tracking" leads with the Tracking Computer', rankOf('mid', 'tracking', /^Tracking Computer II$/), 1, 0);
   check('search', '"te" finds the Tracking Enhancer at all', rankOf('low', 'te', /^Tracking Enhancer I$/) > 0 ? 1 : 0, 1, 0);
-  check('search', '"te" leads with it', rankOf('low', 'te', /^Tracking Enhancer I$/), 1, 0);
+  check('search', '"te" leads with it', rankOf('low', 'te', /^Tracking Enhancer II$/), 1, 0);
   // Typing the words in full must not rank the Omnidirectional variant above the plain one.
-  check('search', '"tracking enhancer" prefers the plain module', rankOf('low', 'tracking enhancer', /^Tracking Enhancer I$/), 1, 0);
+  check('search', '"tracking enhancer" prefers the plain module', rankOf('low', 'tracking enhancer', /^Tracking Enhancer II$/), 1, 0);
+  // Both metas of the module you asked for still beat every Omnidirectional link, which is the
+  // ordering complaint that created this section in the first place.
+  check('search', '"tracking" keeps both Tracking Computers above the Omni links',
+        rankOf('mid', 'tracking', /^Tracking Computer I$/) < rankOf('mid', 'tracking', /^Omnidirectional Tracking Link/) ? 1 : 0, 1, 0);
 
   // The regression that ranking itself introduced: scoring the literal query alone dropped every
   // autocannon to 158th of 200, behind "Hostile Target Acquisition".
   check('search', '"ac" leads with an autocannon', rankOf('high', 'ac', /AutoCannon/i), 1, 0);
   // pyfa's curated shorthands must keep working now that they are ranked rather than only filtered.
-  check('search', '"tc" leads with the Tracking Computer', rankOf('mid', 'tc', /^Tracking Computer I$/), 1, 0);
-  check('search', '"dda" leads with the Drone Damage Amplifier', rankOf('low', 'dda', /^Drone Damage Amplifier I$/), 1, 0);
-  check('search', '"istab" leads with Inertial Stabilizers', rankOf('low', 'istab', /^Inertial Stabilizers I$/), 1, 0);
-  check('search', '"point" leads with a Warp Disruptor', rankOf('mid', 'point', /^Warp Disruptor I$/), 1, 0);
+  check('search', '"tc" leads with the Tracking Computer', rankOf('mid', 'tc', /^Tracking Computer II$/), 1, 0);
+  check('search', '"dda" leads with the Drone Damage Amplifier', rankOf('low', 'dda', /^Drone Damage Amplifier II$/), 1, 0);
+  check('search', '"istab" leads with Inertial Stabilizers', rankOf('low', 'istab', /^Inertial Stabilizers II$/), 1, 0);
+  check('search', '"point" leads with a Warp Disruptor', rankOf('mid', 'point', /^Warp Disruptor II$/), 1, 0);
+
+  // The two ordering rules, asserted as PROPERTIES rather than fixed lists so they hold for queries
+  // nobody wrote a case for. Both are about the same thing — results should read as blocks of
+  // alternatives — and both were violated by the old flat sort.
+  const groupOf = (m) => TYPES[m.typeID]?.gn ?? m.name;
+  // 1. A dogma group is CONTIGUOUS. "tracking" used to alternate computer/disruptor/computer.
+  const groupBreaks = (slot, query) => {
+    const res = jargonSearch(query, modsIn(slot)) ?? [];
+    const seen = new Set();
+    let bad = 0;
+    for (let i = 0; i < res.length; i++) {
+      const g = groupOf(res[i]);
+      if (i > 0 && g === groupOf(res[i - 1])) continue;
+      if (seen.has(g)) bad++;                       // group resumed after something else interrupted
+      seen.add(g);
+    }
+    return bad;
+  };
+  // 2. Inside a group the browser meta rank never goes backwards.
+  const metaOutOfOrder = (slot, query) => {
+    const res = jargonSearch(query, modsIn(slot)) ?? [];
+    let bad = 0;
+    for (let i = 1; i < res.length; i++) {
+      const a = res[i - 1], b = res[i];
+      if (groupOf(a) !== groupOf(b)) continue;
+      if (browserMetaRank(b.typeID, b.meta) < browserMetaRank(a.typeID, a.meta)) bad++;
+    }
+    return bad;
+  };
+  for (const [slot, q] of [['mid', 'web'], ['mid', 'tracking'], ['low', 'dda'], ['high', 'ac'], ['low', 'istab'], ['high', 'civilian']]) {
+    check('search', `"${q}" keeps each module group contiguous`, groupBreaks(slot, q), 0, 0);
+    check('search', `"${q}" is meta-ordered within each group`, metaOutOfOrder(slot, q), 0, 0);
+  }
+  // The reported case, in full: T2 first, then the T1s, then the faction ones — no interleaving.
+  check('search', '"web" runs Stasis Webifier II then I', rankOf('mid', 'web', /^Stasis Webifier II$/), 1, 0);
+  check('search', '"web" puts Stasis Webifier I second', rankOf('mid', 'web', /^Stasis Webifier I$/), 2, 0);
+  check('search', '"web" ranks every T1 above every Faction webifier',
+        rankOf('mid', 'web', /^X5 Enduring Stasis Webifier$/) < rankOf('mid', 'web', /^Dark Blood Stasis Webifier$/) ? 1 : 0, 1, 0);
+  // Grouping must not cost the searched-for module its lead: the Tracking Computer block wins on its
+  // one name-prefix hit even though most of its members score below every Tracking Disruptor.
+  check('search', '"tracking" runs the Computers before the Disruptors',
+        rankOf('mid', 'tracking', /^Tracking Computer I$/) < rankOf('mid', 'tracking', /^Tracking Disruptor II$/) ? 1 : 0, 1, 0);
 
   // Hull initialisms — the feature this section was added for. ONI is deliberately ambiguous in
   // game chat too, so BOTH hulls must come back rather than the search picking one.
@@ -2776,7 +2832,53 @@ Republic Fleet Command Mindlink`;
   // EMPTIES the search rather than merely reordering it. A short one must not, which is what stopped
   // "te" returning 939 modules with the Enhancer buried in them.
   const nMatch = (slot, q, re) => modsIn(slot).filter((m) => nameMatchesQuery(m.name, q) && re.test(m.name)).length;
-  check('search', '"burner" still finds Afterburners mid-word', rankOf('mid', 'burner', /^1MN Afterburner I$/), 1, 0);
+  check('search', '"burner" still finds Afterburners mid-word', rankOf('mid', 'burner', /^1MN Afterburner II$/), 1, 0);
+  // A Stasis Grappler is a different module (short range, sig-scaled) and must not answer "web",
+  // though pyfa's jargon table expands it to both. Its expansion outscored the literal hit, so the
+  // grapplers led a search for "web" — they are now excluded outright, not merely deranked.
+  check('search', '"web" returns no Stasis Grapplers', nMatch('mid', 'web', /Grappler/i), 0, 0);
+  check('search', '"webifier" returns no Stasis Grapplers', nMatch('mid', 'webifier', /Grappler/i), 0, 0);
+  // ...and the shorthands that mean the grappler still reach it, so this is a narrowing, not a loss.
+  check('search', '"sg" still finds a Stasis Grappler', nMatch('mid', 'sg', /Grappler/i) > 0 ? 1 : 0, 1, 0);
+
+  // ── OFF-MARKET MODULES ──────────────────────────────────────────────────────
+  // The browser tree is CCP's market tree, so a module CCP does not sell has no node to live under
+  // and was absent from the search corpus entirely — a Civilian Light Missile Launcher could only be
+  // got into a fit by pasting EFT. Asserted by PROPERTY, not by a hand-listed set, because the point
+  // is total coverage: every fittable non-abyssal module reachable, however the bundle is regenerated.
+  const allOffMarket = Object.values(OFF_MARKET_MODULES).flat();
+  check('search', 'off-market modules exist to backfill', allOffMarket.length > 0 ? 1 : 0, 1, 0);
+  // Exactly once, across every slot: a module both in the tree and backfilled would list twice.
+  check('search', 'no module is offered twice',
+        allOffMarket.filter((m) => modsIn('high').concat(modsIn('mid'), modsIn('low'), modsIn('rigs'))
+          .filter((x) => x.typeID === m.typeID).length !== 1).length, 0, 0);
+  // Abyssal base types stay OUT: a mutated module is reached by rolling a mutaplasmid onto its source
+  // module, and the bare base type has no rolled attributes to show.
+  check('search', 'no Abyssal base type is offered', allOffMarket.filter((m) => metaOf(m.typeID, m.meta) === 'Abyssal').length, 0, 0);
+  // Every one carries a real slot effect. guessSlotFromDogma DEFAULTS to "high", so a sweep that
+  // trusted it would rake every unfittable category-7 type into the high-slot list.
+  const SLOT_EFFECTS = [2663, 6306, 12, 13, 11];
+  check('search', 'every off-market module has a real slot effect',
+        allOffMarket.filter((m) => !SLOT_EFFECTS.some((e) => (TYPES[m.typeID]?.e ?? []).includes(e))).length, 0, 0);
+  // Coverage: nothing fittable, published and non-abyssal is left unreachable in either list.
+  const unreachable = Object.entries(TYPES).filter(([tidStr, t]) => {
+    const id = Number(tidStr);
+    if ((t.c ?? t.category) !== 7 || !t.n) return false;
+    if (!SLOT_EFFECTS.some((e) => (t.e ?? []).includes(e))) return false;
+    if (metaOf(id, null) === 'Abyssal') return false;
+    return !['high', 'mid', 'low', 'rigs'].some((s) => modsIn(s).some((m) => m.typeID === id));
+  });
+  check('search', 'every fittable ship module is reachable', unreachable.length, 0, 0);
+
+  // The reported gap, by name. Civilian gear is the visible half of it — only 4 of the 15 civilian
+  // modules are on the market, so 11 were missing and the Civilian Miner looked like the only one.
+  check('search', '"civilian" finds the Light Missile Launcher', rankOf('high', 'civilian', /^Civilian Light Missile Launcher$/) > 0 ? 1 : 0, 1, 0);
+  check('search', '"lml" finds the Civilian launcher', rankOf('high', 'lml', /^Civilian Light Missile Launcher$/) > 0 ? 1 : 0, 1, 0);
+  check('search', '"civilian" returns more than the Miner', nMatch('high', 'civilian', /^Civilian /), 9, 0);
+  // ...and the half nobody would have reported: navy Bastion modules, officer drops, the Integrated
+  // Sensor Array the Salvation baseline in section 5 is built on.
+  check('search', '"bastion" finds the navy variants', nMatch('high', 'bastion', /Navy Bastion|Fleet Bastion/), 4, 0);
+  check('search', 'the Integrated Sensor Array is reachable', rankOf('high', 'integrated sensor array', /^Integrated Sensor Array$/), 1, 0);
   check('search', '"cannon" still finds AutoCannons mid-word', nMatch('high', 'cannon', /AutoCannon/i) > 0 ? 1 : 0, 1, 0);
   check('search', '"te" no longer drags in mid-word noise', nMatch('low', 'te', /Setele|Co-Processor|Diagnostic/i), 0, 0);
   check('search', '"ac" no longer matches Tractor Beam', nMatch('high', 'ac', /Tractor Beam/i), 0, 0);
