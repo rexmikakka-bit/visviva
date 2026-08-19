@@ -419,6 +419,21 @@ def main():
             entry['s'] = 1
         race_faction[str(tid)] = entry
 
+    # ── alpha clone skill ceiling ───────────────────────────────────────────
+    # CCP's own table, so the preset tracks a skill-set change with a bundle regen. Alpha clones
+    # were race-locked when they launched in 2016; that ended in December 2017 and eve.db now
+    # carries exactly ONE clone whose racial frigate/cruiser/battlecruiser skills all sit at IV.
+    # If CCP ever splits them again, the assert below fails rather than silently emitting one
+    # race's ceiling for everybody.
+    clones = db.execute("SELECT alphaCloneID,alphaCloneName FROM alphaClones").fetchall()
+    assert len(clones) == 1, f"expected one alpha clone, found {len(clones)}: {clones}"
+    alpha_clone = {
+        'name': clones[0][1],
+        'skills': {str(tid): lvl for tid, lvl in db.execute(
+            "SELECT typeID,level FROM alphaCloneSkills WHERE alphaCloneID=? AND level>0",
+            (clones[0][0],))},
+    }
+
     # ── item flavour text (modules/charges/implants/drones/fighters/…) ──────
     # Iterate the TYPES we actually emit, not `fit_types`: `fit_types` requires published=1, and the
     # T3 destroyer tactical modes (Confessor/Svipul/Jackdaw/Hecate/Bomber "... Mode", 89 of them) are
@@ -440,6 +455,7 @@ def main():
           f"({sum(1 for t in ship_traits.values() if t.get('skills') or t.get('role')):,} carry trait bonuses)")
     print(f"descs:   {len(type_descs):,} item descriptions")
     print(f"faction: {len(race_faction):,} hulls with a race/faction")
+    print(f"alpha:   {len(alpha_clone['skills']):,} skills in the {alpha_clone['name']} ceiling")
     print(f"attrs:   +{attrs_added:,} attribute slots added to existing types")
     print(f"         {len(value_changes):,} value changes   |   +{len(new_attr_ids)} new attribute definitions")
     print(f"effects: {len(effect_changes):,} type effect-list changes   |   +{len(new_effect_ids)} new effects")
@@ -491,6 +507,7 @@ def main():
                       ('dogma-attrs.json', new_attrs),
                       ('ship-traits.json', ship_traits),
                       ('ship-factions.json', race_faction),
+                      ('alpha-clone.json', alpha_clone),
                       ('type-descriptions.json', type_descs)]:
         p = os.path.join(DATA, name)
         json.dump(obj, open(p, 'w'), separators=(',', ':'))

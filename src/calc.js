@@ -13,6 +13,7 @@
  */
 
 import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES } from './dogma-engine-init.js';
+import alphaCloneData from './data/alpha-clone.json' with { type: 'json' };
 // Attribute ID → name map (inverse of AID), for abyssal/mutaplasmid attribute resolution.
 export const ATTR_ID_TO_NAME = {};
 for (const [name, id] of Object.entries(AID)) ATTR_ID_TO_NAME[id] = name;
@@ -442,6 +443,22 @@ export const SKILL_BY_TYPEID = new Map(SKILL_CATALOG.map(e => [e.typeID, e]));
 // (`fit.setSkill(SKILL_CAMEL_TO_PYFA[k] ?? k, lvl)` would otherwise pass the camel key, which
 // matches no real skill name, and the all-V fallback would silently put it back to 5).
 for (const e of SKILL_CATALOG) if (!SKILL_CAMEL_TO_PYFA[e.key]) SKILL_CAMEL_TO_PYFA[e.key] = e.name;
+
+// The alpha clone's skill ceiling, from eve.db's own alphaCloneSkills table via build-bundle.py — so
+// it follows a CCP change with a bundle regen rather than needing to be re-transcribed. Alpha clones
+// were race-locked at launch in 2016 and have not been since December 2017: there is ONE ceiling, and
+// all four racial frigate/cruiser/battlecruiser lines sit at IV in it.
+// EVERY catalog skill is listed, with the untrained ones explicitly at 0 — calcFitStats trains any
+// skill it is not handed to V, so omitting them would hand an alpha a maxed character.
+export const ALPHA_SKILLS = (() => {
+  const out = {};
+  for (const e of SKILL_CATALOG) out[e.key] = 0;
+  for (const [tid, level] of Object.entries(alphaCloneData.skills ?? {})) {
+    const e = SKILL_BY_TYPEID.get(Number(tid));
+    if (e) out[e.key] = level;
+  }
+  return out;
+})();
 
 /** Direct skill requirements of one type, as [{typeID, level}]. */
 export function requiredSkillsFor(typeID) {

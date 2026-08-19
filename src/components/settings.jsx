@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
-import { SKILL_CATALOG } from "../calc.js";
+import { SKILL_CATALOG, ALPHA_SKILLS } from "../calc.js";
 import { ImplantLoadoutsManager } from "./implants.jsx";
 import { EsiSettingsPanel, EsiSkillAlignPanel } from "./esi-ui.jsx";
 
 // Skill groups are DERIVED from SKILL_CATALOG rather than hand-listed. The old hardcoded table
-// covered 28 skills; the catalog has 357 — every skill the engine reads PLUS every skill any
+// covered 28 skills; the catalog has 388 — every skill the engine reads PLUS every skill any
 // fittable item requires. Most were unreachable from the UI before, so you could not lower a
 // missile specialization below V, and nothing could tell you a rig needed Jury Rigging.
 // Deriving it means the list can never drift from the engine again.
@@ -30,31 +30,40 @@ const SKILL_GROUPS=(()=>{
     .sort((a,b)=>a.label.localeCompare(b.label));
 })();
 
+// Alpha is a LEVEL MAP, not a single level, so the presets are expressed as maps throughout and the
+// "lit" test is the same for all three. CCP's own ceiling: mostly III/IV, a few at V, and everything
+// it does not train explicitly at 0.
+const PRESETS=[
+  {id:"omega",label:"All V (Max)",col:C.accent,map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,5]))},
+  {id:"alpha",label:"Alpha",col:C.warning,map:ALPHA_SKILLS},
+  {id:"none", label:"Clear All", col:C.danger,map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,0]))},
+];
+
 function SkillsPanel({skills,setSkills}){
-  const setAll=lv=>setSkills(Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,lv])));
-  // Closed by default — 357 skills across 18 groups is far too much to scroll past otherwise.
+  // Closed by default — 388 skills across 18 groups is far too much to scroll past otherwise.
   const[open,setOpen]=useState({});
   const toggle=g=>setOpen(o=>({...o,[g]:!o[g]}));
   const setGroup=(grp,lv)=>setSkills(prev=>({...prev,...Object.fromEntries(grp.skills.map(s=>[s.key,lv]))}));
   const lvlOf=k=>skills?.[k]??0;
-  const allAt=lv=>SKILL_CATALOG.every(e=>lvlOf(e.key)===lv);
+  const matches=map=>SKILL_CATALOG.every(e=>lvlOf(e.key)===(map[e.key]??0));
   return(
     <div>
       <EsiSkillAlignPanel setSkills={setSkills}/>
       <div style={{display:"flex",gap:8,marginBottom:14}}>
         {/* Highlight reflects the ACTUAL state, not the last click: a preset is lit only while every
-            skill still sits at that level, so it goes dark again the moment you adjust one. "All V"
+            skill still matches it, so it goes dark again the moment you adjust one. "All V"
             used to be styled lit unconditionally, which made the other two look inert by comparison.
             "All IV" was dropped: it is not a state any real pilot is in, and next to a character
-            sync it is a worse answer to the same question. */}
-        {[[5,"All V (Max)",C.accent],[0,"Clear All",C.danger]].map(([lv,label,col])=>{
-          const active=allAt(lv);
-          return(<button key={lv} onClick={()=>setAll(lv)} aria-pressed={active}
-            style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
-                    background:active?`${col}22`:C.surfaceAlt,
-                    border:`1px solid ${active?col:C.border}`,
-                    color:active?col:C.textMid,
-                    boxShadow:active?`inset 0 0 0 1px ${col}55`:"none"}}>{label}</button>);
+            sync it is a worse answer to the same question. Alpha is the opposite case — it IS a real
+            character, and the only one you can describe without logging in. */}
+        {PRESETS.map(p=>{
+          const active=matches(p.map);
+          return(<button key={p.id} onClick={()=>setSkills({...p.map})} aria-pressed={active}
+            style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
+                    background:active?`${p.col}22`:C.surfaceAlt,
+                    border:`1px solid ${active?p.col:C.border}`,
+                    color:active?p.col:C.textMid,
+                    boxShadow:active?`inset 0 0 0 1px ${p.col}55`:"none"}}>{p.label}</button>);
         })}
       </div>
       {SKILL_GROUPS.map(grp=>{
@@ -98,7 +107,7 @@ function SkillsPanel({skills,setSkills}){
         </div>);
       })}
       <div style={{marginTop:10,padding:"10px 12px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,fontSize:10,color:C.textMute}}>
-        {SKILL_GROUPS.reduce((n,g)=>n+g.skills.length,0)} skills across {SKILL_GROUPS.length} groups — every skill the engine reads plus every skill a fittable item requires. Unset skills count as level V.
+        {SKILL_GROUPS.reduce((n,g)=>n+g.skills.length,0)} skills across {SKILL_GROUPS.length} groups — every skill the engine reads plus every skill a fittable item requires. Unset skills count as level V. Alpha is CCP's own clone ceiling, from the game data.
       </div>
     </div>
   );

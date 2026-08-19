@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -931,9 +931,9 @@ function check(group, label, actual, expected, tol = 0.005) {
 //       matched. An untrained Caldari Cruiser zeroes the Caracal's shipBonusCC — whose default is
 //       +5 — so the launcher picked up a 5% rate-of-fire PENALTY out of nowhere.
 //
-// The all-zero numbers are eos's, via `scripts/oracle/_zero.py` (a Character at level 0). Before
-// (b) was fixed the Caracal read 17.63 weapon DPS against eos's 16.75 with volley matching exactly
-// — the classic "the divisor is wrong" signature.
+// Every number here is eos's, via `scripts/oracle/oracle_untrained.py`. Before (b) was fixed the
+// Caracal read 17.63 weapon DPS against eos's 16.75 with volley matching exactly — the classic
+// "the divisor is wrong" signature.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nUNTRAINED SKILLS');
@@ -975,6 +975,30 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('untrained', 'zero-skill plated mass (eos)', pz.mass, 15660000, 1e-5);
   check('untrained', 'zero-skill plated armor HP (eos)', pz.armorHP, 6000, 1e-5);
   check('untrained', 'zero-skill plated EHP (eos)', pz.totalEHP, 13323.268713901754, 1e-5);
+
+  // ── the alpha clone preset ────────────────────────────────────────────────
+  // ALPHA_SKILLS comes from eve.db's own alphaCloneSkills table (build-bundle.py -> alpha-clone.json),
+  // and eos applies that same table itself (Skill.level mins against character.alphaClone), so this
+  // is a like-for-like comparison of CCP's ceiling rather than of a transcription.
+  const lv = Object.values(ALPHA_SKILLS);
+  check('alpha', 'ceiling covers the whole catalog', lv.length, SKILL_CATALOG.length, 0);
+  check('alpha', 'no level out of range', lv.filter(v => !Number.isInteger(v) || v < 0 || v > 5).length, 0, 0);
+  check('alpha', 'ceiling is non-trivial', lv.filter(v => v > 0).length > 100 ? 1 : 0, 1, 0);
+  // Alpha clones were race-locked when they launched in 2016 and have not been since December 2017.
+  // eve.db carries ONE clone, so the four racial lines must read identically; if CCP ever re-splits
+  // them, a single ceiling stops being a truthful preset and this is what says so.
+  const racialCruisers = ['amarrCruiser', 'caldariCruiser', 'gallenteCruiser', 'minmatarCruiser'];
+  check('alpha', 'racial cruisers all at IV',
+        new Set(racialCruisers.map(k => ALPHA_SKILLS[k])).size === 1 ? ALPHA_SKILLS.caldariCruiser : -1, 4, 0);
+
+  const ah = calcFitStats(caracal, hmlFit, [], ALPHA_SKILLS, {});
+  check('alpha', 'alpha weapon DPS (eos)', ah.weaponDps?.total, 37.263845234257474, 1e-5);
+  check('alpha', 'alpha shield HP (eos)', ah.shieldHP, 2040, 1e-5);
+  check('alpha', 'alpha EHP (eos)', ah.totalEHP, 7647.955624177961, 1e-5);
+  const ap = calcFitStats(caracal, plateFit, [], ALPHA_SKILLS, {});
+  check('alpha', 'alpha plated mass (eos)', ap.mass, 15472500, 1e-5);
+  check('alpha', 'alpha plated armor HP (eos)', ap.armorHP, 7500, 1e-5);
+  check('alpha', 'alpha plated EHP (eos)', ap.totalEHP, 16536.844513066848, 1e-5);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
