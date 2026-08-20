@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
-import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -1307,7 +1307,6 @@ function MutaplasmidEditor({mod,onUpdateMod}){
     </div>
     {ranges.map(r=>{
       const cur=mod.mutations?.[r.name]??r.base;
-      const frac=r.max>r.min?(cur-r.min)/(r.max-r.min):0.5;
       // Delta vs the unmutated base. For a percentage-displayed attribute the raw ratio has the
       // wrong SIGN (a lower speedMultiplier is a better roll), so compare in display space, where
       // "up is better" holds for everything.
@@ -1326,6 +1325,17 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // double-invert it back to wrong.
       const higherIsBetter=inverted?true:attrHighIsGood(r.attrID);
       const deltaColor=Math.abs(pct)<0.1?C.textMute:((higherIsBetter?pct>0:pct<0)?C.rig:C.warning);
+      // Where the base sits along the TRACK. A mutaplasmid's range is rarely symmetric about the
+      // base (a Decayed rolls -30%/+20%), so this is not the midpoint, and the "base" label below
+      // the slider — which is centred — does not indicate it.
+      //
+      // On 138 ranges it is not on the track at all: a mutaplasmid that only makes an attribute
+      // WORSE starts its range past the base (Unstable rolls capacitorNeed 1.4x-1.8x, so base 5
+      // sits left of a 7-9 slider). There is no base to return to, so no tick and no detent —
+      // snapToBase already declines, since the gap exceeds the whole range.
+      const baseOnSlider=inverted?(r.min+r.max-r.base):r.base;
+      const sliderFrac=r.max>r.min?(baseOnSlider-r.min)/(r.max-r.min):0.5;
+      const baseOnTrack=sliderFrac>=0&&sliderFrac<=1;
       return(<div key={r.name} style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
           <span style={{fontSize:11,fontWeight:600,color:C.text}}>{mutaLabel(r.name)}</span>
@@ -1344,10 +1354,23 @@ function MutaplasmidEditor({mod,onUpdateMod}){
             So the slider is mirrored for those attributes: the knob position is (min + max - raw),
             and the end labels swap with it. Only the DISPLAY is mirrored; `cur` and everything
             stored on the fit stay in raw space, which is what the engine reads. */}
-        <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
-               value={inverted?(r.min+r.max-cur):cur}
-               onChange={e=>{const v=Number(e.target.value);setVal(r.name,inverted?(r.min+r.max-v):v);}}
-               style={{width:"100%",accentColor:C.accent}}/>
+        {/* The tick marks the detent. Its position is the knob's, so it is measured in the same
+            (possibly mirrored) space the slider is drawn in, and the ±7px term corrects for the
+            thumb's own width — the knob's centre travels between half a thumb from each end, so a
+            plain percentage drifts off the tick as the base approaches either extreme. */}
+        <div style={{position:"relative"}}>
+          {baseOnTrack&&<div style={{position:"absolute",left:`calc(${(sliderFrac*100).toFixed(3)}% + ${((0.5-sliderFrac)*14).toFixed(1)}px)`,
+                       top:2,bottom:2,width:2,marginLeft:-1,borderRadius:1,background:C.border,pointerEvents:"none"}}/>}
+          <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
+                 value={inverted?(r.min+r.max-cur):cur}
+                 onChange={e=>{
+                   const v=Number(e.target.value);
+                   const raw=snapToBase(inverted?(r.min+r.max-v):v,r.base,r.min,r.max);
+                   if(raw===r.base&&cur!==r.base) haptic("light");   // only on ENTERING the detent
+                   setVal(r.name,raw);
+                 }}
+                 style={{width:"100%",accentColor:C.accent,position:"relative"}}/>
+        </div>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
           <span>{fmtMutaVal(r.name,inverted?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,inverted?r.min:r.max)}</span>
         </div>

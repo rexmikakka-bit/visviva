@@ -31,7 +31,7 @@ import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2239,6 +2239,57 @@ Republic Fleet Command Mindlink`;
   // An attribute the bundle has never heard of must not crash the readout, and defaults to the
   // majority case (bigger is better) — which is what the editor assumed before the flag was used.
   check('attrdir', 'unknown attribute defaults to higher-is-better', attrHighIsGood(999999) ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13m. BASE DETENT — the mutaplasmid editor's sliders snap onto the unrolled base
+//      The slider steps in 400ths, so landing exactly on the base by dragging is luck, and Revert
+//      is all-or-nothing; the detent is how ONE attribute goes back. The two things worth pinning
+//      are the ones real mutaplasmid data can break on an eve.db upgrade: a detent so wide it
+//      swallows an endpoint (that end of the slider becomes undraggable), and the 138 ranges whose
+//      base is not on the slider at all.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMUTAPLASMID BASE DETENT');
+  check('detent', 'the base itself is unchanged', snapToBase(10, 10, 5, 15), 10, 0);
+  check('detent', 'just inside the zone snaps to base', snapToBase(10.19, 10, 5, 15), 10, 0);
+  check('detent', 'just outside the zone is left alone', snapToBase(10.21, 10, 5, 15), 10.21, 1e-9);
+  check('detent', 'below the base snaps up to it', snapToBase(9.81, 10, 5, 15), 10, 0);
+  // A mutaplasmid that can only make an attribute worse leaves the base off the track entirely.
+  check('detent', 'a base off the track never snaps', snapToBase(7, 5, 7, 9), 7, 0);
+  // Degenerate range: no span, so nothing to measure a proportion against — must not snap or NaN.
+  check('detent', 'a zero-width range never snaps', snapToBase(4, 4.5, 4, 4), 4, 0);
+
+  // Property sweep over every (mutaplasmid, base type, attribute) the game actually ships.
+  let offTrack = 0, endSwallowed = 0, stepEscapes = 0, seen = 0;
+  const done = new Set();
+  for (const [baseTid, mids] of Object.entries(MUTA_BY_TYPE))
+    for (const mid of mids)
+      for (const r of mutaAttrRanges(mid, baseTid)) {
+        const k = `${mid}:${baseTid}:${r.name}`;
+        if (done.has(k)) continue;
+        done.add(k);
+        const span = r.max - r.min;
+        if (!(span > 0)) continue;
+        seen++;
+        if (r.base < r.min || r.base > r.max) {
+          offTrack++;
+          // Off the track, the detent must be inert — otherwise a drag jumps to a value the
+          // mutaplasmid cannot produce.
+          if (snapToBase(r.min, r.base, r.min, r.max) !== r.min) endSwallowed++;
+          continue;
+        }
+        // An endpoint must stay draggable. `base === min` (633 ranges — the mutaplasmid only
+        // improves the attribute) is fine: the detent and the endpoint are the same value.
+        for (const end of [r.min, r.max])
+          if (end !== r.base && snapToBase(end, r.base, r.min, r.max) === r.base) endSwallowed++;
+        // ...and the detent must be wider than the slider's own step, or it can be stepped over.
+        if (snapToBase(r.base + span / 400, r.base, r.min, r.max) !== r.base) stepEscapes++;
+      }
+  check('detent', 'every mutaplasmid range was swept', seen > 20000 ? 1 : 0, 1, 0);
+  check('detent', 'no slider endpoint is swallowed', endSwallowed, 0, 0);
+  check('detent', 'one step off base always snaps back', stepEscapes, 0, 0);
+  check('detent', 'ranges with the base off the track', offTrack, 138, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
