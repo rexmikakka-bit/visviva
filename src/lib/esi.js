@@ -27,6 +27,7 @@ const SSO_TOKEN_URL = 'https://login.eveonline.com/v2/oauth/token';
 const CHARS_KEY = 'axis_esi_chars';
 const ACTIVE_KEY = 'axis_esi_active';
 const PKCE_KEY = 'axis_esi_pkce_pending';
+const SKILLS_KEY = 'axis_esi_skills';
 
 // ─── Storage ────────────────────────────────────────────────────────────────────
 // Fires whenever linked characters or the active character change, so every mounted ESI UI
@@ -66,8 +67,26 @@ export function setActiveCharacterId(characterId) {
 export function removeCharacter(characterId) {
   const list = loadChars().filter(c => c.characterId !== characterId);
   saveChars(list);
+  storeCharacterSkills(characterId, null);
   if (getActiveCharacterId() === characterId) setActiveCharacterId(list[0]?.characterId ?? null);
   else notifyChange();
+}
+
+// ─── Per-character skill cache ──────────────────────────────────────────────────
+// A fit can name the character that flies it (`slots.pilot` = "esi:<id>", see lib/pilot.js), and
+// that has to resolve to a skill map WITHOUT a network call — a fit is recalculated on every
+// keystroke, and the phone may be offline. So a sync writes the full map here, keyed by character,
+// alongside the app-wide sheet it also sets. A character with no entry falls back rather than
+// guessing (resolvePilotSkills); nothing here is authoritative until the user has synced once.
+export function getAllCharacterSkills() {
+  try { return JSON.parse(localStorage.getItem(SKILLS_KEY)) ?? {}; } catch { return {}; }
+}
+export function storeCharacterSkills(characterId, fullSkillMap) {
+  const all = getAllCharacterSkills();
+  if (fullSkillMap) all[String(characterId)] = fullSkillMap;
+  else delete all[String(characterId)];
+  try { localStorage.setItem(SKILLS_KEY, JSON.stringify(all)); } catch {}
+  notifyChange();
 }
 
 // ─── PKCE ───────────────────────────────────────────────────────────────────────
