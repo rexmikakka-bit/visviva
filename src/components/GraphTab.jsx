@@ -721,11 +721,12 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
 function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
-  // Your own ewar silently changes the numbers above, so it has to say so somewhere. Webs, grapplers
-  // and painters just scale the sig/speed below; the scrambler is the one that needs explaining,
-  // because whether it does anything at all depends on the target being a preset with its MWD on.
-  const nWeb=(ownProj?.webs||[]).length, nTP=(ownProj?.painters||[]).length, nScram=(ownProj?.scrams||[]).length;
-  const slowPaint=[nWeb&&`${nWeb} web${nWeb>1?"s":""}/grappler${nWeb>1?"s":""}`,nTP&&`${nTP} painter${nTP>1?"s":""}`].filter(Boolean).join(" and ");
+  // Webs, grapplers and painters need no note: they just scale the sig and speed, which is visible
+  // in the fields below. The scrambler is the one case where a module you have fitted is silently
+  // NOT applied, and that is only ever true on a hand-typed target — hence both the gate and the
+  // fact that this is the only thing the strip says.
+  const customTarget=TARGET_PROFILES[targetProfile]==null;
+  const nScram=customTarget?(ownProj?.scrams||[]).length:0;
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
   const applyTarget=(key,mwd)=>{
     const t=profileTarget(key,mwd); if(!t) return;
@@ -738,13 +739,11 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   // to apply, so the flag is just remembered for the next profile picked.
   const toggleMwd=()=>{const next=!targetMwd;setTargetMwd(next);applyTarget(targetProfile,next);};
   const mwdApplies=TARGET_PROFILES[targetProfile]?.mwdSig!=null;
-  // Four states, and the last is the honest admission: pyfa drags a whole target FIT onto the graph
-  // and can just switch its prop mod off, whereas a hand-typed 200 m could be a hull that size or a
-  // 40 m frigate blooming under an MWD, and nothing here can tell which.
-  const scramNote = !nScram ? null
-    : !targetMwd ? "no effect here — the target isn't running an MWD"
-    : !mwdApplies ? "not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom"
-    : `cuts the MWD inside ${Math.round(Math.max(...ownProj.scrams.map(s=>s.optimal||0))/100)/10} km`;
+  // The honest admission, and the only state left now that the strip is custom-target-only: pyfa
+  // drags a whole target FIT onto the graph and can just switch its prop mod off, whereas a
+  // hand-typed 200 m could be a hull that size or a 40 m frigate blooming under an MWD, and nothing
+  // here can tell which — so the scrambler has nothing to cut.
+  const scramNote = nScram ? "not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom" : null;
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
   const setSpeed=(v)=>{const n=Math.max(0,Number(v)||0);setTargetVel(n);if(n>0)setTargetVelMax(n);setTargetProfile("custom");};
   // The scrub's numeric path into the same two writes typing does. It cannot produce the empty string
@@ -795,10 +794,8 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         <span style={{fontSize:10,fontWeight:400,color:C.textMute}}> · set in Stats › Firepower</span>
       </span>
     </div>}
-    {(slowPaint||scramNote)&&<div style={{padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
-      <div style={{fontSize:10,color:C.textMute,marginBottom:slowPaint&&scramNote?3:0}}>Your ewar</div>
-      {slowPaint&&<div style={{fontSize:11,color:C.textMid}}>{slowPaint} applied to the target, scaled by range.</div>}
-      {scramNote&&<div style={{fontSize:11,color:C.textMid}}>Scrambler: <span style={{color:C.textMute}}>{scramNote}</span></div>}
+    {scramNote&&<div style={{padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
+      <div style={{fontSize:11,color:C.textMid}}>Scrambler: <span style={{color:C.textMute}}>{scramNote}</span></div>
     </div>}
     {/* Editable sig + speed */}
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
