@@ -336,29 +336,36 @@ function directionOf(k, v, b, typeID) {
  * it (a base-value override, see Fit.addModule). An abyssal module keeps its BASE typeID, so without
  * this the deltas are measured against the unrolled item — which is the one number the user already
  * knows is wrong. The rolled row is still `isBaseline`, and its own `stats` come out as zero deltas.
+ *
+ * When there IS a roll, the unrolled item is emitted a SECOND time as an `isStockBase` row. It shares
+ * its typeID with the baseline but is a genuinely different module to fly — a bad roll is often worse
+ * than the stock item it came from, and reverting to stock is then the swap you want. Leaving it out
+ * made the one variant guaranteed to be relevant the only one the list could not offer. Callers must
+ * therefore key rows on typeID PLUS this flag; typeID alone is no longer unique.
  */
 export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutations = null } = {}) {
   const rolled = baselineMutations && Object.keys(baselineMutations).length
     ? { ...attrsOf(baselineTypeID), ...baselineMutations } : null;
   const keys = differingAttributes(typeIDs, { limit, extraAttrs: rolled });
   const base = rolled ?? attrsOf(baselineTypeID);
-  return [...new Set(typeIDs.filter(Boolean))].map(typeID => {
+  const row = (typeID, a, flags) => ({ typeID, ...flags, stats: keys.map(k => {
+    const v = typeof a[k] === 'number' ? a[k] : null;
+    const b = typeof base[k] === 'number' ? base[k] : null;
+    const delta = (v != null && b != null) ? v - b : null;
+    // Percent is undefined against a zero baseline — an attribute the fitted module simply does
+    // not have. The absolute delta still reads fine there, so leave pct null rather than Infinity.
+    const pct = (delta != null && b) ? (delta / Math.abs(b)) * 100 : null;
+    const better = (delta == null || delta === 0) ? null : directionOf(k, v, b, typeID);
+    return { key: k, value: v, delta, pct, better };
+  }) });
+  const rows = [...new Set(typeIDs.filter(Boolean))].map(typeID => {
     const isBaseline = String(typeID) === String(baselineTypeID);
     // The baseline row must read back its OWN rolled values, or the fitted module appears to differ
     // from itself by exactly the roll.
-    const a = (isBaseline && rolled) ? rolled : attrsOf(typeID);
-    const stats = keys.map(k => {
-      const v = typeof a[k] === 'number' ? a[k] : null;
-      const b = typeof base[k] === 'number' ? base[k] : null;
-      const delta = (v != null && b != null) ? v - b : null;
-      // Percent is undefined against a zero baseline — an attribute the fitted module simply does
-      // not have. The absolute delta still reads fine there, so leave pct null rather than Infinity.
-      const pct = (delta != null && b) ? (delta / Math.abs(b)) * 100 : null;
-      const better = (delta == null || delta === 0) ? null : directionOf(k, v, b, typeID);
-      return { key: k, value: v, delta, pct, better };
-    });
-    return { typeID, isBaseline, stats };
+    return row(typeID, (isBaseline && rolled) ? rolled : attrsOf(typeID), { isBaseline });
   });
+  if (rolled) rows.push(row(baselineTypeID, attrsOf(baselineTypeID), { isBaseline: false, isStockBase: true }));
+  return rows;
 }
 
 /**

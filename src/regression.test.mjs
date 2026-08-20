@@ -1715,6 +1715,20 @@ Agency 'Overclocker' SB7 Dose III
         rolled.find(r => r.isBaseline).stats.every(s => s.delta === 0) ? 1 : 0, 1, 0);
   check('cmp', 'the rolled row reports its rolled value',
         rolled.find(r => r.isBaseline).stats.find(s => s.key === 'maxRange').value, 14200, 1e-9);
+  // The UNROLLED item is the one swap guaranteed to be relevant — a bad roll is often worse than the
+  // module it was made from — and it was the only variant the list could not offer, because it
+  // shares its typeID with the baseline and was deduped away. It now comes back as a second row.
+  const stock = rolled.filter(r => r.isStockBase);
+  check('cmp', 'the unmutated base item gets its own row', stock.length, 1, 0);
+  check('cmp', 'the stock row is not the baseline', stock[0].isBaseline ? 1 : 0, 0, 0);
+  check('cmp', 'the stock row keeps the base typeID', stock[0].typeID === tid('Stasis Webifier II') ? 1 : 0, 1, 0);
+  // Stock SW II is 10 km / -60 against the roll's 14.2 km / -63.2, so reverting costs range AND
+  // strength — the deltas are what tell you the roll was worth keeping.
+  check('cmp', 'stock range delta vs the roll', stock[0].stats.find(s => s.key === 'maxRange').delta, -4200, 1e-9);
+  check('cmp', 'stock web strength delta vs the roll', stock[0].stats.find(s => s.key === 'speedFactor').delta, 3.2, 1e-6);
+  check('cmp', 'reverting to a weaker web reads worse', stock[0].stats.find(s => s.key === 'speedFactor').better ? 1 : 0, 0, 0);
+  // Only ever with a roll: an ordinary comparison must not sprout a duplicate row.
+  check('cmp', 'no roll means no stock row', compareRows(webVars, tid('Stasis Webifier II')).some(r => r.isStockBase) ? 1 : 0, 0, 0);
   // A rolled attribute the whole family AGREES on (every webifier cycles in 5000 ms) is still a
   // real difference now, so it has to reach the displayed list — which it only can if the mutated
   // baseline scores as a candidate in differingAttributes.

@@ -1282,16 +1282,31 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         })()}/>
         {isOpen("cap")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
-          <div style={{padding:"7px 8px",textAlign:"center",borderRight:`1px solid ${C.border}`}}><div style={{fontSize:12,fontWeight:700,color:C.warning}}>{fmtN(cs.capCapacity??0)} GJ</div><div style={{fontSize:9,color:C.textMute}}>Capacity</div></div>
+          {/* Tap to unround, same as the Targeting & Misc cells: fmtN abbreviates a capital's
+              capacitor to "78.8k GJ", and those hidden digits are what a cap-stability margin turns
+              on. Inert — and offers no pointer — when the abbreviation is already the whole number. */}
+          {(()=>{
+            const val=`${fmtN(cs.capCapacity??0)} GJ`;
+            const exact=`${(cs.capCapacity??0).toLocaleString(undefined,{maximumFractionDigits:2})} GJ`;
+            const can=exact!==val, on=can&&exactCells.has("capCapacity");
+            return(<div onClick={can?()=>toggleExact("capCapacity"):undefined} title={can?exact:undefined}
+                        style={{padding:"7px 8px",textAlign:"center",borderRight:`1px solid ${C.border}`,cursor:can?"pointer":"default"}}>
+              <div style={{fontSize:12,fontWeight:700,color:C.warning,fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</div>
+              <div style={{fontSize:9,color:C.textMute}}>Capacity</div>
+            </div>);
+          })()}
+          {/* In/Out drops to 11px so both numbers fit side by side, but its LINE HEIGHT is left
+              inherited: an override there shortens this cell's line box and lifts the value and its
+              label clear of the Capacity/Peak regen columns either side. */}
           <div onClick={()=>setCapDeltaMode(m=>m==="net"?"inout":"net")} style={{padding:"7px 8px",textAlign:"center",borderRight:`1px solid ${C.border}`,cursor:"pointer"}}>
             {capDeltaMode==="net"
-              ?<><div style={{fontSize:12,fontWeight:700,color:cs.capDelta>=0?C.success:C.danger}}>{(cs.capDelta??0)>=0?"+":""}{fmtF(cs.capDelta??0)}</div><div style={{fontSize:9,color:C.textMute,borderBottom:`1px dotted ${C.textMute}`,display:"inline-block",lineHeight:1.3}}>Net GJ/s</div></>
-              :<><div style={{fontSize:11,fontWeight:700,lineHeight:1.35}}><span style={{color:C.success}}>+{fmtF(capInGJs)}</span> <span style={{color:C.danger}}>-{fmtF(cs.capDrainPS??0)}</span></div><div style={{fontSize:9,color:C.textMute,borderBottom:`1px dotted ${C.textMute}`,display:"inline-block",lineHeight:1.3}}>In / Out GJ/s</div></>}
+              ?<><div style={{fontSize:12,fontWeight:700,color:cs.capDelta>=0?C.success:C.danger}}>{(cs.capDelta??0)>=0?"+":""}{fmtF(cs.capDelta??0)}</div><div style={{fontSize:9,color:C.textMute}}>Net GJ/s</div></>
+              :<><div style={{fontSize:11,fontWeight:700}}><span style={{color:C.success}}>+{fmtF(capInGJs)}</span> <span style={{color:C.danger}}>-{fmtF(cs.capDrainPS??0)}</span></div><div style={{fontSize:9,color:C.textMute}}>In / Out GJ/s</div></>}
           </div>
           <div onClick={()=>setPeakMode(m=>m==="regen"?"neut":"regen")} style={{padding:"7px 8px",textAlign:"center",cursor:"pointer"}}>
             {peakMode==="regen"
-              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute,borderBottom:`1px dotted ${C.textMute}`,display:"inline-block",lineHeight:1.3}}>Peak regen</div></>
-              :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute,borderBottom:`1px dotted ${C.textMute}`,display:"inline-block",lineHeight:1.3}}>Neut resist</div></>}
+              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute}}>Peak regen</div></>
+              :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Neut resist</div></>}
           </div>
         </div>
         <Row label="Recharge time" value={`${((cs.capRechargeMs??0)/1000).toFixed(0)} s`} last/>

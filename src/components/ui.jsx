@@ -1010,7 +1010,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:'6px 0 9px'}}>
-        <span style={{fontSize:10,color:C.textMute}}>{vars.length} variants · vs fitted{abyssal&&' roll'}</span>
+        <span style={{fontSize:10,color:C.textMute}}>{rows.length} variants · vs fitted{abyssal&&' roll'}</span>
         <div style={{display:"flex",gap:5}}><Sort k="price" label="Price"/><Sort k="meta" label="Meta Level"/></div>
       </div>
       {rows.map(r => {
@@ -1020,7 +1020,8 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
         const price = (abyssal&&r.isBaseline)?null:prices?.get(Number(r.typeID));
         const dPrice = (price!=null&&basePrice!=null)?price-basePrice:null;
         return (
-          <div key={r.typeID} onClick={()=>{if(!readOnly&&!r.isBaseline)onSwap(v);}}
+          // The stock row shares a typeID with the fitted abyssal one, so the flag has to be in the key.
+          <div key={`${r.typeID}${r.isStockBase?':stock':''}`} onClick={()=>{if(!readOnly&&!r.isBaseline)onSwap(v);}}
             style={{padding:'9px 4px',borderBottom:`1px solid ${C.border}`,
                     cursor:(readOnly||r.isBaseline)?'default':'pointer',
                     background:r.isBaseline?C.accentLight:'transparent'}}>
@@ -1029,6 +1030,8 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,color:r.isBaseline?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                   {v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>FITTED</span>}
+                  {/* Same name as the row above it, so without this the two read as a duplicate. */}
+                  {r.isStockBase&&<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>UNMUTATED</span>}
                 </div>
                 {/* Price and its delta lead, because that is the axis this view exists to serve. */}
                 <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
@@ -1055,17 +1058,15 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
             {!r.isBaseline&&r.stats.some(hasDelta)&&(
               <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,marginLeft:35,fontSize:10}}>
                 {r.stats.filter(hasDelta).map(st=>{
-                  // Rate of fire is stored as a cycle-time MULTIPLIER, so its raw delta is
-                  // meaningless — the difference has to be taken in display space, where the
-                  // attribute is already expressed as a percentage of rate of fire.
-                  const rate=MUTA_RATE_PCT.has(st.key);
+                  // The delta is taken in DISPLAY space, not raw, so that the arrow always describes
+                  // the number printed beside it (DeltaMark's contract). It matters wherever the two
+                  // spaces disagree about direction: rate of fire is stored as a cycle-time
+                  // MULTIPLIER, and a resist bonus is stored negative, so in both cases the raw
+                  // difference points the opposite way from what is shown. For every other attribute
+                  // the transform is the identity and this is just `st.delta`.
                   const val=fmtMutaVal(st.key,st.value);
-                  const dRaw=rate
-                    ? mutaToDisplay(st.key,st.value)-mutaToDisplay(st.key,st.value-st.delta)
-                    : st.delta;
-                  const dTxt=rate
-                    ? `${Math.abs(dRaw).toFixed(2)} %`
-                    : fmtMutaVal(st.key,Math.abs(st.delta));
+                  const dRaw=mutaToDisplay(st.key,st.value)-mutaToDisplay(st.key,st.value-st.delta);
+                  const dTxt=fmtMutaDisplay(st.key,Math.abs(dRaw));
                   return(
                   <span key={st.key} style={{color:C.textMid}}>
                     {mutaLabel(st.key)} <span style={{fontWeight:700,color:C.text}}>{val}</span>
@@ -1167,7 +1168,7 @@ const PERCENT_ATTRS=new Set(["aoeCloudSizeBonus","armorDamageAmountBonus","track
   "capacitorCapacityBonus","shieldBoostMultiplier","shieldCapacityBonus","maxVelocityBonus",
   "armorHpBonus","signatureRadiusBonus","falloffBonus","maxRangeBonus","durationBonus"]);
 const mutaUnit=(name)=>{
-  if(MUTA_RATE_PCT.has(name)) return {scale:1,unit:"%",dp:2};
+  if(MUTA_RATE_PCT.has(name)||RESIST_BONUS_RE.test(name)) return {scale:1,unit:"%",dp:2};
   // A "chance" is stored as a 0..1 fraction; 0.2000 tells you nothing at a glance, 20% does.
   if(/chance/i.test(name)) return {scale:0.01,unit:"%",dp:0};
   // Booster bonuses and penalties are all expressed as PERCENTAGES. Listed rather than matched on a
@@ -1185,8 +1186,20 @@ const mutaUnit=(name)=>{
 // Shown — and edited — as that percentage instead. The mapping is monotonically DECREASING, so a
 // smaller raw value is a bigger percentage and the min/max ends of the range swap when displayed.
 const MUTA_RATE_PCT=new Set(["speedMultiplier"]);
-const mutaToDisplay=(name,v)=>MUTA_RATE_PCT.has(name)?(1/v-1)*100:v;
-const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):d;
+
+// A resist module stores its bonus NEGATIVE (a Multispectrum Energized Membrane is
+// emDamageResistanceBonus -20), because dogma multiplies it into a resonance — the fraction of
+// damage that gets THROUGH. Nobody thinks of it that way: a better membrane gives you MORE resist.
+// Shown as the positive resist percentage so the printed number rises with the ship's resists, which
+// is what makes DeltaMark's arrow point up on a better variant without special-casing the arrow.
+// Safe as a blanket rule: every fittable module in the bundle carries these negative, and the only
+// positive occurrences are environment Effect Beacons, which never reach these formatters.
+const RESIST_BONUS_RE=/DamageResistanceBonus$/;
+const mutaToDisplay=(name,v)=>MUTA_RATE_PCT.has(name)?(1/v-1)*100:RESIST_BONUS_RE.test(name)?-v:v;
+const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):RESIST_BONUS_RE.test(name)?-d:d;
+// Does the display mapping DECREASE as the raw value rises? Both transforms above are monotonic, so
+// probing two points settles it and there is no second list to keep in step with them.
+const mutaDisplayInverted=(name)=>mutaToDisplay(name,2)<mutaToDisplay(name,1);
 
 // Plain (no thousands separators) rendering in display units — what goes INTO the text box, so it
 // stays parseable when the user edits it.
@@ -1194,13 +1207,17 @@ const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):d;
 // reads "20", not "20.00". The decimals are still produced first, so a value that genuinely has
 // them (1.25, 11.73) keeps every digit it needs.
 const trimZeros=(t)=>t.includes('.')?t.replace(/\.?0+$/,''):t;
-const mutaValStr=(name,v)=>{
-  const u=mutaUnit(name), d=mutaToDisplay(name,v);
+// The display-space half is separate so a DIFFERENCE between two display values can be formatted the
+// same way a value is, without a raw number to convert that would not survive the round trip.
+const mutaDisplayStr=(name,d)=>{
+  const u=mutaUnit(name);
   if(u.dp!=null) return trimZeros((d/u.scale).toFixed(u.dp));
   const a=Math.abs(d); return trimZeros(a>=100?d.toFixed(1):a>=1?d.toFixed(2):d.toFixed(4));
 };
-const fmtMutaVal=(name,v)=>{ if(v==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(v).toLocaleString()} kg`; // No space before a percent sign — "20%", not "20 %". Every other unit keeps its space ("17 km").
-  return u.unit?`${mutaValStr(name,v)}${u.unit==="%"?"":" "}${u.unit}`:mutaValStr(name,v); };
+const mutaValStr=(name,v)=>mutaDisplayStr(name,mutaToDisplay(name,v));
+const fmtMutaDisplay=(name,d)=>{ if(d==null) return "—"; const u=mutaUnit(name); if(u.unit==="kg") return `${Math.round(d).toLocaleString()} kg`; // No space before a percent sign — "20%", not "20 %". Every other unit keeps its space ("17 km").
+  return u.unit?`${mutaDisplayStr(name,d)}${u.unit==="%"?"":" "}${u.unit}`:mutaDisplayStr(name,d); };
+const fmtMutaVal=(name,v)=>v==null?"—":fmtMutaDisplay(name,mutaToDisplay(name,v));
 
 // Typed entry for a mutated attribute, alongside the slider. Commits on blur/Enter rather than per
 // keystroke so a half-typed "1." or "-" doesn't churn the fit through a recalculation.
@@ -1329,7 +1346,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // Delta vs the unmutated base. For a percentage-displayed attribute the raw ratio has the
       // wrong SIGN (a lower speedMultiplier is a better roll), so compare in display space, where
       // "up is better" holds for everything.
-      const inverted=MUTA_RATE_PCT.has(r.name);   // lower raw = better roll; see the slider below
+      const inverted=mutaDisplayInverted(r.name);   // lower raw = better roll; see the slider below
       const pct=inverted
         ? mutaToDisplay(r.name,cur)-mutaToDisplay(r.name,r.base)
         : (cur/r.base-1)*100;
@@ -1579,7 +1596,13 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
             const vol=cTid?(TYPES[cTid]?.attrs?.volume??1):1;
             nc=cap>0&&vol>0?Math.floor(cap/vol):undefined;
           }
-          onUpdateMod({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc});onClose();}} />)}
+          // The roll is dropped, always. `updateMod` MERGES this into the existing module, so anything
+          // left out here survives — and a mutaplasmid that survives lands on a module it was never
+          // applicable to, silently reapplying the old module's rolled numbers to a different type.
+          // It is also what makes the UNMUTATED row do anything: that row's typeID is the fitted one,
+          // so clearing the roll is the entire swap.
+          onUpdateMod({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc,
+                       mutaplasmid:undefined,mutations:undefined});onClose();}} />)}
         {tab==="mutate"&&(<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/></div>)}
       </div>
     </BottomSheet>
