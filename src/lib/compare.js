@@ -312,7 +312,7 @@ const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
 // why magnitude, not sign, is the rule. It also covers Stasis Grapplers (−80…−88), Structure Stasis
 // Webifiers and webifying drones, all of which had the identical reversed colouring.
 const SIGNED_BONUS_RE = /^(aoeCloudSizeBonus|aoeVelocityBonus|missileVelocityBonus|explosionDelayBonus|trackingSpeedBonus|maxRangeBonus|falloffBonus|maxTargetRangeBonus|scanResolutionBonus|speedFactor)$/;
-function directionOf(k, v, b, typeID) {
+export function directionOf(k, v, b, typeID) {
   if (v == null || b == null) return null;
   // The booster side-effect family first: CCP flags every one highIsGood=1 AND signs them
   // inconsistently, so neither the derived rule nor the raw flag can be trusted for them.

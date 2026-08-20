@@ -9,12 +9,12 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
-import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
-import { compareRows, sortCompareRows } from "../lib/compare.js";
+import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 let _typeDescsCache = null;
@@ -1287,6 +1287,19 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   // module update, so a drag would either flood it or, once coalesced, bury the rest of the fit's
   // history under 400 abyssal steps. Scoped to this editor, it's exactly the granularity wanted.
   const[history,setHistory]=useState([]);
+  // While a slider is held, its value lives HERE and not in the fit. Committing on every pixel of
+  // travel ran a whole fit recalculation per input event — the engine resets and re-applies every
+  // attribute pool, then the entire fit tree re-renders — so the thumb lagged the finger badly on a
+  // phone. Nothing on this panel needs the fit to redraw: the value, the delta and the bar's colour
+  // are all computed from the roll itself, so they stay live at full frame rate off `drag` alone.
+  // The commit lands on release, which is also when the stats behind the sheet update.
+  //
+  // The ref shadows the state because the release handler needs the final value in the same tick,
+  // before the re-render that `setDrag` schedules. Both live up here with the other hooks: the
+  // component returns early when no mutaplasmid is applied, so a hook below that point changes the
+  // hook count the moment one IS applied, and React throws on the next render.
+  const[drag,setDrag]=useState(null);
+  const dragRef=useRef(null);
   const lastPush=useRef({key:null,t:0});
   const snapshot=()=>({mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
   // A slider drag fires on every pixel of travel, so contiguous edits to the SAME slider coalesce
@@ -1336,13 +1349,14 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   const m=mutaplasmidData[active];
   const ranges=mutaAttrRanges(active,mod.typeID);
   const setVal=(name,v)=>{pushHistory('v:'+name);onUpdateMod({...mod,mutations:{...mod.mutations,[name]:v}});};
+  const commitDrag=()=>{const d=dragRef.current;if(!d)return;dragRef.current=null;setDrag(null);setVal(d.name,d.value);};
   return(<div style={{padding:"10px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{m.n}</span>
       <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Remove</button>
     </div>
     {ranges.map(r=>{
-      const cur=mod.mutations?.[r.name]??r.base;
+      const cur=drag?.name===r.name?drag.value:(mod.mutations?.[r.name]??r.base);
       // Delta vs the unmutated base. For a percentage-displayed attribute the raw ratio has the
       // wrong SIGN (a lower speedMultiplier is a better roll), so compare in display space, where
       // "up is better" holds for everything.
@@ -1350,19 +1364,21 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       const pct=inverted
         ? mutaToDisplay(r.name,cur)-mutaToDisplay(r.name,r.base)
         : (cur/r.base-1)*100;
-      // Green means BETTER, not BIGGER. The two are opposite for 19 of the 49 attributes a
-      // mutaplasmid can roll — CPU, powergrid, activation cost, the MWD's signature penalty, mass,
-      // reload, cycle time, the hull resonances — so a plain `pct>0` painted a +25% CPU cost green.
-      // The direction is CCP's `highIsGood`, not a list of ours; see attrHighIsGood in calc.js.
+      // Green means BETTER, not BIGGER — opposite for 19 of the 49 attributes a mutaplasmid can
+      // roll (CPU, powergrid, activation cost, the MWD's signature penalty, mass, reload, cycle
+      // time, the hull resonances), so a plain `pct>0` painted a +25% CPU cost green.
       //
-      // `inverted` wins where it applies: for rate of fire, `pct` is already computed in DISPLAY
-      // space (where up = more shots/sec), so it is pre-corrected and must NOT be flipped again —
-      // CCP quite correctly marks the raw speedMultiplier as lower-is-better, which would
-      // double-invert it back to wrong.
-      const higherIsBetter=inverted?true:attrHighIsGood(r.attrID);
-      // The same three colours DeltaMark paints a variation delta in — this panel and the Variations
-      // tab are answering the same question about the same module, one slider-drag apart.
-      const deltaColor=Math.abs(pct)<0.1?C.textMute:((higherIsBetter?pct>0:pct<0)?C.rig:C.danger);
+      // Asked of `directionOf` — the SAME function the Variations tab uses — rather than of CCP's
+      // raw highIsGood, because this panel and that tab are answering the same question about the
+      // same module, one slider-drag apart, and highIsGood alone gets a whole family wrong: it
+      // describes an attribute in isolation, while a module's sign convention is a property of the
+      // module. A stasis webifier rolled from -60 to -66 is a STRONGER web, and the flag (set for
+      // the propulsion-module use of the same speedFactor) reads it as the worse number.
+      //
+      // It takes RAW values, which is also what sidesteps `inverted`: the display transform never
+      // enters into it.
+      const better=Math.abs(pct)<0.1?null:directionOf(r.name,cur,r.base,mod.typeID);
+      const deltaColor=better==null?C.textMute:(better?C.rig:C.danger);
       // Where the base sits along the TRACK. A mutaplasmid's range is rarely symmetric about the
       // base (a Decayed rolls -30%/+20%), so this is not the midpoint, and the "base" label below
       // the slider — which is centred — does not indicate it.
@@ -1371,7 +1387,20 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // WORSE starts its range past the base (Unstable rolls capacitorNeed 1.4x-1.8x, so base 5
       // sits left of a 7-9 slider). There is no base to return to, so no tick and no detent —
       // snapToBase already declines, since the gap exceeds the whole range.
-      const baseOnSlider=inverted?(r.min+r.max-r.base):r.base;
+      // Which way the slider is DRAWN, which is not the same question as `inverted` and had been
+      // sharing its answer. Two independent reasons the raw axis runs backwards:
+      //
+      //  - the display transform reverses it (rate of fire: a lower speedMultiplier is a faster gun);
+      //  - the base is NEGATIVE, so the attribute's MAGNITUDE is its strength. A web at -60 rolls to
+      //    -66, a cap battery's energyWarfareResistanceBonus to -28, a siege module's logistics
+      //    duration likewise — in raw ascending order the strong end lands on the LEFT.
+      //
+      // XOR, not OR: `mutaToDisplay` already negates the resist-bonus family, so a value that is both
+      // negated for display AND stored negative has flipped once and must not flip twice. Tested on
+      // the range's own base rather than the attribute name, which is what keeps a MICROWARPDRIVE —
+      // same `speedFactor`, positive — running the normal way round.
+      const mirrored=inverted!==(r.base<0);
+      const baseOnSlider=mirrored?(r.min+r.max-r.base):r.base;
       const sliderFrac=r.max>r.min?(baseOnSlider-r.min)/(r.max-r.min):0.5;
       const baseOnTrack=sliderFrac>=0&&sliderFrac<=1;
       // Where a fraction of the RANGE sits along the drawn track. The thumb's centre travels between
@@ -1379,7 +1408,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // enough to visibly miss the base tick. The tick and the bar's two ends all go through here, so
       // they cannot disagree about where a value is.
       const trackPos=(f)=>`calc(${(f*100).toFixed(3)}% + ${((0.5-f)*14).toFixed(2)}px)`;
-      const curFrac=r.max>r.min?((inverted?(r.min+r.max-cur):cur)-r.min)/(r.max-r.min):0.5;
+      const curFrac=r.max>r.min?((mirrored?(r.min+r.max-cur):cur)-r.min)/(r.max-r.min):0.5;
       // Clamped because the base is off the track entirely on 138 ranges (a mutaplasmid that only
       // makes an attribute worse starts past it), and the bar then runs from the edge it lies beyond.
       const originFrac=Math.min(1,Math.max(0,sliderFrac));
@@ -1412,18 +1441,25 @@ function MutaplasmidEditor({mod,onUpdateMod}){
               one judgement, shown twice. At the base it is C.textMute, which never shows: the bar has
               zero width there. */}
           <input type="range" className="vv-muta" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
-                 value={inverted?(r.min+r.max-cur):cur}
+                 value={mirrored?(r.min+r.max-cur):cur}
                  onChange={e=>{
                    const v=Number(e.target.value);
-                   const raw=snapToBase(inverted?(r.min+r.max-v):v,r.base,r.min,r.max);
+                   const raw=snapToBase(mirrored?(r.min+r.max-v):v,r.base,r.min,r.max);
                    if(raw===r.base&&cur!==r.base) haptic("light");   // only on ENTERING the detent
-                   setVal(r.name,raw);
+                   dragRef.current={name:r.name,value:raw};
+                   setDrag(dragRef.current);
                  }}
+                 // Release, however it arrives: a finger lifted, a drag cancelled by a system
+                 // gesture, an arrow key let go, or focus leaving mid-drag. Committing twice is
+                 // harmless — commitDrag clears the ref first — and never committing is not, since
+                 // the roll would be visible on the slider but absent from the fit.
+                 onPointerUp={commitDrag} onPointerCancel={commitDrag}
+                 onLostPointerCapture={commitDrag} onKeyUp={commitDrag} onBlur={commitDrag}
                  style={{position:"relative","--a":trackPos(Math.min(originFrac,curFrac)),
                          "--b":trackPos(Math.max(originFrac,curFrac)),"--c":deltaColor}}/>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
-          <span>{fmtMutaVal(r.name,inverted?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,inverted?r.min:r.max)}</span>
+          <span>{fmtMutaVal(r.name,mirrored?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,mirrored?r.min:r.max)}</span>
         </div>
       </div>);
     })}

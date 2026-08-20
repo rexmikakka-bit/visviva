@@ -25,7 +25,7 @@ import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
-import { differingAttributes, compareRows, sortCompareRows, derivedDirection } from './lib/compare.js';
+import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
@@ -1668,6 +1668,21 @@ Agency 'Overclocker' SB7 Dose III
   const prop2 = compareRows(prop, prop[0]).find(r => r.typeID === prop[1]);
   const pstat = prop2.stats.find(s => s.key === 'speedFactor');
   check('cmp', 'faster MWD still reads better', (pstat && pstat.delta > 0 && pstat.better) ? 1 : 0, 1, 0);
+  // The mutaplasmid editor asks the SAME function, so a rolled attribute and a swapped variant
+  // cannot disagree about which way is up. It used to ask CCP's highIsGood directly, which reads a
+  // web rolled from -60 to -66 as the worse number — the exact case the magnitude rule exists for,
+  // and one that only became visible when these sliders started working (their min/max came back
+  // inverted, so the thumb was pinned). Both signs, and both directions on each.
+  const webTid = tid('Stasis Webifier II'), batTid = tid('Small Cap Battery II');
+  check('cmp', 'a stronger rolled web reads better', directionOf('speedFactor', -66, -60, webTid) ? 1 : 0, 1, 0);
+  check('cmp', 'a weaker rolled web reads worse', directionOf('speedFactor', -54, -60, webTid) ? 1 : 0, 0, 0);
+  check('cmp', 'a faster rolled MWD reads better', directionOf('speedFactor', 550, 500, tid('5MN Microwarpdrive II')) ? 1 : 0, 1, 0);
+  // Negative base, but CCP flags this one lower-is-better, so a blanket "negative means flip" rule
+  // would break it. -28 resists energy warfare harder than -20.
+  check('cmp', 'a stronger rolled cap battery reads better', directionOf('energyWarfareResistanceBonus', -28, -20, batTid) ? 1 : 0, 1, 0);
+  check('cmp', 'a weaker rolled cap battery reads worse', directionOf('energyWarfareResistanceBonus', -15, -20, batTid) ? 1 : 0, 0, 0);
+  // Positive base, lower-is-better: a roll that costs more CPU is not an improvement.
+  check('cmp', 'a costlier rolled CPU reads worse', directionOf('cpu', 30, 25, webTid) ? 1 : 0, 0, 0);
   // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
   // outranked the attributes a disruptor is actually chosen for. Excluded by name.
   const gdAll = Object.keys(TYPES).filter(id => /Guidance Disruptor/i.test(TYPES[id].n ?? '')).map(Number);
@@ -2399,7 +2414,8 @@ Republic Fleet Command Mindlink`;
   check('detent', 'a zero-width range never snaps', snapToBase(4, 4.5, 4, 4), 4, 0);
 
   // Property sweep over every (mutaplasmid, base type, attribute) the game actually ships.
-  let offTrack = 0, endSwallowed = 0, stepEscapes = 0, seen = 0;
+  let offTrack = 0, endSwallowed = 0, stepEscapes = 0, seen = 0, backwards = 0;
+  const negBase = new Map();
   const done = new Set();
   for (const [baseTid, mids] of Object.entries(MUTA_BY_TYPE))
     for (const mid of mids)
@@ -2408,8 +2424,14 @@ Republic Fleet Command Mindlink`;
         if (done.has(k)) continue;
         done.add(k);
         const span = r.max - r.min;
+        // `lo`/`hi` are multipliers and only order the result while the base is positive, so a
+        // negative base (webifier speedFactor, cap battery energyWarfareResistanceBonus) used to
+        // hand back max < min. An <input type=range> clamps that to a single point per spec, which
+        // killed the slider silently — the typed box still worked, so nothing read as broken.
+        if (span < 0) backwards++;
         if (!(span > 0)) continue;
         seen++;
+        if (r.base < 0) negBase.set(r.name, (negBase.get(r.name) ?? 0) + 1);
         if (r.base < r.min || r.base > r.max) {
           offTrack++;
           // Off the track, the detent must be inert — otherwise a drag jumps to a value the
@@ -2425,9 +2447,25 @@ Republic Fleet Command Mindlink`;
         if (snapToBase(r.base + span / 400, r.base, r.min, r.max) !== r.base) stepEscapes++;
       }
   check('detent', 'every mutaplasmid range was swept', seen > 20000 ? 1 : 0, 1, 0);
+  check('detent', 'no range comes back min-above-max', backwards, 0, 0);
   check('detent', 'no slider endpoint is swallowed', endSwallowed, 0, 0);
   check('detent', 'one step off base always snaps back', stepEscapes, 0, 0);
   check('detent', 'ranges with the base off the track', offTrack, 138, 0);
+
+  // A NEGATIVE base is what tells the editor to draw that slider mirrored: the attribute's MAGNITUDE
+  // is its strength, so in raw ascending order the strong end lands on the left. Only three families
+  // are stored that way, and the rule is applied per-RANGE rather than per-attribute name because
+  // `speedFactor` is in both camps — a webifier's is -60, a microwarpdrive's is +500, and mirroring
+  // the MWD too would put its fast end on the left.
+  //
+  // Pinned as an exact set so a bundle regen that adds a fourth family, or flips one of these
+  // positive, surfaces here instead of as a silently backwards slider. Sorted for stability.
+  check('detent', 'attributes whose base is stored negative', [...negBase.keys()].sort().join(','),
+    'energyWarfareResistanceBonus,siegeLocalLogisticsDurationBonus,speedFactor', 0);
+  // ...and the MWD side of that split really is present, or the per-range test is untested.
+  const mwdSpeed = mutaAttrRanges(MUTA_BY_TYPE[tid('50MN Microwarpdrive II')]?.[0], tid('50MN Microwarpdrive II'))
+    .find((r) => r.name === 'speedFactor');
+  check('detent', 'a microwarpdrive keeps a positive speedFactor base', mwdSpeed?.base > 0 ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

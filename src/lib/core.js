@@ -35,7 +35,13 @@ function mutaAttrRanges(mutaID, baseTypeID) {
     if (!name) continue;
     const base = baseAttrs[name];
     if (base == null) continue;
-    out.push({ attrID: aid, name, base, min: base * lo, max: base * hi });
+    // `lo`/`hi` are multipliers, so they only order the RESULT while the base is positive. A stasis
+    // webifier's speedFactor is -60 and a cap battery's energyWarfareResistanceBonus is -20, which
+    // flips them (min -54, max -66); CCP also ships six Siege mutaplasmids with lo > hi outright.
+    // An <input type=range> whose max is below its min is clamped by the spec to a single point, so
+    // the slider went dead while the typed box still worked — 234 of ~25.5k attribute slots.
+    const a = base * lo, b = base * hi;
+    out.push({ attrID: aid, name, base, min: Math.min(a, b), max: Math.max(a, b) });
   }
   return out;
 }
