@@ -3523,6 +3523,17 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     sensorStrength: Math.round(sensorStrength * 10) / 10,
     sensorType:     ship.sensorType ?? '',
 
+    // The UNROUNDED originals of the figures above, for the Targeting panel's tap-to-reveal.
+    //
+    // Rounding for display is normally harmless; here one of them is not. Align time is quantised to
+    // whole server ticks in game, so a 4.003 s align costs a FIFTH second of exposure that "4.00"
+    // hides — and a fit that reads 4.00 will be trimmed as if it were already under the wire.
+    //
+    // A separate bag rather than unrounding the fields themselves: those values are read all over the
+    // UI and pinned by the regression baselines, and nothing else wants the extra digits.
+    exact: { alignTime, warpSpeed, sigRadius, scanRes, targetRange, sensorStrength, lockTime,
+             maxVelocity, maxVelocityAB: abMwdSpeed },
+
     // Drone bay (from ship base data, not engine)
     droneBay:       s.get('droneCapacity') || ship.droneBay || 0,   // || not ?? — base=0 ships get subsystem bonus
     droneBandwidth: s.get('droneBandwidth') || ship.droneBandwidth || 0,

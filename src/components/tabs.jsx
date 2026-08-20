@@ -814,7 +814,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           onSelect={sub=>{swapSubsystem(emptySlot.id,sub);setEmptySlot(null);}}
           onClose={()=>setEmptySlot(null)}/>
       )}
-      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)}/>}
+      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom}/>}
     </div>
   );
 }
@@ -910,6 +910,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // Separate from `collapsed` (which is open-by-default): these nested rows default to CLOSED,
   // so absence from the set means closed.
   const[openPriceGroups,setOpenPriceGroups]=useState({});
+  // Which Targeting & Misc cells are currently showing their unrounded value. Keyed by label, so it
+  // survives the drone-range row appearing and disappearing with the hull.
+  const[exactCells,setExactCells]=useState(()=>new Set());
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
@@ -1279,26 +1282,47 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       {/* Targeting & Misc */}
       <div style={card}>
         <SectionHead id="targeting" title="Targeting and Misc"/>
+        {/* Every figure here is rounded to stay legible in a 1fr column, and for one of them that
+            rounding is dangerous: align time is quantised to whole server ticks, so a 4.003 s align
+            displayed as "4.00" hides a fifth second of exposure and reads as already under the wire.
+            Tapping a cell swaps it for the unrounded value and tapping again puts it back; the extra
+            digits appearing are the whole signal, so the swapped value keeps the same weight and
+            colour as every other figure. Cells whose exact value IS the displayed one — target count,
+            and anything that happens to land on a round number — are inert and say so by not
+            offering the pointer. */}
         {isOpen("targeting")&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
-          {[
-            ["Targets",   String(Math.round(cs.maxTargets??0))],
-            ["Speed", `${Math.round((cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity)?cs.maxVelocityAB:(cs.maxVelocity??0))} m/s`],
-            ["Lock range",`${fmtF(cs.targetRange??0)} km`],
-            ["Align",     `${fmtF(cs.alignTime??0)} s`],
-            ["Scan res.", `${fmtN(cs.scanRes??0)} mm`],
-            ["Signature", `${fmtN(cs.sigRadius??0)} m`],
-            ["Sensor",    `${cs.sensorStrength??0} ${cs.sensorType??""}`],
-            ["Warp",      `${fmtF(cs.warpSpeed??3)} AU/s`],
-            ...(cs.droneBay>0?[["Drone range",`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`]]:[]),
-            ["Cargo",     `${fmtN(cs.cargoCapacity??0)} m³`],
-            // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
-            // multiplier — the same value feeding the align-time cell above it.
-            ["Mass",      `${fmtN(cs.mass??0)} kg`],
-          ].map(([label,val],i,arr)=>{
+          {(()=>{
+            const x=cs.exact??{};
+            const abOn=cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity;
+            const p=(v,d,unit)=>v==null?null:`${v.toFixed(d)}${unit}`;
+            return [
+              ["Targets",   String(Math.round(cs.maxTargets??0))],
+              ["Speed",     `${Math.round(abOn?cs.maxVelocityAB:(cs.maxVelocity??0))} m/s`, p(abOn?x.maxVelocityAB:x.maxVelocity,2," m/s")],
+              ["Lock range",`${fmtF(cs.targetRange??0)} km`,  p(x.targetRange,3," km")],
+              ["Align",     `${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
+              ["Scan res.", `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
+              ["Signature", `${fmtN(cs.sigRadius??0)} m`,     p(x.sigRadius,2," m")],
+              ["Sensor",    `${cs.sensorStrength??0} ${cs.sensorType??""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}`:null],
+              ["Warp",      `${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
+              // droneControlRange is metres and already whole, so the gain here is the km conversion's
+              // own rounding, not a lost fraction of a metre.
+              ...(cs.droneBay>0?[["Drone range",`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),
+              ["Cargo",     `${fmtN(cs.cargoCapacity??0)} m³`,p(cs.cargoCapacity,2," m³")],
+              // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
+              // multiplier — the same value feeding the align-time cell above it. Grouped digits
+              // rather than decimals: kg fractions are noise, but "12.5M" hiding 250,000 kg is not.
+              ["Mass",      `${fmtN(cs.mass??0)} kg`,         cs.mass!=null?`${Math.round(cs.mass).toLocaleString()} kg`:null],
+            ];
+          })().map(([label,val,exact],i,arr)=>{
             const bb=arr.length>(i+2)?`1px solid ${C.border}`:"none";
             const br=(i%2===0)?`1px solid ${C.border}`:"none";
-            return(<div key={label} style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{color:C.textMid}}>{label}</span><span style={{fontWeight:600,color:C.text}}>{val}</span>
+            const can=exact!=null&&exact!==val;
+            const on=can&&exactCells.has(label);
+            return(<div key={label} onClick={can?()=>setExactCells(s=>{const n=new Set(s);n.has(label)?n.delete(label):n.add(label);return n;}):undefined}
+                        title={can?exact:undefined}
+                        style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,cursor:can?"pointer":"default"}}>
+              <span style={{color:C.textMid,flexShrink:0}}>{label}</span>
+              <span style={{fontWeight:600,color:C.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</span>
             </div>);
           })}
         </div>}

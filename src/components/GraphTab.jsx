@@ -382,7 +382,12 @@ function generateCurve(catKey,yKey,xKey,params={}){
 //     instant you lifted your finger — there was no "selected point" to navigate away from at all.
 //     Drag off either edge of the plot to clear, or reset a zoom / change an axis.
 //   * it is an x VALUE, so it re-reads correctly after a zoom or a switch to another fit's curve.
-function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
+// `marker` (optional): {x, label} — a dim vertical reference on the x axis. Used for the ship's lock
+// range on the distance graphs, where the curve happily keeps going past the point at which you can
+// no longer hold a target: a projection graph reading 40% web strength at 90 km is describing
+// something that cannot happen on a hull that locks to 60. Drawn as annotation, not data — thin,
+// dashed, at the grid's own colour weight — because it must not read as a second series.
+function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange,marker}){
   // W wider than a naive "fill the box" guess: the SVG's box height is fixed (H+18) but its CSS width
   // is 100% of whatever card it sits in, so with the old W=280 (a viewBox aspect narrower than any
   // phone's actual card) preserveAspectRatio="meet" scaled to the HEIGHT and centered the content,
@@ -429,6 +434,15 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange}){
       {gp&&<path d={gp} fill="none" stroke={color} strokeWidth="1.25" strokeDasharray="4,3" opacity=".3" strokeLinejoin="round" strokeLinecap="round"/>}
       <path d={ap} fill={`url(#${gId})`}/><path d={lp} fill="none" stroke={color} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round"/>
     </g>
+    {/* Off the right-hand edge it would be drawn ON the axis and read as part of the frame, so it is
+        dropped rather than clamped — the honest message at that zoom is "everything shown is in
+        range". Zooming in brings it back. */}
+    {marker!=null&&marker.x>0&&marker.x<xMax*0.995&&(<g>
+      <line x1={toX(marker.x)} y1={PT} x2={toX(marker.x)} y2={PT+gH} stroke={C.textMute} strokeWidth="1" strokeDasharray="2,4"/>
+      {/* Hung from the top-left of the line so it cannot collide with the x-axis tick labels, and
+          right-anchored so it grows back INTO the plot rather than off the edge near xMax. */}
+      <text x={toX(marker.x)-3} y={PT+8} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{marker.label}</text>
+    </g>)}
     {cursorPx!=null&&cursorYVal!=null&&(<g><line x1={cursorPx} y1={PT} x2={cursorPx} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorPx} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
     {yT.map((v,i)=><text key={i} x={PL-3} y={toY(v)+3} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
     {xT.map((v,i)=><text key={i} x={toX(v)} y={H+4} textAnchor="middle" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
@@ -1024,7 +1038,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         })()}
       </div>
     </div>}
-    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}/></div>
+    {/* Only the `dist` axis, which is km of separation from a target you have to be holding: damage,
+        ewar and reps. Warp's own distance axes are not a projection and get no line. */}
+    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}
+      marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
     {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship}/></div>}
   </div>);
 }

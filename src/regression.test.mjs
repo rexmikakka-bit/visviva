@@ -31,7 +31,7 @@ import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2681,6 +2681,114 @@ Republic Fleet Command Mindlink`;
   check('str', 'a Tracking Enhancer shows nothing', txt('te'), 'undefined');
   check('str', 'a Missile Guidance Computer shows nothing', txt('mgc'), 'undefined');
   check('str', 'a Signal Amplifier shows nothing', txt('sigamp'), 'undefined');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13r. UNROUNDED TARGETING FIGURES — calcFitStats rounds the Targeting & Misc block for display, and
+//      `cs.exact` carries the originals so the panel can reveal them on tap.
+//
+//      This is not cosmetic. Align time is quantised to whole server ticks in game, so the two extra
+//      digits decide whether a fit warps off before a bubble closes; a fit reading "4.00" that is
+//      really 4.003 will be trimmed as though it were already under the wire. Reported from the field.
+//
+//      Both halves are asserted: that `exact` carries MORE than the rounded field (or the bag is
+//      pointless), and that it is the SAME quantity — rounding it must reproduce the rounded field
+//      exactly, or the panel would reveal a different number rather than a finer one.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nUNROUNDED TARGETING FIGURES');
+  const vigil = lookupShip('Vigil');
+  const cs = calcFitStats(vigil, {high:[],mid:[],low:[],rigs:[]}, [], null, {});
+  const x = cs.exact ?? {};
+
+  check('exa', 'align time is carried unrounded', x.alignTime, 3.254159657405609, 1e-9);
+  check('exa', 'the displayed align time rounds to 2dp', cs.alignTime, 3.25, 0);
+  // Same quantity, fewer digits — not a separately-computed number that could drift.
+  check('exa', 'rounding the exact align reproduces the display',
+        Math.round(x.alignTime * 100) / 100, cs.alignTime, 0);
+  // Lock range rounds UP here, so the panel overstates it by 50 m until the cell is tapped. Pinned
+  // because a rounding that only ever went down would make this whole feature much less interesting.
+  check('exa', 'lock range is carried unrounded', x.targetRange, 81.25, 1e-9);
+  check('exa', 'and the display rounds it UP', cs.targetRange, 81.3, 0);
+  // Every field the panel can reveal must actually be in the bag. A missing key is silent in the UI
+  // (the cell just stops being tappable), which is exactly the kind of quiet regression this catches.
+  for (const k of ['alignTime','warpSpeed','sigRadius','scanRes','targetRange','sensorStrength',
+                   'maxVelocity','maxVelocityAB'])
+    check('exa', `exact.${k} is a finite number`, String(Number.isFinite(x[k])), 'true');
+  // Scan resolution genuinely IS whole on this hull. The panel compares the two strings and drops
+  // the tap when they match, so an integer here is correct rather than a missing value.
+  check('exa', 'a whole figure stays whole', x.scanRes, 700, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13q. DRONE AUTO-ADD QUANTITY — tapping a drone in the browser used to drop in a hardcoded five,
+//      inactive. Reported from the field: a Vigil (5 Mbit/s bandwidth, 5 m³ bay) can fly exactly ONE
+//      light drone, so the screen opened five deep with the bandwidth bar already red.
+//
+//      The two budgets cap independently and mean different things — bandwidth is what can be IN
+//      SPACE, the bay is what is CARRIED — so a hull can legitimately hold more than it can launch,
+//      and the quantity has to respect the smaller while the ACTIVE flag follows bandwidth alone.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  // Light drone: 5 Mbit/s, 5 m³. Medium: 10/10. Heavy: 25/25. Sentry: 25 Mbit/s but 25 m³.
+  const LIGHT={bandwidth:5,volume:5}, MED={bandwidth:10,volume:10}, HEAVY={bandwidth:25,volume:25};
+
+  // The reported fit, exactly. Vigil: droneCapacity 5, droneBandwidth 5.
+  const vigil=droneAddQty({...LIGHT,bwFree:5,bayFree:5});
+  check('drn', 'a Vigil takes ONE light drone, not five', vigil.qty, 1, 0);
+  check('drn', 'and that one is launched', String(vigil.active), 'true');
+
+  // The case the hardcoded five was right for, and which must not regress.
+  const vexor=droneAddQty({...LIGHT,bwFree:75,bayFree:125});
+  check('drn', 'a Vexor still takes a full flight of five', vexor.qty, 5, 0);
+  check('drn', 'a Vexor flight launches', String(vexor.active), 'true');
+
+  // Five is a CEILING, not a target: a Vexor has bandwidth for 15 lights and bay for 25, but no
+  // pilot flies more than five, so the extra room must not pull more in.
+  check('drn', 'five is a ceiling', droneAddQty({...LIGHT,bwFree:1000,bayFree:1000}).qty, 5, 0);
+
+  // Bandwidth binds below the bay: a Vexor's 75 Mbit/s is three heavies, its 125 m³ is five.
+  const heavies=droneAddQty({...HEAVY,bwFree:75,bayFree:125});
+  check('drn', 'bandwidth caps heavies below what the bay holds', heavies.qty, 3, 0);
+  check('drn', 'and all three launch', String(heavies.active), 'true');
+
+  // ...and the bay binds below bandwidth the other way round. An Ishtar-shaped case: plenty of
+  // bandwidth left, but the bay is nearly full. Whichever is smaller has to win, both ways, or the
+  // fix just moves the red bar from one gauge to the other.
+  const cramped=droneAddQty({...MED,bwFree:50,bayFree:20});
+  check('drn', 'the bay caps below bandwidth', cramped.qty, 2, 0);
+  check('drn', 'a bay-capped stack still launches', String(cramped.active), 'true');
+
+  // No room at all — bandwidth already spent on another flight. One still goes in, as a spare, but
+  // it must NOT come in active or it immediately overruns the bandwidth the user just allocated.
+  const spare=droneAddQty({...HEAVY,bwFree:0,bayFree:125});
+  check('drn', 'a drone with no bandwidth left still gets added', spare.qty, 1, 0);
+  check('drn', 'but it is not launched', String(spare.active), 'false');
+
+  // Already OVER bandwidth (a restored fit can be), which floors negative. Same answer, and the
+  // clamp is what stops a negative or zero quantity reaching the drone list.
+  const over=droneAddQty({...HEAVY,bwFree:-30,bayFree:125});
+  check('drn', 'an over-bandwidth fit still adds one', over.qty, 1, 0);
+  check('drn', 'and does not launch it', String(over.active), 'false');
+
+  // Bay full, bandwidth free. The spare has nowhere to go, but refusing the tap outright would
+  // leave the user unable to swap flights without deleting first.
+  check('drn', 'a full bay still adds one', droneAddQty({...LIGHT,bwFree:75,bayFree:0}).qty, 1, 0);
+
+  // A hull with NO drone bay at all. Every gauge reads zero; nothing may divide by it or return 0.
+  const noBay=droneAddQty({...LIGHT,bwFree:0,bayFree:0});
+  check('drn', 'a hull with no drone bay adds one, idle', noBay.qty, 1, 0);
+  check('drn', 'no-bay drone is not launched', String(noBay.active), 'false');
+
+  // Salvage/mining drones and the like carry no bandwidth figure in some data paths; a zero divisor
+  // must fall through to the ceiling rather than producing Infinity or NaN.
+  const free=droneAddQty({bandwidth:0,volume:0,bwFree:75,bayFree:125});
+  check('drn', 'a zero-cost drone falls back to the ceiling', free.qty, 5, 0);
+  check('drn', 'and launches', String(free.active), 'true');
+
+  // The top-up path passes Infinity for an inactive stack, since spares cost no bandwidth. Guard
+  // that it stays finite and bay-bound rather than returning Infinity into a quantity.
+  check('drn', 'topping up a stowed stack is bay-bound', droneAddQty({...MED,bwFree:Infinity,bayFree:30}).qty, 3, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

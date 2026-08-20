@@ -1102,6 +1102,23 @@ function moduleTakesCharges(typeID,name){
     .some(([id,nm])=>(a[id]??a[nm])>0);
 }
 
+// How many of a drone to drop in when one is tapped in the browser, and whether it starts flying.
+//
+// Five was hardcoded, which is right for a Vexor and flatly wrong for a Vigil: 5 Mbit/s of bandwidth
+// flies exactly one light drone, so the screen opened with the bandwidth bar already red. Bay volume
+// caps it too, and INDEPENDENTLY — bandwidth limits what can be in space, the bay limits what is
+// carried, so a hull can legitimately hold more than it can launch. Five stays the ceiling: it is
+// the game's own max drones in space for a fully skilled pilot, and this app assumes skills at V.
+//
+// Never returns 0. A drone that fits neither budget is still worth carrying as a spare or as the
+// thing you swap the current flight for — it just goes in unactivated.
+export function droneAddQty({bandwidth,volume,bwFree,bayFree,max=5}){
+  const byBw =bandwidth>0?Math.floor(bwFree /bandwidth):max;
+  const byBay=volume   >0?Math.floor(bayFree/volume   ):max;
+  const qty=Math.max(1,Math.min(max,byBw,byBay));
+  return {qty,active:byBw>=qty};
+}
+
 const TOP_DRONE_ORDER=["Combat Drones","Combat Utility Drones","Electronic Warfare Drones","Logistics Drones","Mining Drones","Salvage Drones"];
 function getMGPath(mgID){
   const chain=[];let cur=Number(mgID);const visited=new Set();

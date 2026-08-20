@@ -331,7 +331,7 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
-function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose}){
+function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom}){
   const[search,setSearch]=useState("");
   const[pasteOpen,setPasteOpen]=useState(false);
   const[pasteText,setPasteText]=useState("");
@@ -433,7 +433,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose})
           </div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
-            <FitCost item={mod}/>
+            <FitCost item={mod} headroom={resourceHeadroom}/>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
@@ -829,8 +829,23 @@ const CalGlyph = ({size=10,color="currentColor"}) => (
 // green throughout the UI, so it is a real association rather than decoration.
 const RES_INK = { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig };
 
-function FitCost({item, size=11}) {
+// `headroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}} for the fit the module
+// would be added to. Given it, a figure the fit cannot afford turns red — the same mark the Variations
+// tab puts on a swap that won't fit. The browser is only ever opened on an EMPTY slot, so unlike the
+// variations case there is no fitted module to back out first: the room left is just total - used.
+//
+// Only the NUMBER tints; the glyph keeps its own hue so the icon goes on meaning "this is PG/CPU/
+// calibration" rather than "fits/doesn't". Same base-attribute arithmetic as the figure it colours,
+// which is deliberately not a claim about the engine's skill-adjusted cost to the tf — Weapon Upgrades
+// and its kin can shave up to 25% off what a module is actually charged, so this errs toward flagging
+// early rather than promising a fit it can't guarantee.
+function FitCost({item, size=11, headroom}) {
   const {cpu,pg,calib} = fitCostParts(item);
+  const fits = (key, val) => {
+    const hr = headroom?.[key];
+    if (!hr) return null;
+    return val <= (hr.total ?? 0) - (hr.used ?? 0) + 1e-6;
+  };
   // Same glyph size FitCostDelta uses in the Variations tab (no size*0.95 shrink) — at ~10px the
   // CPU chip's corner pins were fine enough to disappear into a blob, reading as an unrelated diamond
   // rather than the same icon shown one tab over.
@@ -842,16 +857,20 @@ function FitCost({item, size=11}) {
   const cell  = (key) => ({display:"inline-flex",alignItems:"center",gap:3.5,color:RES_INK[key]});
   const num   = {color:C.textMid,fontWeight:600};
   const row   = {fontSize:size,marginTop:1,display:"flex",alignItems:"center",gap:10,lineHeight:1.3};
-  if (calib > 0) return (
-    <div style={row}>
-      <span style={cell('cal')} title={`${calib} calibration points`}><CalGlyph size={g}/><span style={num}>{fmtResource(calib)}</span></span>
-    </div>
-  );
+  const part  = (key, Glyph, val, unit) => {
+    const ok = fits(key, val);
+    return (
+      <span style={cell(key)} title={`${val}${unit}${ok === false ? " — won't fit" : ''}`}>
+        <Glyph size={g}/><span style={ok===false?{...num,color:C.danger,fontWeight:700}:num}>{fmtResource(val)}</span>
+      </span>
+    );
+  };
+  if (calib > 0) return <div style={row}>{part('cal', CalGlyph, calib, ' calibration points')}</div>;
   if (!(pg > 0) && !(cpu > 0)) return null;
   return (
     <div style={row}>
-      {pg  > 0 && <span style={cell('pg')}  title={`${pg} MW powergrid`}><PgGlyph  size={g}/><span style={num}>{fmtResource(pg)}</span></span>}
-      {cpu > 0 && <span style={cell('cpu')} title={`${cpu} tf CPU`}><CpuGlyph size={g}/><span style={num}>{fmtResource(cpu)}</span></span>}
+      {pg  > 0 && part('pg',  PgGlyph,  pg,  ' MW powergrid')}
+      {cpu > 0 && part('cpu', CpuGlyph, cpu, ' tf CPU')}
     </div>
   );
 }

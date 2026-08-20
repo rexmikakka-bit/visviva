@@ -2,7 +2,7 @@ import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, AccordionSection, ItemDetailSheet } from "./ui.jsx";
-import { REAL_DRONE_BROWSER, FIGHTER_CATALOG } from "../lib/core.js";
+import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, droneAddQty } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
 
@@ -121,7 +121,17 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
   const bayUsed=drones.reduce((s,d)=>s+d.qty*getDroneVol(d),0);
   // Bandwidth counts only ACTIVE drones — the bay holds spares, the bandwidth flies them.
   const bwUsed=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty*getDroneBW(d),0);
-  const addDrone=d=>{const ex=drones.find(e=>e.name===d.name);if(ex){setDrones(drones.map(e=>e.name===d.name?{...e,qty:e.qty+5}:e));return;}setDrones(prev=>{
+  const addDrone=d=>{
+    const bayFree=shipDroneBay-bayUsed, bwFree=shipDroneBandwidth-bwUsed;
+    const ex=drones.find(e=>e.name===d.name);
+    // Topping up a stack already in the bay: the bay always caps it, but bandwidth only does if that
+    // stack is flying — spares cost none. Its active state is the user's and is left alone.
+    if(ex){
+      const{qty}=droneAddQty({bandwidth:getDroneBW(ex),volume:getDroneVol(ex),
+                              bwFree:ex.active?bwFree:Infinity,bayFree});
+      setDrones(drones.map(e=>e.name===d.name?{...e,qty:e.qty+qty}:e));return;
+    }
+    setDrones(prev=>{
       const dtid = d.typeID ?? (d.name ? tidByName(d.name) : null);
       const dta = dtid!=null ? (TYPES[dtid]?.attrs ?? TYPES[String(dtid)]?.attrs ?? null) : null;
       const bw  = dta?.droneBandwidthUsed ?? d.bandwidth ?? 5;
@@ -131,7 +141,8 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
       const trk = dta?.trackingSpeed ?? d.tracking ?? 0;
       const vel = dta?.maxVelocity ?? d.maxVelocity ?? d.velocity ?? 0;
       const hp_ = dta?.hp ?? d.hp ?? 0;
-      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty:5,active:false,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
+      const{qty,active}=droneAddQty({bandwidth:bw,volume:vol,bwFree,bayFree});
+      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
     });}
   const addFighter=f=>{setFighters(prev=>[...prev,{id:Date.now(),name:f.name,tier:f.tier,typeID:f.typeID,role:f.role||null,qty:1,active:true,abilities:{}}]);};
   const toggleFighterActive=id=>setFighters(fighters.map(f=>f.id===id?{...f,active:f.active===false?true:false}:f));
