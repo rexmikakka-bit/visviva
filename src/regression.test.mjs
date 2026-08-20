@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -2572,6 +2572,115 @@ Republic Fleet Command Mindlink`;
   const prec = (state) => M('Missile Guidance Computer II', state, 'Missile Precision Script');
   check('mgc', 'precision script leaves velocity at the bare value',
         missile([prec('overheated'), prec('overheated')], []).velocity, 5625, TOL);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13p. MODULE STRENGTH READOUTS — the bare figure on an EWAR/support row
+//      Two things are being pinned. First the DISTINCT-MAGNITUDE rule: a module that moves several
+//      attributes by the same amount reads as one number, one that moves them differently lists
+//      each. Second, and more important, that the group table is neither too narrow nor too broad.
+//      Keying it off attribute PRESENCE instead of the group name is the tempting shortcut and it
+//      is wrong — `speedFactor` defaults to 1, so every propulsion module in the game resolves it,
+//      which is what the microwarpdrive check below exists to catch.
+//      All values engine-resolved at all skills V; a Praxis is used because it bonuses none of it.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMODULE STRENGTH READOUTS');
+  const S = (vals, unit) => String(formatStrengthValues(vals, unit));
+  check('str', 'equal magnitudes collapse to one figure', S([-17.19, -17.19, -17.19]), '17.2%');
+  check('str', 'different magnitudes list ascending', S([15, 7.5, 15]), '7.5/15%');
+  // A Missile Guidance Computer raises missile velocity +8.25% and shrinks explosion radius
+  // -8.25%: one strength written twice, so signs must not split it into two figures.
+  check('str', 'opposite signs are one magnitude', S([-9, -9, -12, 12]), '9/12%');
+  // Rounds BEFORE deduping. Two attributes reached by different multiplication chains land one ULP
+  // apart — 0.1*3 is not 0.3 — and deduping the raw doubles leaves both, printing "0.3/0.3%".
+  // (Do not "simplify" this to a hand-typed pair like 17.19 / 17.190000000000001: those parse to
+  // the SAME double, so the check silently has no teeth. Verified by reverting the fix.)
+  check('str', 'float dust does not split a figure', S([0.3, 0.1 * 3]), '0.3%');
+  check('str', 'all-zero produces nothing at all', S([0, 0, 0]), 'null');
+
+  const praxis = { typeID: tid('Praxis'), name: 'Praxis' };
+  const rows = {
+    neut:    M('Small Energy Neutralizer II', 'active'),
+    nos:     M('Small Energy Nosferatu II', 'active'),
+    rtc:     M('Remote Tracking Computer II', 'active'),
+    td:      M('Tracking Disruptor II', 'active'),
+    tdScr:   M('Tracking Disruptor II', 'active', 'Tracking Speed Disruption Script'),
+    gdPrec:  M('Guidance Disruptor II', 'active', 'Missile Precision Script'),
+    paint:   M('Target Painter II', 'active'),
+    sebo:    M('Sensor Booster II', 'active'),
+    seboIdle:M('Sensor Booster II', 'online'),
+    seboOff: M('Sensor Booster II', 'offline'),
+    tc:      M('Tracking Computer II', 'active'),
+    mgc:     M('Missile Guidance Computer II', 'active'),
+    web:     M('Stasis Webifier II', 'active'),
+    scram:   M('Warp Scrambler II', 'active'),
+    disr:    M('Warp Disruptor II', 'active'),
+    mwd:     M('50MN Microwarpdrive II', 'active'),
+    te:      M('Tracking Enhancer II', 'online'),
+    sigamp:  M('Signal Amplifier II', 'online'),
+    dc:      M('Damage Control II', 'online'),
+  };
+  const cs = calcFitStats(praxis, {
+    high: [rows.neut, rows.nos, rows.rtc],
+    mid:  [rows.td, rows.tdScr, rows.gdPrec, rows.paint, rows.sebo, rows.seboIdle, rows.seboOff, rows.tc, rows.mgc,
+           rows.web, rows.scram, rows.disr, rows.mwd],
+    low:  [rows.te, rows.sigamp, rows.dc],
+    rigs: [],
+  }, [], null, {});
+  const st = k => cs.slotEngineStats.get(rows[k]) ?? {};
+  const txt = k => String(st(k).strengthText);
+
+  check('str', 'unscripted TD II is ONE figure', txt('td'), '21.5%');            // 17.19 x 1.25 (Signal Suppression V)
+  check('str', 'a script doubles it and keeps it one', txt('tdScr'), '43%');     // the other two attrs are zeroed
+  check('str', 'Remote Tracking Computer II', txt('rtc'), '7.5/15%');
+  check('str', 'Sensor Booster II', txt('sebo'), '30/48%');
+  // A split figure has to name its parts — "30/48%" alone cannot say which number is which. Listed
+  // ascending, in the same order as the figures. Two attributes sharing a value (targeting range
+  // and scan resolution, both 30%) both appear, mapping to the one figure they produced.
+  check('str', 'Sensor Booster II names each figure', String(st('sebo').strengthDetail),
+        'targeting range 30%, scan resolution 30%, sensor strength 48%');
+  check('str', 'Remote Tracking Computer II names each figure', String(st('rtc').strengthDetail),
+        'optimal 7.5%, falloff 15%, tracking 15%');
+  // One figure covering SEVERAL attributes names them instead of listing values — scripting a
+  // disruptor zeroes the attributes it doesn't boost rather than changing the number, so "30%" is
+  // identical on a precision-scripted and an unscripted module and only the names tell them apart.
+  check('str', 'precision-scripted GD is one figure', txt('gdPrec'), '30%');
+  check('str', 'precision-scripted GD names both effects', String(st('gdPrec').strengthAttrs),
+        'explosion velocity and explosion radius');
+  check('str', 'an unscripted TD names all three', String(st('td').strengthAttrs),
+        'optimal, falloff and tracking');
+  // ...but never both forms at once: values-with-names supersedes names-only.
+  check('str', 'a split figure carries no name-only list', String(st('sebo').strengthAttrs), 'undefined');
+  check('str', 'a single-attribute module carries neither', String(st('paint').strengthAttrs), 'undefined');
+  check('str', 'Small Energy Neutralizer II', txt('neut'), '55 GJ/6s');
+  check('str', 'neut GJ per second', st('neut').strengthPerSec, 9.2, 1e-9);
+  check('str', 'Small Energy Nosferatu II', txt('nos'), '10 GJ/2.5s');
+  // Tackle carries warpScrambleStrength and would read "2 pts", but the figure is fixed per module
+  // and already implied by the name, so it is left off the row on purpose. Asserted so it cannot
+  // drift back in as a side effect of widening the table.
+  check('str', 'a warp scrambler shows no strength', txt('scram'), 'undefined');
+  check('str', 'a warp disruptor shows no strength', txt('disr'), 'undefined');
+  // A web has BOTH; the strength is merged into the range entry rather than replacing it, and
+  // returning early on the strength would silently have dropped the range the row already showed.
+  check('str', 'a web keeps its strength', txt('web'), '60%');
+  check('str', 'a web keeps its range too', st('web').optimal, 10, 1e-9);
+  // The whole reason the table is keyed by group name. An MWD carries speedFactor and would be
+  // read as a 500%-strength stasis web by anything that dispatched on the attribute.
+  check('str', 'a microwarpdrive is NOT a stasis web', txt('mwd'), 'undefined');
+  check('str', 'a Damage Control has no strength', txt('dc'), 'undefined');
+  // A module that is fitted but not currently running still shows what it would do; gating the
+  // readout on 'active' (as the rest of section 8b does) blanks it the moment you turn it off.
+  check('str', 'an idle module still reads', txt('seboIdle'), '30/48%');
+  check('str', 'an OFFLINE module reads nothing', txt('seboOff'), 'undefined');
+  // Only effects that land on ANOTHER ship get a readout. A local tracking computer, tracking
+  // enhancer, missile guidance computer or signal amplifier is already fully visible in this fit's
+  // own turret/missile/targeting figures, so restating it on the row is noise. Their REMOTE
+  // counterparts are in (see rtc above). The local Sensor Booster is a deliberate exception.
+  check('str', 'a local Tracking Computer shows nothing', txt('tc'), 'undefined');
+  check('str', 'a Tracking Enhancer shows nothing', txt('te'), 'undefined');
+  check('str', 'a Missile Guidance Computer shows nothing', txt('mgc'), 'undefined');
+  check('str', 'a Signal Amplifier shows nothing', txt('sigamp'), 'undefined');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

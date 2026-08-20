@@ -824,6 +824,132 @@ const isActive    = s => s === 'active' || s === 'overheated';
 const isOverheated = s => s === 'overheated';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Module strength readouts (the bare number on a fitted EWAR/support row)
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyed by CCP's GROUP NAME, mirroring pyfa's gui/builtinViewColumns/misc.py — never by attribute
+// presence. Attributes have DEFAULTS, so `get('speedFactor')` resolves to 1 on nearly every module
+// in the game; an attribute-driven sweep drags in 139 propulsion modules, every weapon rig, the
+// Siege Module and the Clone Vat Bay.
+//
+// One entry covers a whole group even when its members do different jobs, because the values are
+// filtered to the non-zero ones at read time: `Weapon Disruptor` holds both Tracking and Guidance
+// Disruptors, and `Structure Disruption Battery` holds the Standup dampener, weapon disruptor and
+// target painter. Zero is a safe "not applicable" test because every *Bonus/*Percent attribute
+// listed here has a default of 0 (checked against dogma-attrs.json). `speedFactor` — default 1 —
+// is the one exception, and it is only ever read for the web groups, which genuinely carry it.
+//
+// ⚠️ The table only covers modules whose effect lands SOMEWHERE ELSE — on a hostile ship, or on a
+// friendly one being supported. A local Tracking Computer, Tracking Enhancer, Omnidirectional
+// Tracking Link/Enhancer, Missile Guidance Computer/Enhancer, Signal Amplifier or Signal Distortion
+// Amplifier is deliberately absent: its whole effect is already visible in this fit's own turret,
+// missile, targeting and ECM figures, so a row readout would only restate a number the Stats tab
+// already shows. Their REMOTE counterparts are in, for exactly the inverse reason. The one
+// deliberate exception is the local Sensor Booster, kept by request.
+const TRACKING_ATTRS = ['maxRangeBonus', 'falloffBonus', 'trackingSpeedBonus'];
+const GUIDANCE_ATTRS = ['missileVelocityBonus', 'explosionDelayBonus', 'aoeVelocityBonus', 'aoeCloudSizeBonus'];
+const SENSOR_ATTRS   = ['maxTargetRangeBonus', 'scanResolutionBonus'];
+// Only the gravimetric one: all four racial sensor attributes carry the same number on every module
+// that has them, so listing all four would just be four passes through the dedupe. pyfa reads the
+// gravimetric one for the same reason.
+const SEBO_ATTRS     = [...SENSOR_ATTRS, 'scanGravimetricStrengthPercent'];
+const ECM_ATTRS      = ['scanGravimetricStrengthBonus', 'scanLadarStrengthBonus',
+                        'scanMagnetometricStrengthBonus', 'scanRadarStrengthBonus'];
+const MOD_STRENGTH = {
+  'Weapon Disruptor':             { kind: 'disrupt', unit: '%',     attrs: [...TRACKING_ATTRS, ...GUIDANCE_ATTRS] },
+  'Structure Disruption Battery': { kind: 'disrupt', unit: '%',     attrs: [...TRACKING_ATTRS, ...GUIDANCE_ATTRS, ...SENSOR_ATTRS, 'signatureRadiusBonus'] },
+  'Sensor Dampener':              { kind: 'damp',    unit: '%',     attrs: SENSOR_ATTRS },
+  'Target Painter':               { kind: 'paint',   unit: '%',     attrs: ['signatureRadiusBonus'] },
+  'Sensor Booster':               { kind: 'sebo',    unit: '%',     attrs: SEBO_ATTRS },
+  'Remote Sensor Booster':        { kind: 'sebo',    unit: '%',     attrs: SEBO_ATTRS },
+  'Remote Tracking Computer':     { kind: 'track',   unit: '%',     attrs: TRACKING_ATTRS },
+  'Stasis Web':                   { kind: 'web',     unit: '%',     attrs: ['speedFactor'] },
+  'Stasis Grappler':              { kind: 'web',     unit: '%',     attrs: ['speedFactor'] },
+  'Structure Stasis Webifier':    { kind: 'web',     unit: '%',     attrs: ['speedFactor'] },
+  'ECM':                          { kind: 'ecm',     unit: ' str',  attrs: ECM_ATTRS },
+  'Burst Jammer':                 { kind: 'ecm',     unit: ' str',  attrs: ECM_ATTRS },
+  'Structure ECM Battery':        { kind: 'ecm',     unit: ' str',  attrs: ECM_ATTRS },
+  // Deliberately ABSENT: Warp Scrambler / Warp Disruptor / Warp Core Stabilizer. Their point strength
+  // is fixed per module and is read off the name — nobody fits a Warp Scrambler II unsure whether it
+  // is 2 points — so a readout there spends a scarce row on a stat that carries no information.
+  'Energy Neutralizer':           { kind: 'neut',    unit: ' GJ',   attrs: ['energyNeutralizerAmount'], perCycle: true },
+  'Structure Energy Neutralizer': { kind: 'neut',    unit: ' GJ',   attrs: ['energyNeutralizerAmount'], perCycle: true },
+  'Energy Nosferatu':             { kind: 'nos',     unit: ' GJ',   attrs: ['powerTransferAmount'],     perCycle: true },
+};
+
+// What each figure in a multi-value readout actually is. "15/30/48%" is useless without this, and
+// the label has to come from the same list the value did or the two drift apart.
+const STRENGTH_ATTR_LABEL = {
+  maxRangeBonus: 'optimal', falloffBonus: 'falloff', trackingSpeedBonus: 'tracking',
+  missileVelocityBonus: 'missile velocity', explosionDelayBonus: 'flight time',
+  aoeVelocityBonus: 'explosion velocity', aoeCloudSizeBonus: 'explosion radius',
+  maxTargetRangeBonus: 'targeting range', scanResolutionBonus: 'scan resolution',
+  scanGravimetricStrengthPercent: 'sensor strength', signatureRadiusBonus: 'signature radius',
+  speedFactor: 'speed',
+};
+
+/**
+ * The distinct-magnitude rule. A module that moves several attributes by the same amount reads as
+ * ONE number — an unscripted Tracking Disruptor is "17.2%", not "17.2/17.2/17.2%" — while one that
+ * moves them by different amounts lists each, ascending: a Tracking Computer is "7.5/15%".
+ *
+ * Compares MAGNITUDES, unsigned. A Missile Guidance Computer raises missile velocity by +8.25% and
+ * shrinks the explosion radius by −8.25%; that is one strength written twice, not two strengths.
+ * The sign is not informative here either — every module in the table only ever pushes its
+ * attributes the one way its name implies — so carrying it through would only add noise.
+ *
+ * Rounds BEFORE deduping. Round afterwards and 17.19 and 17.190000000000001 survive as two
+ * separate entries and print as two identical "17.2"s.
+ */
+export function formatStrengthValues(values, unit = '%') {
+  const seen = new Set();
+  for (const v of values) {
+    const r = Math.round(Math.abs(v ?? 0) * 10) / 10;
+    if (r > 0) seen.add(r);
+  }
+  if (!seen.size) return null;
+  return [...seen].sort((a, b) => a - b).join('/') + unit;
+}
+
+// Reads a module's strength off the ENGINE, never off raw type data. A script is an ordinary dogma
+// effect: a Tracking Speed Disruption Script zeroes maxRangeBonus/falloffBonus and doubles
+// trackingSpeedBonus, so a raw read shows a scripted disruptor's unscripted three-way split — and
+// a Tracking Disruptor II does not even carry falloffBonus in its type data, yet resolves to it.
+function moduleStrengthStats(fitItem) {
+  const def = MOD_STRENGTH[fitItem.groupName ?? ''] ?? MOD_STRENGTH[fitItem._td?.gn ?? ''];
+  if (!def) return null;
+  const vals = def.attrs.map(a => fitItem.get(a) ?? 0);
+  const text = formatStrengthValues(vals, def.unit);
+  if (!text) return null;
+  const out = { strengthKind: def.kind, strengthText: text };
+  // Which figure is which. Only worth saying when the readout actually splits: a lone number is
+  // already fully described by the module's name and the tooltip's own label, and naming every
+  // attribute behind it would just be the wordiness the terse tooltips exist to avoid.
+  const parts = def.attrs
+    .map((a, i) => ({ label: STRENGTH_ATTR_LABEL[a], v: Math.round(Math.abs(vals[i]) * 10) / 10 }))
+    .filter(p => p.label && p.v > 0)
+    .sort((a, b) => a.v - b.v);   // ascending, so the list reads in the same order as the figures
+  if (new Set(parts.map(p => p.v)).size > 1)
+    out.strengthDetail = parts.map(p => `${p.label} ${p.v}${def.unit}`).join(', ');
+  // Equal magnitudes collapse to one figure, which then hides HOW MANY attributes are behind it —
+  // a Guidance Disruptor scripted for precision reads "30%" whether that is one effect or two. The
+  // names are the only thing that distinguishes a scripted disruptor from an unscripted one at a
+  // glance, since scripting zeroes the attributes it doesn't boost rather than changing the figure.
+  else if (parts.length > 1)
+    out.strengthAttrs = parts.map(p => p.label)
+      .reduce((s, l, i, a) => s + (i === 0 ? '' : i === a.length - 1 ? ' and ' : ', ') + l, '');
+  if (def.perCycle) {
+    const cycleS = Math.round((fitItem.get('duration') ?? 0) / 100) / 10;
+    if (cycleS > 0) {
+      const amount = Math.max(...vals.map(v => Math.abs(v)));
+      out.strengthCycleS = cycleS;
+      out.strengthPerSec = Math.round(amount / cycleS * 10) / 10;
+      out.strengthText  += `/${cycleS}s`;
+    }
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Character-level skill RoF/damage bonuses (applied AFTER engine)
 // These are effects on Skill objects in Pyfa; we compute them analytically.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2518,8 +2644,18 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // defaults to uniform. Armor resonances already include any RAH adaptation (applied in calculate()).
   const dmgP = Array.isArray(opts.damageProfile) ? opts.damageProfile : [0.25, 0.25, 0.25, 0.25];
   for (const { slot, fitItem } of modItems) {
-    if (!fitItem || !isActive(slot.state)) continue;
+    if (!fitItem || !isOnline(slot.state)) continue;
     if (slotEngineStats.has(slot)) continue;
+
+    // Gated on ONLINE, not active. A Tracking Enhancer, Signal Amplifier, Missile Guidance Enhancer
+    // and Warp Core Stabilizer are passive lows that never enter the 'active' state, and they are
+    // exactly the modules whose strength you want to read off the row. Everything below this point
+    // still requires 'active', as it always did.
+    const strength = moduleStrengthStats(fitItem);
+    if (!isActive(slot.state)) {
+      if (strength) slotEngineStats.set(slot, strength);
+      continue;
+    }
 
     // AAR detection: module name contains 'Ancillary Armor Repairer'
     const modName = slot.name ?? '';
@@ -2668,7 +2804,12 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     // (Leadership/Fleet Command/Wing Command areaOfEffectBonus → maxRange) now that
     // those skills are mapped in SKILL_CAMEL_TO_PYFA. 15km × 1.5 (hull) × 1.35 × 1.25 × 1.30 = 49.4km.
     const maxRange = fitItem.get('maxRange') ?? 0;
-    if (maxRange <= 0) continue;
+    // A strength-only module (neut, sebo, ECM, tracking computer) has no maxRange of its own and
+    // used to fall out here with no entry at all — which is why none of them had a row readout.
+    if (maxRange <= 0) {
+      if (strength) slotEngineStats.set(slot, strength);
+      continue;
+    }
     // Remote reps / ewar use falloffEffectiveness (attr 2044); turrets use falloff (158).
     // The turret falloff attr defaults to 1, which masks falloffEffectiveness via ??, so check
     // which attr the module actually carries in its type data and read that one.
@@ -2699,6 +2840,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       falloff:  Math.round(falloff  / 1000 * 10) / 10,
       tracking: Math.round(tracking * 1000) / 1000,
       heatedOptimal: heatedRange != null ? Math.round(heatedRange / 1000 * 10) / 10 : null,
+      // Merged, not a separate branch: a web, painter or disruptor has BOTH a range and a strength,
+      // and returning early on the strength would have silently dropped the range readout it
+      // already had.
+      ...strength,
     });
   }
 

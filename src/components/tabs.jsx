@@ -7,6 +7,42 @@ import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
+import { Hint } from "./Hint.jsx";
+
+// Every figure in a module row's subtext is deliberately unlabelled — a phone row has no width for
+// a label — so each one carries a long-press explanation instead. Keyed by the `strengthKind` that
+// calc.js tags the value with, so the wording and the module the number came from cannot drift
+// apart the way a second hand-kept list of group names would.
+const STRENGTH_LABEL={
+  disrupt:"Weapon disruption", damp:"Sensor dampening", paint:"Target painting",
+  sebo:"Sensor boost", track:"Tracking bonus", web:"Stasis web",
+  ecm:"Jam strength", neut:"Neutralized", nos:"Drained",
+};
+const STRENGTH_UNIT={
+  disrupt:"% reduction", damp:"% reduction", paint:"% signature increase",
+  sebo:"% increase", track:"% increase", web:"% speed reduction",
+  neut:"GJ per cycle", nos:"GJ per cycle",
+};
+// Used when one figure covers several attributes, so the tooltip can name them in front of it:
+// "Explosion velocity and explosion radius disruption". Only the kinds that can reach that case
+// have a noun — everything else moves a single attribute and keeps its STRENGTH_LABEL.
+const STRENGTH_NOUN={disrupt:"disruption",damp:"dampening",sebo:"boost",track:"bonus"};
+function strengthTip(e){
+  let t;
+  // Three shapes, in order of how much the figures leave unsaid. A split readout names each figure
+  // ("targeting range 7.5%, scan resolution 15%"), since a number alone cannot say which attribute
+  // it belongs to. One figure covering several attributes names them instead — scripting a
+  // disruptor zeroes the attributes it doesn't boost rather than changing the number, so the names
+  // are the only thing distinguishing a scripted module from an unscripted one. A single attribute
+  // is already described by the module's name and just gets its unit.
+  if(e.strengthDetail) t=`${STRENGTH_LABEL[e.strengthKind]??""} — ${e.strengthDetail}`;
+  else if(e.strengthAttrs&&STRENGTH_NOUN[e.strengthKind])
+    t=`${e.strengthAttrs[0].toUpperCase()}${e.strengthAttrs.slice(1)} ${STRENGTH_NOUN[e.strengthKind]} — ${STRENGTH_UNIT[e.strengthKind]}`;
+  // ECM's figure is a bare jam strength with no unit to name, hence the guard.
+  else t=(STRENGTH_LABEL[e.strengthKind]??"")+(STRENGTH_UNIT[e.strengthKind]?` — ${STRENGTH_UNIT[e.strengthKind]}`:"");
+  if(e.strengthPerSec) t+=` (${e.strengthPerSec} GJ/s)`;
+  return t;
+}
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
 const CAN_FIT_GROUP_KEYS = ['canFitShipGroup01','canFitShipGroup02','canFitShipGroup03','canFitShipGroup04','canFitShipGroup05','canFitShipGroup06','canFitShipGroup07','canFitShipGroup08','canFitShipGroup09','canFitShipGroup10','canFitShipGroup11','canFitShipGroup12','canFitShipGroup13','canFitShipGroup14','canFitShipGroup15','canFitShipGroup16','canFitShipGroup17','canFitShipGroup18','canFitShipGroup19','canFitShipGroup20'];
@@ -630,92 +666,122 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       {/* Colour alone would just look like an error. Say what happened. */}
                       {row.orphan&&<span title="This slot was removed by a subsystem change. The module is kept here so you don't lose it, but it isn't fitted and doesn't affect any stat." style={{fontSize:9,fontWeight:700,color:C.danger,border:`1px solid ${C.danger}`,borderRadius:4,padding:"0 4px",flexShrink:0,letterSpacing:.3}}>NO SLOT</span>}
                     </div>
-                    <div style={{display:"flex",gap:8,marginTop:2}}>
-                      {row.ammo&&<><span style={{fontSize:11,color:C.textMute}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span><button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
+                    {/* ONE wrapping line. The layout rule is just: the row wraps, the ammo chip
+                        never breaks internally, and every stat lives inside a single nowrap group.
+                        Short ammo and the stats share a line; a long ammo name takes the line to
+                        itself and the stats drop to the next one AS A UNIT — never half a value on
+                        each line, and no width heuristic that would need re-tuning per font.
+
+                        The stats are LEFT-aligned in a fixed canonical order (range, tracking,
+                        strength, then the ancillary/RAH/special readouts) rather than being
+                        right-aligned or placed per module. Right-alignment fights the drag handle
+                        and opens a ragged gutter on a narrow phone; per-module placement is what
+                        made the same figure land in a different spot on every row. Order plus the
+                        colour is what makes a column of modules scannable: green is a distance,
+                        amber is a weapon-or-EWAR figure, purple is a repair total. A turret's
+                        tracking and an EWAR module's strength share the amber because no row ever
+                        carries both — the same slot is either shooting or projecting an effect. */}
+                    <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",columnGap:8,rowGap:1,marginTop:2}}>
+                      {row.ammo&&<span style={{display:"inline-flex",alignItems:"center",maxWidth:"100%",minWidth:0}}>
+                        <span style={{fontSize:11,color:C.textMute,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span>
+                        <button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
                         // A grouped row stands for every slot in row.groupIds (identical module +
                         // identical ammo), so unloading has to clear all of them — clearing only the
                         // representative left the rest loaded while the row rendered as unloaded.
                         const ids=new Set(row.groupIds??[row.id]);
                         return{...prev,[sec.key]:prev[sec.key].map(m=>ids.has(m.id)?{...m,ammo:null,charges:undefined,maxCharges:undefined}:m)};
-                      });}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button></>}
+                      });}} style={{background:'none',border:'none',padding:'0 3px',cursor:'pointer',borderRadius:3,lineHeight:1,marginLeft:1,flexShrink:0}}><span style={{fontSize:11,color:C.textMute}}>✕</span></button>
+                      </span>}
                       {(()=>{
-                        if(!row.typeID)return row.optimal>0||row.falloff>0?<span style={{fontSize:11,color:C.rig}}>{row.optimal}+{row.falloff} km</span>:null;
-                        const eStats=engineStatsBySlotID.get(row.id);
-                        if(eStats&&(eStats.optimal>0||eStats.falloff>0)){
-                          const _fal=eStats.falloff>0?`+${eStats.falloff}`:'';
-                          const _isOH=row.state==='overheated';
-                          // heatedOptimal comes from calc and includes subsystem overload enhancements
-                          // (e.g. Loki Core raises a web's heated range to 45.7km).
-                          const _ohHint=(eStats.heatedOptimal!=null&&!_isOH)?<span style={{fontSize:11,color:C.overheat,marginLeft:6}}>OH: {eStats.heatedOptimal} km</span>:null;
-                          return <span style={{fontSize:11,color:C.rig}}>{eStats.optimal}{_fal} km{_ohHint}</span>;
+                        const e=engineStatsBySlotID.get(row.id);
+                        const chips=[];
+                        const push=(key,tip,node)=>chips.push(<Hint key={key} text={tip}>{node}</Hint>);
+
+                        // ── range ────────────────────────────────────────────────────────────
+                        (()=>{
+                          let opt,fal,heated=null;
+                          if(!row.typeID){ opt=row.optimal??0; fal=row.falloff??0; }
+                          else if(e&&(e.optimal>0||e.falloff>0)){ opt=e.optimal; fal=e.falloff;
+                            // heatedOptimal comes from calc and includes subsystem overload
+                            // enhancements (e.g. Loki Core raises a web's heated range to 45.7km).
+                            heated=row.state!=='overheated'?e.heatedOptimal:null; }
+                          else{
+                            const a=TYPES[row.typeID]?.attrs??{};
+                            const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
+                            opt=Math.round((a.maxRange??0)*(ca.weaponRangeMultiplier??1)/1000*10)/10;
+                            fal=Math.round(((a.falloff??a.falloffEffectiveness??0))*(ca.fallofMultiplier??1)/1000*10)/10;
+                          }
+                          if(!(opt>0||fal>0)) return;
+                          const tip=(fal>0?"Optimal + falloff — km":"Optimal range — km")
+                            +(heated!=null?", OH: overheated optimal":"");
+                          push('rng',tip,<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km
+                            {heated!=null&&<span style={{color:C.overheat,marginLeft:6}}>OH: {heated} km</span>}</span>);
+                        })();
+
+                        // ── turret tracking ──────────────────────────────────────────────────
+                        (()=>{
+                          let trk;
+                          if(!row.typeID) trk=row.tracking??0;
+                          else if(e?.tracking>0) trk=e.tracking;
+                          else{
+                            const a=TYPES[row.typeID]?.attrs??{};
+                            const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
+                            trk=Math.round((a.trackingSpeed??0)*(ca.trackingSpeedMultiplier??1)*1000)/1000;
+                          }
+                          if(!(trk>0)) return;
+                          push('trk',"Tracking — radians/second",
+                            <span style={{fontSize:11,color:C.warning}}>Tr {(+trk).toFixed(1)}</span>);
+                        })();
+
+                        // ── strength (EWAR / support / neut) ─────────────────────────────────
+                        if(e?.strengthText) push('str',strengthTip(e),
+                          <span style={{fontSize:11,fontWeight:600,color:C.warning}}>{e.strengthText}</span>);
+
+                        // ── ancillary reps, RAH, HIC bubble, breacher pods ───────────────────
+                        if(e?.isAAR){
+                          const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
+                          if(e.hasPaste) push('aar',`Repaired over the paste clip — EHP / seconds (${Math.round(e.reloadMs/1000)}s reload)`,
+                            <span style={{fontSize:11,color:C.high}}>{fmt(e.totalEHP??e.totalHP)}/{e.totalS}s</span>);
+                          else push('aar',"Repaired unloaded — EHP/second",
+                            <span style={{fontSize:11,color:C.textMute}}>{fmt(e.ehpS??Math.round(e.repPerCycle/(e.cycleMs/1000)))} EHP/s</span>);
                         }
-                        const a=TYPES[row.typeID]?.attrs??{};
-                        const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
-                        const opt=Math.round((a.maxRange??0)*(ca.weaponRangeMultiplier??1)/1000*10)/10;
-                        const fal=Math.round(((a.falloff??a.falloffEffectiveness??0))*(ca.fallofMultiplier??1)/1000*10)/10;
-                        return (opt>0||fal>0)?<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km</span>:null;
-                      })()}
-                      {(()=>{
-                        if(!row.typeID)return row.tracking>0?<span style={{fontSize:11,color:C.warning}}>Tr {(+row.tracking).toFixed(1)}</span>:null;
-                        const eSt=engineStatsBySlotID.get(row.id);
-                        if(eSt?.tracking>0)return <span style={{fontSize:11,color:C.warning}}>Tr {(+eSt.tracking).toFixed(1)}</span>;
-                        const a=TYPES[row.typeID]?.attrs??{};
-                        const _ra=row.ammo?.replace(/\s*\(\d+\)$/,"");const ca=_ra?TYPES[tidByName(_ra)]?.attrs??{}:{};
-                        const trk=Math.round((a.trackingSpeed??0)*(ca.trackingSpeedMultiplier??1)*1000)/1000;
-                        return trk>0?<span style={{fontSize:11,color:C.warning}}>Tr {trk.toFixed(1)}</span>:null;
-                      })()}
-                      {(()=>{
-                        const eAar=engineStatsBySlotID.get(row.id);
-                        if(!eAar?.isAAR) return null;
-                        const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
-                        if(eAar.hasPaste){
-                          const dispHP=eAar.totalEHP??eAar.totalHP;
-                          return <span style={{fontSize:11,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)}/{eAar.totalS}s</span>;
+                        if(e?.isASB){
+                          const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
+                          if(e.hasCharges) push('asb',`Boosted over the ${e.clipCycles}-charge clip — EHP / seconds (+reload)`,
+                            <span style={{fontSize:11,color:C.high}}>{fmt(e.totalEHP??e.totalHP)} / {e.totalS}s (+{Math.round(e.totalS_withReload-e.totalS)}s)</span>);
+                          else push('asb',"Boosted on cap alone — EHP/second",
+                            <span style={{fontSize:11,color:C.textMute}}>{fmt(e.ehpS)} EHP/s</span>);
                         }
-                        const ehps=eAar.ehpS??Math.round(eAar.repPerCycle/(eAar.cycleMs/1000));
-                        return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(ehps)} EHP/s</span>;
-                      })()}
-                      {(()=>{
-                        const eAsb=engineStatsBySlotID.get(row.id);
-                        if(!eAsb?.isASB) return null;
-                        const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
-                        if(eAsb.hasCharges){
-                          const dispHP=eAsb.totalEHP??eAsb.totalHP;
-                          const reloadS=Math.round(eAsb.totalS_withReload-eAsb.totalS);
-                          return <span style={{fontSize:11,color:'#a78bfa',marginLeft:2}}>{fmt(dispHP)} / {eAsb.totalS}s (+{reloadS}s)</span>;
+                        if(e?.isRAH&&e.rahResistPct){
+                          // Current adapted resist split as four colour-coded figures (EM/Th/Kin/Exp).
+                          const cols=[DMG.em.color,DMG.th.color,DMG.kin.color,DMG.exp.color];
+                          push('rah',"Adapted resists — EM / thermal / kinetic / explosive",
+                            <span style={{display:"inline-flex",alignItems:"center",fontSize:11,fontWeight:700}}>
+                              {e.rahResistPct.map((v,i)=>(<span key={i}>
+                                {i>0&&<span style={{color:C.textMute,margin:"0 3px"}}>/</span>}
+                                <span style={{color:cols[i]}}>{Number(v.toFixed(1))}%</span>
+                              </span>))}
+                            </span>);
                         }
-                        return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>{fmt(eAsb.ehpS)} EHP/s</span>;
-                      })()}
-                      {(()=>{
-                        const eRah=engineStatsBySlotID.get(row.id);
-                        if(!eRah?.isRAH||!eRah.rahResistPct) return null;
-                        // Current adapted resist split as four color-coded figures (EM / Th / Kin / Exp).
-                        const pct=eRah.rahResistPct; // [em,th,kin,exp] percent
-                        const cols=[DMG.em.color,DMG.th.color,DMG.kin.color,DMG.exp.color];
-                        return(<span style={{display:"inline-flex",alignItems:"center",fontSize:11,fontWeight:700,marginLeft:2}}>
-                          {pct.map((v,i)=>(<span key={i}>
-                            {i>0&&<span style={{color:C.textMute,margin:"0 3px"}}>/</span>}
-                            <span style={{color:cols[i]}}>{Number(v.toFixed(1))}%</span>
-                          </span>))}
-                        </span>);
-                      })()}
-                      {(()=>{
-                        const eW=engineStatsBySlotID.get(row.id);
-                        if(!eW?.isWDFG) return null;
-                        const km=Math.round((eW.warpScrambleRange??0)/100)/10;
-                        return <span style={{fontSize:11,color:C.rig,marginLeft:2}}>{km} km</span>;
-                      })()}
-                      {(()=>{
-                        const eB=engineStatsBySlotID.get(row.id);
-                        if(!eB?.isBreacher) return null;
-                        if(eB.noPod) return <span style={{fontSize:11,color:C.textMute,marginLeft:2}}>load a pod</span>;
-                        // pyfa format: total absolute / total %-of-HP "over" duration, resist-ignoring.
-                        const fmtK=(n)=>n>=1000?(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+"k":Math.round(n).toString();
-                        return <span title={`Pure damage inflicted over time, minimum of absolute / relative.\nFull DPS from ${fmtK(eB.fullDpsHP)} target HP`}
-                          style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700,marginLeft:2,cursor:"help"}}>
-                          <span style={{color:C.danger}}>{fmtK(eB.totalAbs)}/{Math.round(eB.totalPct)}%</span>
-                          <span style={{color:C.textMute,fontWeight:400}}>over {Math.round(eB.durationS)}s</span>
-                        </span>;
+                        if(e?.isWDFG) push('wdfg',e.scripted?"Warp disruption range — km (scripted, single target)":"Warp disruption bubble radius — km",
+                          <span style={{fontSize:11,color:C.rig}}>{Math.round((e.warpScrambleRange??0)/100)/10} km</span>);
+                        if(e?.isBreacher){
+                          if(e.noPod) chips.push(<span key='bp' style={{fontSize:11,color:C.textMute}}>load a pod</span>);
+                          else{
+                            // pyfa format: total absolute / total %-of-HP "over" duration, resist-ignoring.
+                            const fmtK=n=>n>=1000?(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+"k":Math.round(n).toString();
+                            push('bp',"Breacher damage, resist-ignoring — absolute / % of target HP, whichever is lower",
+                              <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700}}>
+                                <span style={{color:C.danger}}>{fmtK(e.totalAbs)}/{Math.round(e.totalPct)}%</span>
+                                <span style={{color:C.textMute,fontWeight:400}}>over {Math.round(e.durationS)}s</span>
+                              </span>);
+                          }
+                        }
+
+                        if(!chips.length) return null;
+                        // One nowrap group, so the stats wrap to the next line together rather than
+                        // splitting a value across the break.
+                        return <span style={{display:"inline-flex",alignItems:"center",gap:8,whiteSpace:"nowrap",flexShrink:0}}>{chips}</span>;
                       })()}
                     </div>
                   </div>
