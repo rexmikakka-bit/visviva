@@ -26,9 +26,11 @@ const _navBtn={width:36,height:36,borderRadius:8,background:C.surface,border:`1p
 const BackArrow=()=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
   <path d="M15.5 4.5 8 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
 </svg>);
+// The bar sits well clear of the chevron's tip: at a 4-unit gap the two shapes fused into a capital
+// K at phone size, which is not a direction.
 const BackToStartArrow=()=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-  <path d="M17.5 4.5 10 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
-  <path d="M6 4.5v15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
+  <path d="M19 4.5 11.5 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
+  <path d="M4.5 4.5v15" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"/>
 </svg>);
 
 export function ActiveFitBar({activeFit,onReturn}){
