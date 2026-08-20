@@ -7,6 +7,7 @@ import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
+import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { Hint } from "./Hint.jsx";
 
 // Every figure in a module row's subtext is deliberately unlabelled — a phone row has no width for
@@ -241,6 +242,7 @@ const enforceGroupLimit=(slots,limits,changedId)=>{
 };
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
+  const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
   // stats. A missile launcher's range comes entirely from its charge (velocity x flight time), so an
@@ -541,7 +543,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   };
 
   return(
-    <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
+    <div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
       {/* `top` must clear the notch/Dynamic Island: a plain 16px put "No turret slots available"
           underneath the iPhone sensor bar, where it is unreadable. Same treatment as the price
           banner in App.jsx — env(safe-area-inset-top) is 0 on Android and the web, so the constant
@@ -821,6 +823,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
 function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
+  const _scroll=useScrollMemory("Stats");
   // Per-section collapse state — all open by default.
   const [collapsed,setCollapsed]=useState({});
   const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
@@ -910,9 +913,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // Separate from `collapsed` (which is open-by-default): these nested rows default to CLOSED,
   // so absence from the set means closed.
   const[openPriceGroups,setOpenPriceGroups]=useState({});
-  // Which Targeting & Misc cells are currently showing their unrounded value. Keyed by label, so it
-  // survives the drone-range row appearing and disappearing with the hull.
+  // Which cells are currently showing their unrounded value (Targeting & Misc, and the EHP figures
+  // in Resistances). Keyed by label, so it survives a row appearing and disappearing with the hull.
   const[exactCells,setExactCells]=useState(()=>new Set());
+  const toggleExact=k=>setExactCells(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
@@ -946,14 +950,22 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const armorEHPp  = ehpForProfile(cs.armorHP??0,  r.armor);
   const hullEHPp   = ehpForProfile(cs.hullHP??0,   r.hull);
   const totalEHPp  = shieldEHPp + armorEHPp + hullEHPp;
+  // The EHP figures are shown abbreviated ("45.2k"), which hides up to 50 HP — enough to matter when
+  // you are comparing two fits that differ by one rig. Tapping one swaps it for the exact number.
+  //
+  // The EHP column widens for ALL rows as soon as ANY of them is expanded, because each row is its
+  // own grid: sizing it per-row would let one long number push that row's resist bars out of line
+  // with the rows above and below it. A capital's "1,234,567" is the case that needs the room.
+  const fmtExact=n=>Math.round(n??0).toLocaleString();
+  const ehpCol=["shield","armor","hull"].some(k=>exactCells.has(`ehp:${k}`))?"62px":"44px";
   const layers=[
-    {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),ehp:fmtN(shieldEHPp),
+    {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
      em:r.shield?.em??0,th:r.shield?.th??0,kin:r.shield?.kin??0,exp:r.shield?.exp??0,
      regen:`${fmtF(cs.passiveShieldRegen??0)} HP/s`, repLabel:cs.shieldRepPS>0?`Boost: ${fmtF(cs.shieldRepPS)} HP/s`:""},
-    {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), ehp:fmtN(armorEHPp),
+    {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
      em:r.armor?.em??0, th:r.armor?.th??0, kin:r.armor?.kin??0, exp:r.armor?.exp??0,
      regen:cs.armorRepPS>0?`Rep: ${fmtF(cs.armorRepPS)} HP/s`:"", repLabel:""},
-    {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  ehp:fmtN(hullEHPp),
+    {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
      em:r.hull?.em??0,  th:r.hull?.th??0,  kin:r.hull?.kin??0,  exp:r.hull?.exp??0,
      regen:cs.hullRepPS>0?`Rep: ${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
   ];
@@ -988,7 +1000,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const neutResistPct = (1-(cs.energyWarfareResist??1))*100;
 
   return(
-    <div style={{flex:1,overflowY:"auto",padding:"10px 10px 20px"}}>
+    <div ref={_scroll} style={{flex:1,overflowY:"auto",padding:"10px 10px 20px"}}>
       {showProfilePicker&&<DamageProfileSheet current={dmgProfile} onSelect={setDmgProfile} onClose={()=>setShowProfilePicker(false)}/>}
       {showTargetPicker&&<TargetProfileSheet current={tgtProfile} onSelect={setTgtProfile} onClose={()=>setShowTargetPicker(false)}/>}
 
@@ -1027,7 +1039,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Resistances */}
       <div style={card}>
-        <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span style={{color:C.rig,fontWeight:700}}>{fmtN(totalEHPp)}</span></span>}/>
+        {/* stopPropagation: the whole header row collapses the section, and tapping the number for
+            its exact value must not also close what you are reading. */}
+        <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
+          onClick={e=>{e.stopPropagation();toggleExact("ehp:total");}} title={fmtExact(totalEHPp)}
+          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{exactCells.has("ehp:total")?fmtExact(totalEHPp):fmtN(totalEHPp)}</span></span>}/>
         {isOpen("resists")&&<div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>Incoming damage</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1038,11 +1054,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           </span>
         </div>}
         {isOpen("resists")&&<>
-        <div style={{display:"grid",gridTemplateColumns:"52px 1fr 1fr 1fr 1fr 44px",padding:"5px 12px 4px",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"grid",gridTemplateColumns:`52px 1fr 1fr 1fr 1fr ${ehpCol}`,padding:"5px 12px 4px",borderBottom:`1px solid ${C.border}`}}>
           <span/>{Object.values(DMG).map(d=><span key={d.label} style={{fontSize:10,fontWeight:700,color:d.color,textAlign:"center"}}>{d.label}</span>)}<span style={{fontSize:10,fontWeight:700,color:C.textMute,textAlign:"right"}}>EHP</span>
         </div>
         {layers.map((layer,li)=>(<div key={layer.key}>
-          <div style={{display:"grid",gridTemplateColumns:"52px 1fr 1fr 1fr 1fr 44px",padding:"5px 12px",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
+          <div style={{display:"grid",gridTemplateColumns:`52px 1fr 1fr 1fr 1fr ${ehpCol}`,padding:"5px 12px",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
             <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{layer.label}</span>
             {[{v:layer.em,d:DMG.em},{v:layer.th,d:DMG.th},{v:layer.kin,d:DMG.kin},{v:layer.exp,d:DMG.exp}].map(({v,d})=>(
               <div key={d.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
@@ -1050,7 +1066,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 <span style={{fontSize:10,fontWeight:600,color:d.color}}>{typeof v === "number" ? v.toFixed(1) : v}%</span>
               </div>
             ))}
-            <span style={{fontSize:10,fontWeight:700,color:C.text,textAlign:"right"}}>{layer.ehp}</span>
+            <span onClick={()=>toggleExact(`ehp:${layer.key}`)} title={fmtExact(layer.ehpRaw)}
+                  style={{fontSize:10,fontWeight:700,color:exactCells.has(`ehp:${layer.key}`)?C.rig:C.text,textAlign:"right",cursor:"pointer",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>
+              {exactCells.has(`ehp:${layer.key}`)?fmtExact(layer.ehpRaw):layer.ehp}
+            </span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"52px 1fr auto",padding:"3px 12px",borderBottom:(layers.length-1>li)?`1px solid ${C.border}`:"none",background:`${C.surfaceAlt}88`}}>
             <span style={{fontSize:9,color:C.textMute}}>HP: {layer.hp}</span>
@@ -1318,7 +1337,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const br=(i%2===0)?`1px solid ${C.border}`:"none";
             const can=exact!=null&&exact!==val;
             const on=can&&exactCells.has(label);
-            return(<div key={label} onClick={can?()=>setExactCells(s=>{const n=new Set(s);n.has(label)?n.delete(label):n.add(label);return n;}):undefined}
+            return(<div key={label} onClick={can?()=>toggleExact(label):undefined}
                         title={can?exact:undefined}
                         style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,cursor:can?"pointer":"default"}}>
               <span style={{color:C.textMid,flexShrink:0}}>{label}</span>

@@ -19,6 +19,7 @@ import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import { resolvePilotSkills } from "./lib/pilot.js";
+import { resetScrollMemory } from "./lib/use-scroll-memory.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
@@ -322,6 +323,9 @@ export default function App(){
   // timing question entirely.
   const loadFit=(ship,fitName,fitOverride)=>{
     const fit=fitOverride??fitsDB[ship]?.find(f=>f.name===fitName);
+    // A different fit is a fresh read, so it starts at the top rather than wherever the last one was
+    // scrolled to. Re-opening the fit you are already in keeps your place.
+    if(activeFit?.ship!==ship||activeFit?.fitName!==fitName) resetScrollMemory();
     setActiveFit({ship,fitName});
     // Every route into a fit goes through here, so this is the one place that sees an "open".
     if(fit) setRecentFits(prev=>{

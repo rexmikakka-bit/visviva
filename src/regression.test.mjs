@@ -2256,6 +2256,44 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 13i. WARP SCRAMBLERS vs DISRUPTORS — the damage graph applies your own ewar to the target
+//      The graph shuts the target's MWD off inside scrambler range, so it needs to know which of
+//      your tackle modules actually blocks a prop mod. CCP files scramblers AND disruptors under
+//      groupName 'Warp Scrambler', so the group cannot tell them apart and neither can the name.
+//      `activationBlockedStrenght` (CCP's spelling) is the attribute that does the blocking and is
+//      absent on a disruptor — that is the discriminator, and this pins it.
+//
+//      Range must be ENGINE-computed, not the module's base 9 km: the Mordu's hulls are the whole
+//      reason a scram reaches far enough for this to change a graph, and a hardcoded 9000 would
+//      silently draw the Orthrus's own signature trick out of existence.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nWARP SCRAMBLERS (damage graph tackle)');
+  const mid = (n, state = 'active') => ({ typeID: tid(n), name: n, state });
+  const scramsOf = (shipName, mods) => computeProjectedReps(
+    { typeID: tid(shipName), name: shipName },
+    { high: [], mid: mods, low: [], rigs: [] }, null, {}).scrams;
+
+  check('scram', 'a scrambler is collected', scramsOf('Orthrus', [mid('Warp Scrambler II')]).length, 1, 0);
+  check('scram', 'a DISRUPTOR is not', scramsOf('Orthrus', [mid('Warp Disruptor II')]).length, 0, 0);
+  check('scram', 'an offline scrambler is not', scramsOf('Orthrus', [mid('Warp Scrambler II', 'offline')]).length, 0, 0);
+  // 9 km base × the Orthrus's 1.5 warp-scrambler range bonus at all V.
+  check('scram', 'Orthrus scram range is hull-bonused', scramsOf('Orthrus', [mid('Warp Scrambler II')])[0].optimal, 13500, 1e-9);
+  check('scram', 'an unbonused hull gets the base range', scramsOf('Rifter', [mid('Warp Scrambler II')])[0].optimal, 9000, 1e-9);
+  // Tackle is hard-edged: full strength to maxRange, nothing past it. A falloff would smear the
+  // MWD-off transition the graph draws as a step.
+  check('scram', 'tackle carries no falloff', scramsOf('Rifter', [mid('Warp Scrambler II')])[0].falloff, 0, 0);
+  {
+    // The new branch sits in the same if/else chain as webs and painters, so it is exactly the
+    // shape of edit that can swallow a neighbour. All three still come back from one fit.
+    const r = computeProjectedReps({ typeID: tid('Orthrus'), name: 'Orthrus' },
+      { high: [], mid: [mid('Warp Scrambler II'), mid('Stasis Webifier II'), mid('Target Painter II')], low: [], rigs: [] }, null, {});
+    check('scram', 'webs and painters survive alongside it',
+          r.scrams.length === 1 && r.webs.length === 1 && r.painters.length === 1 ? 1 : 0, 1, 0);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 13g. MIXED CAP-FREE / CAP-USING SHIELD BOOSTERS — sustained tank
 //      A Phoenix Navy Issue carrying a Capital Ancillary Shield Booster on cap booster charges
 //      (cap-FREE) alongside a CONCORD Capital Shield Booster (cap-HUNGRY), on a fit that is not cap

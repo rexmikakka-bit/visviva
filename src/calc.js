@@ -1400,6 +1400,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   const webs = [];
   const neuts = [];
   const painters = [];   // {sigBonus, optimal, falloff}
+  const scrams = [];     // warp SCRAMBLERS only (they stop an MWD): {optimal}
   const damps = [];      // {lockBonus, scanResBonus, optimal, falloff}
   const sensorBoosts = []; // projected Remote Sensor Booster: {lockBonus, scanResBonus, optimal, falloff}
   const trackDisr = [];  // {tracking, optimal:rangeBonus, falloff:falloffBonus, opt, fall}
@@ -1463,6 +1464,18 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
     } else if (gn === 'Target Painter') {
       const sig = fitItem.get('signatureRadiusBonus') ?? 0;
       if (sig > 0) painters.push({ name: slot.name, sigBonus: sig, optimal, falloff });
+    } else if (gn === 'Warp Scrambler') {
+      // A SCRAMBLER shuts the target's MWD off; a DISRUPTOR does not — and CCP files both under
+      // groupName 'Warp Scrambler', so the group cannot tell them apart. `activationBlockedStrenght`
+      // (CCP's spelling) is the attribute that does the blocking and is absent on a disruptor, which
+      // is why it is the test rather than the name or the 9km-vs-24km range.
+      //
+      // Tackle has no falloff: it works at full strength to maxRange and not at all past it. The
+      // range is engine-computed, so a hull range bonus is already in it — which matters, because the
+      // Mordu's hulls are the reason a scram can reach far enough for this to be interesting at all.
+      if ((fitItem.get('activationBlockedStrenght') ?? 0) > 0) {
+        scrams.push({ name: slot.name, optimal, falloff: 0 });
+      }
     } else if (gn === 'Sensor Dampener') {
       const lr = fitItem.get('maxTargetRangeBonus') ?? 0;
       const sr = fitItem.get('scanResolutionBonus') ?? 0;
@@ -1507,7 +1520,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (amt[kind] > 0) reps.push({ kind, name, rawPS: (amt[kind] / dur) * qty, optimal: 1e9, falloff: 0 });
     }
   }
-  return { reps, caps, webs, neuts, painters, damps, sensorBoosts, trackDisr, guideDisr, ecm };
+  return { reps, caps, webs, neuts, painters, scrams, damps, sensorBoosts, trackDisr, guideDisr, ecm };
 }
 
 export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {

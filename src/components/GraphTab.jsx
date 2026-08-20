@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
+import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
@@ -95,6 +96,33 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // formula that had been told to ignore it.
     const profSig = params.tgtSig ?? IDEAL_SIG;
     const profVel = params.tgtSpeed ?? 0;
+    // YOUR OWN ewar, applied to the thing you are shooting. A web that is fitted and running is part
+    // of how much damage lands, so leaving it out understated every tackle fit's application — and
+    // the same modules were already drawn, at the same ranges, one tab over under Ewar.
+    //
+    // Range-scaled and stacking-penalised exactly as the Ewar graph does it, so the two cannot
+    // disagree about what one web is worth at 15 km. Grapplers need no special case: CCP files them
+    // in their own group but `computeProjectedReps` already folds both into `webs`.
+    const PJ = params.ownProj || {};
+    const rfE = (o,f,d) => calcRangeFactor(o,f,d,true);
+    const webMultAt = (dM) => { const ms=(PJ.webs||[]).map(w=>1+(w.speedFactor*rfE(w.optimal,w.falloff,dM))/100); return ms.length?stackingPenalty(ms):1; };
+    const sigMultAt = (dM) => { const ms=(PJ.painters||[]).map(p=>1+((p.sigBonus||0)*rfE(p.optimal,p.falloff,dM))/100); return ms.length?stackingPenalty(ms):1; };
+    // A scrambler does not modify an attribute — it turns the target's microwarpdrive OFF, which is a
+    // state the target either has or doesn't. `tgtNoMwd` is the same profile's not-MWDing sig/speed
+    // pair, supplied only when the target is a preset currently running its MWD; against a hand-typed
+    // sig or speed it is null, because there is no way to know how much of a typed 200 m is MWD bloom.
+    // Tackle is hard-edged (no falloff), so this flips at exactly the scrambler's engine-computed
+    // range — which on a Mordu's hull is a good deal further out than the module's own 9 km.
+    const scrammedAt = (dM) => (PJ.scrams||[]).some(s => dM <= (s.optimal||0));
+    // `free` names the quantity the X AXIS is sweeping. Substituting the MWD-off value for it would
+    // overwrite the axis with a constant and draw a flat line across a graph whose entire subject is
+    // that quantity — the same trap the tgtSig branch fell into once before (see above).
+    const effTarget = (dM, sig, vel, free) => {
+      const nm = (params.tgtNoMwd && scrammedAt(dM)) ? params.tgtNoMwd : null;
+      const s = (nm && free!=="sig") ? nm.sig : sig;
+      const v = (nm && free!=="vel") ? nm.vel : vel;
+      return [s*sigMultAt(dM), v*webMultAt(dM)];
+    };
     // Fixed engagement distance for the speed/sig axes (hold range constant, vary tracking inputs).
     let engDist = 0;
     for (const w of (cs?.graphWeapons ?? [])) engDist = Math.max(engDist, w.kind==="missile" ? (w.lowerRange||0) : (w.optimal || 0));
@@ -141,24 +169,28 @@ function generateCurve(catKey,yKey,xKey,params={}){
         return 1;
     };
     // Compute total applied DPS (or volley) at a given engagement.
-    const applied = (distM, tgtSig, tgtSpeed, perfect) => {
+    // The ghost column needs no ewar handling: `perfect` discards sig and speed outright, so a web
+    // cannot improve on a target already treated as stationary and infinitely large.
+    const applied = (distM, tgtSig, tgtSpeed, perfect, free) => {
+      const [sig, vel] = effTarget(distM, tgtSig, tgtSpeed, free);
       let total = 0;
       for (const w of weapons) {
         const _v = w.volleyEff ?? w.volley;
         const vol = _v.em + _v.th + _v.kin + _v.exp;
         const per = wantVolley ? vol : vol / w.cycleS;
-        total += per * weaponMult(w, distM, tgtSig, tgtSpeed, perfect);
+        total += per * weaponMult(w, distM, sig, vel, perfect);
       }
       return total;
     };
     // Every damage point carries TWO y values: what lands against the target being simulated, and
     // what would land with application perfect. Both come from one call site so the ghost can never
     // sample an x the real line didn't.
-    const both = (distM, tgtSig, tgtSpeed) => [applied(distM,tgtSig,tgtSpeed), applied(distM,tgtSig,tgtSpeed,true)];
+    const both = (distM, tgtSig, tgtSpeed, free) => [applied(distM,tgtSig,tgtSpeed,false,free), applied(distM,tgtSig,tgtSpeed,true,free)];
     // Every volley landed within `TMAX` seconds at one engagement distance, as [t, damage] pairs.
     // Both the time axis (which draws them as a staircase) and the distance axis (which sums them)
     // go through this, so the two can never disagree about what "damage inflicted" means.
-    const damageEvents=(TMAX,distM,sig,vel)=>{
+    const damageEvents=(TMAX,distM,rawSig,rawVel,free)=>{
+      const [sig,vel]=effTarget(distM,rawSig,rawVel,free);
       const evts=[];
       for (const w of weapons){
         const v=w.volleyEff??w.volley;
@@ -224,10 +256,10 @@ function generateCurve(catKey,yKey,xKey,params={}){
         xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
       }
     }
-    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...both(engDist, profSig, v)]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig, vmax*p/100)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, ...both(engDist, sg, profVel)]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig*p/100, profVel)]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...both(engDist, profSig, v, "vel")]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig, vmax*p/100, "vel")]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, ...both(engDist, sg, profVel, "sig")]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig*p/100, profVel, "sig")]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
   }else if(catKey==="ewar"){
     const P=params.ownProj||{};
     const rf=(o,f,d)=>calcRangeFactor(o,f,d,true);
@@ -686,9 +718,14 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   );
 }
 
-function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship}){
+function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
+  // Your own ewar silently changes the numbers above, so it has to say so somewhere. Webs, grapplers
+  // and painters just scale the sig/speed below; the scrambler is the one that needs explaining,
+  // because whether it does anything at all depends on the target being a preset with its MWD on.
+  const nWeb=(ownProj?.webs||[]).length, nTP=(ownProj?.painters||[]).length, nScram=(ownProj?.scrams||[]).length;
+  const slowPaint=[nWeb&&`${nWeb} web${nWeb>1?"s":""}/grappler${nWeb>1?"s":""}`,nTP&&`${nTP} painter${nTP>1?"s":""}`].filter(Boolean).join(" and ");
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
   const applyTarget=(key,mwd)=>{
     const t=profileTarget(key,mwd); if(!t) return;
@@ -701,6 +738,13 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   // to apply, so the flag is just remembered for the next profile picked.
   const toggleMwd=()=>{const next=!targetMwd;setTargetMwd(next);applyTarget(targetProfile,next);};
   const mwdApplies=TARGET_PROFILES[targetProfile]?.mwdSig!=null;
+  // Four states, and the last is the honest admission: pyfa drags a whole target FIT onto the graph
+  // and can just switch its prop mod off, whereas a hand-typed 200 m could be a hull that size or a
+  // 40 m frigate blooming under an MWD, and nothing here can tell which.
+  const scramNote = !nScram ? null
+    : !targetMwd ? "no effect here — the target isn't running an MWD"
+    : !mwdApplies ? "not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom"
+    : `cuts the MWD inside ${Math.round(Math.max(...ownProj.scrams.map(s=>s.optimal||0))/100)/10} km`;
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
   const setSpeed=(v)=>{const n=Math.max(0,Number(v)||0);setTargetVel(n);if(n>0)setTargetVelMax(n);setTargetProfile("custom");};
   // The scrub's numeric path into the same two writes typing does. It cannot produce the empty string
@@ -750,6 +794,11 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       <span style={{fontSize:11,fontWeight:700,color:C.textMid}}>{tgtProfile?.n}
         <span style={{fontSize:10,fontWeight:400,color:C.textMute}}> · set in Stats › Firepower</span>
       </span>
+    </div>}
+    {(slowPaint||scramNote)&&<div style={{padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
+      <div style={{fontSize:10,color:C.textMute,marginBottom:slowPaint&&scramNote?3:0}}>Your ewar</div>
+      {slowPaint&&<div style={{fontSize:11,color:C.textMid}}>{slowPaint} applied to the target, scaled by range.</div>}
+      {scramNote&&<div style={{fontSize:11,color:C.textMid}}>Scrambler: <span style={{color:C.textMute}}>{scramNote}</span></div>}
     </div>}
     {/* Editable sig + speed */}
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
@@ -833,6 +882,7 @@ function interpCurveAt(pts,xVal,col=1){
 // set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
 // two views from disagreeing about which resist profile is in force.
 function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile}){
+  const _scroll=useScrollMemory("Graph");
   // Lazy, once per mount — see loadGraphPrefs. A ref rather than useMemo because these feed useState
   // initialisers, and a discarded memo would silently hand back defaults.
   const _prefs=useRef(undefined);
@@ -921,7 +971,12 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     const sn=ship?.name; if(!sn) return null;
     try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters,drones}); }catch{ return null; }
   },[ship,slots,skills,implants,boosters,drones]);
-  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,xZoom});
+  // What the target would present with its MWD off — the only thing a scrambler in `ownProj` can be
+  // modelled against. Non-null only for a preset that HAS an MWD variant and is currently running it:
+  // once sig or speed is typed the profile becomes "custom", which carries no variant, and a typed
+  // number cannot be decomposed into hull plus MWD bloom.
+  const tgtNoMwd=useMemo(()=>(targetMwd&&TARGET_PROFILES[targetProfile]?.mwdSig!=null)?profileTarget(targetProfile,false):null,[targetMwd,targetProfile]);
+  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
@@ -939,7 +994,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const displayGhost=pts.length?(cursorY!=null?interpCurveAt(pts,cursorX,2):pts[_baseIdx][2]):null;
   const appliedPct=(displayGhost>0&&displayVal!=null&&displayGhost>displayVal*1.005)?Math.round(displayVal/displayGhost*100):null;
   const fmt=v=>v==null?"--":v>=10000?`${(v/1000).toFixed(1)}k`:v>=100?v.toFixed(0):v.toFixed(1);
-  return(<div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
+  return(<div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:5,paddingBottom:2}}>
         {GRAPH_CONFIG.map(c=><button key={c.key} onClick={()=>handleCatChange(c.key)} style={{flexShrink:0,padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:catKey===c.key?`${c.color}22`:C.surface,border:`1px solid ${catKey===c.key?c.color:C.border}`,color:catKey===c.key?c.color:C.textMid}}>{c.label}</button>)}
@@ -1042,7 +1097,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}
       marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship}/></div>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj}/></div>}
   </div>);
 }
 
