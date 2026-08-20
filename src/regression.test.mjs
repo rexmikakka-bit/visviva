@@ -3426,18 +3426,31 @@ Republic Fleet Command Mindlink`;
   const full = validStatesFor(modOf('Heavy Neutron Blaster II', 'weapon'));
   check('gesture', 'tap runs an online module', gestureTarget(full, 'online', 'tap'), 'active', 0);
   check('gesture', 'tap stops an active module', gestureTarget(full, 'active', 'tap'), 'online', 0);
-  // Stopping an overheated module goes straight to online rather than stepping down through active:
-  // one tap means stop, and having to tap twice to stop something would be the surprise.
-  check('gesture', 'tap stops an overheated module outright', gestureTarget(full, 'overheated', 'tap'), 'online', 0);
+  // Tapping a hot module cools it — one step down to active, not all the way to stopped. Tap is the
+  // undo for the double-tap that overheated it, so it has to land where that started.
+  check('gesture', 'tap cools an overheated module to active', gestureTarget(full, 'overheated', 'tap'), 'active', 0);
+  // Tap never offlines, on ANY shape from ANY state — hold is the only way off, so a mis-tap cannot
+  // silently drop a module out of the fit's stats. Swept over every shape rather than asserted on the
+  // four-state module alone, where it is vacuous: the shape that can get this wrong is the passive
+  // one, whose only "stop" would have to be offline.
+  let tapOfflines = 0;
+  for (const [name, type] of shapes) {
+    const states = validStatesFor(modOf(name, type));
+    tapOfflines += states.filter((s) => gestureTarget(states, s, 'tap') === 'offline').length;
+  }
+  check('gesture', 'no tap on any module shape offlines it', tapOfflines, 0, 0);
   check('gesture', 'double-tap overheats', gestureTarget(full, 'active', 'double'), 'overheated', 0);
   check('gesture', 'hold offlines', gestureTarget(full, 'active', 'hold'), 'offline', 0);
   check('gesture', 'hold again restores it', gestureTarget(full, 'offline', 'hold'), 'online', 0);
 
-  // A passive module has no active state, so tap is its on/off switch instead of a dead gesture —
-  // and double-tap, which it cannot honour, refuses rather than falling back to something else.
+  // A passive module has no active state, so the only thing tap could "stop" it into is offline —
+  // and tap does not offline. It therefore brings the module online and then refuses, rather than
+  // becoming a second, shorter offline gesture on exactly the modules (an EANM) where a stray tap is
+  // most costly. Double-tap, which it cannot honour either, refuses instead of falling back.
   const passive = ['offline', 'online'];
-  check('gesture', 'tap toggles a passive module on', gestureTarget(passive, 'offline', 'tap'), 'online', 0);
-  check('gesture', 'tap toggles a passive module off', gestureTarget(passive, 'online', 'tap'), 'offline', 0);
+  check('gesture', 'tap runs a passive module', gestureTarget(passive, 'offline', 'tap'), 'online', 0);
+  check('gesture', 'tap refuses to offline a passive module',
+    gestureTarget(passive, 'online', 'tap') === null ? 1 : 0, 1, 0);
   check('gesture', 'a passive module refuses overheat', gestureTarget(passive, 'online', 'double') === null ? 1 : 0, 1, 0);
 
   // A rig has exactly one state, so all three gestures must refuse. Silently doing nothing here is

@@ -336,20 +336,21 @@ function validStatesFor(mod){
 // leave. Hold offlines; holding again brings it back.
 //
 // What a gesture means depends on what the module can legally do, so the mapping is computed from
-// `states` rather than hardcoded: a passive module has no active state, and tap on it toggles the
-// only pair it has. A module with no second state at all (a rig) has no gesture, and says so by
-// returning null — the caller reports that rather than silently doing nothing.
+// `states` rather than hardcoded. A module with no second state at all (a rig) has no gesture, and
+// says so by returning null — the caller reports that rather than silently doing nothing.
 function gestureTarget(states,cur,gesture){
   const has=(s)=>states.includes(s);
   if(gesture==="hold")   return has("offline")?(cur==="offline"?"online":"offline"):null;
   if(gesture==="double") return has("overheated")?(cur==="overheated"?"active":"overheated"):null;
-  // Tap: run/stop. "Run" is active where the module has one, otherwise online — which makes tap the
-  // on/off switch for a passive module instead of a dead gesture. Overheated counts as running, so a
-  // single tap stops an overheated module outright rather than stepping down through active first.
+  // Tap: run/stop, and it NEVER offlines — hold is the only way off, so a brushed finger cannot
+  // silently unfit a module's stats. That constraint is only visible on a passive module, whose
+  // "stop" would have to be offline: tap brings it online and then refuses. Overheated steps down
+  // one notch to active rather than stopping outright, since tapping a hot module means "cool it".
   if(!has("online"))return null;
-  const run=has("active")?"active":"online";
-  if(run==="online")return has("offline")?(cur==="online"?"offline":"online"):null;
-  return (cur==="active"||cur==="overheated")?"online":run;
+  if(cur==="offline")    return has("active")?"active":"online";
+  if(cur==="overheated") return "active";
+  if(cur==="active")     return "online";
+  return has("active")?"active":null;
 }
 const calcTransversal=(a,b)=>{const d=Math.abs(a-b)%360,n=d>180?360-d:d;return Math.min(n,180-n);};
 
