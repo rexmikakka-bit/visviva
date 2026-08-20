@@ -1360,7 +1360,9 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       // CCP quite correctly marks the raw speedMultiplier as lower-is-better, which would
       // double-invert it back to wrong.
       const higherIsBetter=inverted?true:attrHighIsGood(r.attrID);
-      const deltaColor=Math.abs(pct)<0.1?C.textMute:((higherIsBetter?pct>0:pct<0)?C.rig:C.warning);
+      // The same three colours DeltaMark paints a variation delta in — this panel and the Variations
+      // tab are answering the same question about the same module, one slider-drag apart.
+      const deltaColor=Math.abs(pct)<0.1?C.textMute:((higherIsBetter?pct>0:pct<0)?C.rig:C.danger);
       // Where the base sits along the TRACK. A mutaplasmid's range is rarely symmetric about the
       // base (a Decayed rolls -30%/+20%), so this is not the midpoint, and the "base" label below
       // the slider — which is centred — does not indicate it.
@@ -1372,6 +1374,15 @@ function MutaplasmidEditor({mod,onUpdateMod}){
       const baseOnSlider=inverted?(r.min+r.max-r.base):r.base;
       const sliderFrac=r.max>r.min?(baseOnSlider-r.min)/(r.max-r.min):0.5;
       const baseOnTrack=sliderFrac>=0&&sliderFrac<=1;
+      // Where a fraction of the RANGE sits along the drawn track. The thumb's centre travels between
+      // half a thumb from each end, so a bare percentage drifts off by up to 7px near an extreme —
+      // enough to visibly miss the base tick. The tick and the bar's two ends all go through here, so
+      // they cannot disagree about where a value is.
+      const trackPos=(f)=>`calc(${(f*100).toFixed(3)}% + ${((0.5-f)*14).toFixed(2)}px)`;
+      const curFrac=r.max>r.min?((inverted?(r.min+r.max-cur):cur)-r.min)/(r.max-r.min):0.5;
+      // Clamped because the base is off the track entirely on 138 ranges (a mutaplasmid that only
+      // makes an attribute worse starts past it), and the bar then runs from the edge it lies beyond.
+      const originFrac=Math.min(1,Math.max(0,sliderFrac));
       return(<div key={r.name} style={{marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:3}}>
           <span style={{fontSize:11,fontWeight:600,color:C.text}}>{mutaLabel(r.name)}</span>
@@ -1395,9 +1406,12 @@ function MutaplasmidEditor({mod,onUpdateMod}){
             thumb's own width — the knob's centre travels between half a thumb from each end, so a
             plain percentage drifts off the tick as the base approaches either extreme. */}
         <div style={{position:"relative"}}>
-          {baseOnTrack&&<div style={{position:"absolute",left:`calc(${(sliderFrac*100).toFixed(3)}% + ${((0.5-sliderFrac)*14).toFixed(1)}px)`,
-                       top:2,bottom:2,width:2,marginLeft:-1,borderRadius:1,background:C.border,pointerEvents:"none"}}/>}
-          <input type="range" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
+          {baseOnTrack&&<div style={{position:"absolute",left:trackPos(sliderFrac),
+                       top:2,bottom:2,width:2,marginLeft:-1,borderRadius:1,background:C.borderStrong,pointerEvents:"none"}}/>}
+          {/* The bar's colour is `deltaColor`, the same value the percentage above it is painted in —
+              one judgement, shown twice. At the base it is C.textMute, which never shows: the bar has
+              zero width there. */}
+          <input type="range" className="vv-muta" min={r.min} max={r.max} step={(r.max-r.min)/400||0.01}
                  value={inverted?(r.min+r.max-cur):cur}
                  onChange={e=>{
                    const v=Number(e.target.value);
@@ -1405,7 +1419,8 @@ function MutaplasmidEditor({mod,onUpdateMod}){
                    if(raw===r.base&&cur!==r.base) haptic("light");   // only on ENTERING the detent
                    setVal(r.name,raw);
                  }}
-                 style={{width:"100%",accentColor:C.accent,position:"relative"}}/>
+                 style={{position:"relative","--a":trackPos(Math.min(originFrac,curFrac)),
+                         "--b":trackPos(Math.max(originFrac,curFrac)),"--c":deltaColor}}/>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
           <span>{fmtMutaVal(r.name,inverted?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,inverted?r.min:r.max)}</span>

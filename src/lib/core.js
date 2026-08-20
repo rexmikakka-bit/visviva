@@ -277,6 +277,23 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 .vv-from-right{animation:vv-from-right .2s cubic-bezier(.22,.61,.36,1)}
 .vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}
 @media (prefers-reduced-motion:reduce){.vv-from-right,.vv-from-left{animation:none}}
+
+/* Mutaplasmid sliders. The bar runs from the BASE value to the current one and is coloured by
+   whether the roll is an improvement, so its length reads as the size of the roll and its colour as
+   the sign — which a left-anchored accent fill cannot say at all. That needs the native track
+   replaced: accent-color only ever fills left-to-thumb. MutaplasmidEditor supplies --a/--b (the two
+   stop positions, already ordered) and --c (the colour); the px term in those positions corrects for
+   the thumb's own width, since its centre travels between half a thumb from each end.
+   Both track rules are duplicated rather than grouped because a selector list is dropped whole by
+   any engine that does not recognise one member, and no engine knows both prefixes. */
+.vv-muta{-webkit-appearance:none;appearance:none;width:100%;height:16px;background:transparent}
+.vv-muta::-webkit-slider-runnable-track{height:4px;border-radius:2px;
+  background:linear-gradient(to right,${C.border} var(--a),var(--c) var(--a),var(--c) var(--b),${C.border} var(--b))}
+.vv-muta::-moz-range-track{height:4px;border-radius:2px;
+  background:linear-gradient(to right,${C.border} var(--a),var(--c) var(--a),var(--c) var(--b),${C.border} var(--b))}
+.vv-muta::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;
+  margin-top:-5px;border-radius:50%;border:none;background:${C.text}}
+.vv-muta::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:none;background:${C.text}}
 `;
 import { C } from "../theme.js";
 import { metaOf, META_COLORS, META_ORDER, browserMetaRank } from "./meta.js";
