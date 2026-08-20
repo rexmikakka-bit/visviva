@@ -321,7 +321,12 @@ export default function App(){
   // nothing -- which silently skipped the tab registration (the fit opened, but never as a tab)
   // while still setting activeFit, so it looked like it half-worked. Passing the object removes the
   // timing question entirely.
-  const loadFit=(ship,fitName,fitOverride)=>{
+  // `keepPage` leaves you on whatever screen you were already on. Switching between OPEN TABS is the
+  // case: the tabs are a way to compare the same aspect of two fits, so being thrown back to the Fit
+  // page meant re-navigating to Effects (or Drones, or Cargo) after every switch — which is most of
+  // the work the strip exists to save. Opening a fit from the library still lands on the Fit page,
+  // because there you picked the fit itself rather than a comparison.
+  const loadFit=(ship,fitName,fitOverride,keepPage)=>{
     const fit=fitOverride??fitsDB[ship]?.find(f=>f.name===fitName);
     // A different fit is a fresh read, so it starts at the top rather than wherever the last one was
     // scrolled to. Re-opening the fit you are already in keeps your place.
@@ -384,8 +389,7 @@ export default function App(){
     setBoosters(fit?.boosters??[]);
     setProjFits(fit?.projFits??[]);
     setCmdFits(fit?.cmdFits??[]);
-    setFittingsView("active");
-    setBottomTab("fittings");
+    if(!keepPage){setFittingsView("active");setBottomTab("fittings");}
   };
   const importFit=(parsed)=>{
     const{shipName,fitName,ship,mods,drones:pDrones,fighters:pFighters,cargo:pCargo,implantNames,boosterNames,subsystems:pSubs}=parsed;
@@ -509,7 +513,7 @@ export default function App(){
     setOpenTabs(prev=>(prev??[]).filter(t=>!(t.ship===tab.ship&&(t.id!=null?t.id===tab.id:t.name===tab.name))));
     if(wasActive){
       const next=openFitTabs[idx+1]??openFitTabs[idx-1];
-      if(next) loadFit(next.ship,next.name);
+      if(next) loadFit(next.ship,next.name,undefined,true);
     }
   };
   // Deleting the fit you have open leaves the same hole as closing its tab, so it lands the same
@@ -604,7 +608,8 @@ export default function App(){
           row of fit names would just be noise. */}
       {!(bottomTab==="fittings"&&fittingsView&&fittingsView!=="active")&&
         <FitTabs tabs={openFitTabs} activeFit={activeFit} open={tabsOpen}
-                 onSelect={t=>loadFit(t.ship,t.name)} onClose={closeFitTab}
+                 onSelect={t=>loadFit(t.ship,t.name,undefined,true)} onClose={closeFitTab}
+                 onReorder={order=>setOpenTabs(order)}
                  onToggle={()=>setTabsOpen(o=>!o)}
                  onOpenLibrary={()=>{wantNewTab.current=true;setBottomTab("fittings");setFittingsView("browse");}}/>}
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to

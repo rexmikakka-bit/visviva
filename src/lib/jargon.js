@@ -293,6 +293,11 @@ export const JARGON = {
   cb:       J('cb', 'capacitor booster', 'command burst'),
   inj:      J('inj', 'capacitor booster'),
   injector: J('injector', 'capacitor booster'),
+  // In EVE "cap" is always the capacitor; "capital" is a hull size and gets typed in full. Without
+  // this, "cap booster" scored a Capital SHIELD Booster exactly as highly as a Capacitor Booster —
+  // both merely start a word with those three letters — and eight of them led the results.
+  // The literal half still matches "capital", so those hulls' modules are found, just ranked below.
+  cap:      J('cap', 'capacitor'),
 
   // Electronics/sensor upgrades
   coproc:  J('coproc', 'co-proc'),
@@ -401,7 +406,10 @@ const MIN_MIDWORD = 4;
 const literalMatch = (name, tok) =>
   atWordStart(name, tok) || (tok.length >= MIN_MIDWORD && name.includes(tok));
 
-const EXPANSION = 700;
+// Above the name-PREFIX tier, not just the word-start one. A prefix hit is still a literal hit, and
+// it can land on a different word than the shorthand means: "cap" prefixes "Capital Shield Booster"
+// while meaning capacitor, which at 700 kept eight of them above every Capacitor Booster.
+const EXPANSION = 900;
 function expansionScore(name, query) {
   const entry = JARGON[query];
   if (!entry) return 0;
@@ -411,18 +419,33 @@ function expansionScore(name, query) {
 // Relevance, highest first. The tiers are deliberately coarse and gap-separated: within a tier the
 // caller breaks ties on name LENGTH, which is what floats "Tracking Computer I" above "Unit
 // D-34343's Modified Tracking Computer" without needing to know anything about meta levels.
-export function searchScore(name, query) {
+function scoreOne(name, q) {
   const n = String(name ?? "").toLowerCase();
-  const q = String(query ?? "").trim().toLowerCase();
   if (!q) return 0;
   if (n === q) return 1000;                                     // exact
-  if (n.startsWith(q)) return 800;                              // "tracking" -> Tracking Computer
   const jargonHit = expansionScore(n, q);                       // "ac" -> AutoCannon
   if (jargonHit) return jargonHit;
+  if (n.startsWith(q)) return 800;                              // "tracking" -> Tracking Computer
   if (atWordStart(n, q)) return 600;                            // -> Remote Tracking Computer
   if (initialsOf(name).startsWith(q.replace(/\s+/g, ""))) return 500;  // "te" -> Tracking Enhancer
   if (n.includes(q)) return 300;                                // "cannon" -> AutoCannon (mid-word)
   return 100;                                                   // matched via jargon / another token
+}
+
+// A query is TOKENS — `nameMatchesQuery` has always treated it that way, and scoring only the whole
+// string is why every multi-word search lost its ranking: no tier above the 100 floor can fire on a
+// phrase that appears in no name, so "cap booster" scored all 53 hits identically and the order fell
+// through to name length, putting eight Capital SHIELD Boosters on top.
+//
+// The whole-query score is ADDED to the per-token scores rather than replaced, because it is the only
+// one that can see a phrase: it is what keeps "Tracking Computer II" (a name prefix) above "Remote
+// Tracking Computer II" when both satisfy each token equally well. A one-token query is returned
+// unchanged, so nothing that already ranked correctly moves.
+export function searchScore(name, query) {
+  const q = String(query ?? "").trim().toLowerCase();
+  const toks = q.split(/\s+/).filter(Boolean);
+  if (toks.length < 2) return scoreOne(name, q);
+  return toks.reduce((sum, t) => sum + scoreOne(name, t), scoreOne(name, q));
 }
 
 export function rankByRelevance(names, query, nameOf = (x) => x) {

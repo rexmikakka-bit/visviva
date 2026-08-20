@@ -3212,6 +3212,14 @@ Republic Fleet Command Mindlink`;
   check('search', '"dda" leads with the Drone Damage Amplifier', rankOf('low', 'dda', /^Drone Damage Amplifier II$/), 1, 0);
   check('search', '"istab" leads with Inertial Stabilizers', rankOf('low', 'istab', /^Inertial Stabilizers II$/), 1, 0);
   check('search', '"point" leads with a Warp Disruptor', rankOf('mid', 'point', /^Warp Disruptor II$/), 1, 0);
+  // A MULTI-WORD query used to score only the whole string, which matches no name — so all 53 hits
+  // tied at the 100 floor and the order fell through to name length, leading with eight Capital
+  // SHIELD Boosters. Needs both halves of the fix: tokenised scoring, and "cap" reading as capacitor
+  // rather than as a prefix of "capital".
+  check('search', '"cap booster" ranks capacitor boosters above capital shield boosters',
+        rankOf('mid', 'cap booster', /Capacitor Booster/) < rankOf('mid', 'cap booster', /Capital Shield Booster/) ? 1 : 0, 1, 0);
+  // ...and the shorthand must not hijack the word typed in full.
+  check('search', '"capital shield booster" still leads with it', rankOf('mid', 'capital shield booster', /^Capital Shield Booster II$/), 1, 0);
 
   // The two ordering rules, asserted as PROPERTIES rather than fixed lists so they hold for queries
   // nobody wrote a case for. Both are about the same thing — results should read as blocks of

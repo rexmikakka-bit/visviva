@@ -186,8 +186,11 @@ export function PilotSheet({pilot,setPilot,missing,onClose}){
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)"}}/>
+      {/* The safe-area inset is what every other sheet in the app pays (see ui.jsx's BottomSheet):
+          without it the footer line sits under the home indicator on a modern iPhone. */}
       <div onClick={e=>e.stopPropagation()} style={{position:"relative",width:"100%",maxWidth:430,margin:"0 auto",
-           background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+           background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden",
+           paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
         <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:15,fontWeight:700,color:C.text}}>Pilot</span>
@@ -226,7 +229,7 @@ export function PilotSheet({pilot,setPilot,missing,onClose}){
           ))}
           <div style={{height:10}}/>
         </div>
-        <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.textMute}}>
+        <div style={{padding:"10px 16px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.textMute}}>
           The pilot is saved with this fit. Skills you have never set count as level V.
         </div>
       </div>
