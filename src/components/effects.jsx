@@ -366,7 +366,11 @@ function boosterSlotOf(b){
 const _SECTIONS=[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"},{tabId:"environment",label:"System"}];
 const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
 
-export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,environment,setEnvironment,onOpenFit}){
+// `sourceSkills(fit)` comes from App.jsx and is the SAME resolver it applies the effects with, so a
+// card here cannot claim a different number from the one the fit is actually getting — a projected
+// or command fit is flown by the pilot it names, or by the app-wide sheet if it names none, and that
+// decision belongs in one place.
+export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,sourceSkills=()=>SKILL_DEFAULTS,environment,setEnvironment,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SECTION_IDS,section,setSection);
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
@@ -437,7 +441,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       {projFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
         const rangeKm=f.rangeKm??30;
-        const eff=srcFit?computeProjectedReps({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,SKILL_DEFAULTS,{implants:srcFit.implants,boosters:srcFit.boosters,drones:srcFit.drones}):{reps:[],webs:[],neuts:[]};
+        const eff=srcFit?computeProjectedReps({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,sourceSkills(srcFit),{implants:srcFit.implants,boosters:srcFit.boosters,drones:srcFit.drones}):{reps:[],webs:[],neuts:[]};
         const rf=(o,fo)=>calcRangeFactor(o,fo,rangeKm*1000,true);
         const totals={shield:0,armor:0,hull:0};
         for(const r of eff.reps)totals[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
@@ -495,7 +499,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       })}
       <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
       {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>{
-        const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
+        const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
         const rangeKm=optims.length?Math.round(Math.min(...optims)/1000):30;
         setProjFits(prev=>[...prev,{ship,fitName:fit.name,rangeKm}]);
@@ -506,7 +510,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       {cmdFits.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No command fits applied</div>}
       {cmdFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
-        const bursts=srcFit?computeCommandBursts({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,SKILL_DEFAULTS,{implants:srcFit.implants,boosters:srcFit.boosters}):[];
+        const bursts=srcFit?computeCommandBursts({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,sourceSkills(srcFit),{implants:srcFit.implants,boosters:srcFit.boosters}):[];
         const on=f.active!==false;   // opt-out, see the projected tab
         return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,opacity:on?1:0.55}}>
           <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:8}}>

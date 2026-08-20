@@ -3,6 +3,8 @@ import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
+import { PILOT_ALL_V, PILOT_ALPHA, esiPilot } from "../lib/pilot.js";
+import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
 import appMark from "../assets/app-mark.png";
@@ -127,15 +129,18 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
 // Skill-requirement indicator: green book when the character meets every fitted item's required
 // skills, red when not. Red is tappable and lists what's short. Hidden with no active fit, since
 // there'd be nothing to check.
-function SkillBook({ok,count,onClick}){
+// Colour still answers "can this pilot fly it" (green/red); the button now also OPENS the pilot
+// picker, which is why it is tappable even when everything is green — a fully-skilled fit is
+// exactly when you might want to see it flown by an alpha instead.
+function SkillBook({ok,count,onClick,custom}){
   const col=ok?C.success:C.danger;
   return(
-    <button onClick={ok?undefined:onClick} disabled={ok}
-      title={ok?"All skill requirements met":`${count} skill${count===1?"":"s"} insufficient — tap for details`}
-      aria-label={ok?"All skill requirements met":`${count} skills insufficient`}
+    <button onClick={onClick}
+      title={ok?"All skill requirements met — tap to change pilot":`${count} skill${count===1?"":"s"} insufficient — tap for details`}
+      aria-label={ok?"Pilot: all skill requirements met":`Pilot: ${count} skills insufficient`}
       style={{position:"relative",width:34,height:34,borderRadius:9,background:`${col}1a`,
               border:`1px solid ${col}66`,display:"flex",alignItems:"center",justifyContent:"center",
-              padding:0,cursor:ok?"default":"pointer",flexShrink:0}}>
+              padding:0,cursor:"pointer",flexShrink:0}}>
       <svg width={18} height={18} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         {/* open book */}
         <path d="M12 6.5C10.4 5.2 8.3 4.6 5.8 4.6c-.7 0-1.3.05-1.8.13v13c.5-.08 1.1-.13 1.8-.13 2.5 0 4.6.6 6.2 1.9"
@@ -147,11 +152,37 @@ function SkillBook({ok,count,onClick}){
       {!ok&&<span style={{position:"absolute",top:-5,right:-5,minWidth:15,height:15,borderRadius:99,
         background:C.danger,color:"#fff",fontSize:9,fontWeight:800,display:"flex",alignItems:"center",
         justifyContent:"center",padding:"0 3px",lineHeight:1}}>{count>99?"99+":count}</span>}
+      {/* A fit flown by someone other than you looks identical otherwise, and its numbers are not
+          your numbers — that has to be visible without opening the sheet. Yields to the red count
+          badge, which is the more urgent of the two. */}
+      {ok&&custom&&<span style={{position:"absolute",top:-3,right:-3,width:8,height:8,borderRadius:99,
+        background:C.accent,border:`1px solid ${C.surface}`}}/>}
     </button>
   );
 }
 
-export function SkillGapSheet({missing,onClose}){
+// One control, two questions: WHO flies this fit, and what can't they use. They belong together —
+// the gap list is only meaningful relative to a pilot, and picking a different one rewrites it.
+// `pilot` is a string on the fit (lib/pilot.js): absent means "your skills", the app-wide sheet.
+export function PilotSheet({pilot,setPilot,missing,onClose}){
+  const chars=(()=>{ try{ return esi.listCharacters(); }catch{ return []; } })();
+  const cached=(()=>{ try{ return esi.getAllCharacterSkills(); }catch{ return {}; } })();
+  const opts=[
+    {id:null,label:"Your Skills",sub:"The sheet in Settings → Skills"},
+    {id:PILOT_ALL_V,label:"All V",sub:"Every skill trained to V"},
+    {id:PILOT_ALPHA,label:"Alpha",sub:"CCP's alpha clone ceiling"},
+    ...chars.map(c=>({
+      id:esiPilot(c.characterId),
+      label:c.characterName,
+      // An ESI pilot that has never been synced has no sheet to fly with and falls back, so say so
+      // rather than showing a character whose numbers are silently someone else's.
+      sub:cached[String(c.characterId)]
+        ? `${Object.values(cached[String(c.characterId)]).filter(v=>v>0).length} trained skills`
+        : "Not synced — sync in Settings → ESI",
+      stale:!cached[String(c.characterId)],
+    })),
+  ];
+  const cur=pilot??null;
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)"}}/>
@@ -159,10 +190,26 @@ export function SkillGapSheet({missing,onClose}){
            background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
         <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-          <span style={{fontSize:15,fontWeight:700,color:C.text}}>Insufficient Skills</span>
+          <span style={{fontSize:15,fontWeight:700,color:C.text}}>Pilot</span>
           <button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>×</button>
         </div>
-        <div style={{overflowY:"auto",padding:"6px 0 14px"}}>
+        <div style={{overflowY:"auto"}}>
+          {opts.map(o=>{
+            const on=cur===o.id;
+            return(<button key={o.id??"default"} onClick={()=>{haptic();setPilot(o.id);}}
+              style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",padding:"11px 16px",
+                      background:on?C.accentLight:"none",border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:on?800:600,color:on?C.accent:C.text}}>{o.label}</div>
+                <div style={{fontSize:10,color:o.stale?C.warning:C.textMute,marginTop:2}}>{o.sub}</div>
+              </div>
+              {on&&<span style={{fontSize:13,fontWeight:800,color:C.accent,flexShrink:0}}>✓</span>}
+            </button>);
+          })}
+          <div style={{padding:"10px 16px 4px",fontSize:11,fontWeight:700,letterSpacing:.5,textTransform:"uppercase",
+                       color:missing.length?C.danger:C.success}}>
+            {missing.length?`${missing.length} skill${missing.length===1?"":"s"} insufficient`:"All skill requirements met"}
+          </div>
           {missing.map(m=>(
             <div key={m.key} style={{padding:"9px 16px",borderBottom:`1px solid ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
@@ -177,16 +224,17 @@ export function SkillGapSheet({missing,onClose}){
               </div>
             </div>
           ))}
+          <div style={{height:10}}/>
         </div>
         <div style={{padding:"10px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.textMute}}>
-          Set your levels in Settings → Skills. Skills you have never set count as level V.
+          The pilot is saved with this fit. Skills you have never set count as level V.
         </div>
       </div>
     </div>
   );
 }
 
-export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,collapsed}){
+export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,pilot,collapsed}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
   const shipName=activeFit?.ship??"Axis";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
@@ -225,7 +273,7 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {activeFit?.ship&&skillCheck&&
-          <SkillBook ok={skillCheck.ok} count={skillCheck.missing.length} onClick={onSkillGaps}/>}
+          <SkillBook ok={skillCheck.ok} count={skillCheck.missing.length} onClick={onSkillGaps} custom={!!pilot}/>}
         <button onClick={onShipInfo} style={{width:collapsed?34:52,height:collapsed?34:52,borderRadius:collapsed?8:11,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
             ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>

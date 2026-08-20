@@ -293,6 +293,35 @@ Two things that are easy to get wrong here:
 `SKILL_CATALOG` also back-fills `SKILL_CAMEL_TO_PYFA` for its derived keys, so a level set on a
 requirement-only skill actually reaches the engine instead of falling through to the all-V default.
 
+### Per-fit pilot (`slots.pilot`) — one resolver, and it must stay the only one
+
+A fit can name whose skills it is flown with: `slots.pilot` is `"allV"`, `"alpha"`, `"me"` or
+`"esi:<characterId>"`, absent meaning "the app-wide sheet". `resolvePilotSkills()` in `src/lib/pilot.js`
+is the **only** place that decision is made, and it is deliberately pure and esi-free (`calc.js` and
+the regression suite import it; `esi.js` touches `localStorage` and `fetch`) — the per-character skill
+cache is passed in. It is written at sync time to `axis_esi_skills`; an `esi:` pilot that has never
+synced falls back rather than guessing, because a character connected on another device has no entry.
+
+Three things here are load-bearing:
+
+- **`fallback` is the caller's, not `appSkills`.** They are different questions: "no pilot named"
+  resolves to the app sheet in the app and to all V in a headless caller, while an unresolvable
+  `esi:` pilot must never quietly borrow *your* skills.
+- **A projection/command SOURCE fit resolves through the SAME resolver with the SAME fallback as the
+  fit being edited**, so a saved fit reads identically whether you are editing it or projecting it.
+  An earlier build gave source fits their own all-V fallback ("it's someone else's ship"); that is
+  **not** the behaviour — the skills a fit was last edited under are the skills it keeps.
+- **The Effects tab is handed App.jsx's own `sourceSkills` resolver** rather than computing its own.
+  The card and the applied value diverging is a real bug this project has already shipped once: the
+  burst applied at the local sheet while the card beside it was hardcoded to all V, and a Vargur
+  under Sleipnir links read 141.9k EHP against pyfa's 146k with the card still saying 22.5%. They
+  agreed only while every skill was unset (and so defaulted to V). Pinned in section 13l.
+
+**No storage migration, and `SCHEMA_VERSION` stays where it is.** `pilot` is optional exactly like
+`pilotSec` / `tactical` / `systemSecurity` / `environment`, none of which have one. Absent is a
+permanent, meaningful state — also true of every brand-new fit — not a legacy shape. Stamping
+`pilot:null` would be a no-op; stamping `"me"` would silently change how every existing fit projects.
+
 ### ⚠️ T3D tactical modes are `published=0` — and the generator filtered on `published`
 
 All 18 "Ship Modifiers" (group **1306**) — the items that carry a T3 destroyer's mode bonuses — are

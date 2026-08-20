@@ -81,6 +81,9 @@ export function EsiSettingsPanel({ setSkills }) {
       // skill key means level V in this app — so merging left every untrained skill at V.
       const full = esi.esiSkillsToFullSkillMap(resp);
       setSkills(full);
+      // Also cached per character, so a fit that names this pilot (slots.pilot = "esi:<id>") can be
+      // calculated with their sheet offline, without disturbing the app-wide one.
+      esi.storeCharacterSkills(activeId, full);
       setSyncedMsg(`Synced ${Object.values(full).filter(v => v > 0).length} trained skills.`);
     } catch (e) { setError(friendlyError(e)); }
     finally { setBusy(false); }
@@ -155,6 +158,7 @@ export function EsiSkillAlignPanel({ setSkills }) {
       // unset, and unset means V.
       const full = esi.esiSkillsToFullSkillMap(resp);
       setSkills(full);
+      esi.storeCharacterSkills(c.characterId, full);
       const trained = Object.values(full).filter(v => v > 0).length;
       setDone({ name: c.characterName, trained, total: Object.keys(full).length });
     } catch (e) { setError(friendlyError(e)); }

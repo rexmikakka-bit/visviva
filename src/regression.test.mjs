@@ -28,10 +28,11 @@ import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
+import { resolvePilotSkills, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -1817,6 +1818,32 @@ Republic Fleet Command Mindlink`;
   // ...and the links must actually be doing something, or everything above passes trivially.
   const bare = stats(null);
   check('burst', 'links raise EHP materially', linked.totalEHP > bare.totalEHP * 1.15 ? 1 : 0, 1, 0);
+
+  // The SOURCE fit names who flies it. App.jsx resolves a projection/command source through the SAME
+  // resolver and the SAME fallback as the fit being edited, so a saved fit reads identically either
+  // way: the skills it was last edited under are the skills it keeps when something projects it.
+  // An untagged link fit therefore follows the app-wide sheet, and a tagged one overrides it.
+  const srcBurst = (pilot, appSkills, id) => {
+    const sk = resolvePilotSkills(pilot, { appSkills, fallback: appSkills });
+    const bs = computeCommandBursts(S.ship, { ...S.slots, pilot }, sk, { implants: S.p.implantNames ?? [] });
+    return bs.find(b => b.buffID === id)?.value ?? 0;
+  };
+  check('burst', 'untagged link fit follows the app sheet', srcBurst(undefined, SKILLS_ALL_V, 12), 22.5, 1e-9);
+  // ...and a tagged one does NOT. An alpha cannot train Shield Command at all (section 13t pins
+  // shieldCommand === 0), so the same hull with the same modules must boost strictly less.
+  check('burst', 'alpha-flown link fit boosts less',
+    srcBurst(PILOT_ALPHA, SKILLS_ALL_V, 12) < 22.5 ? 1 : 0, 1, 0);
+  check('burst', 'alpha-flown link fit still boosts',
+    srcBurst(PILOT_ALPHA, SKILLS_ALL_V, 12) > 0 ? 1 : 0, 1, 0);
+  // The tag beats the sheet in BOTH directions - an all-V tag on an alpha's sheet is the mirror of
+  // the check above, and it is the one that fails if a tagged source silently falls through.
+  check('burst', 'allV tag overrides an alpha app sheet', srcBurst(PILOT_ALL_V, ALPHA_SKILLS, 12), 22.5, 1e-9);
+  check('burst', 'untagged follows an alpha app sheet too',
+    srcBurst(undefined, ALPHA_SKILLS, 12) < 22.5 ? 1 : 0, 1, 0);
+  // ...and it reaches the boosted fit, not just the card.
+  check('burst', 'weaker links give the Vargur less EHP',
+    stats(computeCommandBursts(S.ship, S.slots, ALPHA_SKILLS, { implants: S.p.implantNames ?? [] })).totalEHP
+      < linked.totalEHP ? 1 : 0, 1, 0);
 }
 
 // 13o. HOW MANY OF A GROUP MAY RUN AT ONCE (calcFitStats().groupLimits)
@@ -1975,6 +2002,65 @@ Republic Fleet Command Mindlink`;
   // reachable from an ESI response. The old name-based path missed four to name typos.
   const unreachable = SKILL_CATALOG.filter(e => !e.typeID).length;
   check('esi', 'every catalog skill has a typeID to match on', unreachable, 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13t. PER-FIT PILOT — which character's sheet a fit is calculated with.
+//      `slots.pilot` names it; resolvePilotSkills turns that name into a skill map. The FALLBACK is
+//      the load-bearing part: it is passed in by the caller because it differs by ROLE. The fit you
+//      are editing falls back to the app-wide skill sheet; a projection/command SOURCE fit falls
+//      back to all V (someone else's ship — your sheet has no business scaling their logi, which is
+//      the 13l Vargur/Sleipnir baseline). Both were the behaviour before pilots existed, so an
+//      untagged fit must resolve to its caller's fallback and calculate exactly as it always did.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPER-FIT PILOT');
+  const me = { gunnery: 2 };
+  const cached = { '95465499': { gunnery: 4 } };
+  const other = { gunnery: 1 };
+  const R = (p, fb = SKILLS_ALL_V) => resolvePilotSkills(p, { appSkills: me, esiSkills: cached, fallback: fb });
+
+  // An unset pilot is every fit saved before this existed, so it MUST take the caller's fallback.
+  check('pilot', 'undefined pilot falls back', R(undefined, other) === other ? 1 : 0, 1, 0);
+  check('pilot', 'null pilot falls back', R(null, other) === other ? 1 : 0, 1, 0);
+  check('pilot', 'empty string falls back', R('', other) === other ? 1 : 0, 1, 0);
+  check('pilot', 'unknown pilot string falls back', R('nonsense', other) === other ? 1 : 0, 1, 0);
+  // Same input, two roles, two answers — this is what preserves both existing behaviours at once.
+  check('pilot', 'the fallback is the caller\'s, not a constant',
+        R(undefined, me) === me && R(undefined, SKILLS_ALL_V) === SKILLS_ALL_V ? 1 : 0, 1, 0);
+
+  check('pilot', 'allV resolves to SKILL_DEFAULTS', R(PILOT_ALL_V, other) === SKILLS_ALL_V ? 1 : 0, 1, 0);
+  check('pilot', 'me resolves to the app sheet', R(PILOT_ME, other) === me ? 1 : 0, 1, 0);
+  check('pilot', 'me with no app sheet falls back',
+        resolvePilotSkills(PILOT_ME, { appSkills: null, fallback: other }) === other ? 1 : 0, 1, 0);
+  check('pilot', 'alpha resolves to the alpha ceiling', R(PILOT_ALPHA, other) === ALPHA_SKILLS ? 1 : 0, 1, 0);
+  check('pilot', 'esi:<id> resolves to that character\'s cached sheet',
+        R(esiPilot('95465499'), other)?.gunnery, 4, 0);
+  // A character connected on another device, or one that has never been synced, has no cached map.
+  // Guessing (or resolving to an empty object, which calcFitStats would train back to V) would be a
+  // silent wrong answer, so it falls back like any other unresolvable pilot.
+  check('pilot', 'unsynced esi character falls back', R(esiPilot('1'), other) === other ? 1 : 0, 1, 0);
+  check('pilot', 'a non-object cache entry falls back',
+        resolvePilotSkills(esiPilot('7'), { esiSkills: { 7: 'nope' }, fallback: other }) === other ? 1 : 0, 1, 0);
+  check('pilot', 'esiPilotId round-trips', esiPilotId(esiPilot('42')) === '42' ? 1 : 0, 1, 0);
+  check('pilot', 'esiPilotId is null for a preset', esiPilotId(PILOT_ALPHA) === null ? 1 : 0, 1, 0);
+
+  // ALPHA semantics, restated here because the picker offers it as a pilot and it is the one preset
+  // whose skills are NOT a uniform level: a skill absent from CCP's ceiling is 0, never V. Shield /
+  // Armored / Information Command are absent entirely and Leadership caps at III.
+  check('pilot', 'alpha: absent skill is 0 not V', ALPHA_SKILLS.shieldCommand, 0, 0);
+  check('pilot', 'alpha: Leadership caps below V', ALPHA_SKILLS.leadership < 5 ? 1 : 0, 1, 0);
+  // Teeth that the pilot actually reaches the engine: the same Caracal, two pilots, two DPS figures
+  // (both already validated against eos in section 12a).
+  const carPilot = { typeID: tid('Caracal'), name: 'Caracal' };
+  const hml = { high: [M('Heavy Missile Launcher II', 'active', 'Scourge Fury Heavy Missile')],
+                mid: [], low: [], rigs: [] };
+  const dpsWith = p => calcFitStats(carPilot, hml, [],
+    resolvePilotSkills(p, { appSkills: ALPHA_SKILLS, fallback: SKILLS_ALL_V }), {}).weaponDps?.total;
+  // eos: scripts/oracle, Caracal + one HML II with Fury, Character(level 5).
+  check('pilot', 'allV pilot flies at all V', dpsWith(PILOT_ALL_V), 44.601791333817474, 1e-5);
+  check('pilot', 'alpha pilot flies at the alpha ceiling', dpsWith(PILOT_ALPHA), 37.263845234257474, 1e-5);
+  check('pilot', 'no pilot takes the fallback, not the app sheet', dpsWith(undefined), 44.601791333817474, 1e-5);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2789,6 +2875,56 @@ Republic Fleet Command Mindlink`;
   // The top-up path passes Infinity for an inactive stack, since spares cost no bandwidth. Guard
   // that it stays finite and bay-bound rather than returning Infinity into a quantity.
   check('drn', 'topping up a stowed stack is bay-bound', droneAddQty({...MED,bwFree:Infinity,bayFree:30}).qty, 3, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13s. CROSS-SLOT IMPLANT SEARCH — the picker's search only ever saw one slot's items, so a player
+//      who knew the implant but not the slot had to open slots until one of them had it.
+//      searchImplants spans all ten and returns each hit tagged with the slot it fills.
+//
+//      The ORDER is the load-bearing part and cannot come from the module browser's machinery:
+//      every grade of a set implant carries the SAME metaGroupID 4 / metaLevel 9, so browserMetaRank
+//      cannot separate High from Low, and jargonSearch's tie-break on name LENGTH puts Beta before
+//      Alpha. Slot-ascending, then grade best-first, is what lays a set out Alpha..Omega.
+{
+  // core.js fills implantData from a LAZY dynamic import that cannot resolve under Node (it pulls a
+  // JSON module without an import attribute), so the list is built here the way core.js builds it.
+  const bundle = (await import('./data-bundle.js')).implantData ?? {};
+  const ALL = [];
+  for (const [slot, sd] of Object.entries(bundle))
+    for (const items of Object.values(sd?.groups ?? {}))
+      for (const it of items) ALL.push({ ...it, slot: Number(slot) });
+
+  check('imps', 'the bundle carries every implant', ALL.length, 836, 0);
+
+  // One character is ambiguous enough to match most of 836 items; filtering there is noise, not help.
+  check('imps', 'a one-character query does not search', String(searchImplants('a', ALL)), 'null', 0);
+  check('imps', 'an empty query does not search', String(searchImplants('   ', ALL)), 'null', 0);
+
+  const amulet = searchImplants('amulet', ALL);
+  check('imps', 'amulet finds all three grades of all six slots', amulet.length, 18, 0);
+  check('imps', 'and leads with the slot-1 High-grade', amulet[0].name, 'High-grade Amulet Alpha', 0);
+  check('imps', 'then Mid', amulet[1].name, 'Mid-grade Amulet Alpha', 0);
+  check('imps', 'then Low', amulet[2].name, 'Low-grade Amulet Alpha', 0);
+  // Beta before Alpha was the exact failure of ranking by name length, so pin the handover.
+  check('imps', 'and only then slot 2', amulet[3].name, 'High-grade Amulet Beta', 0);
+  const slotsAsc = amulet.every((x, i) => i === 0 || x.slot >= amulet[i - 1].slot);
+  check('imps', 'slots never go backwards', String(slotsAsc), 'true', 0);
+  check('imps', 'the set spans slots 1-6', `${amulet[0].slot}-${amulet[amulet.length - 1].slot}`, '1-6', 0);
+
+  // Ascendancy has no Low grade, so a hardcoded three-per-slot assumption would overcount it.
+  check('imps', 'ascendancy has only two grades', searchImplants('ascendancy', ALL).length, 12, 0);
+
+  // The whole point of the feature: a hardwiring answers which slot it goes in without opening any.
+  const hw = searchImplants('deadeye', ALL);
+  check('imps', 'deadeye is a hardwiring family', hw.length, 60, 0);
+  check('imps', 'and lives in the hardwiring slots', String(hw.every(x => x.slot >= 6)), 'true', 0);
+
+  // Every result must name a real slot, or the row cannot fit itself anywhere.
+  const badSlot = searchImplants('grade', ALL).filter(x => !(x.slot >= 1 && x.slot <= 10));
+  check('imps', 'every hit carries a valid slot', badSlot.length, 0, 0);
+
+  check('imps', 'a nonsense query finds nothing', searchImplants('qqzzxx', ALL).length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

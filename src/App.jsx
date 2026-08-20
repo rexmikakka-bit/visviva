@@ -12,12 +12,13 @@ import { DronesScreen } from "./components/drones.jsx";
 import { ImplantsScreen } from "./components/implants.jsx";
 import { EffectsScreen, buildBoosterFromName } from "./components/effects.jsx";
 import { SettingsOverlay } from "./components/settings.jsx";
-import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, SkillGapSheet } from "./components/layout.jsx";
+import { ExportFitModal, HamburgerMenu, ChooserSheet, AppHeader, BottomNav, PilotSheet } from "./components/layout.jsx";
 import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
+import { resolvePilotSkills } from "./lib/pilot.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
@@ -139,12 +140,28 @@ export default function App(){
   const[projFits,setProjFits]=useState(initialFit?.projFits??[]);
   const[cmdFits,setCmdFits]=useState(initialFit?.cmdFits??[]);
   const[skills,setSkills]=useState(()=>{try{const s=localStorage.getItem("pyfa-skills");if(s)return{...SKILL_DEFAULTS,...JSON.parse(s)};}catch{}return SKILL_DEFAULTS;});
+  // Every linked character's synced sheet, keyed by character id — written by the ESI sync, read
+  // here so a fit that names a pilot resolves without a network call. Re-read on the same change
+  // event the ESI panels use, so syncing a character updates an open fit immediately.
+  const[esiSkills,setEsiSkills]=useState(()=>esi.getAllCharacterSkills());
+  useEffect(()=>esi.onCharactersChanged(()=>setEsiSkills(esi.getAllCharacterSkills())),[]);
+  // The sheet THIS fit is flown with. A fit can name its pilot (`slots.pilot`); with none named it
+  // falls back to the app-wide sheet, which is what every fit did before pilots existed.
+  const fitSkills=useMemo(()=>resolvePilotSkills(slots?.pilot,{appSkills:skills,esiSkills,fallback:skills}),
+                          [slots?.pilot,skills,esiSkills]);
+  // The sheet a SOURCE fit (projected / command) is flown with. Resolved exactly like `fitSkills`,
+  // so a saved fit reads the same whether you are editing it or projecting it — the skills it was
+  // last edited under are the skills it keeps. Shared with the Effects tab, which renders a card for
+  // each of these: the card and the applied value have to resolve identically or they disagree, and
+  // that has happened before (see the burst comment below).
+  const sourceSkills=useMemo(()=>(fit)=>resolvePilotSkills(fit?.slots?.pilot,{appSkills:skills,esiSkills,fallback:skills}),
+                             [skills,esiSkills]);
   // Can this character actually fly the fit? Checked against every fitted item's own
   // requiredSkillN/requiredSkillNLevel, not just the skills the dogma engine reads.
   const skillCheck=useMemo(()=>activeFit?.ship
-    ? checkFitSkills(lookupShip(activeFit.ship)??{name:activeFit.ship,typeID:tidByName(activeFit.ship)},slots,drones,fighters,skills)
+    ? checkFitSkills(lookupShip(activeFit.ship)??{name:activeFit.ship,typeID:tidByName(activeFit.ship)},slots,drones,fighters,fitSkills)
     : {ok:true,missing:[]},
-  [activeFit,slots,drones,fighters,skills]);
+  [activeFit,slots,drones,fighters,fitSkills]);
   const externalBursts=useMemo(()=>{
     const out=[];
     for(const cf of cmdFits){
@@ -153,18 +170,18 @@ export default function App(){
       if(cf.active===false)continue;
       const fit=fitsDB[cf.ship]?.find(f=>f.name===cf.fitName);
       if(!fit)continue;
-      // SKILL_DEFAULTS (all V), NOT the local pilot's skills. A command fit is by definition
-      // SOMEONE ELSE's ship — you are flying the fit being boosted, not the booster — so applying
-      // your own sheet to it is wrong on its face, and it silently disagreed with the Effects tab,
-      // which has always displayed this list at all V. The two only matched while every skill was
-      // unset (and so defaulted to V); the moment a real character was synced from ESI they
-      // diverged, and a Vargur under Sleipnir links read 141.9k EHP against pyfa's 146k because
-      // the burst applied at 19.5% while the card next to it said 22.5%.
-      const bursts=computeCommandBursts({name:cf.ship,typeID:tidByName(cf.ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters});
+      // The BOOSTER'S OWN fit decides who flies it: its `slots.pilot` if it names one, otherwise the
+      // app-wide sheet — the same resolution the Effects tab uses to DRAW this list. That shared
+      // resolver is the point. The two used to be computed separately and silently disagreed: the
+      // applied burst took the local sheet while the card beside it was hardcoded to all V, so a
+      // Vargur under Sleipnir links read 141.9k EHP against pyfa's 146k with the card still saying
+      // 22.5%. They only matched while every skill was unset (and so defaulted to V); the moment a
+      // real character was synced from ESI they came apart.
+      const bursts=computeCommandBursts({name:cf.ship,typeID:tidByName(cf.ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters});
       for(const b of bursts)out.push(b);
     }
     return out;
-  },[cmdFits,fitsDB]);   // NOT `skills` — command fits are flown at all V, see above
+  },[cmdFits,fitsDB,sourceSkills]);
   const projectedEffects=useMemo(()=>{
     // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
     // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
@@ -178,7 +195,7 @@ export default function App(){
     // having no resistance and projected damps/disruptors hit at full strength. Applied PER SOURCE
     // MODULE, before stacking — stack(b*r) != stack(b)*r, and eos does the former.
     const tShip=activeFit?.ship;
-    const R=(projFits.length&&tShip)?projectionResistances({name:tShip,typeID:tidByName(tShip)},slots,skills,{externalBursts}):null;
+    const R=(projFits.length&&tShip)?projectionResistances({name:tShip,typeID:tidByName(tShip)},slots,fitSkills,{externalBursts}):null;
     const rz=k=>(R&&Number.isFinite(R[k])?R[k]:1);
     // disallowAssistance (in practice: an ACTIVE HIC bubble) refuses ALL incoming remote
     // assistance - reps and remote sensor boosters - while still taking EWAR normally.
@@ -188,8 +205,9 @@ export default function App(){
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
       if(!fit)continue;
       // All V for the same reason as externalBursts above: a PROJECTED fit is another pilot's
-      // ship, so the local skill sheet has no business scaling its logi reps, webs or neuts.
-      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,SKILL_DEFAULTS,{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
+      // ship, so the local skill sheet has no business scaling its logi reps, webs or neuts —
+      // unless that fit names its own pilot.
+      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
       if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});
@@ -213,15 +231,15 @@ export default function App(){
     const debuffs={sig:stackPct(col.sig),lockRange:stackPct(col.lock),scanRes:stackPct(col.scan),tracking:stackPct(col.trk),turretOptimal:stackPct(col.topt),turretFalloff:stackPct(col.tfall),missileRange:stackPct(col.mrng),explosionDelay:stackPct(col.edly),aoeVel:stackPct(col.avel),aoeCloud:stackPct(col.acld)};
     const hasDebuff=Object.values(debuffs).some(v=>Math.abs(v)>0.05);
     return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts};
-  },[projFits,fitsDB,skills,activeFit,slots,externalBursts]);
+  },[projFits,fitsDB,fitSkills,sourceSkills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
   const snapshotStats=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName) return null;
     try{
-      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{fighters,implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{fighters,implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
-  },[activeFit,slots,drones,fighters,skills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fighters,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const shipMeta=useMemo(()=>{
     const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
     return {faction:sh?.race??"",cls:sh?.hullClass??sh?.groupName??""};
@@ -230,26 +248,26 @@ export default function App(){
     const shipName=activeFit?.ship;
     if(!shipName) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneInfo ?? [];
     }catch{ return []; }
-  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const activeDroneDps=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName) return 0;
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
       return cs?.droneDps?.total ?? 0;
     }catch{ return 0; }
-  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const fighterInfo=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName||!(fighters?.length)) return [];
     try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],skills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
+      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
       return cs?.fighterDetails ?? [];
     }catch{ return []; }
-  },[activeFit,slots,drones,skills,implants,boosters,externalBursts,fighters,dmgProfile]);
+  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,fighters,dmgProfile]);
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
   const[fittingsView,setFittingsView]=useState(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   // Set while the browser was opened by the menu's "New Fit", which tells the ship rows the user
@@ -257,7 +275,7 @@ export default function App(){
   // listing what's already on it. Any other route into the browser leaves it false.
   const[newFitIntent,setNewFitIntent]=useState(false);
   const[showShipInfo,setShowShipInfo]=useState(false);
-  const[showSkillGaps,setShowSkillGaps]=useState(false);
+  const[showPilot,setShowPilot]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
@@ -569,14 +587,14 @@ export default function App(){
   // children below finally have a bounded height and each screen's own overflowY:auto region takes
   // over. With minHeight the column just grew and the DOCUMENT scrolled, which is what dragged the
   // bottom nav off the bottom of the screen.
-  return(<SkillsProvider value={skills}>
+  return(<SkillsProvider value={fitSkills}>
   <div className="app-shell" style={{background:C.bg,display:"flex",justifyContent:"center"}}>
     <style>{GLOBAL_CSS}</style>
     <div className="app-col" style={{height:"100%",display:"flex",flexDirection:"column",background:C.bg}}>
       {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
           sheet rendered on `showShipInfo && activeFit?.ship`, so tapping the header thumbnail with
           no fit open armed the flag invisibly and the next fit you created opened the sheet. */}
-      <AppHeader collapsed={headerCollapsed} onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowSkillGaps(true)}/>
+      <AppHeader collapsed={headerCollapsed} onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowPilot(true)} pilot={slots?.pilot??null}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
@@ -588,11 +606,11 @@ export default function App(){
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent}/>}
+        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
-        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
+        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
       </div>
       {/* Every tab except Fittings operates ON a fit — Cargo, Drones, Implants and Effects all have
           nothing to act on with no ship selected, so the bar is five dead buttons taking a row of
@@ -610,9 +628,10 @@ export default function App(){
       {icon:"&#128225;",label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
-    {showSkillGaps&&<SkillGapSheet missing={skillCheck.missing} onClose={()=>setShowSkillGaps(false)}/>}
+    {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
+                            missing={skillCheck.missing} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
-    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={skills} priceHub={priceHub} priceSource={priceSource}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} priceHub={priceHub} priceSource={priceSource}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
