@@ -1115,9 +1115,9 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
             <button key={a.label} onClick={()=>{haptic();a.onClick();if(a.closes!==false)onClose();}}
               title={a.title}
               style={{flex:1,padding:"8px 0",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",
-                      background:a.primary?C.accentLight:C.surfaceAlt,
-                      border:`1px solid ${a.primary?C.accentBorder:C.border}`,
-                      color:a.primary?C.accent:C.textMid}}>{a.label}</button>
+                      background:a.danger?"rgba(239,68,68,.1)":a.primary?C.accentLight:C.surfaceAlt,
+                      border:`1px solid ${a.danger?"rgba(239,68,68,.3)":a.primary?C.accentBorder:C.border}`,
+                      color:a.danger?C.danger:a.primary?C.accent:C.textMid}}>{a.label}</button>
           ))}
         </div>
       )}

@@ -280,6 +280,7 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 `;
 import { C } from "../theme.js";
 import { metaOf, META_COLORS, META_ORDER, browserMetaRank } from "./meta.js";
+import { nameMatchesQuery, searchScore } from "./jargon.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";
 const DMG={
   em: {label:"EM",  color:"#60a5fa"},
@@ -1157,6 +1158,47 @@ function buildDroneBrowser(){
   }
   return result;
 }
+// Every implant, flattened out of the per-slot tree and carrying the slot it came from.
+//
+// The picker is opened FROM a slot, so its search could only ever answer "which Amulet goes here" —
+// but the question a player actually has is the other way round ("I want an Ascendancy, where does
+// it go?"), and answering it meant opening slots one at a time until one of them had the thing.
+// Computed on call rather than cached: implantData arrives via the lazy data-bundle import, so a
+// module-load snapshot would be permanently empty.
+export function allImplants(){
+  const out=[];
+  for(const[slot,sd]of Object.entries(implantData??{}))
+    for(const items of Object.values(sd?.groups??{}))
+      for(const it of items) out.push({...it,slot:Number(slot)});
+  return out;
+}
+
+// High before Mid before Low, matching the best-first order the module browser uses for meta. It has
+// to come off the NAME: every grade of a set implant carries the same metaGroupID 4 / metaLevel 9, so
+// browserMetaRank cannot tell them apart. Hardwirings (no prefix) sort last within a tie, which only
+// arises when a query hits both a set and a hardwiring.
+const IMPLANT_GRADE_RANK=n=>/^High-grade/.test(n)?0:/^Mid-grade/.test(n)?1:/^Low-grade/.test(n)?2:3;
+
+// Matching implants across every slot, most relevant first, or null for a query too short to be worth
+// filtering on.
+//
+// Sorted on SLOT before name, unlike the module browser's group-then-meta blocking: for a set query
+// every member ties at the same word-start score, and slot order then lays the set out Alpha..Omega —
+// which is both the natural reading order and, for someone who searched because they did not know the
+// slot, the answer itself.
+export function searchImplants(query,list){
+  const q=String(query??"").trim();
+  if(q.length<2) return null;
+  const src=list??allImplants();
+  return src
+    .filter(i=>nameMatchesQuery(i.name,q))
+    .map((i,idx)=>({i,idx,s:searchScore(i.name,q)}))
+    .sort((a,b)=>b.s-a.s||a.i.slot-b.i.slot
+                ||IMPLANT_GRADE_RANK(a.i.name)-IMPLANT_GRADE_RANK(b.i.name)
+                ||a.i.name.localeCompare(b.i.name)||a.idx-b.idx)
+    .map(r=>r.i);
+}
+
 const REAL_CHARGE_BROWSER=buildChargeBrowser();
 const REAL_DRONE_BROWSER=buildDroneBrowser();
 const REAL_MODULE_BROWSER={high:buildModuleBrowser("high"),mid:buildModuleBrowser("mid"),low:buildModuleBrowser("low"),rigs:buildModuleBrowser("rigs")};

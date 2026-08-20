@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { ItemDetailSheet, BottomSheet } from "./ui.jsx";
-import { haptic, implantSetMembers, implantData } from "../lib/core.js";
+import { ItemDetailSheet, BottomSheet, InfoButton } from "./ui.jsx";
+import { haptic, implantSetMembers, implantData, searchImplants } from "../lib/core.js";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
@@ -48,9 +48,49 @@ const HARDWIRING_BUCKET_ORDER=HARDWIRING_BUCKETS.map(([b])=>b).concat(["Other Ha
 const IMPLANT_GROUP_NICKNAME=/^[A-Z][A-Za-z'-]*\s*\((.+)\)$/;
 const implantGroupLabel=n=>IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n;
 
+// One implant, as a tappable row. Shared by the per-slot picker and the cross-slot search, which
+// want the same affordances (art, skill mark, fit-the-whole-set) and differ only in whether the slot
+// is already known — hence `badge`, which the search fills in and the picker leaves off.
+function ImplantRow({item,fitted,badge,onPick,onPickSet,onInfo}){
+  // Set implants get a second action: fit the whole set at once. Six slots for one intent.
+  const set=implantSetMembers(item.name);
+  const sub=[badge,item.metaGroupID>0?`Meta ${item.metaLevel??0}`:null].filter(Boolean);
+  return(
+  <div onClick={()=>{haptic();onPick(item);}}
+    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 16px",
+            borderBottom:`1px solid ${C.border}`,cursor:"pointer",
+            background:fitted?C.accentLight:"transparent"}}>
+    {/* Item art, same as the module and booster browsers. Hidden on failure so the rare implant
+        with no bundled icon leaves a gap rather than a broken-image box. */}
+    <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
+      {item.typeID&&<img className="eve-icon" src={eveIcon(item.typeID,32)} width={28} height={28} alt=""
+        style={{borderRadius:5,flexShrink:0}} onError={e=>{e.target.style.visibility="hidden";}}/>}
+      <div style={{minWidth:0}}>
+      <div style={{fontSize:13,fontWeight:600,color:fitted?C.accent:C.text}}>{item.name}</div>
+      {sub.length>0&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{sub.join(" · ")}</div>}
+      </div>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+      <SkillMark typeID={item.typeID}/>
+      {set&&<button onClick={e=>{e.stopPropagation();haptic();onPickSet(set);}}
+        title={`Fit all ${set.members.length} ${set.setName} implants`}
+        style={{padding:"4px 9px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer",
+                background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Set</button>}
+      {/* Reading an implant's description used to require FITTING it first — the row's only action
+          was to fit, and the trailing "+" said so without offering anything else. It is replaced
+          rather than joined by the info button because the row itself is still the fit affordance,
+          so the "+" was never doing any work the tap target wasn't already doing. The ✓ stays: it
+          is state, not an action, and it is the only thing marking what you already have. */}
+      {fitted&&<span style={{color:C.accent}}>✓</span>}
+      {item.typeID&&<InfoButton onClick={e=>{e.stopPropagation();haptic();onInfo(item);}} title={`About ${item.name}`}/>}
+    </div>
+  </div>);
+}
+
 function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   const[search,setSearch]=useState("");
   const[drill,setDrill]=useState(null);
+  const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
 
   const slotData=implantData?.[String(slot)];
   const rawGroups=slotData?.groups??{};
@@ -80,41 +120,17 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
     ? allItems.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()))
     : null;
 
-  const ItemRow=({item})=>{
-    // Set implants get a second action: fit the whole set at once. Six slots for one intent.
-    const set=implantSetMembers(item.name);
-    return(
-    <div onClick={()=>{haptic();onSelect({name:item.name,typeID:item.typeID,slot,bonus:""});onClose();}}
-      style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 16px",
-              borderBottom:`1px solid ${C.border}`,cursor:"pointer",
-              background:current===item.name?C.accentLight:"transparent"}}>
-      {/* Item art, same as the module and booster browsers. Hidden on failure so the rare implant
-          with no bundled icon leaves a gap rather than a broken-image box. */}
-      <div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}>
-        {item.typeID&&<img className="eve-icon" src={eveIcon(item.typeID,32)} width={28} height={28} alt=""
-          style={{borderRadius:5,flexShrink:0}} onError={e=>{e.target.style.visibility="hidden";}}/>}
-        <div style={{minWidth:0}}>
-        <div style={{fontSize:13,fontWeight:600,color:current===item.name?C.accent:C.text}}>{item.name}</div>
-        {item.metaGroupID>0&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>Meta {item.metaLevel??0}</div>}
-        </div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-        <SkillMark typeID={item.typeID}/>
-        {set&&<button onClick={e=>{e.stopPropagation();haptic();onSelectSet(set);onClose();}}
-          title={`Fit all ${set.members.length} ${set.setName} implants`}
-          style={{padding:"4px 9px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer",
-                  background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Set</button>}
-        {current===item.name?<span style={{color:C.accent}}>✓</span>:<span style={{color:C.textMute}}>+</span>}
-      </div>
-    </div>);
-  };
+  const fit=it=>{onSelect({name:it.name,typeID:it.typeID,slot,bonus:""});onClose();};
+  const ItemRow=({item})=><ImplantRow item={item} fitted={current===item.name}
+    onPick={fit} onPickSet={set=>{onSelectSet(set);onClose();}} onInfo={setInfoItem}/>;
 
   // ONE sheet for both levels, with an in-content Back bar — the same shape as the module browser.
   // Rendering a second <BottomSheet> for the drilled level put a different element at the same tree
   // position, so React reused the instance and its half-finished `closing` state: after backing out
   // of a group the sheet stayed translated off-screen while its full-screen overlay kept eating every
   // tap, which reads as the whole app freezing.
-  return(<BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh">
+  return(<>
+    <BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh">
     {drill&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>{haptic();setDrill(null);}} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
@@ -151,7 +167,14 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
         ))
     }
       </>}
-  </BottomSheet>);
+    </BottomSheet>
+    {/* A SIBLING of the browser, not a child — the same shape the module browser uses. Nesting it
+        would put a second sheet inside the one being scrolled, and the browser stays mounted
+        underneath so closing the info card returns you to where you were in the list. */}
+    {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name}
+      actions={[{label:"Fit implant",primary:true,onClick:()=>fit(infoItem)}]}
+      onSwap={v=>fit(v)} onClose={()=>setInfoItem(null)}/>}
+  </>);
 }
 
 // Searchable loadout list. Replaces a horizontal chip strip that grew a scroll bar the moment you
@@ -198,7 +221,15 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   const[savingName,setSavingName]=useState(false);
   const[newLoadoutName,setNewLoadoutName]=useState("");
   const[showLoadouts,setShowLoadouts]=useState(false);
+  const[query,setQuery]=useState("");
   const filled=implants.filter(i=>i.name!=="[Empty]").length;
+  // Cross-slot search. The per-slot picker can only ever answer "which Amulet goes HERE", but the
+  // question a player usually arrives with is the reverse — they know the implant and not the slot,
+  // and answering it meant opening slots one at a time until one of them had the thing. Results
+  // carry their own slot and fit straight into it, so the slot never has to be guessed at all.
+  const results=useMemo(()=>searchImplants(query),[query]);
+  const fitInto=item=>setImplants(prev=>prev.map(i=>i.slot===item.slot?{...i,name:item.name,bonus:null}:i));
+  const fitSet=set=>fitSet(set);
 
   function saveLoadout(){
     if(!newLoadoutName.trim())return;
@@ -244,9 +275,21 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
           title="Clear every implant from this fit"
           style={{padding:"7px 12px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",background:"none",border:`1px solid ${C.border}`,color:C.danger}}>Clear</button>}
       </div>
+      <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={query}
+        onChange={e=>setQuery(e.target.value)} placeholder="Search all implants..."
+        style={{width:"100%",marginTop:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,padding:"7px 10px",color:C.text,fontSize:12,boxSizing:"border-box"}}/>
     </div>
-    <div style={{flex:1,overflowY:"auto",padding:12}}>
-      {[{label:"Attribute Enhancers",slots:[1,2,3,4,5],color:C.accent},{label:"Hardwirings",slots:[6,7,8,9,10],color:C.high}].map(grp=>(
+    {/* While searching, the results REPLACE the slot list rather than sitting above it: a result is
+        already labelled with the slot it fills, so showing both puts the same ten slots on screen
+        twice. Clearing the box brings the list straight back. */}
+    <div style={{flex:1,overflowY:"auto",padding:results?0:12}}>
+      {results
+        ? (results.length
+            ? results.map(item=><ImplantRow key={item.typeID} item={item} badge={`Slot ${item.slot}`}
+                fitted={implants.find(i=>i.slot===item.slot)?.name===item.name}
+                onPick={fitInto} onPickSet={fitSet} onInfo={it=>setDetail({...it,typeID:it.typeID??tidByName(it.name)})}/>)
+            : <div style={{padding:"24px 16px",textAlign:"center",fontSize:12,color:C.textMute}}>No implants match "{query.trim()}"</div>)
+        : [{label:"Attribute Enhancers",slots:[1,2,3,4,5],color:C.accent},{label:"Hardwirings",slots:[6,7,8,9,10],color:C.high}].map(grp=>(
         <div key={grp.label} style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"0 2px"}}>
             <div style={{width:8,height:8,borderRadius:99,background:grp.color}}/>
@@ -274,18 +317,30 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     </div>
     {detail&&(()=>{
       const set=implantSetMembers(detail.name);
+      // The sheet is reached two ways now — from the slot list (where this implant IS fitted) and
+      // from a search result (where it may not be) — so the actions follow what is actually in the
+      // slot rather than how the sheet was opened.
+      const fitted=implants.find(i=>i.slot===detail.slot)?.name===detail.name;
       const acts=[];
       if(set)acts.push({label:`+ ${set.setName} set`,primary:true,
         title:`Fit all ${set.members.length} ${set.setName} implants`,
-        onClick:()=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))});
-      acts.push({label:"Change implant",onClick:()=>setPicker({slot:detail.slot,name:detail.name})});
+        onClick:()=>fitSet(set)});
+      if(!fitted)acts.push({label:"Fit implant",primary:!set,onClick:()=>fitInto(detail)});
+      else{
+        acts.push({label:"Change implant",onClick:()=>setPicker({slot:detail.slot,name:detail.name})});
+        // Removing an implant used to live one level DOWN, inside the picker you reached via Change
+        // implant — so taking something off meant opening a browser you had no intention of
+        // browsing, and reading as if the only way to empty a slot was to replace it.
+        acts.push({label:"Remove implant",danger:true,
+          onClick:()=>setImplants(prev=>prev.map(i=>i.slot===detail.slot?{...i,name:"[Empty]",bonus:null}:i))});
+      }
       return<ItemDetailSheet typeID={detail.typeID} name={detail.name} actions={acts}
         onSwap={v=>setImplants(prev=>prev.map(i=>i.slot===detail.slot?{...i,name:v.name,bonus:null}:i))}
         onClose={()=>setDetail(null)}/>;
     })()}
     {picker&&<ImplantPicker slot={picker.slot} current={picker.name}
       onSelect={opt=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:opt.name,bonus:opt.bonus??null}:i))}
-      onSelectSet={set=>setImplants(prev=>prev.map(i=>{const m=set.members.find(x=>x.slot===i.slot);return m?{...i,name:m.name,bonus:null}:i;}))}
+      onSelectSet={fitSet}
       onClear={()=>setImplants(prev=>prev.map(i=>i.slot===picker.slot?{...i,name:"[Empty]",bonus:null}:i))}
       onClose={()=>setPicker(null)}/>}
     {showLoadouts&&<ImplantLoadoutSheet loadouts={loadouts} onLoad={loadLoadout}
