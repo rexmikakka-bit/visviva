@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isGroupableModule, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { Hint } from "./Hint.jsx";
@@ -157,11 +157,9 @@ const groupFittedError=typeID=>{
 //
 // The gesture→state mapping itself is pure and lives in lib/core.js, where the regression suite can
 // reach it without a DOM.
-// 300ms is Android's own DOUBLE_TAP_TIMEOUT, so the window matches what a thumb is already trained
-// on elsewhere on the phone. Erring long is the safer direction here: a missed double-tap reads as a
-// broken control, while a pair of deliberate taps landing inside 300ms overheats visibly and one more
-// tap undoes it.
-const HOLD_MS=450, DOUBLE_MS=300;
+// The double-tap window and the reason it is measured off the event lives in core.js — the abyssal
+// sliders use the same gesture and it must not drift between the two.
+const HOLD_MS=450;
 function StateDot({row,states,onSet}){
   const t=useRef({timer:null,lastTap:0,held:false});
   useEffect(()=>()=>clearTimeout(t.current.timer),[]);
@@ -181,12 +179,10 @@ function StateDot({row,states,onSet}){
     clearTimeout(t.current.timer);
     e.stopPropagation();           // never opens the module menu — the row's onClick is the menu
     if(t.current.held)return;      // the hold already fired; this is just the finger leaving
-    // e.timeStamp, NOT Date.now(): the browser stamps an input event when it RECEIVES it, so a stamp
-    // survives the queue. Reading the clock inside the handler measures when React got round to us
-    // instead — and the first tap commits a state change that recalculates the whole fit, which blocks
-    // the main thread for ~500ms here. Measured that way a genuine 140ms double-tap reads as 650ms and
-    // silently degrades into two single taps: the module runs, stops, and never overheats.
-    const now=e.timeStamp, isDouble=now-t.current.lastTap<DOUBLE_MS;
+    // e.timeStamp, NOT Date.now() — see the note on DOUBLE_TAP_MS. Measured off the clock, a genuine
+    // 140ms double-tap here reads as 650ms and degrades into two single taps: the module runs, stops,
+    // and never overheats.
+    const now=e.timeStamp, isDouble=now-t.current.lastTap<DOUBLE_TAP_MS;
     t.current.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
     fire(isDouble?"double":"tap");
   };

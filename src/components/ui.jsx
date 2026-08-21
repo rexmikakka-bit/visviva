@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DMG_COLOR, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -1374,6 +1374,16 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   const[drag,setDrag]=useState(null);
   const dragRef=useRef(null);
   const lastPush=useRef({key:null,t:0});
+  // Double-tap a slider to put that attribute back to its unmutated base. Dragging there by hand
+  // means hunting a detent one step of four hundred wide, and on the 138 ranges whose base sits off
+  // the track entirely it cannot be reached at any width — so the only existing route back was Undo,
+  // which walks the whole editor's history rather than this one attribute.
+  //
+  // Both refs live up here with the other hooks for the reason the note on `drag` gives: this
+  // component returns early when no mutaplasmid is applied, so a hook declared below that point
+  // changes the hook count the moment one is applied.
+  const tapRef=useRef({name:null,t:0});
+  const downRef=useRef({x:0,y:0});
   const snapshot=()=>({mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
   // A slider drag fires on every pixel of travel, so contiguous edits to the SAME slider coalesce
   // into one step — Undo steps back a whole drag, not one four-hundredth of one. Button presses
@@ -1423,6 +1433,36 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   const ranges=mutaAttrRanges(active,mod.typeID);
   const setVal=(name,v)=>{pushHistory('v:'+name);onUpdateMod({...mod,mutations:{...mod.mutations,[name]:v}});};
   const commitDrag=()=>{const d=dragRef.current;if(!d)return;dragRef.current=null;setDrag(null);setVal(d.name,d.value);};
+  // A pointer release on a slider: ordinarily a commit, but two stationary releases in quick
+  // succession on the SAME slider reset it to base instead.
+  //
+  // A range input treats a bare tap as a seek, so the first tap moves the value before the reset
+  // lands. That is deliberately not suppressed: `pushHistory` merges same-slider edits inside 900ms,
+  // so in the normal case the tap and the reset collapse into one history entry and Undo steps back
+  // to the value from before the gesture rather than into the middle of it.
+  //
+  // The distance test is what separates this from a fast pair of drags, which is a real way to tune
+  // a value and must not silently wipe it. Ten pixels is below a finger's own wobble on a tap and
+  // well under any drag worth keeping.
+  const endDrag=(e,name,base)=>{
+    const still=Math.hypot(e.clientX-downRef.current.x,e.clientY-downRef.current.y)<10;
+    // e.timeStamp, NOT Date.now() — see the note on DOUBLE_TAP_MS. The first tap commits a value,
+    // which recalculates the whole fit; measured off the clock the second tap always looks late and
+    // the reset could never fire.
+    const now=e.timeStamp;
+    const dbl=still&&tapRef.current.name===name&&now-tapRef.current.t<DOUBLE_TAP_MS;
+    tapRef.current=dbl?{name:null,t:0}:{name:still?name:null,t:now};
+    if(!dbl){commitDrag();return;}
+    // Drop the second tap's seek rather than committing it — the gesture asked for base, not for
+    // wherever the finger happened to land. Tested against the COMMITTED value, not the rendered one:
+    // by now the seek has already been through setDrag and a re-render, so the displayed value is the
+    // tap's, and comparing that would call a double-tap on the base tick a no-op while leaving the
+    // first tap's seek behind.
+    dragRef.current=null;setDrag(null);
+    if((mod.mutations?.[name]??base)===base)return;   // already home — don't bank an undo step
+    haptic("medium");
+    setVal(name,base);
+  };
   return(<div style={{padding:"10px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{m.n}</span>
@@ -1526,7 +1566,14 @@ function MutaplasmidEditor({mod,onUpdateMod}){
                  // gesture, an arrow key let go, or focus leaving mid-drag. Committing twice is
                  // harmless — commitDrag clears the ref first — and never committing is not, since
                  // the roll would be visible on the slider but absent from the fit.
-                 onPointerUp={commitDrag} onPointerCancel={commitDrag}
+                 //
+                 // Only the finger-lifted case routes through endDrag, since it is the only one that
+                 // could be half of a double-tap. The others stay plain commits; a cancelled or
+                 // blurred drag is not a tap and must not arm the reset. onLostPointerCapture still
+                 // follows a reset, but commitDrag no-ops once endDrag has cleared the ref.
+                 title="Double-tap to reset to base"
+                 onPointerDown={e=>{downRef.current={x:e.clientX,y:e.clientY};}}
+                 onPointerUp={e=>endDrag(e,r.name,r.base)} onPointerCancel={commitDrag}
                  onLostPointerCapture={commitDrag} onKeyUp={commitDrag} onBlur={commitDrag}
                  style={{position:"relative","--a":trackPos(Math.min(originFrac,curFrac)),
                          "--b":trackPos(Math.max(originFrac,curFrac)),"--c":deltaColor}}/>

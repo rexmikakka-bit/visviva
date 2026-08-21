@@ -362,6 +362,19 @@ function gestureTarget(states,cur,gesture){
   if(cur==="active")     return "online";
   return has("active")?"active":null;
 }
+// 300ms is Android's own DOUBLE_TAP_TIMEOUT, so the window matches what a thumb is already trained on
+// elsewhere on the phone. Erring long is the safer direction: a missed double-tap reads as a broken
+// control, while a pair of deliberate taps landing inside the window does something visible that one
+// more gesture undoes. Shared by the module state dot and the abyssal sliders so the same gesture does
+// not need different timing in different parts of the app.
+//
+// ⚠️ Measure it with the EVENT's `timeStamp`, never `Date.now()` inside the handler. The browser
+// stamps an input event when it RECEIVES it, so the stamp survives the queue; the clock read inside
+// the handler measures when React got round to you. That distinction is not academic in either place
+// this is used — the first tap commits a change that recalculates the whole fit and blocks the main
+// thread for ~500ms, so a genuine 140ms double-tap reads as 650ms and silently degrades into two
+// single taps.
+export const DOUBLE_TAP_MS=300;
 const calcTransversal=(a,b)=>{const d=Math.abs(a-b)%360,n=d>180?360-d:d;return Math.min(n,180-n);};
 
 // ── Ship lookup ────────────────────────────────────────────────────
