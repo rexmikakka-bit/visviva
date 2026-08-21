@@ -249,10 +249,8 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   // module info panel and the Variations tab ask, so green means the same thing on a hull row as it
   // does one sheet away on a module row. Not a local high-is-good table: that is how the two drift.
   //
-  // null where there is no honest answer, which paints the row plain. `mass` is the one that needs
-  // it — CCP flags it high-is-good and for a HULL that is backwards, since mass is what makes an
-  // align slow, but "lower is better" is not right either once you are being bumped. Slot and
-  // hardpoint counts get null for the different reason that they never carry a current value.
+  // null where there is no honest answer, which paints the row plain — the slot and hardpoint counts,
+  // which never carry a current value to compare against.
   const R = (label, base, cur, fmt, attr=null) => ({label, base:num(base), cur:num(cur), fmt, attr});
   const rnd = (v,p=1) => Math.round(v*10**p)/10**p;
   const F = {
@@ -299,7 +297,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       R('Agility', ship?.agility, cs?.agility, F.agi, 'agility'),
       R('Warp Speed', ship?.warpSpeed, cs?.warpSpeed, F.au, 'warpSpeedMultiplier'),
       R('Signature Radius', ship?.sigRadius, cs?.sigRadius, F.m, 'signatureRadius'),
-      R('Mass', ship?.mass, cs?.mass, F.mkg),
+      R('Mass', ship?.mass, cs?.mass, F.mkg, 'mass'),
     ],
     structure: [
       R('Shield HP', ship?.shieldHP, cs?.shieldHP, F.hp, 'shieldCapacity'),

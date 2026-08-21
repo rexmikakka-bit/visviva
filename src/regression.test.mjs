@@ -1807,13 +1807,19 @@ Loki Propulsion - Intercalated Nanofibers
   for (const [k, want] of Object.entries(HULL_ATTR_DIR))
     check('cmp', `hull ${k}: ${want ? 'higher' : 'lower'} is better`,
           directionOf(k, 2, 1, tempestTid) ? 1 : 0, want, 0);
-  // `mass` is deliberately NOT in that table and is passed no key at all, so its row stays plain.
-  // CCP flags it high-is-good, which for a hull is backwards — mass is what makes an align slow —
-  // but "lower is better" is not honest either once bump resistance is the thing you want. This
-  // check exists so that if someone adds mass to the sheet on the strength of the flag, the reason
-  // it was left out is sitting right here.
-  check('cmp', 'CCP flags hull mass high-is-good (why the sheet asks nothing about it)',
-        directionOf('mass', 2, 1, tempestTid) ? 1 : 0, 1, 0);
+  // `mass` is the one attribute in the sheet where CCP's own flag has to be overridden: it ships
+  // highIsGood=1, and on a hull that is backwards — mass is what makes an align slow. compare.js
+  // corrects it in LOWER_IS_BETTER_TARGETS, and these two pin that the correction reaches the DIRECT
+  // attribute path and not only the effect path. It was consulted on the effect path alone at first,
+  // which painted a plated hull's heavier mass green.
+  check('cmp', 'hull mass: heavier is worse (CCP flag overridden)',
+        directionOf('mass', 2, 1, tempestTid) ? 1 : 0, 0, 0);
+  check('cmp', 'hull mass: lighter is better',
+        directionOf('mass', 1, 2, tempestTid) ? 1 : 0, 1, 0);
+  // Same correction, the other family it covers: the ~50 industry multipliers are all mis-flagged
+  // highIsGood, when a rig's −20% exists to drive them down.
+  check('cmp', 'industry time multiplier: lower is better',
+        directionOf('attributeEquipmentManufactureTimeMultiplier', 0.8, 1, tempestTid) ? 1 : 0, 1, 0);
 
   // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
   // outranked the attributes a disruptor is actually chosen for. Excluded by name.

@@ -223,7 +223,7 @@ export function differingAttributes(typeIDs, { limit = 6, extraAttrs = null } = 
 //   larger target attribute  --target's own highIsGood-->  better or worse
 //   ...and if the domain is a hostile TARGET, invert: hurting them helps you.
 //
-// Worked through, that is `better = (increases === targetHighIsGood) !== hostile`. It gets the
+// Worked through, that is `better = (increases === correctedHighIsGood) !== hostile`. It gets the
 // reported case right (capNeedBonus lowers capacitorNeed, which is lower-is-better, so -20 beats
 // -15) and — the reason a blanket "negative means magnitude" rule was rejected — it also gets the
 // DRAWBACK case right: a Capacitor Power Relay's shieldBoostMultiplier is likewise negative, but it
@@ -252,7 +252,7 @@ const OP_DECREASES = new Set([1, 3, 5]);
 const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
 
 /**
- * Target attributes whose highIsGood CCP has simply got wrong.
+ * Attributes whose highIsGood CCP has simply got wrong.
  *
  * The derived rule is only ever as good as the flag on the attribute it lands on, and the industry
  * multipliers are a systematic error: `attributeAdvCompManufactureTimeMultiplier` and its ~50
@@ -263,10 +263,15 @@ const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
  *
  * Kept as patterns rather than a list of 50 names because the family is open-ended: CCP adds a new
  * manufacturing category and its multiplier arrives mis-flagged exactly like the others.
+ *
+ * This applies to an attribute read DIRECTLY as well as to one arrived at through an effect. It was
+ * consulted only on the effect path at first, which split the file against itself: mass was declared
+ * a cost here, and then the fallback at the bottom of directionOf asked CCP's raw flag and painted a
+ * heavier hull green. The correction belongs to the attribute, not to the route taken to reach it.
  */
 const LOWER_IS_BETTER_TARGET_RE = /(Time|Material|Mat|Cost)Multiplier$/;
 const LOWER_IS_BETTER_TARGETS = new Set(['mass', 'strEngMatBonus']);
-function targetHighIsGood(attrID) {
+function correctedHighIsGood(attrID) {
   const name = ATTR_ID_TO_NAME[attrID];
   if (name && (LOWER_IS_BETTER_TARGET_RE.test(name) || LOWER_IS_BETTER_TARGETS.has(name))) return false;
   return attrHighIsGood(attrID);
@@ -293,7 +298,7 @@ export function derivedDirection(typeID, key) {
       const increases = OP_INCREASES.has(m.operation) ? true
                       : OP_DECREASES.has(m.operation) ? false : null;
       if (increases === null) { verdict = null; break outer; }   // unknown operation — say nothing
-      const better = increases === targetHighIsGood(m.modifiedAttributeID);
+      const better = increases === correctedHighIsGood(m.modifiedAttributeID);
       // Two effects on the same module disagreeing about the same attribute means we cannot
       // honestly pick a direction — fall through to the rules below rather than take the first.
       if (verdict !== null && verdict !== better) { verdict = null; break outer; }
@@ -322,7 +327,7 @@ export function directionOf(k, v, b, typeID) {
   const derived = derivedDirection(typeID, k);
   if (derived !== null)         return derived ? v > b : v < b;
   if (SIGNED_BONUS_RE.test(k))  return Math.abs(v) > Math.abs(b);   // stronger bonus wins
-  return attrHighIsGood(ATTR_NAME_TO_ID[k]) ? v > b : v < b;
+  return correctedHighIsGood(ATTR_NAME_TO_ID[k]) ? v > b : v < b;
 }
 
 /**
