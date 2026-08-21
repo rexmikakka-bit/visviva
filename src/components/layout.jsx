@@ -3,7 +3,7 @@ import { C } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
-import { PILOT_ALL_V, PILOT_ALPHA, esiPilot } from "../lib/pilot.js";
+import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, describeSkillSheet } from "../lib/pilot.js";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
@@ -164,11 +164,15 @@ function SkillBook({ok,count,onClick,custom}){
 // One control, two questions: WHO flies this fit, and what can't they use. They belong together —
 // the gap list is only meaningful relative to a pilot, and picking a different one rewrites it.
 // `pilot` is a string on the fit (lib/pilot.js): absent means "your skills", the app-wide sheet.
-export function PilotSheet({pilot,setPilot,missing,onClose}){
+export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
   const chars=(()=>{ try{ return esi.listCharacters(); }catch{ return []; } })();
   const cached=(()=>{ try{ return esi.getAllCharacterSkills(); }catch{ return {}; } })();
   const opts=[
-    {id:null,label:"Your Skills",sub:"The sheet in Settings → Skills"},
+    // "Your Skills" is the only option that doesn't say what you'd be flying with — the other rows
+    // name a character or a ceiling. Naming the sheet here saves a trip to Settings to find out
+    // whether it is still all V, still aligned to a pilot, or something you edited by hand.
+    {id:null,label:`Your Skills (${describeSkillSheet(appSkills,{esiSkills:cached,characters:chars})})`,
+     sub:"The sheet in Settings → Skills"},
     {id:PILOT_ALL_V,label:"All V",sub:"Every skill trained to V"},
     {id:PILOT_ALPHA,label:"Alpha",sub:"CCP's alpha clone ceiling"},
     ...chars.map(c=>({

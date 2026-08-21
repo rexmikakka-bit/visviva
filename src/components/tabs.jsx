@@ -855,10 +855,14 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,
         abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
       charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
-      character:[
-        ...(implants??[]).filter(i=>i?.name&&i.name!=='[Empty]').map(i=>({typeID:tidByName(i.name),qty:1})),
-        ...(boosters??[]).map(b=>({typeID:tidByName(b.name),qty:1})),
-      ].filter(s=>s.typeID),
+      // Boosters are part of the FIT price; implants are not. The line between them is "does flying
+      // this consume it". A booster is spent on the undock and its bonuses are already in every
+      // number on this tab, so excluding it lets a 500M fit quote 380M while flying on 120M of
+      // drugs. Implants survive the loss, follow you from ship to ship, and a full high-grade set
+      // outvalues most hulls — so they stay out of the headline figure and get their own row.
+      boosters:(boosters??[]).map(b=>({typeID:tidByName(b.name),qty:1})).filter(s=>s.typeID),
+      implants:(implants??[]).filter(i=>i?.name&&i.name!=='[Empty]')
+        .map(i=>({typeID:tidByName(i.name),qty:1})).filter(s=>s.typeID),
       // Fighters sit in the Drones group rather than a group of their own — no hull carries both,
       // so a "Fighters" row would be permanently empty on every ship that isn't a carrier.
       // `qty` on a fighter is SQUADRONS, but the market sells them one at a time, so the priced
@@ -883,14 +887,15 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   },[fitFingerprint,priceHub,priceSource]);// eslint-disable-line react-hooks/exhaustive-deps
   const groupTotals=useMemo(()=>{
     const sum=items=>items.reduce((acc,{typeID,qty,abyssal})=>acc+(abyssal?0:(prices?.get(typeID)??0)*qty),0);
-    return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),character:sum(priceItems.character),drones:sum(priceItems.drones)};
+    return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),
+           boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),implants:sum(priceItems.implants)};
   },[priceItems,prices]);
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
-  // The hull-and-fit cost is the number you compare against another fit; implants and boosters are
-  // a property of the PILOT and follow you from ship to ship, so a total that silently folds in a
-  // set of high-grades tells you very little about the fit itself. Both are shown, split by colour
-  // rather than by a label, since the pair reads fine without one.
-  const hullPrice=useMemo(()=>totalPrice-(groupTotals.character??0),[totalPrice,groupTotals]);
+  // The hull-and-fit cost is the number you compare against another fit; implants are a property of
+  // the PILOT and follow you from ship to ship, so a total that silently folds in a set of
+  // high-grades tells you very little about the fit itself. Both are shown, split by colour rather
+  // than by a label, since the pair reads fine without one.
+  const hullPrice=useMemo(()=>totalPrice-(groupTotals.implants??0),[totalPrice,groupTotals]);
   // Per-item breakdown behind each Fit Value row. Identical typeIDs are merged (a fit with 6 of the
   // same launcher reads "6x …" on one line rather than six lines), then sorted by TOTAL value
   // descending so the expensive things are what you see first.
@@ -1371,12 +1376,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         <SectionHead id="fitvalue" title="Fit Value" right={
           <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
             <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
-            {!priceLoading&&(groupTotals.character??0)>0&&
-              <span style={{color:C.accent}} title="Including implants and boosters">{fmtISK(totalPrice)}</span>}
+            {!priceLoading&&(groupTotals.implants??0)>0&&
+              <span style={{color:C.accent}} title="Including implants">{fmtISK(totalPrice)}</span>}
           </span>
         }/>
         {isOpen("fitvalue")&&<>
-          {[['Ship','ship'],['Modules','modules'],['Charges','charges'],['Character','character'],['Drones','drones']].map(([label,key],i,arr)=>{
+          {[['Ship','ship'],['Modules','modules'],['Charges','charges'],['Drones','drones'],['Boosters','boosters'],['Implants','implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
             const open=expandable&&openPriceGroups[key];

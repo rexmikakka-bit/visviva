@@ -28,7 +28,7 @@ import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
-import { resolvePilotSkills, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
+import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
@@ -2195,6 +2195,26 @@ Republic Fleet Command Mindlink`;
   check('pilot', 'allV pilot flies at all V', dpsWith(PILOT_ALL_V), 44.601791333817474, 1e-5);
   check('pilot', 'alpha pilot flies at the alpha ceiling', dpsWith(PILOT_ALPHA), 37.263845234257474, 1e-5);
   check('pilot', 'no pilot takes the fallback, not the app sheet', dpsWith(undefined), 44.601791333817474, 1e-5);
+
+  // describeSkillSheet — the words the pilot picker and the snapshot card put on a sheet. The trap
+  // it exists to avoid: an UNSET skill is V, so a fresh install (SKILL_DEFAULTS, with every
+  // requirement-only skill simply absent) must read "All Skills V" and not "Custom".
+  const charList = [{ characterId: 95465499, characterName: 'Rex Mikakka' }];
+  const rexSheet = Object.fromEntries(SKILL_CATALOG.map(e => [e.key, e.key === 'gunnery' ? 4 : 0]));
+  const D = (s, cache = { '95465499': rexSheet }) =>
+    describeSkillSheet(s, { esiSkills: cache, characters: charList });
+
+  check('pilot', 'the default sheet reads as all V', D(SKILLS_ALL_V), 'All Skills V');
+  check('pilot', 'a sheet with every catalog skill at V reads as all V',
+        D(Object.fromEntries(SKILL_CATALOG.map(e => [e.key, 5]))), 'All Skills V');
+  check('pilot', 'an empty sheet reads as all V — unset is V', D({}), 'All Skills V');
+  check('pilot', 'a synced sheet names its character', D(rexSheet), 'Rex Mikakka');
+  // The name must come from the SHEET matching, not from a character merely being connected.
+  check('pilot', 'a character connected but not matched is not named',
+        D({ ...rexSheet, gunnery: 3 }), 'Custom');
+  check('pilot', 'an uncached character cannot be named', D(rexSheet, {}), 'Custom');
+  check('pilot', 'the alpha ceiling is named', D(ALPHA_SKILLS), 'Alpha');
+  check('pilot', 'a hand-edited sheet is Custom', D({ ...SKILLS_ALL_V, gunnery: 3 }), 'Custom');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

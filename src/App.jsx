@@ -18,7 +18,7 @@ import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
-import { resolvePilotSkills } from "./lib/pilot.js";
+import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
 import * as esi from "./lib/esi.js";
 
@@ -157,6 +157,11 @@ export default function App(){
   // that has happened before (see the burst comment below).
   const sourceSkills=useMemo(()=>(fit)=>resolvePilotSkills(fit?.slots?.pilot,{appSkills:skills,esiSkills,fallback:skills}),
                              [skills,esiSkills]);
+  // What the RESOLVED sheet is, in words, for the snapshot card's footer. Derived from the sheet
+  // rather than from `slots.pilot`, so a fit with no pilot named still says whether the app-wide
+  // sheet it fell back to is all V or someone's actual character.
+  const fitSkillLabel=useMemo(()=>describeSkillSheet(fitSkills,{esiSkills,characters:esi.listCharacters()}),
+                              [fitSkills,esiSkills]);
   // Can this character actually fly the fit? Checked against every fitted item's own
   // requiredSkillN/requiredSkillNLevel, not just the skills the dogma engine reads.
   const skillCheck=useMemo(()=>activeFit?.ship
@@ -642,9 +647,9 @@ export default function App(){
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} onClose={()=>setShowShipInfo(false)}/>}
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
-                            missing={skillCheck.missing} onClose={()=>setShowPilot(false)}/>}
+                            missing={skillCheck.missing} appSkills={skills} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
-    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} priceHub={priceHub} priceSource={priceSource}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}

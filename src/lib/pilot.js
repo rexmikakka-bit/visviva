@@ -4,7 +4,7 @@
 // Deliberately does NOT import esi.js: calc.js and the regression suite pull this in, and esi.js
 // reaches for localStorage and fetch. The caller passes the per-character ESI skill cache instead.
 
-import { SKILL_DEFAULTS, ALPHA_SKILLS } from "../calc.js";
+import { SKILL_DEFAULTS, ALPHA_SKILLS, SKILL_CATALOG } from "../calc.js";
 
 export const PILOT_ALL_V = "allV";
 export const PILOT_ALPHA = "alpha";
@@ -46,4 +46,30 @@ export function resolvePilotSkills(pilot, { appSkills = null, esiSkills = null, 
     if (m && typeof m === "object") return m;
   }
   return fallback;
+}
+
+/**
+ * A short name for what a skill sheet actually IS — "All Skills V", a character's name, "Alpha", or
+ * "Custom". Answers the question the app-wide sheet otherwise only answers by scrolling 388 rows:
+ * a fit's numbers are qualified by skills, and "Your Skills" says nothing about which ones.
+ *
+ * An UNSET skill is V, not 0 (calcFitStats trains anything it isn't handed), so a fresh install —
+ * where the sheet is SKILL_DEFAULTS and the ~190 requirement-only skills are simply absent — has to
+ * read "All Skills V" rather than "Custom". That is why every comparison here goes through `?? 5`.
+ *
+ * Character names come from the per-character ESI cache, which is a full map, so a sheet aligned to
+ * a pilot matches theirs exactly. Passed in rather than read here for the same reason
+ * `resolvePilotSkills` takes its caches: this file must not reach for localStorage.
+ */
+export function describeSkillSheet(skills, { esiSkills = null, characters = null } = {}) {
+  const lvl = (m, k) => m?.[k] ?? 5;
+  const same = (a, b) => SKILL_CATALOG.every(e => lvl(a, e.key) === lvl(b, e.key));
+  if (SKILL_CATALOG.every(e => lvl(skills, e.key) === 5)) return "All Skills V";
+  for (const [id, map] of Object.entries(esiSkills ?? {})) {
+    if (!map || typeof map !== "object" || !same(skills, map)) continue;
+    const name = (characters ?? []).find(c => String(c.characterId) === String(id))?.characterName;
+    if (name) return name;
+  }
+  if (same(skills, ALPHA_SKILLS)) return "Alpha";
+  return "Custom";
 }

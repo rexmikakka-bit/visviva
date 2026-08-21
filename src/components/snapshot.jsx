@@ -350,7 +350,7 @@ function Projected({ links, incoming }) {
 
 // The card renders off-screen at a fixed 1140px so the exported image is consistent regardless of the
 // phone's viewport. The two columns stretch to equal height, so a tall loadout grows the whole card.
-function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected }) {
+function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected, skillLabel }) {
   const s = cs ?? {};
   const dmg = s.totalDps ?? {};
   const dmgTotal = (dmg.em ?? 0) + (dmg.th ?? 0) + (dmg.kin ?? 0) + (dmg.exp ?? 0);
@@ -388,8 +388,13 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
       if (id) addFit(id, (f.qty ?? 1) * ((TYPES[id]?.attrs?.fighterSquadronMaxSize) || 1));
     }
     for (const i of (implants ?? [])) { if (i?.name && i.name !== '[Empty]') { const id = tidByName(i.name); if (id) addChar(id); } }
-    for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addChar(id); } }
-    const total = (ship ?? 0) + fit + character;
+    // Boosters count as FIT, implants do not, and the line between them is "does it get consumed
+    // flying this". A booster is spent on the undock and its bonuses are already in every number on
+    // this card, so leaving it out lets a 500M fit quote 380M while flying on 120M of drugs.
+    // Implants survive the loss, aren't part of what you undocked, and a full high-grade set
+    // outvalues most hulls — so they stay out of the headline and are listed separately.
+    for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addFit(id); } }
+    const total = (ship ?? 0) + fit;
     return total > 0 ? { ship, fit, character, total } : null;
   })();
 
@@ -441,7 +446,9 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>Ship: {priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : "N/A"}</div>
               <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Fit: {fmtISKShort(priceBreakdown.fit)}</div>
               {priceBreakdown.character > 0 && (
-                <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Character: {fmtISKShort(priceBreakdown.character)}</div>
+                <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>
+                  Implants: {fmtISKShort(priceBreakdown.character)} <span style={{ opacity: 0.65 }}>(excl.)</span>
+                </div>
               )}
             </div>
           )}
@@ -560,12 +567,16 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         )}
 
         <div style={{ marginTop: "auto", paddingTop: 12, borderTop: `1px solid ${T.line}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          {/* Two different kinds of text that were sharing one style. "All skills V" QUALIFIES every
+          {/* Two different kinds of text that were sharing one style. The skill line QUALIFIES every
               number on the card and is the first thing a reader should check; the trademark line is
               boilerplate nobody needs to read twice. Separated by weight and colour rather than by
-              adding a row, since the footer is height-constrained. */}
+              adding a row, since the footer is height-constrained.
+              It used to read "All skills V" unconditionally, which was a lie on any fit flown by a
+              real character — the card is the one place these numbers travel without their app. */}
           <div style={{ fontSize: 11, fontWeight: 500, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
-            <span style={{ color: T.text, fontWeight: 700, letterSpacing: ".02em", flexShrink: 0 }}>All skills V</span>
+            <span style={{ color: T.text, fontWeight: 700, letterSpacing: ".02em", flexShrink: 0 }}>
+              {skillLabel === "Custom" ? "Custom skills" : (skillLabel ?? "All Skills V")}
+            </span>
             <span style={{ color: T.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>EVE Online is a trademark of Fenris Creations.</span>
           </div>
           <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.accent }}>AXIS</div>
