@@ -18,11 +18,14 @@ const STRENGTH_LABEL={
   disrupt:"Weapon disruption", damp:"Sensor dampening", paint:"Target painting",
   sebo:"Sensor boost", track:"Tracking bonus", web:"Stasis web",
   ecm:"Jam strength", neut:"Neutralized", nos:"Drained",
+  rshield:"Shield transferred", rarmor:"Armor repaired", rhull:"Hull repaired",
+  rcap:"Capacitor transferred",
 };
 const STRENGTH_UNIT={
   disrupt:"% reduction", damp:"% reduction", paint:"% signature increase",
   sebo:"% increase", track:"% increase", web:"% speed reduction",
   neut:"GJ per cycle", nos:"GJ per cycle",
+  rshield:"HP per cycle", rarmor:"HP per cycle", rhull:"HP per cycle", rcap:"GJ per cycle",
 };
 // Used when one figure covers several attributes, so the tooltip can name them in front of it:
 // "Explosion velocity and explosion radius disruption". Only the kinds that can reach that case
@@ -41,7 +44,7 @@ function strengthTip(e){
     t=`${e.strengthAttrs[0].toUpperCase()}${e.strengthAttrs.slice(1)} ${STRENGTH_NOUN[e.strengthKind]} — ${STRENGTH_UNIT[e.strengthKind]}`;
   // ECM's figure is a bare jam strength with no unit to name, hence the guard.
   else t=(STRENGTH_LABEL[e.strengthKind]??"")+(STRENGTH_UNIT[e.strengthKind]?` — ${STRENGTH_UNIT[e.strengthKind]}`:"");
-  if(e.strengthPerSec) t+=` (${e.strengthPerSec} GJ/s)`;
+  if(e.strengthPerSec) t+=` (${e.strengthPerSec} ${e.strengthPerSecUnit}/s)`;
   return t;
 }
 

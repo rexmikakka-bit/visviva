@@ -3102,6 +3102,43 @@ Republic Fleet Command Mindlink`;
   check('str', 'a Tracking Enhancer shows nothing', txt('te'), 'undefined');
   check('str', 'a Missile Guidance Computer shows nothing', txt('mgc'), 'undefined');
   check('str', 'a Signal Amplifier shows nothing', txt('sigamp'), 'undefined');
+
+  // Remote assistance. Every amount below is eos's own `getModifiedItemAttr` on the same Guardian at
+  // all skills V, read via scripts/oracle. Two Guardians because it only has six high slots and the
+  // ancillary/mutadaptive variants sit in their OWN dogma groups — a per-group table has to be shown
+  // reaching all of them, since a missing group reads as a blank row rather than a wrong number.
+  const guardian = { typeID: tid('Guardian'), name: 'Guardian' };
+  const rr = {
+    rarmor:  M('Large Remote Armor Repairer II', 'active'),
+    rcap:    M('Large Remote Capacitor Transmitter II', 'active'),
+    ararPaste: M('Small Ancillary Remote Armor Repairer', 'active', 'Nanite Repair Paste'),
+    ararBare:  M('Small Ancillary Remote Armor Repairer', 'active'),
+    rshield: M('Large Remote Shield Booster II', 'active'),
+    rhull:   M('Large Remote Hull Repairer II', 'active'),
+  };
+  const mut = M('Heavy Mutadaptive Remote Armor Repairer I', 'active');
+  const csRR = calcFitStats(guardian, {
+    high: [rr.rarmor, rr.rcap, rr.ararPaste, rr.ararBare, rr.rshield, rr.rhull], mid: [], low: [], rigs: [],
+  }, [], null, {});
+  const csMut = calcFitStats(guardian, { high: [mut], mid: [], low: [], rigs: [] }, [], null, {});
+  const sr = k => csRR.slotEngineStats.get(rr[k]) ?? {};
+
+  check('str', 'Large Remote Armor Repairer II', String(sr('rarmor').strengthText), '512 HP/6s');
+  check('str', 'remote armor rep HP per second', sr('rarmor').strengthPerSec, 85.3, 1e-9);
+  // The per-second unit travels with the figure. It was hardcoded to GJ back when neuts and nos were
+  // the only per-cycle rows, which would have printed "85.3 GJ/s" for an armor repairer.
+  check('str', 'remote rep names HP, not GJ', String(sr('rarmor').strengthPerSecUnit), 'HP');
+  check('str', 'remote cap transmitter still names GJ', String(sr('rcap').strengthPerSecUnit), 'GJ');
+  check('str', 'Large Remote Capacitor Transmitter II', String(sr('rcap').strengthText), '351 GJ/5s');
+  check('str', 'Large Remote Shield Booster II', String(sr('rshield').strengthText), '680 HP/8s');
+  check('str', 'Large Remote Hull Repairer II', String(sr('rhull').strengthText), '230 HP/6s');
+  check('str', 'Heavy Mutadaptive Remote Armor Repairer I unspooled',
+        String((csMut.slotEngineStats.get(mut) ?? {}).strengthText), '392 HP/6s');
+  // eos (module.py getRepAmount) keys the x3 purely on "a charge is loaded" — an ARAR takes nothing
+  // but paste. The bare attribute is 37; printing that would understate a loaded one by two thirds.
+  check('str', 'a paste-loaded ARAR reps x3', String(sr('ararPaste').strengthText), '111 HP/3s');
+  check('str', 'an unloaded ARAR reps its bare amount', String(sr('ararBare').strengthText), '37 HP/3s');
+  check('str', 'paste-loaded ARAR HP per second', sr('ararPaste').strengthPerSec, 37, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

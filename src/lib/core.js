@@ -242,8 +242,12 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 
 /* The app is exactly one viewport tall and never scrolls as a whole: each screen owns its own
    scroller. That is what keeps the header and the bottom nav pinned instead of scrolling away
-   with the page. dvh first with a vh fallback — dvh needs iOS 15.4 and our floor is 15.0. */
-.app-shell{height:100vh;height:100dvh;overflow:hidden}
+   with the page.
+   Sized from the parent, NOT in dvh. dvh is the *dynamic* viewport, so it re-resolves every time
+   iOS shows or hides its toolbar — including mid-gesture, while you are dragging something. The
+   height chain is now html -> body -> #root -> here, all 100%, resolving once against the initial
+   containing block and never moving. index.css owns the top of that chain. */
+.app-shell{height:100%;overflow:hidden}
 
 /* Phones get the full screen width; the 430px column is a DESKTOP affordance, and capping there
    left a dead strip either side on any phone wider than 430pt (an iPhone Pro Max is 440). */

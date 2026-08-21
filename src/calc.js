@@ -874,6 +874,17 @@ const MOD_STRENGTH = {
   'Energy Neutralizer':           { kind: 'neut',    unit: ' GJ',   attrs: ['energyNeutralizerAmount'], perCycle: true },
   'Structure Energy Neutralizer': { kind: 'neut',    unit: ' GJ',   attrs: ['energyNeutralizerAmount'], perCycle: true },
   'Energy Nosferatu':             { kind: 'nos',     unit: ' GJ',   attrs: ['powerTransferAmount'],     perCycle: true },
+  // Remote assistance — the same amount-per-cycle shape as a neut, and in for the same reason: the
+  // effect lands on someone else, so nothing in this fit's own stats says how big it is. The
+  // ancillary and mutadaptive variants sit in their OWN dogma groups rather than under the plain
+  // ones, which is how they went missing from the projection path once already.
+  'Remote Shield Booster':             { kind: 'rshield', unit: ' HP', attrs: ['shieldBonus'],           perCycle: true },
+  'Ancillary Remote Shield Booster':   { kind: 'rshield', unit: ' HP', attrs: ['shieldBonus'],           perCycle: true },
+  'Remote Armor Repairer':             { kind: 'rarmor',  unit: ' HP', attrs: ['armorDamageAmount'],     perCycle: true },
+  'Ancillary Remote Armor Repairer':   { kind: 'rarmor',  unit: ' HP', attrs: ['armorDamageAmount'],     perCycle: true, pasteMult: true },
+  'Mutadaptive Remote Armor Repairer': { kind: 'rarmor',  unit: ' HP', attrs: ['armorDamageAmount'],     perCycle: true },
+    'Remote Hull Repairer':              { kind: 'rhull',   unit: ' HP', attrs: ['structureDamageAmount'], perCycle: true },
+  'Remote Capacitor Transmitter':      { kind: 'rcap',    unit: ' GJ', attrs: ['powerTransferAmount'],   perCycle: true },
 };
 
 // What each figure in a multi-value readout actually is. "15/30/48%" is useless without this, and
@@ -917,7 +928,11 @@ export function formatStrengthValues(values, unit = '%') {
 function moduleStrengthStats(fitItem) {
   const def = MOD_STRENGTH[fitItem.groupName ?? ''] ?? MOD_STRENGTH[fitItem._td?.gn ?? ''];
   if (!def) return null;
-  const vals = def.attrs.map(a => fitItem.get(a) ?? 0);
+  // An Ancillary Remote Armor Repairer loaded with Nanite Repair Paste reps x3 (eos keys purely on
+  // "a charge is loaded" — an ARAR takes nothing else). Reading the bare attribute would print a
+  // third of what the module does, the same way the projected path once under-repped every logi.
+  const mult = (def.pasteMult && fitItem._charge) ? (fitItem.get('chargedArmorDamageMultiplier') || 1) : 1;
+  const vals = def.attrs.map(a => (fitItem.get(a) ?? 0) * mult);
   const text = formatStrengthValues(vals, def.unit);
   if (!text) return null;
   const out = { strengthKind: def.kind, strengthText: text };
@@ -943,6 +958,11 @@ function moduleStrengthStats(fitItem) {
       const amount = Math.max(...vals.map(v => Math.abs(v)));
       out.strengthCycleS = cycleS;
       out.strengthPerSec = Math.round(amount / cycleS * 10) / 10;
+      // Carried alongside the figure rather than hardcoded at the tooltip: these used to be GJ-only
+      // modules, and remote reps are HP.
+      out.strengthPerSecUnit = def.unit.trim();
+      // Carried alongside the figure rather than hardcoded at the tooltip: these used to be GJ-only
+      // modules, and remote reps are HP.
       out.strengthText  += `/${cycleS}s`;
     }
   }

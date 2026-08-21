@@ -50,6 +50,18 @@
   }
 }
 
+/* The document itself must have NO scroll range. Every screen owns its own scroller (see .app-shell),
+   so a page-level scroll is never something the user asked for — it is a gesture that escaped an
+   inner scroller. `overscroll-behavior:none` stops that chaining at the source and also kills the
+   rubber-band, which on iOS is the "glitches out" half: the bounce moves the visual viewport, which
+   changes what dvh resolves to, which resizes the shell mid-gesture. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
 }
@@ -64,7 +76,12 @@ body {
      were centred inside their own boxes and never lined up with each other. The 59 places that
      genuinely want centred text all set it themselves. */
   text-align: left;
-  min-height: 100svh;
+  /* Was `min-height:100svh` against an .app-shell sized in 100dvh. Those two units are identical on
+     a desktop and differ on iOS by exactly the toolbar's height, so the shell was routinely TALLER
+     than the min-height and #root grew past the viewport — giving the document the scroll range it
+     is not supposed to have. Deriving from the parent instead means there is only one height in the
+     chain and no unit left to disagree with. */
+  height: 100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
