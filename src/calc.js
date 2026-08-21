@@ -44,13 +44,13 @@ export const SKILL_DEFAULTS = {
   navigation:5, evasiveManeuvering:5, spaceshipCommand:5, accelerationControl:5, highSpeedManeuvering:5, afterburner:5,
   longRangeTargeting:5, targetManagement:5, signatureAnalysis:5, ladarSensorCompensation:5, gravimetricSensorCompensation:5,
   magnetometricSensorCompensation:5, radarSensorCompensation:5,
-  shieldRigging:5, armorRigging:5, energyWeaponRigging:5, projectileWeaponRigging:5, hybridWeaponRigging:5, astronauticsRigging:5, launcherRigging:5, droneRigging:5, electronicSuperiority:5, droneSharpshooting:5, droneAvionics:5, droneNavigationComputer:5, astronauticRigging:5,
+  shieldRigging:5, armorRigging:5, energyWeaponRigging:5, projectileWeaponRigging:5, hybridWeaponRigging:5, astronauticsRigging:5, launcherRigging:5, droneRigging:5, electronicSuperiority:5, droneSharpshooting:5, droneNavigationComputer:5, astronauticRigging:5,
   shieldCompensation:5,
   // Racial shield compensation skills boost shield resistance amplifier effectiveness (+5%/lvl)
   emShieldCompensation:5, thermalShieldCompensation:5, kineticShieldCompensation:5, explosiveShieldCompensation:5,
   // Armor compensation skills (scale passive armor hardener effectiveness):
   emArmorCompensation:5, thermalArmorCompensation:5, kineticArmorCompensation:5, explosiveArmorCompensation:5,
-  highSpeedManeuvering:5, propulsionJamming:5, capacitorEmissionSystems:5,
+  propulsionJamming:5, capacitorEmissionSystems:5,
   shieldEmissionSystems:5, remoteArmorRepairSystems:5, remoteHullRepairSystems:5,
   // Gunnery
   gunnery:5, rapidFiring:5, surgicalStrike:5, sharpshooter:5, trajectoryAnalysis:5,
@@ -129,13 +129,15 @@ export const SKILL_CAMEL_TO_PYFA = {
   signatureAnalysis:'Signature Analysis',
   ladarSensorCompensation:'Ladar Sensor Compensation', gravimetricSensorCompensation:'Gravimetric Sensor Compensation',
   magnetometricSensorCompensation:'Magnetometric Sensor Compensation', radarSensorCompensation:'Radar Sensor Compensation',
-  shieldRigging:'Shield Rigging', armorRigging:'Armor Rigging', energyWeaponRigging:'Energy Weapon Rigging', projectileWeaponRigging:'Projectile Weapon Rigging', hybridWeaponRigging:'Hybrid Weapon Rigging', astronauticsRigging:'Astronautics Rigging', launcherRigging:'Launcher Rigging', droneRigging:'Drone Rigging', electronicSuperiority:'Electronic Superiority', droneSharpshooting:'Drone Sharpshooting', droneAvionics:'Drone Avionics', droneNavigationComputer:'Drone Navigation Computer', astronauticRigging:'Astronautic Rigging',
+  // The drone skills that used to be listed here too now live in their own blocks below —
+  // droneAvionics with the drones, and the four whose name needed correcting in the "corrected
+  // names" block. See the note there for why a key must appear exactly once.
+  shieldRigging:'Shield Rigging', armorRigging:'Armor Rigging', energyWeaponRigging:'Energy Weapon Rigging', projectileWeaponRigging:'Projectile Weapon Rigging', hybridWeaponRigging:'Hybrid Weapon Rigging', astronauticsRigging:'Astronautics Rigging', launcherRigging:'Launcher Rigging', droneSharpshooting:'Drone Sharpshooting',
   shieldCompensation:'Shield Compensation',
   emShieldCompensation:'EM Shield Compensation', thermalShieldCompensation:'Thermal Shield Compensation',
   kineticShieldCompensation:'Kinetic Shield Compensation', explosiveShieldCompensation:'Explosive Shield Compensation',
   emArmorCompensation:'EM Armor Compensation', thermalArmorCompensation:'Thermal Armor Compensation',
   kineticArmorCompensation:'Kinetic Armor Compensation', explosiveArmorCompensation:'Explosive Armor Compensation',
-  highSpeedManeuvering:'High Speed Maneuvering',
   propulsionJamming:'Propulsion Jamming',
   capacitorEmissionSystems:'Capacitor Emission Systems',
   shieldEmissionSystems:'Shield Emission Systems', remoteArmorRepairSystems:'Remote Armor Repair Systems', remoteHullRepairSystems:'Remote Hull Repair Systems',
@@ -198,7 +200,11 @@ export const SKILL_CAMEL_TO_PYFA = {
   // Command burst AOE range skills (Effect 6769: areaOfEffectBonus → maxRange).
   // These were missing, so the engine never received them → burst range showed hull bonus only.
   leadership:'Leadership', fleetCommand:'Fleet Command', wingCommand:'Wing Command',
-  // Fixed names (audit found these resolving to nonexistent types):
+  // Corrected names — an audit found the obvious camelCase-to-Title-Case guess resolving to a type
+  // that does not exist ('Electronic Superiority', 'Drone Navigation Computer', …), which silently
+  // meant the skill did nothing. These used to sit here as a SECOND entry shadowing the wrong one in
+  // the rigging block above; last-wins made that work, but it made the map order load-bearing and
+  // invisible. The wrong entries are deleted, so each key appears exactly once.
   electronicSuperiority:'Electronic Superiority Rigging',
   droneNavigationComputer:'Drone Navigation',
   astronauticRigging:'Astronautics Rigging',
@@ -3745,7 +3751,6 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     droneBay:       s.get('droneCapacity') || ship.droneBay || 0,   // || not ?? — base=0 ships get subsystem bonus
     droneBandwidth: s.get('droneBandwidth') || ship.droneBandwidth || 0,
     droneControlRange: Math.round(s.get('droneControlDistance') ?? 20000),
-    droneControlRange,
     volume:         s.get('volume') ?? ship.volume ?? 0,
     cargoCapacity:  s.get('capacity') ?? 0,
     warpCapNeed:    ship.warpCapNeed ?? 0,

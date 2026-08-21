@@ -6,8 +6,8 @@
  *
  * WHY NOT JUST `eslint src`?
  * -------------------------
- * The codebase currently has ~150 pre-existing style findings (unused vars, react-hooks patterns,
- * duplicate-but-identical object keys). Gating CI on all of them would block every PR on legacy
+ * The codebase currently has ~200 pre-existing style findings (unused vars, empty catch blocks,
+ * react-hooks advisories). Gating CI on all of them would block every PR on legacy
  * issues nobody introduced, and the usual result is that people start passing --no-verify, which
  * makes the gate worthless.
  *
@@ -38,6 +38,18 @@ const FATAL = new Set([
   'no-cond-assign',
   'no-self-assign',
   'no-sparse-arrays',
+
+  // Calling a hook conditionally or inside a loop desynchronises React's hook order, which throws
+  // mid-render — precisely the blank page ErrorBoundary.jsx exists to catch, and the one lint
+  // finding in this codebase that is a crash rather than a smell. Zero violations as of 2026-08-20,
+  // so gating it costs nothing and keeps it that way.
+  'react-hooks/rules-of-hooks',
+
+  // A duplicate key silently discards the earlier value. Benign when both sides agree, and a live
+  // bug when they don't: SKILL_CAMEL_TO_PYFA carried four skills whose corrected pyfa name only
+  // worked because it was declared second, and calc.js's droneControlRange had a Math.round that
+  // never ran because a shorthand of the same name followed it.
+  'no-dupe-keys',
 ]);
 
 const eslint = new ESLint();
