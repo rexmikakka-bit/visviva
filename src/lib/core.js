@@ -519,7 +519,13 @@ function generateEmptySlots(ship,subsystems){
     const subs=subsystems??[null,null,null,null];
     const layout=t3cSlotLayout(subs.filter(Boolean));
     return{
-      subsystems:Array.from({length:4},(_,i)=>subs[i]??{id:`sub${i}`,name:`[Empty Subsystem Slot]`,icon:null,type:"empty"}),
+      // Every other rack identifies its slots by id, and so must this one. A subsystem list coming
+      // straight from parseEFT carries only a name and typeID — importFit stamps the ids by group
+      // order, but a direct caller doesn't, and four slots sharing the id `undefined` collapse onto
+      // one another anywhere they are keyed. Spread last so an id that IS already there wins.
+      subsystems:Array.from({length:4},(_,i)=>subs[i]
+        ?{id:`sub${i}`,type:"subsystem",...subs[i]}
+        :{id:`sub${i}`,name:`[Empty Subsystem Slot]`,icon:null,type:"empty"}),
       high:make("h","High",layout.hiSlots),
       mid: make("m","Mid", layout.medSlots),
       low: make("l","Low", layout.lowSlots),

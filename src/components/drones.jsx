@@ -107,7 +107,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
   </BottomSheet>);
 }
 
-export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
+export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
   const[showDronePicker,setShowDronePicker]=useState(false);
   const[showFighterPicker,setShowFighterPicker]=useState(false);
   const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
@@ -306,7 +306,10 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fighters,setFighters
     </div>
     {showDronePicker&&<DroneBrowserSheet existingDrones={drones} onAdd={addDrone} onClose={()=>setShowDronePicker(false)}/>}
     {showFighterPicker&&<FighterBrowserSheet onAdd={addFighter} onClose={()=>setShowFighterPicker(false)}/>}
+    {/* Keyed by the drone ROW's id, not its name: two rows can hold the same drone type, and the
+        engine tracks them separately. */}
     {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}
+      item={fittedDrones?.get(infoItem.droneId)}
       onSwap={v=>setDrones(ds=>ds.map(x=>x.id===infoItem.droneId?{...x,name:v.name,typeID:v.typeID}:x))}/>}
   </div>);
 }

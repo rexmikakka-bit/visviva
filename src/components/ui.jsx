@@ -639,14 +639,39 @@ function ItemPrice({typeID}) {
   );
 }
 
-// Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab
-function ItemInfoPanel({typeID}) {
+// Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab.
+//
+// `item` (optional) is this item's ENGINE object for the fit it is actually sitting in — a DogmaItem
+// from calcFitStats' `fittedItems` / `fittedDrones`. Given one, every row gains a second value and
+// the panel answers the question the type data cannot: what is this module doing HERE, with this
+// ship's bonuses, these rigs, this heat and this roll on it. Without one (the module browser, the
+// variations list, an implant search result) there is no fit to be current in, so the panel collapses
+// back to a single column of type data — the pre-existing behaviour, unchanged.
+//
+// The two columns come from ONE object: `.get()` is post-modifier, `.getBase()` is pre. That split is
+// also why an abyssal roll needs no special case — the engine setBase()es its mutations, so the base
+// column already reads the ROLLED value rather than the stock item's, which is what "make its stats
+// reflect what they truly are" asks for and what pyfa shows.
+//
+// `mutaplasmid` is the roll's mutaplasmid id, shown as the same grade badge the Variations tab uses.
+//
+// `overrides` is a plain attrName → current-value map that wins over `.get()`. It exists for missile
+// charges, whose flight time, velocity, application and damage are computed in calc.js rather than by
+// the engine — see `fittedChargeStats` there. Without it those rows would read current == base and
+// claim nothing had modified them, which is the opposite of true.
+function ItemInfoPanel({typeID, item, mutaplasmid, overrides}) {
   const typeDescriptions = useTypeDescriptions();
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
   const attrs = td.attrs ?? td.a ?? {};
   const skills = getItemSkills(typeID);
   const meta = metaOf(typeID, null);
+  // An `item` for a DIFFERENT type would silently print another module's numbers under this one's
+  // name, which is the one failure mode here that looks like data rather than a bug.
+  const eng = (item && Number(item.typeID) === Number(typeID)) ? item : null;
+  // Overrides describe a fitted instance, so they are meaningless without one to describe.
+  const ov = eng ? overrides : null;
+  const grade = mutaplasmid ? abyssalGrade(mutaplasmid) : null;
 
   // Build section rows
   const shownKeys = new Set();
@@ -659,12 +684,38 @@ function ItemInfoPanel({typeID}) {
   const other = Object.keys(attrs).filter(k => !shownKeys.has(k) && !INFO_HIDDEN.has(k) && typeof attrs[k] === 'number').sort((a,b)=>a.localeCompare(b));
   if (other.length) sections.push({label:'Other', rows:other});
 
-  const Row = ({k}) => (
-    <div style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:`1px solid ${C.border}`}}>
-      <span style={{fontSize:12,color:C.textMid,maxWidth:'58%'}}>{fmtAttrName(k)}</span>
-      <span style={{fontSize:12,fontWeight:600,color:C.text}}>{fmtInfoVal(k, attrs[k])}</span>
-    </div>
-  );
+  const GRID = eng ? '1fr auto auto' : '1fr auto';
+
+  const Row = ({k}) => {
+    const cur  = (ov && k in ov) ? ov[k] : (eng ? eng.get(k) : attrs[k]);
+    const base = eng ? eng.getBase(k) : attrs[k];
+    // Float dust, not a modifier: the engine multiplies through several pools, so an untouched
+    // attribute can come back a few ULP off its own base. Compared relatively so the threshold means
+    // the same thing for a 0.23 resonance and a 250,000 m lock range.
+    const changed = eng && typeof cur === 'number' && typeof base === 'number'
+      && Math.abs(cur - base) > Math.abs(base) * 1e-9 + 1e-12;
+    // `better` is judged on RAW values (directionOf's contract, shared with the Variations tab), but
+    // the ARROW has to describe the number printed beside it. Resonances are the one place those
+    // disagree: they are stored as a multiplier and displayed as a resist percentage, so a resonance
+    // going down is a resist going up.
+    const better = changed ? directionOf(k, cur, base, typeID) : null;
+    const dir = !changed ? 0
+      : (RESIST_ATTRS.has(k) ? -Math.sign(cur - base) : Math.sign(cur - base));
+    return (
+      <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
+                   padding:'5px 0',borderBottom:`1px solid ${C.border}`,
+                   background:changed?`${C.accentLight}`:'transparent'}}>
+        <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{fmtAttrName(k)}</span>
+        <span style={{fontSize:12,fontWeight:600,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
+                      color:changed?(better==null?C.text:(better?C.rig:C.danger)):C.text}}>
+          {dir!==0&&<span style={{fontSize:7,verticalAlign:1,marginRight:3}}>{dir>0?'▲':'▼'}</span>}
+          {fmtInfoVal(k, cur)}
+        </span>
+        {eng&&<span style={{fontSize:12,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
+                            color:changed?C.textMid:C.textMute}}>{fmtInfoVal(k, base)}</span>}
+      </div>
+    );
+  };
 
   // useTypeDescriptions() returns null until the lazy import resolves — and since the effect that
   // loads it runs AFTER the first render, that null is guaranteed on every first paint, cache or
@@ -679,7 +730,15 @@ function ItemInfoPanel({typeID}) {
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text}}>{td.n}</div>
           <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{td.gn}</div>
-          {meta && <span style={{fontSize:10,color:META_COLORS[meta]??C.textMute,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,display:'inline-block',marginTop:3}}>{meta}</span>}
+          <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center',marginTop:3}}>
+            {meta && <span style={{fontSize:10,color:META_COLORS[meta]??C.textMute,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700}}>{meta}</span>}
+            {/* Same badge as the Variations tab and the snapshot card, so a rolled module is
+                recognisable as the same module wherever it appears. Sits beside the meta badge
+                because it is the other half of "what item is this" — the name alone cannot say. */}
+            {grade && <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
+                                    color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
+                                    borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>}
+          </div>
         </div>
       </div>
       {/* Description */}
@@ -703,7 +762,17 @@ function ItemInfoPanel({typeID}) {
           </div>
         </div>
       )}
-      {/* Attribute sections */}
+      {/* Attribute sections. The column header appears once, above all of them, rather than
+          repeating per section — and only when there are two columns to name. Without it a row
+          showing the same number twice reads as a rendering bug rather than "nothing changed". */}
+      {eng && sections.length > 0 && (
+        <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,padding:'0 0 3px',
+                     fontSize:9,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5}}>
+          <span/>
+          <span style={{textAlign:'right'}}>Current</span>
+          <span style={{textAlign:'right'}}>Base</span>
+        </div>
+      )}
       {sections.map(sec => (
         <div key={sec.label} style={{marginBottom:10}}>
           <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:4,marginTop:4}}>{sec.label}</div>
@@ -749,7 +818,7 @@ function TraitsPanel({typeID, empty="No trait data available."}){
 }
 
 // Standalone bottom sheet for item info (triggered from browser or charge list)
-function ItemInfoSheet({typeID, onClose}) {
+function ItemInfoSheet({typeID, onClose, item, overrides}) {
   return (
     <div style={{position:'fixed',inset:0,zIndex:400,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
       <div style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
@@ -757,15 +826,19 @@ function ItemInfoSheet({typeID, onClose}) {
           <button onClick={onClose} style={{background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
-          <ItemInfoPanel typeID={typeID}/>
+          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides}/>
         </div>
       </div>
     </div>
   );
 }
 
-function ModuleInfoTab({typeID, mod}) {
-  return <ItemInfoPanel typeID={typeID ?? mod?.typeID}/>;
+// `engineItem` is the module's DogmaItem on the fit it is sitting in (calcFitStats' `fittedItems`,
+// keyed by slot id). The abyssal roll rides in on `mod` and is only a BADGE here — the rolled numbers
+// themselves are already the engine item's base values, so there is nothing to merge.
+function ModuleInfoTab({typeID, mod, engineItem}) {
+  return <ItemInfoPanel typeID={typeID ?? mod?.typeID} item={engineItem}
+                        mutaplasmid={mod?.mutaplasmid}/>;
 }
 
 // Shared by the module browser, the structure module browser and the Variations tab, so the three
@@ -1096,7 +1169,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
  * set" and "Change implant", so those are reachable from the same sheet that tells you what the
  * implant does, without this component needing to know what an implant is.
  */
-export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
+export function ItemDetailSheet({typeID, name, onClose, onSwap, actions, item}) {
   // Traits only appears for things CCP actually wrote trait text for — in this sheet that is the T3
   // subsystems. Showing an always-empty third tab on every drone and implant would cost more than it
   // gives, and the tab row is already tight on a phone.
@@ -1130,7 +1203,7 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions}) {
         ))}
       </div>
       <div style={{padding:"4px 14px 16px"}}>
-        {tab==="info" && <ItemInfoPanel typeID={typeID}/>}
+        {tab==="info" && <ItemInfoPanel typeID={typeID} item={item}/>}
         {tab==="traits" && <div style={{paddingTop:12}}><TraitsPanel typeID={typeID}/></div>}
         {/* readOnly when the caller gave no handler, so the list stops advertising "tap to swap"
             on rows that cannot do anything — which is how this shipped for boosters. */}
@@ -1479,7 +1552,10 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   </div>);
 }
 
-function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom}){
+// `chargeStats` is calc.js' effective-charge map for THIS slot — see `fittedChargeStats` there. Only
+// the loaded charge gets it: the ammo list offers every compatible charge, but the others aren't on
+// the fit, so type data alone is the honest answer for them.
+function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -1635,7 +1711,7 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
             })}
           </div>);
         })()}
-        {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod}/></div>)}
+        {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem}/></div>)}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
                                 baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
@@ -1657,7 +1733,14 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
         {tab==="mutate"&&(<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/></div>)}
       </div>
     </BottomSheet>
-    {chargeInfo&&<ItemInfoSheet typeID={chargeInfo} onClose={()=>setChargeInfo(null)}/>}
+    {/* The ammo list offers every compatible charge, but only the LOADED one exists on the fit — so
+        only that one gets the engine item and the current/base columns. Tapping any other shows its
+        type data alone, which is the honest answer: it isn't loaded, so it has no current value. */}
+    {chargeInfo&&(()=>{
+      const loaded=engineItem?._charge&&Number(engineItem._charge.typeID)===Number(chargeInfo)?engineItem._charge:null;
+      return <ItemInfoSheet typeID={chargeInfo} onClose={()=>setChargeInfo(null)}
+        item={loaded} overrides={loaded?chargeStats:null}/>;
+    })()}
   </>);
 }
 

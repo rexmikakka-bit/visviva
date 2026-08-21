@@ -1525,6 +1525,111 @@ Agency 'Overclocker' SB7 Dose III
   // What the user actually reads off the fitting bar, and the reason the hundredths matter.
   check('geno', 'cpu surplus', st.cpuTotal - st.cpuUsed, 3.51, 1e-3);
   check('geno', 'pg surplus',  st.pgTotal  - st.pgUsed,  4.09, 1e-3);
+
+  // ── The per-item engine handles the info panel reads for its two value columns ──────────────
+  // Keyed by slot id, which is rack-prefixed and so unique fit-wide. A mis-keyed map is invisible in
+  // every aggregate stat above — the fit still computes — so it needs its own assertion.
+  const filled = ['high','mid','low','rigs'].flatMap(k => slots[k] ?? []).filter(s => s?.typeID);
+  check('geno', 'every fitted module has its engine item',
+    filled.filter(s => st.fittedItems.get(s.id)?.typeID === s.typeID).length, filled.length, 0);
+
+  // An abyssal roll is setBase()d, so the engine's BASE is the ROLLED value, not the stock item's.
+  // That is what makes the panel's right-hand column read post-mutation/pre-fit-effect, exactly as
+  // pyfa's does, with no special case anywhere downstream. 22.90375 is the roll written in the EFT
+  // above; 25 is what the stock Federation Navy 800mm Steel Plates carries.
+  const plateSlot = (slots.low ?? []).find(s => s.name === 'Federation Navy 800mm Steel Plates');
+  const plate = st.fittedItems.get(plateSlot.id);
+  check('geno', 'abyssal base IS the roll', plate.getBase('cpu'), 22.90375, 1e-9);
+  check('geno', 'the stock type still says otherwise', TYPES[plate.typeID].a.cpu, 25, 0);
+
+  // ...and `get()` is that base plus what the FIT does to it: Acceleration Control V (+25%) and
+  // Zor's Custom Navigation Hyper-Link (speedFBonus 5), each in its own stacking group and so both
+  // at full strength. Both columns from one object, which is the whole design.
+  const mwdSlot = (slots.mid ?? []).find(s => s.name === 'Corelum B-Type 50MN Microwarpdrive');
+  const mwd = st.fittedItems.get(mwdSlot.id);
+  check('geno', 'mwd speedFactor base is the roll', mwd.getBase('speedFactor'), 525.5976, 1e-9);
+  check('geno', 'mwd speedFactor current adds the fit on top',
+    mwd.get('speedFactor'), 525.5976 * 1.25 * 1.05, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12j. FITTED-ITEM ATTRIBUTES FOR THE INFO PANEL — subsystems and missile charges.
+//
+//      The panel shows current-vs-base from ONE engine item per fitted thing. Two of those things
+//      do not fall out of the engine alone:
+//
+//      • Subsystem slots are only given their ids on the app's import path. A list handed straight
+//        to buildSlotsFromEFT used to arrive with none, so all four collapsed onto the key
+//        `undefined` and three subsystems became unreachable.
+//      • A missile's flight time, velocity and damage are computed in THIS file, outside the engine
+//        (calc.js reads charge attributes raw and builds its own multiplier chain for the skills the
+//        engine cannot apply to a charge). So `_charge.get()` equals `_charge.getBase()` for exactly
+//        the attributes a missile fit is read for, and the panel needs `fittedChargeStats` to say
+//        anything true. The assertions below pin BOTH halves: that the engine alone is silent, and
+//        that the override is not.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFITTED-ITEM ATTRIBUTES (subsystems, missile charges)');
+  const LOKI = `[Loki, info panel]
+
+Heavy Missile Launcher II, Scourge Fury Heavy Missile
+
+Loki Core - Augmented Nuclear Reactor
+Loki Defensive - Adaptive Defense Node
+Loki Offensive - Launcher Efficiency Configuration
+Loki Propulsion - Intercalated Nanofibers
+`;
+  const p = parseEFT(LOKI);
+  const ship = lookupShip(p.shipName);
+  const slots = buildSlotsFromEFT(ship, p.mods, p.subsystems);
+  const st = calcFitStats(ship, slots, [], SKILLS_ALL_V, {});
+
+  const subIds = (slots.subsystems ?? []).map(s => s.id);
+  check('panel', 'four subsystem slots, four distinct ids', new Set(subIds).size, 4, 0);
+  check('panel', 'and they are the rack-prefixed ones', subIds.join(','), 'sub0,sub1,sub2,sub3', 0);
+  check('panel', 'every subsystem resolves to its own engine item',
+    (slots.subsystems ?? []).filter(s => s.typeID && st.fittedItems.get(s.id)?.typeID === s.typeID).length, 4, 0);
+
+  const launcher = st.fittedItems.get('h0');
+  const charge = launcher._charge;
+  const ov = st.fittedChargeStats.get('h0');
+
+  // What the engine can and cannot reach, stated exactly. It DOES carry the subsystem's +5%/lvl
+  // missile velocity (effect 6923, a LocationRequiredSkillModifier filtered on the charge's missile
+  // skill) — so the charge reads 4300 x 1.25. What it cannot carry is the SKILL half, because a
+  // skill's ItemModifier cannot reach a charge; on flight time and damage, where the skills are the
+  // only source here, it therefore has nothing to say at all.
+  check('panel', 'engine carries the subsystem half of velocity',
+    charge.get('maxVelocity'), 4300 * 1.25, 1e-9);
+  check('panel', 'engine leaves charge flight time at base',
+    charge.get('explosionDelay') - charge.getBase('explosionDelay'), 0, 0);
+  check('panel', 'engine leaves charge damage at base',
+    charge.get('kineticDamage') - charge.getBase('kineticDamage'), 0, 0);
+
+  // calc.js rebuilds the whole chain from the RAW base, so its answer must carry BOTH halves:
+  // Missile Projection V (+10%/lvl velocity) and Missile Bombardment V (+10%/lvl flight), both
+  // unpenalized, plus that same subsystem +25% on velocity.
+  check('panel', 'charge velocity current', ov.maxVelocity, 4300 * 1.5 * 1.25, 1e-9);
+  check('panel', 'charge flight time current', ov.explosionDelay, 4875 * 1.5, 1e-9);
+  // Heavy Missiles V (+5%/lvl) x Warhead Upgrades V (+2%/lvl) = 1.25 x 1.10.
+  check('panel', 'charge damage current', ov.kineticDamage, 201 * 1.25 * 1.10, 1e-9);
+  // The launcher carries no damageMultiplier, so the panel's four damage rows must add back up to
+  // the fit's volley. This ties the override to a number the rest of the suite already validates —
+  // a drifting multiplier chain cannot move one without the other.
+  const ovDmg = ov.emDamage + ov.thermalDamage + ov.kineticDamage + ov.explosiveDamage;
+  check('panel', 'charge damage rows sum to the fit volley', ovDmg, st.weaponVolley.total, 1e-9);
+
+  // Application is overridden for the same reason, and it is the sharper case: the engine reaches a
+  // charge through LocationRequiredSkillModifier only, so it carries this subsystem's +5%/lvl
+  // explosion velocity (effect 6924) and NONE of the two skills, which are OwnerRequiredSkillModifier.
+  // Target Navigation Prediction V is +10%/lvl and Guided Missile Precision V is -5%/lvl, both
+  // unpenalized. eos, all skills V: 133.125 m/s and 180.75 m.
+  check('panel', 'engine carries only the subsystem half of explosion velocity',
+    charge.get('aoeVelocity'), 71 * 1.25, 1e-9);
+  check('panel', 'charge explosion velocity current', ov.aoeVelocity, 71 * 1.5 * 1.25, 1e-9);
+  check('panel', 'charge explosion radius current', ov.aoeCloudSize, 241 * 0.75, 1e-9);
+  check('panel', 'and the engine has something to say about it',
+    charge.get('aoeVelocity') > charge.getBase('aoeVelocity') ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2809,6 +2914,85 @@ Republic Fleet Command Mindlink`;
   const prec = (state) => M('Missile Guidance Computer II', state, 'Missile Precision Script');
   check('mgc', 'precision script leaves velocity at the bare value',
         missile([prec('overheated'), prec('overheated')], []).velocity, 5625, TOL);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13t. MISSILE APPLICATION — explosion velocity and explosion radius
+//      A fitted missile reported its BARE type value on every fit: a Caracal's Scourge Fury read
+//      71 m/s and 241 m with all skills at V. `_applyEffect` walks OwnerRequiredSkillModifier over
+//      modules and drones but never over a module's loaded CHARGE, and almost every application
+//      bonus in the game — the Target Navigation Prediction and Guided Missile Precision SKILLS,
+//      the Warhead Flare/Rigor Catalyst RIGS, a Golem's or Nighthawk's HULL bonus, the Zainou
+//      'Deadeye' implants, Crash — arrives through exactly that func. Opening the engine path is
+//      not the fix: `engineChargeMult` and the warhead/hardwiring chains exist because it is shut,
+//      so widening it double-counts missile DAMAGE (22 baselines move, a Cerberus by 37%). calc.js
+//      rebuilds the chain from base instead, which also puts the rigs in the SAME stacking pool as
+//      the Guidance Computer — what pyfa does, since Effect1590/1472/6135 all penalise in module
+//      context and leave skills, implants and boosters alone.
+//      Every number below is eos's, all skills V (scripts/oracle).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMISSILE APPLICATION (explosion velocity / radius)');
+  const app = (eft, opts = {}) => {
+    const p = parseEFT(eft);
+    const ship = lookupShip(p.shipName);
+    const st = calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {
+      implants: (opts.implants ?? []).map(n => ({ name: n })),
+      boosters: opts.boosters ?? [],
+    });
+    const g = (st.graphWeapons ?? [])[0] ?? {};
+    return { vel: g.explosionVelocity, rad: g.explosionRadius };
+  };
+  const TOL = 1e-5;
+  const CH = 'Heavy Missile Launcher II, Scourge Fury Heavy Missile';
+  // The bare case IS the bug: 71 x 1.5 (Target Navigation Prediction V) and 241 x 0.75 (Guided
+  // Missile Precision V). Both skills were missing entirely, so this failed at the base values.
+  const bare = app(`[Caracal, x]\n\n\n${CH}\n`);
+  check('aoe', 'bare Caracal explosion velocity (eos 106.500)', bare.vel, 106.5, TOL);
+  check('aoe', 'bare Caracal explosion radius (eos 180.750)', bare.rad, 180.75, TOL);
+  // The shared-pool case. Alone each is unpenalised, so it cannot tell the pools apart; together
+  // the weaker of the two must be cut to exp(-1/7.1289) = 0.8691 strength. Penalising them in
+  // separate pools gives 121.412 here, ~2% adrift on a very ordinary fit.
+  const mgc = app(`[Caracal, x]\n\nMissile Guidance Computer II, Missile Precision Script\n\n${CH}\n`);
+  const rig = app(`[Caracal, x]\n\n\n${CH}\n\nMedium Warhead Rigor Catalyst II\n`);
+  const both = app(`[Caracal, x]\n\nMissile Guidance Computer II, Missile Precision Script\n\n${CH}\n\nMedium Warhead Rigor Catalyst II\n`);
+  check('aoe', 'MGC II precision, radius (eos 150.926)', mgc.rad, 150.92578125, TOL);
+  check('aoe', 'Warhead Rigor Catalyst II, radius (eos 144.600)', rig.rad, 144.6, TOL);
+  check('aoe', 'MGC + Rigor share ONE stacking pool (eos 123.864)', both.rad, 123.86399537345128, TOL);
+  // Hull bonuses, all OwnerRequiredSkillModifier and so all invisible to the engine's charge.
+  check('aoe', 'Caracal Navy Issue radius (eos 135.562)', app(`[Caracal Navy Issue, x]\n\n\n${CH}\n`).rad, 135.5625, TOL);
+  check('aoe', 'Nighthawk HAM velocity (eos 130.500)',
+    app(`[Nighthawk, x]\n\n\nHeavy Assault Missile Launcher II, Scourge Rage Heavy Assault Missile\n`).vel, 130.5, TOL);
+  check('aoe', 'Golem cruise radius (eos 425.250)',
+    app(`[Golem, x]\n\n\nCruise Missile Launcher II, Scourge Fury Cruise Missile\n`).rad, 425.25, TOL);
+  // Implants and boosters: unpenalised, and read raw off the type rather than from the engine.
+  const imp = app(`[Caracal, x]\n\n\n${CH}\n`,
+    { implants: ["Zainou 'Deadeye' Target Navigation Prediction TN-905", "Zainou 'Deadeye' Guided Missile Precision GP-805"] });
+  check('aoe', 'TN-905 + GP-805 velocity (eos 111.825)', imp.vel, 111.825, TOL);
+  check('aoe', 'TN-905 + GP-805 radius (eos 171.712)', imp.rad, 171.7125, TOL);
+  check('aoe', 'Strong Crash radius (eos 126.525)',
+    app(`[Caracal, x]\n\n\n${CH}\n`, { boosters: [{ name: 'Strong Crash Booster' }] }).rad, 126.525, TOL);
+  // A booster DOWNSIDE is a pyfa `boosterSideEffect` — off unless the user switches it on. Walking
+  // the booster's effects picked Blue Pill's -30% explosion velocity up unconditionally.
+  const bp = 'Strong Blue Pill Booster';
+  check('aoe', 'Blue Pill side effect is OFF by default (eos 106.500)',
+    app(`[Caracal, x]\n\n\n${CH}\n`, { boosters: [{ name: bp }] }).vel, 106.5, TOL);
+  // Switched on it is -30% scaled by Neurotoxin Recovery V (-5%/lvl magnitude), so -22.5%, not -30%.
+  // eos agrees to the last bit: 82.53750000000001 with se.active = True on effect 2749.
+  check('aoe', 'and applies when switched on, Neurotoxin-scaled (eos 82.538)', app(`[Caracal, x]\n\n\n${CH}\n`,
+    { boosters: [{ name: bp, sideEffects: [{ key: 'boosterAOEVelocityPenalty', value: -30, enabled: true }] }] }).vel,
+    106.5 * 0.775, TOL);
+  // Structures. A Standup missile has an EMPTY `rs`, so every skill-filtered source rejects it on
+  // its own — no MLO gate needed — while the structure guidance modules and rigs, which filter on
+  // the charge's GROUP, still reach it. Both halves have to hold at once.
+  const SL = 'Standup Multirole Missile Launcher I, Standup Light Missile';
+  const azb = app(`[Azbel, x]\n\n\n${SL}\n`);
+  check('aoe', 'Azbel Standup Light Missile velocity (eos 200.000)', azb.vel, 200, TOL);
+  check('aoe', 'Azbel Standup Light Missile radius (eos 100.000)', azb.rad, 100, TOL);
+  check('aoe', 'Standup MGE II reaches it by group (eos 94.000)',
+    app(`[Azbel, x]\nStandup Missile Guidance Enhancer II\n\n${SL}\n`).rad, 94, TOL);
+  check('aoe', 'Standup M-Set Missile Precision II, velocity (eos 284.000)',
+    app(`[Azbel, x]\n\n\n${SL}\n\nStandup M-Set Missile Precision II\n`).vel, 284, TOL);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
