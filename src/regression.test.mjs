@@ -1788,6 +1788,33 @@ Loki Propulsion - Intercalated Nanofibers
   check('cmp', 'a weaker rolled cap battery reads worse', directionOf('energyWarfareResistanceBonus', -15, -20, batTid) ? 1 : 0, 0, 0);
   // Positive base, lower-is-better: a roll that costs more CPU is not an improvement.
   check('cmp', 'a costlier rolled CPU reads worse', directionOf('cpu', 30, 25, webTid) ? 1 : 0, 0, 0);
+  // ── The ship info sheet's attribute keys ─────────────────────────────────────────────────
+  // ShipInfoSheet's attributes tab colours a changed hull attribute green or red through this same
+  // directionOf, keyed by a hand-typed dogma attribute NAME per row. A typo there does not throw and
+  // does not blank the row: the name misses ATTR_NAME_TO_ID, highIsGood comes back undefined, and
+  // directionOf quietly settles on lower-is-better — so a hull whose shield buffer went UP would
+  // paint red. Every key that sheet uses is asserted here, with the verdict it must give, because
+  // the failure is invisible by inspection and only ever shows up as a wrong colour.
+  const tempestTid = tid('Tempest');
+  const HULL_ATTR_DIR = {
+    cpuOutput: 1, powerOutput: 1, upgradeCapacity: 1, capacitorCapacity: 1, rechargeRate: 0,
+    maxTargetRange: 1, scanResolution: 1, maxLockedTargets: 1, maxVelocity: 1, agility: 0,
+    warpSpeedMultiplier: 1, signatureRadius: 0, shieldCapacity: 1, armorHP: 1, hp: 1,
+    droneCapacity: 1, droneBandwidth: 1,
+    // One per sensor type — the sheet keys off the hull's own sensor, so all four must resolve.
+    scanRadarStrength: 1, scanLadarStrength: 1, scanMagnetometricStrength: 1, scanGravimetricStrength: 1,
+  };
+  for (const [k, want] of Object.entries(HULL_ATTR_DIR))
+    check('cmp', `hull ${k}: ${want ? 'higher' : 'lower'} is better`,
+          directionOf(k, 2, 1, tempestTid) ? 1 : 0, want, 0);
+  // `mass` is deliberately NOT in that table and is passed no key at all, so its row stays plain.
+  // CCP flags it high-is-good, which for a hull is backwards — mass is what makes an align slow —
+  // but "lower is better" is not honest either once bump resistance is the thing you want. This
+  // check exists so that if someone adds mass to the sheet on the strength of the flag, the reason
+  // it was left out is sitting right here.
+  check('cmp', 'CCP flags hull mass high-is-good (why the sheet asks nothing about it)',
+        directionOf('mass', 2, 1, tempestTid) ? 1 : 0, 1, 0);
+
   // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
   // outranked the attributes a disruptor is actually chosen for. Excluded by name.
   const gdAll = Object.keys(TYPES).filter(id => /Guidance Disruptor/i.test(TYPES[id].n ?? '')).map(Number);
@@ -3123,6 +3150,35 @@ Republic Fleet Command Mindlink`;
   check('str', 'a Missile Guidance Computer shows nothing', txt('mgc'), 'undefined');
   check('str', 'a Signal Amplifier shows nothing', txt('sigamp'), 'undefined');
 
+  // Range, falloff and tracking belong to the module AS FITTED — skills, rigs, tracking enhancers
+  // and the loaded ammo all reach a gun whether or not it is currently cycling — so STOPPING a
+  // turret must not move any of them. They used to: only the active-weapon pass wrote these, so a
+  // merely-online turret got no slotEngineStats entry, and the row silently fell back to raw type
+  // attributes. A 1400mm Howitzer II loaded with Domination EMP L read "24+35 km / Tr 0.9" (the
+  // bare, skill-less type data) beside its true "37.5+99.7 km / Tr 1.2".
+  //
+  // Reported as a GESTURE bug, not a wrong number, which is why it is worth a comment: the false
+  // figures are short enough to fit on one line where the real ones wrap to two, so the row shrank
+  // the instant the first tap stopped the gun and the state dot slid out from under the second tap
+  // of a double-tap-to-overheat. It never reproduced on a desktop viewport, where nothing wraps.
+  //
+  // Asserted as an active/online EQUALITY rather than against typed-in numbers, so the check keeps
+  // its teeth through any rebalance: it is the invariant, not the value, that is being pinned.
+  const tempest = { typeID: tid('Tempest'), name: 'Tempest' };
+  const gunAt = state => {
+    const g = M('1400mm Howitzer Artillery II', state, 'Domination EMP L');
+    return calcFitStats(tempest, { high: [g], mid: [], low: [M('Gyrostabilizer II', 'online')], rigs: [] },
+      [], null, {}).slotEngineStats.get(g) ?? {};
+  };
+  const gunOn = gunAt('online'), gunAct = gunAt('active');
+  check('str', 'a stopped turret still reports its optimal', gunOn.optimal, gunAct.optimal, 1e-9);
+  check('str', 'a stopped turret still reports its falloff', gunOn.falloff, gunAct.falloff, 1e-9);
+  check('str', 'a stopped turret still reports its tracking', gunOn.tracking, gunAct.tracking, 1e-9);
+  // And the numbers really are the buffed ones, rather than raw type data that happens to agree on
+  // both sides — an equality check alone would still pass if BOTH states fell back to the base.
+  // The bare type carries 24 km of optimal; Sharpshooter V takes it to 30.
+  check('str', 'that optimal is the fitted one, not the base', gunOn.optimal > 24 ? 1 : 0, 1, 0);
+
   // Remote assistance. Every amount below is eos's own `getModifiedItemAttr` on the same Guardian at
   // all skills V, read via scripts/oracle. Two Guardians because it only has six high slots and the
   // ancillary/mutadaptive variants sit in their OWN dogma groups — a per-group table has to be shown
@@ -3516,6 +3572,48 @@ Republic Fleet Command Mindlink`;
   check('hull', 'Naga is still an Attack Battlecruiser', sub('Naga'), 'Caldari Attack Battlecruiser', 0);
   // No racial skill and no mapped faction: the subtitle drops the race rather than saying "Unknown".
   check('hull', 'Gnosis has no race to show', sub('Gnosis'), 'Combat Battlecruiser', 0);
+
+  // hullClass and race were never the only stale fields on a ships.json row — they were just the
+  // ones someone noticed. Three more, all now taken from the dogma bundle in lookupShip, all swept
+  // rather than spot-checked for the reason the comment above gives.
+  //
+  // MASS: 317 of ships.json's 423 rows carry mass 0 (and volume 0), the Vargur among them. It read
+  // "0.00M kg" on the hull's own attributes sheet next to a correct 150.00M current, and GraphTab's
+  // align-time fallback (`cs?.mass ?? ship.mass`) would have taken the 0 rather than skipping past
+  // it. No ship in EVE is massless, so this needs no tolerance for a legitimate zero.
+  const massless = [], volumeless = [];
+  for (const [, t] of hulls) {
+    const s = lookupShip(t.n);
+    if (!(s?.mass > 0)) massless.push(t.n);
+    if (!(s?.volume > 0)) volumeless.push(t.n);
+  }
+  if (massless.length) console.log(`      MASSLESS: ${massless.slice(0, 8).join(', ')}`);
+  check('hull', 'every hull has a mass', massless.length, 0, 0);
+  check('hull', 'every hull has a volume', volumeless.length, 0, 0);
+  check('hull', 'Vargur mass (kg)', lookupShip('Vargur').mass, 150e6, 1e-9);
+
+  // SENSOR TYPE: ships.json calls 62 Minmatar hulls "Laser", which is not one of the four sensor
+  // types EVE has — the Minmatar sensor is LADAR. The Stats tab prints this string verbatim beside
+  // the strength ("20 Laser" on a Vargur), and the ship attributes sheet builds a dogma attribute
+  // NAME out of it, where "Laser" resolves to nothing at all.
+  const SENSORS = new Set(['Radar', 'Ladar', 'Magnetometric', 'Gravimetric']);
+  const badSensor = [], mismatched = [];
+  for (const [, t] of hulls) {
+    const s = lookupShip(t.n);
+    const a = t.attrs ?? t.a ?? {};
+    const carried = [...SENSORS].filter(k => (a[`scan${k}Strength`] ?? 0) > 0);
+    if (!carried.length) continue;              // structures/special hulls with no sensor at all
+    if (!SENSORS.has(s?.sensorType)) { badSensor.push(`${t.n}:${s?.sensorType}`); continue; }
+    // The strength must be the one belonging to the type it claims — the two used to be able to
+    // disagree, since they came from different places (Cenotaph read 25 against the type's 15).
+    if (Math.abs((a[`scan${s.sensorType}Strength`] ?? 0) - (s?.sensorStrength ?? 0)) > 1e-9)
+      mismatched.push(t.n);
+  }
+  if (badSensor.length) console.log(`      NOT A SENSOR TYPE: ${badSensor.slice(0, 8).join(', ')}`);
+  check('hull', 'every sensor type is one of CCP\'s four', badSensor.length, 0, 0);
+  check('hull', 'every sensor strength matches its type', mismatched.length, 0, 0);
+  check('hull', 'the Minmatar sensor is Ladar, not Laser', String(lookupShip('Vargur').sensorType), 'Ladar', 0);
+  check('hull', 'Cenotaph sensor strength is the type data\'s', lookupShip('Cenotaph').sensorStrength, 15, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

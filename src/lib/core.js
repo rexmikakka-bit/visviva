@@ -390,6 +390,12 @@ function hullIdentity(typeID){
   if(!td) return null;
   return {hullClass:td.groupName??td.gn??"", race:classifyHull(td,typeID).race};
 }
+// A hull's sensor is whichever of CCP's four strength attributes it actually carries, strongest
+// first. Shared with lookupShip rather than inlined twice: ships.json's own sensorType calls 62
+// Minmatar hulls "Laser", which is not a sensor type EVE has — the Minmatar sensor is LADAR.
+const strongestSensor=a=>[["Radar",a.scanRadarStrength],["Ladar",a.scanLadarStrength],
+  ["Magnetometric",a.scanMagnetometricStrength],["Gravimetric",a.scanGravimetricStrength]]
+  .filter(([,v])=>v>0).sort((x,y)=>(y[1]??0)-(x[1]??0));
 // Fallback: build a ships.json-shaped object from dogma TYPES data for ships
 // that are missing from ships.json (e.g. Naga). Fixes blank stats/slots.
 function shipFromDogma(name){
@@ -397,8 +403,7 @@ function shipFromDogma(name){
   const td=tid?(TYPES[tid]??TYPES[String(tid)]):null;
   if(!td)return null;
   const a=td.attrs??td.a??{};
-  const sensors=[["Radar",a.scanRadarStrength],["Ladar",a.scanLadarStrength],["Magnetometric",a.scanMagnetometricStrength],["Gravimetric",a.scanGravimetricStrength]]
-    .filter(([,v])=>v>0).sort((x,y)=>(y[1]??0)-(x[1]??0));
+  const sensors=strongestSensor(a);
   const rz=k=>Math.round((1-(a[k]??1))*1000)/10;
   const{hullClass,race}=hullIdentity(tid)??{hullClass:"",race:null};
   return{
@@ -428,6 +433,25 @@ function lookupShip(name){
   const ship=found?{...found}:(shipFromDogma(name)??{name});
   const id=hullIdentity(ship.typeID);
   if(id){ship.hullClass=id.hullClass;ship.race=id.race;}
+  // ships.json is a legacy precomputed bundle and hullClass/race above are not the only fields it
+  // gets wrong — it is just where we noticed first. The dogma bundle is regenerated from pyfa's
+  // eve.db and is the authoritative side of every disagreement, so take these from it too:
+  //
+  //   mass / volume  — 0 on 317 of 423 entries, the Vargur among them. Read as "0.00M kg" on the
+  //                    hull's attributes sheet, and GraphTab's align-time fallback would have
+  //                    divided by it. 0 is not a mass any ship has, so a falsy test is safe.
+  //   sensorType     — 62 Minmatar hulls say "Laser", which EVE has no such thing as. Overridden
+  //                    rather than backfilled: it is present and WRONG, not missing, and the Stats
+  //                    tab prints it verbatim ("20 Laser" on a Vargur).
+  //   sensorStrength — two hulls are stale (Cenotaph 25→15, Tholos 16→8), so it comes across with
+  //                    the type it belongs to rather than being left to disagree with it.
+  const _a=ship.typeID?((TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.attrs??(TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.a):null;
+  if(_a){
+    if(!ship.mass)ship.mass=_a.mass??0;
+    if(!ship.volume)ship.volume=_a.volume??0;
+    const sen=strongestSensor(_a)[0];
+    if(sen){ship.sensorType=sen[0];ship.sensorStrength=sen[1];}
+  }
   return ship;
 }
 const fmtN=n=>{if(n==null)return"-";if(n>=1e6)return`${(n/1e6).toFixed(2)}M`;if(n>=100000)return`${Math.round(n/1000)}k`;if(n>=1000){const k=n/1000;return`${k%1===0?k.toFixed(0):k.toFixed(1)}k`;}return String(Math.round(n));};

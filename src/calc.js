@@ -2824,6 +2824,58 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // Incoming damage profile (from the Resistances tab) for EHP-weighted ancillary rep readouts;
   // defaults to uniform. Armor resonances already include any RAH adaptation (applied in calculate()).
   const dmgP = Array.isArray(opts.damageProfile) ? opts.damageProfile : [0.25, 0.25, 0.25, 0.25];
+
+  // Range / tracking as DISPLAYED on a module row. Pulled out of the active-module branch below so
+  // the merely-online branch can call it too: optimal, falloff and tracking are properties of the
+  // module AS FITTED — skills, rigs, tracking enhancers and the loaded ammo all reach it whether or
+  // not it happens to be cycling — so they must not change when you stop the gun. They did. An
+  // online-but-inactive turret got no entry here at all, the row fell back to raw type attributes,
+  // and a 1400mm Howitzer with Domination EMP read "24+35 km / Tr 0.9" (the bare, skill-less type
+  // data) instead of its real "37.5+99.7 km / Tr 1.2". Reported as a double-tap problem rather than
+  // a wrong number: the short strings fit on one line where the true ones need two, so the row
+  // shrank on the first tap and the state dot slid out from under the second.
+  const rangeDisplayStats = (fitItem, slot, strength) => {
+    const maxRange = fitItem.get('maxRange') ?? 0;
+    // A strength-only module (neut, sebo, ECM, tracking computer) has no maxRange of its own and
+    // used to fall out here with no entry at all — which is why none of them had a row readout.
+    if (maxRange <= 0) return strength || null;
+    // Remote reps / ewar use falloffEffectiveness (attr 2044); turrets use falloff (158).
+    // The turret falloff attr defaults to 1, which masks falloffEffectiveness via ??, so check
+    // which attr the module actually carries in its type data and read that one.
+    const _ta = TYPES[fitItem.typeID]?.attrs ?? TYPES[fitItem.typeID]?.a ?? {};
+    const hasFalloffEff = (_ta.falloffEffectiveness ?? _ta['2044']) != null;
+    const falloff = hasFalloffEff
+      ? (fitItem.get('falloffEffectiveness') ?? 0)
+      : (fitItem.get('falloff') ?? 0);
+    const tracking = fitItem.get('trackingSpeed') ?? 0;
+    // Heated range: if the module isn't already overheated but CAN overload its range
+    // (has overloadRangeBonus), compute the heated maxRange for display (e.g. webs/tackle).
+    // Use the ENGINE-resolved overloadRangeBonus, which includes subsystem enhancements
+    // (e.g. Loki Core's E6936 raises the web's overload bonus from 30 to 45).
+    let heatedRange = null;
+    const overloadRangeBonus = fitItem.get('overloadRangeBonus') ?? 0;
+    if (overloadRangeBonus && !isOverheated(slot.state)) {
+      // NOT `maxRange * (1 + bonus/100)`. maxRange is already stacked, and the overload bonus is a
+      // PostPercent that would land in that same penalised pool — so applying it on top double-
+      // counts the slot it takes. Under an Interdiction Maneuvers link a Loki's Domination web
+      // reads 45.1 km cold; the naive form promised 65.5 km against the 63.3 you actually get,
+      // because overheating demotes the burst to the second stacking slot. getWithExtraPercent
+      // resolves the attribute with the bonus IN the pool, through the same code path as the real
+      // overheated value, so the preview and the toggled state now agree by construction.
+      heatedRange = fitItem.getWithExtraPercent('maxRange', overloadRangeBonus);
+    }
+    return {
+      optimal:  Math.round(maxRange / 1000 * 10) / 10,
+      falloff:  Math.round(falloff  / 1000 * 10) / 10,
+      tracking: Math.round(tracking * 1000) / 1000,
+      heatedOptimal: heatedRange != null ? Math.round(heatedRange / 1000 * 10) / 10 : null,
+      // Merged, not a separate branch: a web, painter or disruptor has BOTH a range and a strength,
+      // and returning early on the strength would have silently dropped the range readout it
+      // already had.
+      ...strength,
+    };
+  };
+
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isOnline(slot.state)) continue;
     if (slotEngineStats.has(slot)) continue;
@@ -2834,7 +2886,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     // still requires 'active', as it always did.
     const strength = moduleStrengthStats(fitItem);
     if (!isActive(slot.state)) {
-      if (strength) slotEngineStats.set(slot, strength);
+      // Range/tracking too, not just strength — see rangeDisplayStats. Everything BELOW this point
+      // still requires 'active' and should: an AAR that is not cycling repairs nothing, and a rep
+      // or neut figure on a stopped module would be a claim about output, not about the module.
+      const ranged = rangeDisplayStats(fitItem, slot, strength);
+      if (ranged) slotEngineStats.set(slot, ranged);
       continue;
     }
 
@@ -2984,48 +3040,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
     // (Leadership/Fleet Command/Wing Command areaOfEffectBonus → maxRange) now that
     // those skills are mapped in SKILL_CAMEL_TO_PYFA. 15km × 1.5 (hull) × 1.35 × 1.25 × 1.30 = 49.4km.
-    const maxRange = fitItem.get('maxRange') ?? 0;
-    // A strength-only module (neut, sebo, ECM, tracking computer) has no maxRange of its own and
-    // used to fall out here with no entry at all — which is why none of them had a row readout.
-    if (maxRange <= 0) {
-      if (strength) slotEngineStats.set(slot, strength);
-      continue;
-    }
-    // Remote reps / ewar use falloffEffectiveness (attr 2044); turrets use falloff (158).
-    // The turret falloff attr defaults to 1, which masks falloffEffectiveness via ??, so check
-    // which attr the module actually carries in its type data and read that one.
-    const _ta = TYPES[fitItem.typeID]?.attrs ?? TYPES[fitItem.typeID]?.a ?? {};
-    const hasFalloffEff = (_ta.falloffEffectiveness ?? _ta['2044']) != null;
-    const falloff = hasFalloffEff
-      ? (fitItem.get('falloffEffectiveness') ?? 0)
-      : (fitItem.get('falloff') ?? 0);
-    const tracking = fitItem.get('trackingSpeed') ?? 0;
-    // Heated range: if the module isn't already overheated but CAN overload its range
-    // (has overloadRangeBonus), compute the heated maxRange for display (e.g. webs/tackle).
-    // Use the ENGINE-resolved overloadRangeBonus, which includes subsystem enhancements
-    // (e.g. Loki Core's E6936 raises the web's overload bonus from 30 to 45).
-    let heatedRange = null;
-    const overloadRangeBonus = fitItem.get('overloadRangeBonus') ?? 0;
-    if (overloadRangeBonus && !isOverheated(slot.state)) {
-      // NOT `maxRange * (1 + bonus/100)`. maxRange is already stacked, and the overload bonus is a
-      // PostPercent that would land in that same penalised pool — so applying it on top double-
-      // counts the slot it takes. Under an Interdiction Maneuvers link a Loki's Domination web
-      // reads 45.1 km cold; the naive form promised 65.5 km against the 63.3 you actually get,
-      // because overheating demotes the burst to the second stacking slot. getWithExtraPercent
-      // resolves the attribute with the bonus IN the pool, through the same code path as the real
-      // overheated value, so the preview and the toggled state now agree by construction.
-      heatedRange = fitItem.getWithExtraPercent('maxRange', overloadRangeBonus);
-    }
-    slotEngineStats.set(slot, {
-      optimal:  Math.round(maxRange / 1000 * 10) / 10,
-      falloff:  Math.round(falloff  / 1000 * 10) / 10,
-      tracking: Math.round(tracking * 1000) / 1000,
-      heatedOptimal: heatedRange != null ? Math.round(heatedRange / 1000 * 10) / 10 : null,
-      // Merged, not a separate branch: a web, painter or disruptor has BOTH a range and a strength,
-      // and returning early on the strength would have silently dropped the range readout it
-      // already had.
-      ...strength,
-    });
+    const ranged = rangeDisplayStats(fitItem, slot, strength);
+    if (ranged) slotEngineStats.set(slot, ranged);
   }
 
   // ── 9. Drones ─────────────────────────────────────────────────────────────

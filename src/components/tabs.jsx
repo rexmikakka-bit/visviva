@@ -956,13 +956,19 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const hullEHPp   = ehpForProfile(cs.hullHP??0,   r.hull);
   const totalEHPp  = shieldEHPp + armorEHPp + hullEHPp;
   // The EHP figures are shown abbreviated ("45.2k"), which hides up to 50 HP — enough to matter when
-  // you are comparing two fits that differ by one rig. Tapping one swaps it for the exact number.
+  // you are comparing two fits that differ by one rig. Tapping any of them swaps ALL FOUR (total plus
+  // the three layers) for their exact numbers.
   //
-  // The EHP column widens for ALL rows as soon as ANY of them is expanded, because each row is its
-  // own grid: sizing it per-row would let one long number push that row's resist bars out of line
-  // with the rows above and below it. A capital's "1,234,567" is the case that needs the room.
+  // One shared key rather than one per layer, because the reason to want exact EHP is to compare —
+  // against another fit, or across the layers of this one — and a per-layer toggle meant four taps to
+  // get a comparable set, with whatever you forgot to tap still abbreviated beside the rest.
+  //
+  // The EHP column widens for ALL rows at once anyway, because each row is its own grid: sizing it
+  // per-row would let one long number push that row's resist bars out of line with the rows above and
+  // below it. A capital's "1,234,567" is the case that needs the room.
   const fmtExact=n=>Math.round(n??0).toLocaleString();
-  const ehpCol=["shield","armor","hull"].some(k=>exactCells.has(`ehp:${k}`))?"62px":"44px";
+  const ehpExact=exactCells.has("ehp");
+  const ehpCol=ehpExact?"62px":"44px";
   const layers=[
     {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
      em:r.shield?.em??0,th:r.shield?.th??0,kin:r.shield?.kin??0,exp:r.shield?.exp??0,
@@ -1047,8 +1053,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         {/* stopPropagation: the whole header row collapses the section, and tapping the number for
             its exact value must not also close what you are reading. */}
         <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
-          onClick={e=>{e.stopPropagation();toggleExact("ehp:total");}} title={fmtExact(totalEHPp)}
-          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{exactCells.has("ehp:total")?fmtExact(totalEHPp):fmtN(totalEHPp)}</span></span>}/>
+          onClick={e=>{e.stopPropagation();toggleExact("ehp");}} title={fmtExact(totalEHPp)}
+          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(totalEHPp):fmtN(totalEHPp)}</span></span>}/>
         {isOpen("resists")&&<div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>Incoming damage</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
@@ -1071,9 +1077,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 <span style={{fontSize:10,fontWeight:600,color:d.color}}>{typeof v === "number" ? v.toFixed(1) : v}%</span>
               </div>
             ))}
-            <span onClick={()=>toggleExact(`ehp:${layer.key}`)} title={fmtExact(layer.ehpRaw)}
-                  style={{fontSize:10,fontWeight:700,color:exactCells.has(`ehp:${layer.key}`)?C.rig:C.text,textAlign:"right",cursor:"pointer",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>
-              {exactCells.has(`ehp:${layer.key}`)?fmtExact(layer.ehpRaw):layer.ehp}
+            {/* Colour stays put through the toggle. It used to go accent-coloured while expanded,
+                which made "I tapped this" look like "this layer is special" — the one thing colour
+                means everywhere else in this table. The number changing IS the feedback. */}
+            <span onClick={()=>toggleExact("ehp")} title={fmtExact(layer.ehpRaw)}
+                  style={{fontSize:10,fontWeight:700,color:C.text,textAlign:"right",cursor:"pointer",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>
+              {ehpExact?fmtExact(layer.ehpRaw):layer.ehp}
             </span>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"52px 1fr auto",padding:"3px 12px",borderBottom:(layers.length-1>li)?`1px solid ${C.border}`:"none",background:`${C.surfaceAlt}88`}}>

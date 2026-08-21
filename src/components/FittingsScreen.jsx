@@ -10,8 +10,9 @@ import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
 import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleTag,
          allTags, fitsWithTag, colorForTag, setTagColor, renameTag, removeTagEverywhere } from "../lib/fit-tags.js";
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
+import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton, TraitsPanel } from "./ui.jsx";
+import { InfoButton, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
@@ -120,9 +121,15 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
   // appear twice, once as "add existing" and once as "create new".
   const canCreate = !!n && !allNames.some(t=>tagKey(t)===tagKey(n));
   const commit = () => { if(canCreate){onToggle(n);setDraft("");} };
+  // Sit in the strip the keyboard leaves visible, not on the layout viewport the keyboard does not
+  // shrink — otherwise this sheet's whole point (a text field) opens underneath it. maxHeight goes
+  // with it: 70vh is 70% of the FULL screen, which with the keyboard up is taller than the space
+  // there is, so the field would scroll out of the sheet even once the sheet itself is in view.
+  const vv = useVisualViewport();
+  const frame = vv ? {top:vv.top,height:vv.height,left:0,right:0} : {inset:0};
   return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70vh",overflowY:"auto",background:C.surface,
+    <div onClick={onClose} style={{position:"fixed",...frame,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70%",overflowY:"auto",background:C.surface,
         borderTop:`1px solid ${C.border}`,borderRadius:"14px 14px 0 0",padding:"14px 16px 22px"}}>
         <div style={{display:"flex",alignItems:"center",marginBottom:2}}>
           <div style={{flex:1,minWidth:0}}>
@@ -162,49 +169,88 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
   );
 }
 
-export function ShipInfoSheet({ship, onClose}) {
+export function ShipInfoSheet({ship, cs, onClose}) {
   const [tab, setTab] = useState('traits');
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
   const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
+  // Two value columns when opened from a fit: what the hull actually IS right now, beside the bare
+  // hull it started as. Same shape and same reading order as ItemInfoPanel's module columns, so the
+  // hull's sheet does not have to be learned separately. Opened from the ship BROWSER there is no
+  // fit, `cs` is absent, and it collapses back to the single column it has always been.
+  const num = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+  // `cur` stays null on any row the fit cannot answer AUTHORITATIVELY, and such a row prints one
+  // number spanning both columns rather than repeating the base under a "Current" heading. That is
+  // not fussiness: cs carries no fitted slot layout, and a T3 cruiser's subsystems genuinely change
+  // the slot and hardpoint counts, so echoing the hull's numbers there would be quietly wrong on the
+  // one class of ship where the question is worth asking.
+  // The trailing key is the DOGMA attribute name, handed to directionOf — the same function the
+  // module info panel and the Variations tab ask, so green means the same thing on a hull row as it
+  // does one sheet away on a module row. Not a local high-is-good table: that is how the two drift.
+  //
+  // null where there is no honest answer, which paints the row plain. `mass` is the one that needs
+  // it — CCP flags it high-is-good and for a HULL that is backwards, since mass is what makes an
+  // align slow, but "lower is better" is not right either once you are being bumped. Slot and
+  // hardpoint counts get null for the different reason that they never carry a current value.
+  const R = (label, base, cur, fmt, attr=null) => ({label, base:num(base), cur:num(cur), fmt, attr});
+  const rnd = (v,p=1) => Math.round(v*10**p)/10**p;
+  const F = {
+    tf:  v=>`${rnd(v,2)} tf`,       mw:  v=>`${rnd(v,2)} MW`,   pts: v=>`${Math.round(v)} pts`,
+    int: v=>`${Math.round(v)}`,     gj:  v=>`${Math.round(v)} GJ`,
+    sec: v=>`${(v/1000).toFixed(1)} s`,                          km:  _fmtKm,
+    mm:  v=>`${Math.round(v)} mm`,  pt:  v=>`${rnd(v)} points`,  ms:  v=>`${Math.round(v)} m/s`,
+    agi: v=>`${rnd(v,4)}`,          au:  v=>`${v.toFixed(2)} AU/s`,
+    m:   v=>`${rnd(v)} m`,          mkg: v=>`${(v/1e6).toFixed(2)}M kg`,
+    hp:  v=>`${Math.round(v).toLocaleString()} HP`,
+    m3:  v=>`${rnd(v)} m³`,         mbit:v=>`${rnd(v)} Mbit/s`,
+  };
   const attrs = {
     fitting: [
-      ['CPU Output', ship?.cpu != null ? `${ship.cpu} tf` : '-'],
-      ['Powergrid Output', ship?.pg != null ? `${ship.pg} MW` : '-'],
-      ['Calibration', ship?.calibration != null ? `${ship.calibration} pts` : '-'],
-      ['High Slots', ship?.hiSlots ?? ship?.highSlots ?? '-'],
-      ['Mid Slots', ship?.medSlots ?? ship?.midSlots ?? '-'],
-      ['Low Slots', ship?.lowSlots ?? '-'],
-      ['Rig Slots', ship?.rigSlots ?? '-'],
-      ['Turret Hardpoints', ship?.turrets ?? '-'],
-      ['Launcher Hardpoints', ship?.launchers ?? '-'],
+      R('CPU Output', ship?.cpu, cs?.cpuTotal, F.tf, 'cpuOutput'),
+      R('Powergrid Output', ship?.pg, cs?.pgTotal, F.mw, 'powerOutput'),
+      R('Calibration', ship?.calibration, cs?.calTotal, F.pts, 'upgradeCapacity'),
+      R('High Slots', ship?.hiSlots ?? ship?.highSlots, null, F.int),
+      R('Mid Slots', ship?.medSlots ?? ship?.midSlots, null, F.int),
+      R('Low Slots', ship?.lowSlots, null, F.int),
+      R('Rig Slots', ship?.rigSlots, null, F.int),
+      R('Turret Hardpoints', ship?.turrets, null, F.int),
+      R('Launcher Hardpoints', ship?.launchers, null, F.int),
     ],
     capacitor: [
-      ['Capacitor Capacity', ship?.capCapacity ? `${Math.round(ship.capCapacity)} GJ` : '-'],
-      ['Recharge Time', ship?.capRechargeRate ? `${(ship.capRechargeRate/1000).toFixed(1)} s` : '-'],
+      R('Capacitor Capacity', ship?.capCapacity, cs?.capCapacity, F.gj, 'capacitorCapacity'),
+      R('Recharge Time', ship?.capRechargeRate, cs?.capRechargeMs, F.sec, 'rechargeRate'),
     ],
     targeting: [
-      ['Max Target Range', ship?.targetRange ? _fmtKm(ship.targetRange) : '-'],
-      ['Scan Resolution', ship?.scanRes ? `${ship.scanRes} mm` : '-'],
-      ['Max Locked Targets', ship?.maxTargets ?? '-'],
-      [`${ship?.sensorType||'Sensor'} Strength`, ship?.sensorStrength ? `${ship.sensorStrength} points` : '-'],
+      // cs.targetRange is KM and the hull record's is METRES. Feeding both to one formatter without
+      // converting would have read a 68 km lock range as 68 m — wrong by a factor of a thousand, and
+      // plausible enough on a row already full of small numbers to go unnoticed.
+      R('Max Target Range', ship?.targetRange, cs?.targetRange!=null?cs.targetRange*1000:null, F.km, 'maxTargetRange'),
+      R('Scan Resolution', ship?.scanRes, cs?.scanRes, F.mm, 'scanResolution'),
+      R('Max Locked Targets', ship?.maxTargets, cs?.maxTargets, F.int, 'maxLockedTargets'),
+      // CCP has four separate strength attributes, one per sensor type, so the key is the hull's own
+      // sensor rather than a fixed one. They all flag the same way, but a Radar hull asking about
+      // scanGravimetricStrength is the kind of thing that silently starts returning null later.
+      R(`${ship?.sensorType||'Sensor'} Strength`, ship?.sensorStrength, cs?.sensorStrength, F.pt,
+        ship?.sensorType ? `scan${ship.sensorType}Strength` : null),
     ],
     navigation: [
-      ['Max Velocity', ship?.maxVelocity ? `${Math.round(ship.maxVelocity)} m/s` : '-'],
-      ['Agility', ship?.agility != null ? `${ship.agility}` : '-'],
-      ['Warp Speed', ship?.warpSpeed ? `${Number(ship.warpSpeed).toFixed(2)} AU/s` : '-'],
-      ['Signature Radius', ship?.sigRadius ? `${ship.sigRadius} m` : '-'],
-      ['Mass', ship?.mass ? `${(ship.mass/1e6).toFixed(2)}M kg` : '-'],
+      R('Max Velocity', ship?.maxVelocity, cs?.maxVelocity, F.ms, 'maxVelocity'),
+      R('Agility', ship?.agility, cs?.agility, F.agi, 'agility'),
+      R('Warp Speed', ship?.warpSpeed, cs?.warpSpeed, F.au, 'warpSpeedMultiplier'),
+      R('Signature Radius', ship?.sigRadius, cs?.sigRadius, F.m, 'signatureRadius'),
+      R('Mass', ship?.mass, cs?.mass, F.mkg),
     ],
     structure: [
-      ['Shield HP', ship?.shieldHP ? `${Math.round(ship.shieldHP)} HP` : '-'],
-      ['Armor HP', ship?.armorHP ? `${Math.round(ship.armorHP)} HP` : '-'],
-      ['Hull HP', ship?.hullHP ? `${Math.round(ship.hullHP)} HP` : '-'],
-      ['Drone Bay', ship?.droneBay ? `${ship.droneBay} m³` : '-'],
-      ['Drone Bandwidth', (ship?.droneBandwidth??ship?.droneBW) ? `${ship?.droneBandwidth??ship?.droneBW} Mbit/s` : '-'],
+      R('Shield HP', ship?.shieldHP, cs?.shieldHP, F.hp, 'shieldCapacity'),
+      R('Armor HP', ship?.armorHP, cs?.armorHP, F.hp, 'armorHP'),
+      R('Hull HP', ship?.hullHP, cs?.hullHP, F.hp, 'hp'),
+      R('Drone Bay', ship?.droneBay, cs?.droneBay, F.m3, 'droneCapacity'),
+      R('Drone Bandwidth', ship?.droneBandwidth ?? ship?.droneBW, cs?.droneBandwidth, F.mbit, 'droneBandwidth'),
     ],
   };
+  const twoCol = !!cs;
+  const GRID = twoCol ? '1fr auto auto' : '1fr auto';
 
   return (
     <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column'}}
@@ -250,19 +296,53 @@ export function ShipInfoSheet({ship, onClose}) {
           )}
           {tab==='attributes' && (
             <div>
-              {Object.entries(attrs).map(([section, rows]) => (
+              {twoCol && (
+                <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,paddingBottom:6}}>
+                  <span/>
+                  {['Current','Base'].map(h=>(<span key={h} style={{fontSize:10,fontWeight:700,color:C.textMute,
+                    textAlign:'right',textTransform:'uppercase',letterSpacing:.5}}>{h}</span>))}
+                </div>
+              )}
+              {Object.entries(attrs).map(([section, rows]) => {
+                const shown = rows.filter(r => r.base != null || r.cur != null);
+                if (!shown.length) return null;
+                return (
                 <div key={section} style={{marginBottom:16}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',
                     letterSpacing:.5,marginBottom:8}}>{section}</div>
-                  {rows.filter(([,v]) => v !== '-' && v !== 'undefined').map(([label, val]) => (
-                    <div key={label} style={{display:'flex',justifyContent:'space-between',
-                      padding:'5px 0',borderBottom:`1px solid ${C.border}`}}>
-                      <span style={{fontSize:12,color:C.textMid}}>{label}</span>
-                      <span style={{fontSize:12,fontWeight:600,color:C.text}}>{val}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
+                  {shown.map(r => {
+                    const val = r.cur ?? r.base;
+                    // Relative, for the reason ItemInfoPanel gives: the engine multiplies through
+                    // several pools, so an untouched attribute can come back a few ULP off its base.
+                    const changed = twoCol && r.cur != null && r.base != null
+                      && Math.abs(r.cur - r.base) > Math.abs(r.base) * 1e-9 + 1e-12;
+                    // The arrow says which WAY the fit moved the number; the COLOUR says whether that
+                    // is an improvement, and on half these rows the two disagree — a smaller
+                    // signature and a bigger shield buffer are both wins. Green/red comes from
+                    // directionOf, the same function the module info panel and the Variations tab
+                    // ask, so the colour cannot come to mean one thing on a hull row and another on
+                    // a module row one tap away. A row with no honest direction stays plain (see R).
+                    const dir = changed ? Math.sign(r.cur - r.base) : 0;
+                    const better = changed && r.attr ? directionOf(r.attr, r.cur, r.base, ship?.typeID) : null;
+                    const valColor = better == null ? C.text : (better ? C.rig : C.danger);
+                    return (
+                    <div key={r.label} style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
+                      padding:'5px 0',borderBottom:`1px solid ${C.border}`,
+                      background:changed?C.accentLight:'transparent'}}>
+                      <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{r.label}</span>
+                      <span style={{fontSize:12,fontWeight:600,color:valColor,textAlign:'right',
+                        fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
+                        ...(twoCol&&r.cur==null?{gridColumn:'2 / span 2'}:{})}}>
+                        {dir!==0&&<span style={{fontSize:7,verticalAlign:1,marginRight:3}}>{dir>0?'▲':'▼'}</span>}
+                        {r.fmt(val)}
+                      </span>
+                      {twoCol&&r.cur!=null&&<span style={{fontSize:12,textAlign:'right',fontVariantNumeric:'tabular-nums',
+                        whiteSpace:'nowrap',color:changed?C.textMid:C.textMute}}>
+                        {r.base!=null?r.fmt(r.base):'—'}</span>}
+                    </div>);
+                  })}
+                </div>);
+              })}
             </div>
           )}
         </div>

@@ -50,7 +50,11 @@ function InfoButton({onClick,title="Item info"}){
 // position:fixed element is positioned against the LAYOUT viewport, which the keyboard does not
 // shrink, so a bottom sheet otherwise sits underneath the keyboard: you type in the search box and
 // cannot see what you are searching. Following visualViewport keeps the sheet in the visible strip.
-function useVisualViewport(){
+//
+// Exported because any bottom-anchored overlay with a text field needs it, not just BottomSheet.
+// The tag sheet builds its own overlay and went without, so `+ Tag` opened a field behind the
+// keyboard — the same bug this hook already existed to fix, one component over.
+export function useVisualViewport(){
   const [vv,setVv]=useState(null);
   useEffect(()=>{
     const v=window.visualViewport;
