@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { ItemDetailSheet, BottomSheet, InfoButton } from "./ui.jsx";
-import { haptic, implantSetMembers, implantData, searchImplants } from "../lib/core.js";
+import { haptic, implantSetMembers, applyImplantSet, implantData, searchImplants } from "../lib/core.js";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
@@ -229,7 +229,9 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   // carry their own slot and fit straight into it, so the slot never has to be guessed at all.
   const results=useMemo(()=>searchImplants(query),[query]);
   const fitInto=item=>setImplants(prev=>prev.map(i=>i.slot===item.slot?{...i,name:item.name,bonus:null}:i));
-  const fitSet=set=>fitSet(set);
+  // ONE update for the whole set: six separate writes would each recalculate the fit, five of them
+  // against a half-fitted set. The mapping itself lives in core.js so it can be tested.
+  const fitSet=set=>setImplants(prev=>applyImplantSet(prev,set));
 
   function saveLoadout(){
     if(!newLoadoutName.trim())return;

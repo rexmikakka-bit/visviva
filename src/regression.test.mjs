@@ -32,7 +32,7 @@ import { resolvePilotSkills, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PIL
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2466,6 +2466,67 @@ Republic Fleet Command Mindlink`;
   const mwdSpeed = mutaAttrRanges(MUTA_BY_TYPE[tid('50MN Microwarpdrive II')]?.[0], tid('50MN Microwarpdrive II'))
     .find((r) => r.name === 'speedFactor');
   check('detent', 'a microwarpdrive keeps a positive speedFactor base', mwdSpeed?.base > 0 ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13n. IMPLANT SETS — the "+ Set" button, which shipped doing nothing at all
+//      Both entry points (the cross-slot search and the per-slot picker) route through one handler,
+//      and that handler was written `set => fitSet(set)` — a const arrow calling itself. Every press
+//      blew the stack. It was invisible because the whole feature lived inside a component and had
+//      no coverage; the mapping is now a pure function in core.js, which is what these check.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nIMPLANT SETS');
+  const emptyRows = () => Array.from({ length: 10 }, (_, i) => ({ slot: i + 1, name: '[Empty]', bonus: null }));
+  const snake = implantSetMembers('High-grade Snake Alpha');
+  check('implantset', 'a member resolves its whole set', snake?.members.length ?? 0, 6, 0);
+  check('implantset', 'the set is named without the Greek letter', snake?.setName, 'High-grade Snake', 0);
+  // Any member finds the same set, not just Alpha — the row that carries the button is whichever one
+  // the search happened to return.
+  check('implantset', 'Omega resolves the same set as Alpha',
+    implantSetMembers('High-grade Snake Omega')?.setName, 'High-grade Snake', 0);
+  check('implantset', 'a non-set implant offers no set', implantSetMembers('Ocular Filter - Basic') === null ? 1 : 0, 1, 0);
+
+  // The bug itself: this call used to recurse until the stack gave out.
+  const fitted = applyImplantSet(emptyRows(), snake);
+  check('implantset', 'fitting a set fills its six slots',
+    fitted.filter((i) => i.name !== '[Empty]').length, 6, 0);
+  check('implantset', 'every slot lands the right member',
+    fitted.slice(0, 6).every((i, n) => i.name === snake.members[n].name) ? 1 : 0, 1, 0);
+  check('implantset', 'the hardwiring slots are left alone',
+    fitted.slice(6).every((i) => i.name === '[Empty]') ? 1 : 0, 1, 0);
+  check('implantset', 'the list keeps its ten slots in order',
+    fitted.map((i) => i.slot).join(',') , '1,2,3,4,5,6,7,8,9,10', 0);
+
+  // A set overwrites the attribute enhancers it covers but must not touch a hardwiring the user
+  // fitted by hand — the two occupy disjoint slots and a set only ever claims 1-6.
+  const withHardwiring = emptyRows().map((i) => (i.slot === 8 ? { ...i, name: 'Zainou Deadeye' } : i));
+  check('implantset', 'a hand-fitted hardwiring survives a set',
+    applyImplantSet(withHardwiring, snake)[7].name, 'Zainou Deadeye', 0);
+  // Swapping one set for another replaces all six rather than merging the two.
+  const swapped = applyImplantSet(fitted, implantSetMembers('High-grade Crystal Alpha'));
+  check('implantset', 'a second set replaces the first',
+    swapped.slice(0, 6).filter((i) => i.name.includes('Snake')).length, 0, 0);
+  // Purity: React state is compared by reference, so mutating in place would fit the set and then
+  // fail to redraw it.
+  const before = emptyRows();
+  applyImplantSet(before, snake);
+  check('implantset', 'the input list is not mutated', before[0].name, '[Empty]', 0);
+
+  // Sweep every set the game ships, so a bundle regen that renames a grade or drops a member shows
+  // up here rather than as a "+ Set" that half-fills the slots.
+  let badSets = 0, seenSets = new Set();
+  for (const [name] of IMPLANT_NAME_TO_SLOT) {
+    const set = implantSetMembers(name);
+    if (!set || seenSets.has(set.setName)) continue;
+    seenSets.add(set.setName);
+    const out = applyImplantSet(emptyRows(), set);
+    // Each member must land in exactly the slot the data gave it, and nothing may be left over.
+    if (out.filter((i) => i.name !== '[Empty]').length !== set.members.length) badSets++;
+    if (!set.members.every((m) => out[m.slot - 1].name === m.name)) badSets++;
+  }
+  check('implantset', 'every implant set in the bundle', seenSets.size, 55, 0);
+  check('implantset', 'every set fits cleanly into its slots', badSets, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
