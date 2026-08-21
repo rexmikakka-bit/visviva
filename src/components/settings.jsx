@@ -161,9 +161,7 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
           <div style={{marginTop:12,fontSize:11,color:C.textMute,lineHeight:1.5}}>
             <div><strong style={{color:C.textMid}}>Fuzzwork</strong> — sell-order percentile, matching pyfa's default. One request for the whole fit; the fastest option.</div>
             <div style={{marginTop:6}}><strong style={{color:C.textMid}}>ceve-market</strong> — lowest sell order in the hub's region. One small request per item.</div>
-            
             <div style={{marginTop:6}}>All sources cache for 1 hour per hub.</div>
-            <div style={{marginTop:8,color:C.warning}}>ceve-market only works in the installed app — it sends no CORS headers, so a web browser blocks it. Fuzzwork works everywhere.</div>
           </div>
         </div>}
         {section==="implants"&&<ImplantLoadoutsManager implants={implants} setImplants={setImplants} loadouts={loadouts} setLoadouts={setLoadouts}/>}
