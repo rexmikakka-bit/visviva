@@ -228,10 +228,17 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   // and answering it meant opening slots one at a time until one of them had the thing. Results
   // carry their own slot and fit straight into it, so the slot never has to be guessed at all.
   const results=useMemo(()=>searchImplants(query),[query]);
-  const fitInto=item=>setImplants(prev=>prev.map(i=>i.slot===item.slot?{...i,name:item.name,bonus:null}:i));
+  // Fitting from the search CLEARS the query, which is what puts the slot list back. Here the query
+  // IS the browser — the results replace the list rather than sitting above it (see the note further
+  // down) — so leaving it in place after a pick left you on the same rows, with the implant you just
+  // fitted nowhere on screen and no way out but emptying the box by hand. Everything else in the app
+  // dismisses on pick: ImplantPicker's own `fit` calls onClose, the loadout row does onLoad+onClose,
+  // and ItemDetailSheet closes itself after any action. This is the same gesture.
+  const dismissSearch=()=>setQuery("");
+  const fitInto=item=>{setImplants(prev=>prev.map(i=>i.slot===item.slot?{...i,name:item.name,bonus:null}:i));dismissSearch();};
   // ONE update for the whole set: six separate writes would each recalculate the fit, five of them
   // against a half-fitted set. The mapping itself lives in core.js so it can be tested.
-  const fitSet=set=>setImplants(prev=>applyImplantSet(prev,set));
+  const fitSet=set=>{setImplants(prev=>applyImplantSet(prev,set));dismissSearch();};
 
   function saveLoadout(){
     if(!newLoadoutName.trim())return;
@@ -277,9 +284,17 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
           title="Clear every implant from this fit"
           style={{padding:"7px 12px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",background:"none",border:`1px solid ${C.border}`,color:C.danger}}>Clear</button>}
       </div>
-      <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={query}
-        onChange={e=>setQuery(e.target.value)} placeholder="Search all implants..."
-        style={{width:"100%",marginTop:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,padding:"7px 10px",color:C.text,fontSize:12,boxSizing:"border-box"}}/>
+      {/* The x is the way OUT, not a convenience. Emptying this box is the only thing that brings the
+          slot list back, so a query matching nothing left you on a bare "no implants match" page with
+          no exit but backspacing it clear — which reads as the screen being stuck. */}
+      <div style={{position:"relative",marginTop:6}}>
+        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={query}
+          onChange={e=>setQuery(e.target.value)} placeholder="Search all implants..."
+          style={{width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,padding:"7px 10px",paddingRight:query?30:10,color:C.text,fontSize:12,boxSizing:"border-box"}}/>
+        {query&&<button onClick={()=>{haptic();dismissSearch();}} title="Clear search"
+          style={{position:"absolute",right:0,top:0,bottom:0,width:30,display:"flex",alignItems:"center",justifyContent:"center",
+                  background:"none",border:"none",padding:0,cursor:"pointer",color:C.textMute,fontSize:15}}>&#10005;</button>}
+      </div>
     </div>
     {/* While searching, the results REPLACE the slot list rather than sitting above it: a result is
         already labelled with the slot it fills, so showing both puts the same ten slots on screen
