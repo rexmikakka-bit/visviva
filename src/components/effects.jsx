@@ -256,7 +256,12 @@ function BoosterPickerSheet({onAdd,onClose}){
   </BottomSheet>);
 }
 
-export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
+// `pinned` is an optional shortcut list — [{ship,fit}] — shown above the search box under its own
+// header. The graph's target picker passes the open fit tabs, so the fit you are comparing against is
+// almost always one tap away instead of a name you have to remember and type. Hidden the moment you
+// start searching: a shortcut list that stays put while the results below it change reads as a result
+// that refuses to be filtered.
+export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pinnedLabel="Open fits"}){
   const[search,setSearch]=useState("");
   // MEMOISED because `filterFn` is expensive: the command picker passes hasCommandBursts, which runs
   // a full computeCommandBursts dogma pass PER FIT (~11 ms on a desktop, several times that on a
@@ -279,6 +284,16 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn}){
         <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search fits..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
       </div>
     </div>
+    {!q&&pinned?.length>0&&<>
+      <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"10px 14px 6px"}}>{pinnedLabel}</div>
+      {pinned.map(({ship,fit},i)=>(
+        <div key={`p:${ship}::${fit.name}::${i}`} onClick={()=>{onSelect(ship,fit);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:C.surfaceAlt}}>
+          <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{ship}</div></div>
+          <span style={{fontSize:14,color:C.textMute,flexShrink:0}}>{">"}</span>
+        </div>
+      ))}
+      <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"12px 14px 6px"}}>All fits</div>
+    </>}
     {filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
     {/* Keyed by POSITION, not by fit.id. This list is the one place in the app that flattens every
         ship's fits into a single list, and fit ids are only unique within a ship — a restored backup

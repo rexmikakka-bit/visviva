@@ -3,6 +3,8 @@ import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
+import { FitPickerSheet } from "./effects.jsx";
+import { targetFitProfile } from "../lib/graph-target.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
   calcRangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor,
@@ -49,8 +51,12 @@ const TARGET_PROFILES={
   frigate: {label:"Frigate", sig:40,      vel:350,   dist:10000, desc:"40m sig / 350 m/s",   mwdSig:200,  mwdVel:3050},
   cruiser: {label:"Cruiser", sig:130,     vel:200,   dist:20000, desc:"130m sig / 200 m/s",  mwdSig:690,  mwdVel:1870},
   battleship:{label:"Battleship",sig:380, vel:100,   dist:30000, desc:"380m sig / 100 m/s",  mwdSig:2300, mwdVel:1040},
-  fit:     {label:"Choose Fit", sig:null, vel:null,  dist:20000, desc:"From saved fit"},
 };
+// A saved fit used as the target is `targetProfile === TARGET_FIT`, which is deliberately NOT an
+// entry above: those are static sig/speed pairs, and a fit's are computed from the fit. There used
+// to be a `fit:{sig:null,vel:null}` placeholder here, hidden again by a filter on the button row —
+// applying it would have written a null sig, which is why it was never wired up.
+const TARGET_FIT="fit";
 /** The sig/speed a profile presents, with the MWD toggle applied where the profile has a variant. */
 const profileTarget=(key,mwd)=>{
   const p=TARGET_PROFILES[key];
@@ -718,14 +724,16 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   );
 }
 
-function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj}){
+function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj,targetFit,targetFitStats,onPickFit,onClearFit}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
+  const fitActive=targetProfile===TARGET_FIT;
   // Webs, grapplers and painters need no note: they just scale the sig and speed, which is visible
   // in the fields below. The scrambler is the one case where a module you have fitted is silently
   // NOT applied, and that is only ever true on a hand-typed target — hence both the gate and the
-  // fact that this is the only thing the strip says.
-  const customTarget=TARGET_PROFILES[targetProfile]==null;
+  // fact that this is the only thing the strip says. A FIT target is not custom: its prop mod can be
+  // switched off and the hull re-read, so the scrambler applies and there is nothing to warn about.
+  const customTarget=TARGET_PROFILES[targetProfile]==null&&!fitActive;
   const nScram=customTarget?(ownProj?.scrams||[]).length:0;
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
   const applyTarget=(key,mwd)=>{
@@ -733,12 +741,16 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
     setTgtSig(t.sig);
     if(t.vel!=null){setTargetVel(t.vel);setTargetVelMax(Math.max(t.vel,100));}
   };
+  // A fit target's numbers are pushed by GraphTab's effect, not from here — applyTarget only knows
+  // the static presets, and profileTarget returns null for anything else, so this is a no-op for it.
   const pickProfile=(key)=>{setTargetProfile(key);applyTarget(key,targetMwd);};
   // Toggling MWD re-applies the CURRENT profile immediately, so the sig/speed fields below always
   // agree with the buttons above. On Ideal (or a hand-edited custom target) there is no MWD variant
   // to apply, so the flag is just remembered for the next profile picked.
   const toggleMwd=()=>{const next=!targetMwd;setTargetMwd(next);applyTarget(targetProfile,next);};
-  const mwdApplies=TARGET_PROFILES[targetProfile]?.mwdSig!=null;
+  // A fit only has an MWD variant if it actually carries a prop mod; without one the two passes come
+  // back identical and the toggle would silently do nothing.
+  const mwdApplies=fitActive?!!targetFitStats?.hasProp:TARGET_PROFILES[targetProfile]?.mwdSig!=null;
   // The honest admission, and the only state left now that the strip is custom-target-only: pyfa
   // drags a whole target FIT onto the graph and can just switch its prop mod off, whereas a
   // hand-typed 200 m could be a hull that size or a 40 m frigate blooming under an MWD, and nothing
@@ -773,13 +785,38 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       <button onClick={toggleMwd} aria-pressed={targetMwd}
         title={mwdApplies
           ? "Target has its microwarpdrive running: much larger signature (easier to hit and to apply full missile damage) but much faster (harder for turrets to track)"
-          : "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship"}
+          : fitActive?"This fit carries no propulsion module"
+                     :"No MWD variant for this profile — applies to Frigate / Cruiser / Battleship"}
         style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
                 opacity:mwdApplies?1:0.45,
                 background:targetMwd?C.accentLight:C.surface,border:`1px solid ${targetMwd?C.accentBorder:C.border}`,
                 color:targetMwd?C.accent:C.textMid}}>
         MWD
       </button>
+    </div>
+    {/* A saved fit standing in for the target. Deliberately its own row rather than a fifth button
+        above: the row already wraps onto a second line on a phone once MWD is in it, and the chip
+        has to hold a ship name and a fit name anyway.
+        It supplies SIG and SPEED only. Resists stay with Stats › Firepower — simming against the
+        uniform profile while doing the resist arithmetic yourself is the normal way to read one of
+        these graphs, and a curve silently pre-corrected for a specific hull's resists is harder to
+        reason about, not easier. */}
+    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
+      <button onClick={()=>{if(targetFit&&!fitActive)setTargetProfile(TARGET_FIT);else onPickFit();}}
+        title={targetFit?"Tap to use this fit's signature and speed, or pick a different fit":"Use a saved fit's signature and speed as the target"}
+        style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",
+                background:fitActive?C.accentLight:C.surface,border:`1px solid ${fitActive?C.accentBorder:C.border}`,
+                color:targetFit?(fitActive?C.accent:C.textMid):C.textMute}}>
+        <span style={{flexShrink:0}}>&#8982;</span>
+        <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          {targetFit?`${targetFit.ship} · ${targetFit.name}`:"Choose target fit…"}
+          {/* The reference outlived the fit. Say so rather than clearing it: the sig and speed it
+              last supplied are still on screen and still a real target. */}
+          {targetFit&&!targetFitStats&&<span style={{color:C.warning,fontWeight:400}}> · not found</span>}
+        </span>
+      </button>
+      {targetFit&&<button onClick={onClearFit} title="Stop using a fit as the target"
+        style={{padding:"6px 9px",borderRadius:6,fontSize:12,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.danger,flexShrink:0}}>&#10005;</button>}
     </div>
     {/* Target RESISTS — how much of your damage actually lands — are chosen ONCE, in Stats >
         Firepower, and only read here. This used to be a second picker writing the same shared
@@ -878,7 +915,7 @@ function interpCurveAt(pts,xVal,col=1){
 // tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
 // set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
 // two views from disagreeing about which resist profile is in force.
-function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile}){
+function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,fitsDB,sourceSkills,openFitTabs}){
   const _scroll=useScrollMemory("Graph");
   // Lazy, once per mount — see loadGraphPrefs. A ref rather than useMemo because these feed useState
   // initialisers, and a discarded memo would silently hand back defaults.
@@ -890,6 +927,12 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // what a fresh install opens on.
   const[axisByCat,setAxisByCat]=useState(()=>gp('axisByCat',{}));
   const[targetProfile,setTargetProfile]=useState(()=>gp('targetProfile',"ideal")),[targetAngle,setTargetAngle]=useState(()=>gp('targetAngle',0)),[selfAngle,setSelfAngle]=useState(()=>gp('selfAngle',0));
+  // A saved fit standing in for the target: {ship,name}, or null. Stored by NAME rather than by the
+  // fit's id because ids are only unique within a ship (see FitPickerSheet's key comment), and this
+  // has to survive a restore from backup. A reference that no longer resolves is left alone rather
+  // than cleared — see targetFitStats.
+  const[targetFit,setTargetFit]=useState(()=>gp('targetFit',null));
+  const[showFitPicker,setShowFitPicker]=useState(false);
   // Off by default: the hull profiles have always meant the bare hull, and silently switching them
   // to MWD-on values would move every existing user's curves with no visible cause.
   const[targetMwd,setTargetMwd]=useState(()=>gp('targetMwd',false));
@@ -917,8 +960,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX]);
   // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
   // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
   // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
@@ -972,7 +1015,40 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // modelled against. Non-null only for a preset that HAS an MWD variant and is currently running it:
   // once sig or speed is typed the profile becomes "custom", which carries no variant, and a typed
   // number cannot be decomposed into hull plus MWD bloom.
-  const tgtNoMwd=useMemo(()=>(targetMwd&&TARGET_PROFILES[targetProfile]?.mwdSig!=null)?profileTarget(targetProfile,false):null,[targetMwd,targetProfile]);
+  // The open fit tabs, resolved to real fits, as the picker's shortcut list. The fit currently being
+  // EDITED is kept in rather than filtered out: shooting your own fit is a mirror match, which is a
+  // question people genuinely ask of a graph like this. The tabs arrive already reconciled against
+  // fitsDB by resolveTabs, so a pointer here always names a fit that exists.
+  const openTabFits=useMemo(()=>(openFitTabs??[])
+    .map(t=>{const f=fitsDB?.[t.ship]?.find(x=>x.name===t.name);return f?{ship:t.ship,fit:f}:null;})
+    .filter(Boolean),[openFitTabs,fitsDB]);
+  // The chosen target fit's two sig/speed pairs, or null when nothing is chosen — and ALSO null when
+  // the reference no longer resolves (the fit was renamed or deleted). That case deliberately leaves
+  // the sig and speed fields showing the numbers it last supplied: they are still a real target, and
+  // silently resetting the engagement to Ideal because a fit was tidied up is worse than a stale chip
+  // saying so. Skills resolve through the caller's `sourceSkills` for the same reason a projected fit
+  // does — this is someone else's ship, flown on whatever sheet it was last edited under.
+  const targetFitStats=useMemo(()=>{
+    if(!targetFit)return null;
+    const fit=fitsDB?.[targetFit.ship]?.find(f=>f.name===targetFit.name);
+    if(!fit)return null;
+    return targetFitProfile(targetFit.ship,fit,sourceSkills?sourceSkills(fit):skills);
+  },[targetFit,fitsDB,sourceSkills,skills]);
+  // The single place a fit target's numbers are pushed into the sig/speed fields. An effect rather
+  // than a write inside the picker's onSelect so that all three ways in agree: choosing a fit,
+  // toggling MWD, and coming back to a graph whose target fit has been edited since. Typing in either
+  // field sets targetProfile to "custom", which is what detaches it from here.
+  useEffect(()=>{
+    if(targetProfile!==TARGET_FIT||!targetFitStats)return;
+    const t=(targetMwd&&targetFitStats.hasProp)?targetFitStats.mwd:targetFitStats.noMwd;
+    setTgtSig(t.sig);setTargetVel(t.vel);setTargetVelMax(Math.max(t.vel,100));
+  },[targetProfile,targetFitStats,targetMwd]);
+  const tgtNoMwd=useMemo(()=>{
+    // A fit target is the case a scrambler was always missing: its prop mod can simply be switched
+    // off and the hull re-read, which is exactly what a typed sig or speed cannot be decomposed into.
+    if(targetProfile===TARGET_FIT)return (targetMwd&&targetFitStats?.hasProp)?targetFitStats.noMwd:null;
+    return (targetMwd&&TARGET_PROFILES[targetProfile]?.mwdSig!=null)?profileTarget(targetProfile,false):null;
+  },[targetMwd,targetProfile,targetFitStats]);
   const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
@@ -1094,7 +1170,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}
       marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj}/></div>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}}/></div>}
+    {showFitPicker&&<FitPickerSheet title="Target Fit" fitsDB={fitsDB??{}} pinned={openTabFits}
+      onSelect={(shipName,fit)=>{setTargetFit({ship:shipName,name:fit.name});setTargetProfile(TARGET_FIT);}}
+      onClose={()=>setShowFitPicker(false)}/>}
   </div>);
 }
 

@@ -30,6 +30,7 @@ import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromE
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
+import { targetFitProfile } from './lib/graph-target.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
@@ -2472,6 +2473,53 @@ Republic Fleet Command Mindlink`;
     check('mwdprof', `${top}: median sig with MWD`, median(sigs), exp.sig, 0.03);
     check('mwdprof', `${top}: median velocity with MWD`, median(vels), exp.vel, 0.03);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13h-2. A SAVED FIT AS THE GRAPH'S TARGET
+//      targetFitProfile() reduces a saved fit to the two things the application maths asks of a
+//      target — signature radius and speed — each in a prop-mod-running and a prop-mod-idle variant,
+//      so a scrambler in your own fit has something real to switch off. It does NOT read resists;
+//      those stay owned by Stats > Firepower.
+//
+//      What is actually at stake here is the STATE FORCING. calc.js only counts an ACTIVE prop mod
+//      towards maxVelocityAB, and only an active microwarpdrive blooms signatureRadius — so reading
+//      the fit as saved would hand back whichever variant its owner happened to leave it in, and the
+//      MWD toggle would move the numbers on one saved fit and not another for no visible reason.
+//      Both directions are pinned: forcing ON must lift a fit saved with its MWD idle, and forcing
+//      OFF must drop one saved with it running, to the SAME pair.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nGRAPH TARGET FIT');
+  const mwdID = tid('50MN Microwarpdrive II');
+  const cruiser = 'Rupture';
+  const mk = (state) => ({ slots: { high: [], mid: [{ typeID: mwdID, state }], low: [], rigs: [] } });
+  const onSaved  = targetFitProfile(cruiser, mk('active'), null);
+  const offSaved = targetFitProfile(cruiser, mk('online'), null);
+  check('gtgt', 'a fit resolves to a target profile', onSaved && offSaved ? 1 : 0, 1, 0);
+  // The state the fit was SAVED in must not survive into the answer.
+  check('gtgt', 'saved-active and saved-idle agree on the MWD-on speed', onSaved.mwd.vel, offSaved.mwd.vel, 1e-9);
+  check('gtgt', 'saved-active and saved-idle agree on the MWD-on sig',   onSaved.mwd.sig, offSaved.mwd.sig, 1e-9);
+  check('gtgt', 'saved-active and saved-idle agree on the MWD-off speed', onSaved.noMwd.vel, offSaved.noMwd.vel, 1e-9);
+  check('gtgt', 'saved-active and saved-idle agree on the MWD-off sig',   onSaved.noMwd.sig, offSaved.noMwd.sig, 1e-9);
+  // ...and the two variants must actually differ, or the MWD toggle is a control that does nothing.
+  check('gtgt', 'MWD raises speed', onSaved.mwd.vel > onSaved.noMwd.vel * 3 ? 1 : 0, 1, 0);
+  check('gtgt', 'MWD blooms signature', onSaved.mwd.sig > onSaved.noMwd.sig * 3 ? 1 : 0, 1, 0);
+  check('gtgt', 'hasProp is set', onSaved.hasProp ? 1 : 0, 1, 0);
+  // The MWD-off pair is the BARE HULL, which is a number CCP publishes — so this is an absolute
+  // baseline, not a self-consistency check that would survive the whole function being wrong.
+  const bare = calcFitStats({ typeID: tid(cruiser), name: cruiser },
+                            { high: [], mid: [], low: [], rigs: [] }, [], null, {});
+  check('gtgt', 'MWD-off speed is the bare hull', onSaved.noMwd.vel, Math.round(bare.maxVelocity), 1e-9);
+  check('gtgt', 'MWD-off sig is the bare hull',   onSaved.noMwd.sig, bare.sigRadius, 1e-9);
+  // A fit with no prop mod at all: both variants collapse, and hasProp says so rather than leaving
+  // the UI offering a toggle that silently changes nothing.
+  const noProp = targetFitProfile(cruiser, { slots: { high: [], mid: [], low: [], rigs: [] } }, null);
+  check('gtgt', 'no prop mod: hasProp is false', noProp.hasProp ? 1 : 0, 0, 0);
+  check('gtgt', 'no prop mod: the two variants collapse', noProp.mwd.vel, noProp.noMwd.vel, 1e-9);
+  // Nonsense in, null out — the caller renders the reference as stale instead of crashing the graph.
+  check('gtgt', 'an unknown ship yields null', targetFitProfile('Not A Ship', mk('active'), null) === null ? 1 : 0, 1, 0);
+  check('gtgt', 'a fit with no slots yields null', targetFitProfile(cruiser, {}, null) === null ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
