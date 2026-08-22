@@ -273,7 +273,10 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
             reads as "this button changed job" at 16px, and it doubles as the way back out.
             The GLYPH rotates, not the button: the button carries the rail's divider border, and
             rotating that turned the divider into a diagonal slash across the rail. */}
+        {/* Held, not just tapped, so it needs the same no-select the tabs' hold-drag does — otherwise
+            iOS treats the hold as a text selection and highlights the glyph mid-gesture. */}
         <div role="button" aria-label={armed ? "Cancel closing all tabs" : "Open a fit in a new tab"}
+             className="no-select"
              onPointerDown={startPlusPress}
              onClick={() => {
                if (ignoreClick.current) { ignoreClick.current = false; return; }
