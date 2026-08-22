@@ -922,6 +922,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // in Resistances). Keyed by label, so it survives a row appearing and disappearing with the hull.
   const[exactCells,setExactCells]=useState(()=>new Set());
   const toggleExact=k=>setExactCells(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});
+  // Whether the ancillary clip pool is folded INTO the EHP figure or shown added onto it. Split by
+  // default: a clip is conditional (it lasts one reload cycle and needs the charges to still be
+  // there), so the sum has to be something you opt into, not a headline number that quietly makes
+  // every ancillary fit look 50% tougher than its resists say.
+  const[clipMerged,setClipMerged]=useState(false);
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
@@ -967,6 +972,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // per-row would let one long number push that row's resist bars out of line with the rows above and
   // below it. A capital's "1,234,567" is the case that needs the room.
   const fmtExact=n=>Math.round(n??0).toLocaleString();
+  // Already weighted by the selected incoming profile in calc.js, so it sums with totalEHPp directly.
+  const clipEHP=cs.ancilClipEHP??0;
+  const headEHP=totalEHPp+(clipMerged?clipEHP:0);
   const ehpExact=exactCells.has("ehp");
   const ehpCol=ehpExact?"62px":"44px";
   const layers=[
@@ -1052,9 +1060,18 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       <div style={card}>
         {/* stopPropagation: the whole header row collapses the section, and tapping the number for
             its exact value must not also close what you are reading. */}
+        {/* The clip is shown as an ADDITION rather than merged straight in, because it is a pool you
+            get once per reload and only while the charges last — the split form says that, a single
+            bigger number does not. Tapping it commits to the combined figure, which is what a "EHP +
+            clip" comparison in a fit discussion actually wants. Separate tap target from the exact-
+            value toggle on the EHP number itself, so neither has to give up its gesture. */}
         <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
-          onClick={e=>{e.stopPropagation();toggleExact("ehp");}} title={fmtExact(totalEHPp)}
-          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(totalEHPp):fmtN(totalEHPp)}</span></span>}/>
+          onClick={e=>{e.stopPropagation();toggleExact("ehp");}} title={fmtExact(headEHP)}
+          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(headEHP):fmtN(headEHP)}</span>
+          {clipEHP>0&&<span onClick={e=>{e.stopPropagation();setClipMerged(m=>!m);}}
+            title={clipMerged?"Includes the ancillary clip — tap to show it separately":"Ancillary clip pool — tap to add it into the EHP total"}
+            style={{color:C.high,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>
+            {clipMerged?" w/ ancil.":` +${ehpExact?fmtExact(clipEHP):fmtN(clipEHP)} ancil.`}</span>}</span>}/>
         {isOpen("resists")&&<div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>Incoming damage</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>

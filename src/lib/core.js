@@ -965,8 +965,19 @@ function getCompatibleCharges(mod){
   const out=[];
   for(const gid of chargeGroups){
     for(const c of (CHARGES_BY_GROUP.get(gid)??[])){
-      // chargeSize filter: skip only if both sides specify a size and they differ
-      if(chargeSize!=null && c.chargeSize!=null && c.chargeSize!==chargeSize)continue;
+      // chargeSize filter, exactly as eos's Module.isValidCharge does it: if the MODULE names a size,
+      // the charge must carry that same size — and a charge with NO size fails that, it is not exempt.
+      //
+      // The old rule ("skip only if both sides specify a size and they differ") let the two sizeless
+      // charges in the game, Cap Booster 25 and Navy Cap Booster 25, into every ancillary shield
+      // booster. That is not a harmless extra option: they are the smallest by volume, so an X-Large
+      // ASB offered a 149-charge clip it cannot load in game (400s are its smallest), and the clip
+      // EHP that clip implies is nonsense. Capacitor Boosters proper carry no chargeSize at all, so
+      // they are untouched and still take a 25 — which is correct, they do.
+      //
+      // A module size of 0 (the Small ASB) means "no size restriction" here, not "size zero"; eos
+      // gates on `> 0` for the same reason.
+      if(chargeSize>0 && c.chargeSize!==chargeSize)continue;
       if(capacity>0 && c.volume>0 && c.volume>capacity)continue;
       if(!modIsCivilian && isCivilian(c.name))continue;
       out.push(c);
@@ -984,16 +995,14 @@ function getCompatibleCharges(mod){
 //
 // Returns {name, qty} or null.
 //
-// The size rule is the fiddly part. Cap Booster 25 and Navy Cap Booster 25 carry NO chargeSize at
-// all, so `getCompatibleCharges`'s "skip only when both sides specify a size and they differ" quite
-// correctly lets them into every module's list — they really do fit anything. Picking the smallest
-// compatible charge outright would therefore load 149 Navy Cap Booster 25 into an X-Large. So:
-// prefer charges whose chargeSize EXACTLY matches the module's, and only fall back to the sizeless
-// ones when nothing matches (which is what a Small ASB, chargeSize 0, actually wants).
+// Smallest volume wins among the compatible charges — which is also what picks Navy over the plain
+// variant, as navy charges are physically smaller for the same capacitor. Every ASB size lands on 9
+// charges, which is the number the module is known for.
 //
-// Within the pool, smallest volume wins — that is also what picks Navy over the plain variant, as
-// navy charges are physically smaller for the same capacitor. Every ASB size lands on 9 charges,
-// which is the number the module is known for.
+// This used to need a size rule of its own, preferring an exact chargeSize match and falling back to
+// sizeless charges, because `getCompatibleCharges` let the sizeless Cap Booster 25s into every list
+// and "smallest volume" would otherwise have loaded 149 of them into an X-Large. That filter now
+// enforces the size itself, so a sized module never sees them and the fallback has nothing to catch.
 function defaultChargeFor(typeID){
   const td=typeID!=null?(TYPES[typeID]??TYPES[String(typeID)]):null;
   if(!td)return null;
@@ -1013,11 +1022,9 @@ function defaultChargeFor(typeID){
     return {name:"Nanite Repair Paste",qty:Math.floor(capacity/vol)};
   }
 
-  const modSize=a["128"]??a.chargeSize??null;
   const compatible=getCompatibleCharges({typeID,name:td.n??td.name});
   if(!compatible.length)return null;
-  const sized=compatible.filter(c=>c.chargeSize!=null&&c.chargeSize===modSize);
-  const pool=(sized.length?sized:compatible)
+  const pool=compatible
     .map(c=>({...c,vol:c.volume??((TYPES[c.typeID]?.attrs??TYPES[c.typeID]?.a??{})["161"])}))
     .filter(c=>c.vol>0)
     .sort((x,y)=>x.vol-y.vol||x.name.localeCompare(y.name));

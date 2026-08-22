@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -908,6 +908,56 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('aar', 'AAR on paste, EHP/s', aarPaste.armorRepEhpS, 140.56, 2e-3);
   check('aar', 'AAR empty, EHP/s', aarBare.armorRepEhpS, 46.85, 2e-3);
   check('aar', 'plain repairer, EHP/s', plain.armorRepEhpS, 83.29, 1e-3);
+}
+
+// -----------------------------------------------------------------------------
+// 11h-2. ANCILLARY CLIP EHP — the one-shot pool a LOADED ancillary adds on top of the fit's EHP,
+//        summed fit-wide so the Stats tab can offer "EHP + clip" without swiping to the fitting tab.
+//        Every number here is the same paste/charge phase the module row already showed, so it is
+//        anchored to 11h's eos-validated rep figures rather than being a new baseline of its own.
+//        The gate is what needs guarding: this is a POOL, and only a loaded module has one.
+// -----------------------------------------------------------------------------
+{
+  console.log('\nANCILLARY CLIP EHP');
+  const myrm = { typeID: tid('Myrmidon'), name: 'Myrmidon' };
+  const lows = (low) => ({ high: [], mid: [], low, rigs: [] });
+  const AAR  = (state, ammo) => M('Medium Ancillary Armor Repairer', state, ammo);
+  const clipOf = (ship, slots, opts) => calcFitStats(ship, slots, [], null, opts ?? {}).ancilClipEHP;
+
+  // 8 paste cycles x 853.875 HP = 6831 raw, x 1/0.675 (uniform profile over the Myrmidon's armor
+  // resonances 0.5/0.65/0.65/0.9) = 10120 EHP.
+  const paste = calcFitStats(myrm, lows([AAR('active', 'Nanite Repair Paste')]), [], null, {});
+  check('clip', 'AAR on paste, clip EHP', paste.ancilClipEHP, 10120, 1e-5);
+  // Tied to 11h's eos-validated raw HP/s rather than standing alone: the pool IS the paste phase
+  // (9 s x 8 cycles) of that rep, resist-weighted. Breaks if either the phase or the weighting moves.
+  check('clip', 'clip is the paste phase of the validated rep',
+        paste.ancilClipEHP / (paste.armorRepPS * 72), 1 / 0.675, 1e-4);
+  // A pool exists only if the clip does. An AAR with no paste still reps — one cycle, off the ship's
+  // own cap — so it has a RATE and no pool; counting it would inflate the headline on a fit that
+  // cannot actually spend it.
+  check('clip', 'unloaded AAR contributes no clip', clipOf(myrm, lows([AAR('active')])), 0, 0);
+  // Nor does a module that is fitted and online but not cycling, matching every other output figure.
+  check('clip', 'inactive AAR contributes no clip', clipOf(myrm, lows([AAR('online', 'Nanite Repair Paste')])), 0, 0);
+  check('clip', 'plain repairer contributes no clip',
+        clipOf(myrm, lows([M('Medium Armor Repairer II', 'active')])), 0, 0);
+  check('clip', 'no ancillary, no clip', clipOf(myrm, lows([])), 0, 0);
+  // Fit-wide sum, not the largest — same trap the AAR EHP/s path fell into once (see 11h).
+  check('clip', 'two AARs sum',
+        clipOf(myrm, lows([AAR('active', 'Nanite Repair Paste'), AAR('active', 'Nanite Repair Paste')])), 20240, 1e-5);
+
+  // Shield side: a Caracal's ASB runs a clip of cap boosters, 9 x 146 HP = 1314 raw.
+  const car  = { typeID: tid('Caracal'), name: 'Caracal' };
+  const mids = (mid) => ({ high: [], mid, low: [], rigs: [] });
+  const ASB  = (ammo) => M('Medium Ancillary Shield Booster', 'active', ammo);
+  // Shield resonances 1/0.8/0.6/0.5 -> 0.725 under a uniform profile -> 1314 x 1.37931 = 1812.
+  check('clip', 'ASB on cap boosters, clip EHP', clipOf(car, mids([ASB('Navy Cap Booster 50')])), 1812, 1e-5);
+  check('clip', 'ASB running on capacitor contributes no clip', clipOf(car, mids([ASB(null)])), 0, 0);
+  // The pool is weighted by the SELECTED incoming profile, which is the whole reason it may be added
+  // to the Stats tab's own profile-weighted EHP. Under pure EM a Caracal's shield has 0% resist, so
+  // the clip must fall back to its raw 1314 HP — if this reads 1812 the weighting was ignored and
+  // the combined figure would be adding two differently-weighted numbers.
+  check('clip', 'clip follows the incoming damage profile',
+        clipOf(car, mids([ASB('Navy Cap Booster 50')]), { damageProfile: [1, 0, 0, 0] }), 1314, 1e-5);
 }
 
 // -----------------------------------------------------------------------------
@@ -2436,6 +2486,31 @@ Republic Fleet Command Mindlink`;
   const capSizes = caps.map(g => g.capSize);
   check('chg', 'cap booster sizes strictly descending',
         capSizes.every((v, i) => i === 0 || v < capSizes[i - 1]) ? 1 : 0, 1, 0);
+
+  // A module that names a chargeSize takes THAT size and nothing else — eos's rule, and a charge
+  // carrying no size of its own fails it rather than being treated as universal. Cap Booster 25 and
+  // Navy Cap Booster 25 are the only sizeless charges in the game, and they were being offered to
+  // every ancillary shield booster: an X-Large ASB listed a 149-charge clip of them, which the game
+  // does not allow (400 is its smallest) and which reads as a ~900k EHP ancillary pool on the fit.
+  const named = (name) => chargesFor(name).map(c => c.name).sort().join(', ');
+  check('chg', 'X-Large ASB takes only its own size',
+        named('X-Large Ancillary Shield Booster'),
+        'Cap Booster 400, Cap Booster 800, Navy Cap Booster 400, Navy Cap Booster 800', 0);
+  check('chg', 'Capital ASB takes only its own size',
+        named('Capital Ancillary Shield Booster'), 'Cap Booster 3200, Navy Cap Booster 3200', 0);
+  const has25 = (name) => chargesFor(name).filter(c => /Cap Booster 25$/.test(c.name)).length;
+  check('chg', 'no sizeless charge on a sized ASB', has25('X-Large Ancillary Shield Booster'), 0, 0);
+  // The Small ASB's chargeSize is 0, which means "unrestricted", not "size zero" — it really does
+  // take a 25. Gating on `size != null` instead of `size > 0` would empty its list entirely.
+  check('chg', 'Small ASB still takes the sizeless 25s', has25('Small Ancillary Shield Booster'), 2, 0);
+  // Capacitor Boosters proper carry no chargeSize, so the rule must not reach them: a Heavy Cap
+  // Booster loading a 25 is legal and useful.
+  check('chg', 'capacitor booster unaffected', has25('Heavy Capacitor Booster II'), 2, 0);
+  // Every ASB is known for a 9-charge clip; the auto-loaded default has to survive the filter.
+  for (const sz of ['Small', 'Medium', 'Large', 'X-Large', 'Capital']) {
+    check('chg', `${sz} ASB auto-loads 9 charges`,
+          defaultChargeFor(tid(`${sz} Ancillary Shield Booster`))?.qty ?? 0, 9, 0);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

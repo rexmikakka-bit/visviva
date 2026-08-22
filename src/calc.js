@@ -3556,9 +3556,17 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // Praxis with an AAR plus an Imperial Navy Large Armor Repairer reported 447 EHP/s, not 695.3.
   let armorRepIsAAR = false;
   let aarEhpS = 0;
+  // A LOADED ancillary carries a one-shot POOL of effective HP on top of the fit's own EHP — the
+  // number people mean when they compare "X EHP plus clip". Only a loaded one has a pool: an ASB
+  // running on capacitor alone, or an AAR with no paste, cycles off the ship's own resources and is
+  // a rate, not a pool, so `hasPaste`/`hasCharges` gates this rather than `isAAR`/`isASB`.
+  // `totalEHP` is already weighted by `opts.damageProfile` — the same profile the Stats tab weights
+  // its own layer EHP with — so the two are directly summable.
+  let ancilClipEHP = 0;
   if (slotEngineStats) {
     for (const [, stats] of slotEngineStats) {
       if (stats.isAAR) { aarEhpS += stats.ehpS ?? 0; armorRepIsAAR = true; }
+      if ((stats.isAAR && stats.hasPaste) || (stats.isASB && stats.hasCharges)) ancilClipEHP += stats.totalEHP ?? 0;
     }
   }
   const nonAarRepPS = Math.max(0, armorRepPS - armorRepPS_AAR);
@@ -3677,6 +3685,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     shieldHP, armorHP, hullHP,
     shieldEHP, armorEHP, hullEHP,
     totalEHP: shieldEHP + armorEHP + hullEHP,
+    ancilClipEHP,
     resists: effectiveResists,
 
     // Tank
