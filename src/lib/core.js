@@ -232,6 +232,11 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
 }).catch(() => { _bundleReady = true; _bundleListeners.forEach(fn => fn()); });
 
 const GLOBAL_CSS=`
+/* WKWebView defaults to text-size-adjust:auto, which inflates text in blocks much wider than the
+   viewport — and it does so per cluster, so a layout laid out at a fixed width on a phone gets
+   different sizes in different racks. The snapshot card (1140px inside a ~390px viewport) showed it
+   as a visibly smaller High rack. Every size in this app is declared; none of them want adjusting. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .hs{-ms-overflow-style:none;scrollbar-width:none}.hs::-webkit-scrollbar{display:none}
 
 /* Unselectable. React emits plain "user-select" for the style prop, which WebKit ignores — iOS
