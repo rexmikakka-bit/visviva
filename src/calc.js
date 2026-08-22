@@ -2087,8 +2087,17 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const spoolBaseVolleyT = { em:0, th:0, kin:0, exp:0 };
 
   for (const { slot, fitItem } of modItems) {
-    if (!fitItem || !isActive(slot.state)) continue;
+    if (!fitItem) continue;
     const gn = fitItem.groupName;
+    // A launcher's range is a property of the module and its loaded missile — skills, rigs, guidance
+    // computers and the charge's own velocity/flight time — so it must not vanish when you stop
+    // firing, exactly as a turret's optimal doesn't (see `rangeDisplayStats` below). A launcher
+    // carries no `maxRange` attribute, though, so that helper cannot derive one from the module and
+    // a stopped launcher's row showed no range at all. Let an ONLINE launcher through for the range
+    // chain; `firing` still gates everything that is a claim about OUTPUT — dps, volley, and the
+    // graph's per-weapon entry.
+    const firing = isActive(slot.state);
+    if (!firing && !(isOnline(slot.state) && isLauncher(gn, fitItem.effectIDs))) continue;
 
     // 'Structure Doomsday Weapon' / 'Structure Area Denial Module' are the structure-side names for
     // exactly this shape — intrinsic damage on a fixed cycle. They were missing, so an Arcing Vorton
@@ -2449,12 +2458,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const dps = totalDmg / (effCycleMs / 1000);
         const vol = totalDmg;
         const safeTot = totalChargeHp || 1;
-        weaponDps.em   += dps*(chEm /safeTot); weaponVolley.em   += vol*(chEm /safeTot);
-        weaponDps.th   += dps*(chTh /safeTot); weaponVolley.th   += vol*(chTh /safeTot);
-        weaponDps.kin  += dps*(chKin/safeTot); weaponVolley.kin  += vol*(chKin/safeTot);
-        weaponDps.exp  += dps*(chExp/safeTot); weaponVolley.exp  += vol*(chExp/safeTot);
-        weaponDps.total  += dps;
-        weaponVolley.total += vol;
+        if (firing) {
+          weaponDps.em   += dps*(chEm /safeTot); weaponVolley.em   += vol*(chEm /safeTot);
+          weaponDps.th   += dps*(chTh /safeTot); weaponVolley.th   += vol*(chTh /safeTot);
+          weaponDps.kin  += dps*(chKin/safeTot); weaponVolley.kin  += vol*(chKin/safeTot);
+          weaponDps.exp  += dps*(chExp/safeTot); weaponVolley.exp  += vol*(chExp/safeTot);
+          weaponDps.total  += dps;
+          weaponVolley.total += vol;
+        }
 
         // ── Missile range + explosion stats (pyfa-exact, verified vs Affected-By panel) ──
         // range = velocity × flightTime. Modifier model:
@@ -2806,7 +2817,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           aoeCloudSize:    aoeRadPre,
         });
         // Per-weapon graph data (missile application + three-zone range). Volley split by damage type.
-        if (totalChargeHp > 0 && vol > 0) {
+        if (firing && totalChargeHp > 0 && vol > 0) {
           graphWeapons.push({
             kind: 'missile',
             volley: { em: vol*(chEm/safeTot), th: vol*(chTh/safeTot), kin: vol*(chKin/safeTot), exp: vol*(chExp/safeTot) },

@@ -3265,6 +3265,29 @@ Republic Fleet Command Mindlink`;
   // The bare type carries 24 km of optimal; Sharpshooter V takes it to 30.
   check('str', 'that optimal is the fitted one, not the base', gunOn.optimal > 24 ? 1 : 0, 1, 0);
 
+  // Same invariant for a MISSILE launcher, which needed a separate fix: the turret repair above
+  // works by reading the module's `maxRange`, and a launcher has none — its range is the loaded
+  // charge's velocity × flight time, computed only in the active-weapon pass. So a stopped launcher
+  // got no entry at all and its row showed no range whatsoever, rather than a wrong one.
+  const caracal = { typeID: tid('Caracal'), name: 'Caracal' };
+  const lnchAt = state => {
+    const l = M('Heavy Missile Launcher II', state, 'Scourge Fury Heavy Missile');
+    const cs = calcFitStats(caracal, { high: [l], mid: [], low: [M('Ballistic Control System II', 'online')], rigs: [] },
+      [], null, {});
+    return { st: cs.slotEngineStats.get(l) ?? {}, dps: cs.weaponDps.total, guns: cs.graphWeapons.length };
+  };
+  const lnchOn = lnchAt('online'), lnchAct = lnchAt('active');
+  check('str', 'a stopped launcher still reports its range', lnchOn.st.optimal, lnchAct.st.optimal, 1e-9);
+  check('str', 'that range is a real number, not absent', lnchOn.st.optimal > 0 ? 1 : 0, 1, 0);
+  check('str', 'a stopped launcher still reports missile velocity', lnchOn.st.velocity, lnchAct.st.velocity, 1e-9);
+  check('str', 'a stopped launcher still reports explosion radius', lnchOn.st.explosionRadius, lnchAct.st.explosionRadius, 1e-9);
+  // ...and the range chain running while stopped must not leak into anything that is a claim about
+  // OUTPUT. A launcher you have switched off shoots nothing, and contributes no weapon to the graph.
+  check('str', 'a stopped launcher deals no dps', lnchOn.dps, 0, 0);
+  check('str', 'a stopped launcher is not a graph weapon', lnchOn.guns, 0, 0);
+  check('str', 'a firing launcher still deals dps', lnchAct.dps > 0 ? 1 : 0, 1, 0);
+  check('str', 'a firing launcher is still a graph weapon', lnchAct.guns, 1, 0);
+
   // Remote assistance. Every amount below is eos's own `getModifiedItemAttr` on the same Guardian at
   // all skills V, read via scripts/oracle. Two Guardians because it only has six high slots and the
   // ancillary/mutadaptive variants sit in their OWN dogma groups — a per-group table has to be shown
