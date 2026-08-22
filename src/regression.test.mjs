@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -4162,6 +4162,56 @@ Republic Fleet Command Mindlink`;
   const rig = validStatesFor(modOf('Small Core Defense Field Extender I', 'rig'));
   check('gesture', 'a rig refuses every gesture',
     GESTURES.filter((g) => gestureTarget(rig, 'online', g) === null).length, 3, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17. MODULE REACTIVATION DELAY — a bomber's bomb DPS, and the skill-prescale ordering
+//
+// A user reported a Hound with one Bomb Launcher II reading 580 DPS against pyfa's 74.8. Two
+// independent bugs stacked up, and either one alone still gives a plausible-looking wrong number:
+//
+//   1. `moduleReactivationDelay` was read NOWHERE in the codebase. A bomb launcher is forced idle
+//      for 67.5 s between 10 s cycles, so it fires once every 77.5 s — but DPS, cap use and the
+//      damage-over-time graph all divided by the raw cycle. That alone is the reported 580. 56 types
+//      carry the attribute (cloaks, cynos, Assault Damage Controls, MJDs, Interdiction Nullifiers,
+//      Warp Core Stabilizers), so this was never only about bombs — hence the cap checks below.
+//   2. Bomb Deployment's PRESCALE effect (8469, which multiplies the skill's own bonus attr by
+//      attr 280 = skillLevel) is listed AFTER its consumer (3036), so the -10%/lvl arrived flat
+//      instead of x5 and left the delay at 121.5 s. A scan found 35 modifiers across ~24 skills in
+//      the same shape, so the fix is a general ordering pass in the engine, not a Bomb Deployment
+//      case — and no other baseline in this suite moves, which is what says it is safe.
+//
+// eos: getWeaponDps() 74.83870967741936 (identical with factorReload on or off — the 10 s reload
+// hides entirely inside the 67.5 s idle), volley 5800.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMODULE REACTIVATION DELAY');
+
+  // The cycle model itself, ported from eos's Module.getCycleParameters(). The reload only shows up
+  // when it is LONGER than the forced idle, because the two run concurrently — that branch is the
+  // one that reads like a bug when you skim it.
+  check('delay', 'delay adds to the cycle', effectiveCycleMs(10000, 67500), 77500, 0);
+  check('delay', 'no delay reduces to cycle + reload/clip', effectiveCycleMs(10000, 0, 4, 10000), 12500, 0);
+  check('delay', 'reload hides inside a longer delay', effectiveCycleMs(10000, 67500, 4, 10000), 77500, 0);
+  // Reload longer than the delay: the delay covers the non-boundary cycles, the reload the last one.
+  check('delay', 'a longer reload wins at the clip boundary', effectiveCycleMs(10000, 2000, 4, 10000), 14000, 0);
+  check('delay', 'no delay and no clip is just the cycle', effectiveCycleMs(10000), 10000, 0);
+
+  const hound = calcFitStats({ typeID: tid('Hound'), name: 'Hound' },
+    { high: [M('Bomb Launcher II', 'active', 'Concussion Bomb')], mid: [], low: [], rigs: [] }, [], null, {});
+  check('delay', 'Hound bomb DPS', hound.weaponDps.total, 74.83870967741936, 1e-9);
+  check('delay', 'Hound bomb volley', hound.weaponVolley.total, 5800, 0);
+  // 75 s base, -50% at Bomb Deployment V. Reading 67.5 here is what proves BOTH the skill being
+  // trained and the prescale running before its consumer: untrained gives 135 s, and trained but
+  // mis-ordered gives 121.5 s. It also proves the delay reached the graph, which divides by it.
+  check('delay', 'trained + prescaled bomb launcher idle (s)', hound.graphWeapons[0].delayS, 67.5, 1e-9);
+
+  // Cap is spent once per ACTIVATION, so the same divisor governs cap use — and these two modules
+  // are the reason this is not a weapons-only fix. eos capUse: 0.2186 and 1.0423 GJ/s.
+  const capOf = (name, rack) => calcFitStats({ typeID: tid('Rifter'), name: 'Rifter' },
+    { high: [], mid: [], low: [], rigs: [], [rack]: [M(name, 'active')] }, [], null, {}).capDrainPS;
+  check('delay', 'Assault Damage Control II cap use GJ/s', capOf('Assault Damage Control II', 'low'), 0.2185792349726776, 1e-9);
+  check('delay', 'Medium Micro Jump Drive cap use GJ/s', capOf('Medium Micro Jump Drive', 'mid'), 1.0423280423280423, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

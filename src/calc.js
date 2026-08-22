@@ -692,6 +692,17 @@ function extractChargeBursts(fitItem, cAttrs) {
   return out;
 }
 
+// Average time from one activation to the next, in ms — eos's Module.getCycleParameters().averageTime.
+// A module can be forced idle between cycles (moduleReactivationDelay: 67.5 s on a trained bomb
+// launcher against a 10 s cycle, 180 s on a Micro Jump Drive), and that idle time counts against
+// everything measured per second. The delay also swallows the reload when it is the longer of the
+// two, which is why the clip term drops out rather than adding on top. Pass reloadMs=0 to not
+// factor reload; with no delay this reduces to the plain cycle + reload/clip it replaced.
+export function effectiveCycleMs(cycleMs, delayMs = 0, numShots = 0, reloadMs = 0) {
+  if (numShots > 0 && reloadMs > delayMs) return cycleMs + ((numShots - 1) * delayMs + reloadMs) / numShots;
+  return cycleMs + delayMs;
+}
+
 // ── Damage-application math for the graph (ported from pyfa) ─────────────────
 // Range strength factor (eos/calc.py calculateRangeFactor). restrictedRange=false for turrets.
 export function calcRangeFactor(optimal, falloff, distance, restricted = true) {
@@ -1994,6 +2005,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     const ct = fitItem.get('duration') || fitItem.get('speed') || 0;
     const isInjector = fitItem.groupName === 'Capacitor Booster';
     if (!ct || (cn === 0 && !isInjector)) continue;
+    // Cap is spent once per ACTIVATION, and a module forced idle between cycles activates that much
+    // less often — an Assault Damage Control draws its 35 GJ every 160 s, not every 10 s. Injectors
+    // carry no delay, so their branch below keeps the raw cycle it always used.
+    const ctDrain = effectiveCycleMs(ct, fitItem.get('moduleReactivationDelay') ?? 0);
     // Cap boosters: get the charge's capacitorBonus from the ENGINE-COMPUTED charge, not the raw type
     // data — hull bonuses can modify it (e.g. the Minokawa's +20%/level Force Auxiliary C5 bonus
     // doubles a Navy Cap Booster 3200 to 6400 at level 5). Reading TYPES[] here ignored those bonuses.
@@ -2023,10 +2038,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       // Drain uses raw cycle for ALL non-injector modules, including AAR/ASB. Pyfa's capacitor
       // model treats ancillary reps as continuously cycling (no reload gap): its displayed cap
       // delta and "Lasts" time both reverse-calculate to unaveraged AAR drain. Match that.
-      capDrainPS += cn / (ct / 1000);
+      capDrainPS += cn / (ctDrain / 1000);
     }
     capModules.push({
-      cycleMs: Math.max(1, ct),
+      cycleMs: Math.max(1, ctDrain),
       capNeedGJ: isInjector ? -injAmt : (loadedCapCharge ? 0 : cn),
       // Cap booster: clip = floor(bay / chargeVol), min 1 — pyfa models injector reloads.
       // AAR/ASB: clip 0 = continuous cycling, matching pyfa's cap simulation.
@@ -2195,9 +2210,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         if (factorInReload && numShots > 0) {
           reloadMs = (fitItem.get('reloadTime') ?? 5000);
         }
-        const effCycleMs = numShots > 0
-          ? (numShots * cycleMs + reloadMs) / numShots
-          : cycleMs;
+        const effCycleMs = effectiveCycleMs(cycleMs, fitItem.get('moduleReactivationDelay') ?? 0, numShots, reloadMs);
 
         const dps = (type) => charge[type] * totalDmgMult / (effCycleMs / 1000);
         const vol = (type) => charge[type] * totalDmgMult;
@@ -2242,6 +2255,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           spoolPerCycle: fitItem.get('damageMultiplierBonusPerCycle') ?? 0,
           numShots: clipSizeOf(fitItem, slot.ammo, { dfltVol: 0.0125, min: 1 }),
           reloadS: (fitItem.get('reloadTime') ?? 0) / 1000,
+          delayS: (fitItem.get('moduleReactivationDelay') ?? 0) / 1000,
         });
       }
 
@@ -2454,7 +2468,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const numShots = (_lCap > 0 && _chVol > 0) ? Math.floor(_lCap / _chVol) : (fitItem.get('numShots') ?? 0);
         let reloadMs = 0;
         if (factorInReload && numShots > 0) reloadMs = fitItem.get('reloadTime') ?? 10000;
-        const effCycleMs = numShots > 0 ? (numShots * cycleMs + reloadMs) / numShots : cycleMs;
+        const effCycleMs = effectiveCycleMs(cycleMs, fitItem.get('moduleReactivationDelay') ?? 0, numShots, reloadMs);
         const dps = totalDmg / (effCycleMs / 1000);
         const vol = totalDmg;
         const safeTot = totalChargeHp || 1;
@@ -2825,6 +2839,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
             lowerRange, higherRange, higherChance,
             explosionRadius: aoeRad, explosionVelocity: aoeVel, aoeDamageReductionFactor: chDRF,
             numShots, reloadS: (fitItem.get('reloadTime') ?? 0) / 1000,
+            delayS: (fitItem.get('moduleReactivationDelay') ?? 0) / 1000,
           });
         }
       }

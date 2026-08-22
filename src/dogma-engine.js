@@ -377,6 +377,26 @@ function effectActiveForState(effectCat, itemState) {
   return false;
 }
 
+// A skill's PRESCALE effect multiplies one of the skill's own bonus attributes by attr 280
+// (skillLevel), turning a per-level figure into the trained one. Anything reading that attribute
+// has to run after it. Detected by shape rather than by an ID list so a new skill is covered on the
+// next bundle regeneration; the arrays are per-type and immutable, so the order is cached on them.
+const _skillOrder = new WeakMap();
+const _isPrescale = eid => {
+  const m = EFFECTS[eid]?.m;
+  return !!m?.length && m.every(x => x.func === 'ItemModifier' && x.domain === 'itemID' && x.modifyingAttributeID === 280);
+};
+function skillPassOrder(effectIDs) {
+  let ordered = _skillOrder.get(effectIDs);
+  if (ordered) return ordered;
+  const pre = effectIDs.filter(_isPrescale);
+  ordered = (pre.length && pre.length < effectIDs.length)
+    ? [...pre, ...effectIDs.filter(e => !_isPrescale(e))]
+    : effectIDs;
+  _skillOrder.set(effectIDs, ordered);
+  return ordered;
+}
+
 // ─── Fit ──────────────────────────────────────────────────────────────────────
 export class Fit {
   // Booster side-effect penalty effects — skipped by default (matches Pyfa default behaviour)
@@ -523,7 +543,13 @@ export class Fit {
       // e.g. Effect280: cpuOutputBonus2 = cpuOutputBonus2_base × skillLevel
       // Without this, all skill scaling effects produce zero.
       skillItem.attrs._base[280] = level;
-      for (const eid of skillItem.effectIDs) {
+      // A skill's own bonus attributes are scaled by level by a PRESCALE effect on the skill itself
+      // (bombLauncherReactivationDelayBonus ×= skillLevel). CCP's list order does not guarantee it
+      // comes before the effect that reads the scaled value, and for 35 modifiers across ~24 skills
+      // it does not: Bomb Deployment lists its consumer (3036) at index 1 and its prescale (8469) at
+      // index 2, so the -10% per level arrived as a flat -10%. Run prescales first, stable within
+      // each group, so a skill is fully scaled before anything reads it.
+      for (const eid of skillPassOrder(skillItem.effectIDs)) {
         this._applyEffect(eid, skillItem, level, true);  // skills are non-penalized
       }
     }

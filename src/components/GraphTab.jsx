@@ -191,7 +191,10 @@ function generateCurve(catKey,yKey,xKey,params={}){
       for (const w of weapons) {
         const _v = w.volleyEff ?? w.volley;
         const vol = _v.em + _v.th + _v.kin + _v.exp;
-        const per = wantVolley ? vol : vol / w.cycleS;
+        // A forced idle between cycles (a bomb launcher's 67.5 s) is time the weapon is not firing,
+        // so it belongs in the DPS divisor. Reload does not: this curve is sustained-fire DPS and
+        // the reload gap is what the damage-over-time graph exists to show.
+        const per = wantVolley ? vol : vol / (w.cycleS + (w.delayS ?? 0));
         total += per * weaponMult(w, distM, sig, vel, perfect);
       }
       return total;
@@ -230,8 +233,11 @@ function generateCurve(catKey,yKey,xKey,params={}){
           const sp=spools?1+Math.min(w.spoolMax,cycles*w.spoolPerCycle):1;
           evts.push([t, base*sp, ideal*sp]);
           shots++; cycles++;
-          if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + w.reloadS; }
-          else t += w.cycleS;
+          // The forced idle runs concurrently with the reload, so a clip boundary costs whichever is
+          // longer rather than both — a bomb launcher reloads inside its 67.5 s delay for free.
+          const idle = w.delayS ?? 0;
+          if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + Math.max(w.reloadS, idle); }
+          else t += w.cycleS + idle;
         }
       }
       evts.sort((a,b)=>a[0]-b[0]);
