@@ -2907,7 +2907,9 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const baseRep    = fitItem.get('armorDamageAmount') ?? 0;
       const cycleMs    = fitItem.get('duration') ?? fitItem.get('speed') ?? 15000;
       const reloadMs   = fitItem.get('reloadTime') ?? 60000;
-      const hasPaste   = slot.ammo === 'Nanite Repair Paste';
+      // Strip the "(N)" count suffix the way every other charge read in this file does. It is the
+      // same predicate as the tank block's, and the two must not be allowed to disagree.
+      const hasPaste   = (slot.ammo ?? '').replace(/\s*\(\d+\)$/, '') === 'Nanite Repair Paste';
       // chargedArmorDamageMultiplier (attr1886) not stored in our TYPES → always falls back to 3
       const pasteMult  = (fitItem.get('chargedArmorDamageMultiplier') || 3);
       // Standard AARs always have 8 paste cycles (capacity/0.01 total paste / chargeRate per cycle)
@@ -3367,12 +3369,19 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       localRepairers.push({ tank:'shield', repPS: ps, capPS: isCapCharged ? 0 : cn / (dur / 1000), cn });
 
     } else if (isArmorRepairer(gn)) {
-      // Engine applies: Marauder hull bonus, Bastion, Repair Systems skill duration
-      const amount = fitItem.get('armorDamageAmount');
+      // Engine applies: Marauder hull bonus, Bastion, Repair Systems skill duration — but NOT the
+      // paste multiplier, which is a charge attribute the engine never folds into armorDamageAmount.
+      // pyfa multiplies it in right here (eos fit.py, `amount * multiplier / cycleTime`, and again
+      // in the efficiency sort and the sustained add-back), so leaving it out made a loaded AAR
+      // report the same raw HP/s as an empty one — a third of what it actually reps.
+      const pasteMult = (gn === 'Ancillary Armor Repairer'
+        && (slot.ammo ?? '').replace(/\s*\(\d+\)$/, '') === 'Nanite Repair Paste')
+        ? (fitItem.get('chargedArmorDamageMultiplier') || 1) : 1;
+      const amount = (fitItem.get('armorDamageAmount') ?? 0) * pasteMult;
       const ps = amount / (dur / 1000);
       armorRepPS  += ps;
-      // An AAR's real output is its PASTE-boosted figure (from the engine stats below). Track its
-      // unboosted rep here so we can subtract it and avoid counting the module twice.
+      // The EHP path recomputes an AAR from its own block below, so its contribution is tracked here
+      // and subtracted there. Both sides carry the paste multiplier, so they still cancel exactly.
       if (gn === 'Ancillary Armor Repairer') armorRepPS_AAR += ps;
       const cn = fitItem.get('capacitorNeed') ?? 0;
       localRepairers.push({ tank:'armor', repPS: ps, capPS: cn / (dur / 1000), cn });

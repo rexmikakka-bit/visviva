@@ -877,6 +877,38 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // -----------------------------------------------------------------------------
+// 11h. LOCAL ANCILLARY ARMOR REPAIRER — the paste multiplier on the RAW HP/s.
+//      The engine never folds chargedArmorDamageMultiplier into armorDamageAmount (it lives on the
+//      charge), so the tank block has to multiply it in the way pyfa does. It did not, and the
+//      Resistances tab's "Rep: n HP/s" therefore read the same loaded as empty — a third of what
+//      the module reps. The EHP/s path was always right, because it recomputes the AAR from its own
+//      block, which is exactly why this went unnoticed: the two numbers disagreed by 3x on the same
+//      screen. Every figure below is eos's (scripts/oracle, fit.tank / fit.effectiveTank).
+// -----------------------------------------------------------------------------
+{
+  console.log('\nLOCAL ANCILLARY ARMOR REPAIRER');
+  const myrm = { typeID: tid('Myrmidon'), name: 'Myrmidon' };
+  const repFit = (low) => ({ high: [], mid: [], low, rigs: [] });
+  const aarPaste = calcFitStats(myrm, repFit([M('Medium Ancillary Armor Repairer', 'active', 'Nanite Repair Paste')]), [], null, {});
+  const aarBare  = calcFitStats(myrm, repFit([M('Medium Ancillary Armor Repairer', 'active')]), [], null, {});
+  const plain    = calcFitStats(myrm, repFit([M('Medium Armor Repairer II', 'active')]), [], null, {});
+  check('aar', 'AAR on paste, raw HP/s', aarPaste.armorRepPS, 94.88, 1e-3);
+  check('aar', 'AAR empty, raw HP/s', aarBare.armorRepPS, 31.62, 1e-3);
+  // The ratio IS the multiplier — a check that survives any future rebalance of the base rep.
+  check('aar', 'paste is worth exactly 3x', aarPaste.armorRepPS / aarBare.armorRepPS, 3, 1e-9);
+  // A plain repper has no charge and must not pick up a multiplier from anywhere.
+  check('aar', 'plain repairer unaffected, raw HP/s', plain.armorRepPS, 56.22, 1e-3);
+  // EHP/s comes from a SEPARATE code path that subtracts the raw AAR contribution and re-adds its
+  // own. Both sides now carry the multiplier, so they must still cancel exactly.
+  // The AAR block rounds its EHP/s to 0.1 before returning it, so the expected values are eos's
+  // exact ones and the tolerance is whatever that quantisation costs at this magnitude — NOT slack
+  // for a real divergence. The plain repairer goes through an unrounded path and holds at 1e-3.
+  check('aar', 'AAR on paste, EHP/s', aarPaste.armorRepEhpS, 140.56, 2e-3);
+  check('aar', 'AAR empty, EHP/s', aarBare.armorRepEhpS, 46.85, 2e-3);
+  check('aar', 'plain repairer, EHP/s', plain.armorRepEhpS, 83.29, 1e-3);
+}
+
+// -----------------------------------------------------------------------------
 // 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
 //     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
 //     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial
