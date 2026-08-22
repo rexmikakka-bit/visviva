@@ -619,6 +619,7 @@ export default function App(){
         <FitTabs tabs={openFitTabs} activeFit={activeFit} open={tabsOpen}
                  onSelect={t=>loadFit(t.ship,t.name,undefined,true)} onClose={closeFitTab}
                  onReorder={order=>setOpenTabs(order)}
+                 onCloseAll={()=>setOpenTabs([])}
                  onToggle={()=>setTabsOpen(o=>!o)}
                  onOpenLibrary={()=>{wantNewTab.current=true;setBottomTab("fittings");setFittingsView("browse");}}/>}
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to

@@ -38,7 +38,11 @@ const HOLD_MS = 350;
 // A tap is never perfectly still on a phone; past this the gesture is a scroll and the hold is off.
 const SLOP = 8;
 
-export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, onOpenLibrary, onReorder }) {
+// How long an armed "close all" waits before disarming itself. Long enough to read the prompt and
+// decide, short enough that a rail left armed and forgotten is not a mis-tap sitting in wait.
+const ARMED_MS = 4000;
+
+export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, onOpenLibrary, onReorder, onCloseAll }) {
   const scroller = useRef(null);
   const activeEl = useRef(null);
   const isActive = (t) => activeFit?.ship === t.ship && activeFit?.fitName === t.name;
@@ -55,6 +59,28 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
   const lastX = useRef(0);
   const raf = useRef(0);
   const view = order ?? tabs;
+
+  // Close-all lives on a hold of the + rather than a control of its own: it is the only thing in the
+  // rail already about tab MEMBERSHIP, and hold is free there (hold-drag belongs to the tabs). Armed
+  // it turns the + red and spins it into an x, and the dashes — which mean nothing once you are
+  // deciding whether to keep any tabs at all — become the confirmation.
+  //
+  // Closing tabs destroys nothing: a tab is a pointer into fitsDB and every fit is saved. The confirm
+  // step is here because losing a session's worth of tabs to a stray press is annoying, not because
+  // anything is at risk, which is why it disarms itself rather than demanding an answer.
+  const [armed, setArmed] = useState(false);
+  const plusHold = useRef(null);
+  // Set on the RELEASE that arms, so the click that release generates is eaten however long the hold
+  // ran. A timer started at arming time only covers a release inside its window — hold past it and the
+  // click lands on the armed x and cancels the gesture, which is what this went wrong as.
+  const ignoreClick = useRef(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), ARMED_MS);
+    return () => clearTimeout(t);
+  }, [armed]);
+  // Nothing to close: covers closing the last tab by hand while armed, and deleting its fit.
+  useEffect(() => { if (!tabs.length) setArmed(false); }, [tabs.length]);
 
   // `touch-action` is latched when a gesture STARTS, so switching it on mid-hold does not stop a
   // scroll that is already in flight. A non-passive touchmove that preventDefaults is the only thing
@@ -167,6 +193,47 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
     }, HOLD_MS) };
   };
 
+  // Same hold as the tabs' reorder, so the two gestures feel like one idea. Releasing produces a
+  // click on the + — which is now the armed x — so it has to be eaten or the gesture cancels itself
+  // the moment you let go.
+  //
+  // That swallow is tied to the RELEASE, not to a timer started when it armed. A timer only covers a
+  // release that lands inside its window: keep holding past it and the click gets through, which is
+  // exactly what a deliberate "hold it until I'm sure" press does. The short timeout here runs the
+  // other way, clearing the flag if the release produces no click at all rather than leaving it set
+  // to swallow the next genuine tap.
+  const startPlusPress = (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (!tabs.length || armed) return;
+    const x = e.clientX, y = e.clientY;
+    let fired = false;
+    const detach = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    const onUp = () => {
+      if (plusHold.current) { clearTimeout(plusHold.current); plusHold.current = null; }
+      detach();
+      if (!fired) return;
+      ignoreClick.current = true;
+      setTimeout(() => { ignoreClick.current = false; }, 400);
+    };
+    const onMove = (ev) => {
+      if (fired) return;   // armed already; a wandering finger no longer cancels it
+      if (Math.abs(ev.clientX - x) > SLOP || Math.abs(ev.clientY - y) > SLOP) onUp();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    plusHold.current = setTimeout(() => {
+      plusHold.current = null;
+      fired = true;
+      setArmed(true);
+      haptic("medium");
+    }, HOLD_MS);
+  };
+
   // Keep the current tab visible. With the strip narrower than the tab list, switching to a fit
   // that sits off-screen would otherwise leave you looking at a strip with no highlight in it.
   useEffect(() => {
@@ -180,21 +247,46 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
   return (
     <div style={{ ...STICKY, background: C.bg, borderBottom: `1px solid ${C.border}` }}>
       <div style={{ display: "flex", alignItems: "center", height: 22 }}>
-        <div role="button" aria-label={open ? "Hide fit tabs" : "Show fit tabs"}
-             aria-expanded={open} onClick={tabs.length ? onToggle : undefined}
-             style={{ flex: 1, display: "flex", gap: 2, alignItems: "center", height: "100%",
-                      padding: "0 8px", cursor: tabs.length ? "pointer" : "default" }}>
-          {view.map((t) => (
-            <span key={keyOf(t)}
-                  style={{ flex: 1, maxWidth: 60, height: 3, borderRadius: 99,
-                           transition: "background .18s ease",
-                           background: isActive(t) ? C.accent : C.borderStrong }}/>
-          ))}
-        </div>
-        <div role="button" aria-label="Open a fit in a new tab" onClick={onOpenLibrary}
+        {armed ? (
+          <div role="button" aria-label={`Close all ${tabs.length} tabs`}
+               onClick={() => { setArmed(false); haptic("medium"); onCloseAll?.(); }}
+               style={{ flex: 1, display: "flex", alignItems: "center", height: "100%",
+                        padding: "0 8px", cursor: "pointer" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: C.danger }}>
+              Close all {tabs.length} tab{tabs.length === 1 ? "" : "s"}?
+            </span>
+          </div>
+        ) : (
+          <div role="button" aria-label={open ? "Hide fit tabs" : "Show fit tabs"}
+               aria-expanded={open} onClick={tabs.length ? onToggle : undefined}
+               style={{ flex: 1, display: "flex", gap: 2, alignItems: "center", height: "100%",
+                        padding: "0 8px", cursor: tabs.length ? "pointer" : "default" }}>
+            {view.map((t) => (
+              <span key={keyOf(t)}
+                    style={{ flex: 1, maxWidth: 60, height: 3, borderRadius: 99,
+                             transition: "background .18s ease",
+                             background: isActive(t) ? C.accent : C.borderStrong }}/>
+            ))}
+          </div>
+        )}
+        {/* Armed, the + spins 45 degrees into an x rather than swapping glyph — the rotation is what
+            reads as "this button changed job" at 16px, and it doubles as the way back out.
+            The GLYPH rotates, not the button: the button carries the rail's divider border, and
+            rotating that turned the divider into a diagonal slash across the rail. */}
+        <div role="button" aria-label={armed ? "Cancel closing all tabs" : "Open a fit in a new tab"}
+             onPointerDown={startPlusPress}
+             onClick={() => {
+               if (ignoreClick.current) { ignoreClick.current = false; return; }
+               if (armed) setArmed(false); else onOpenLibrary();
+             }}
              style={{ flexShrink: 0, width: 34, height: "100%", display: "flex", alignItems: "center",
-                      justifyContent: "center", color: C.textMute, fontSize: 16, lineHeight: 1,
-                      cursor: "pointer", borderLeft: `1px solid ${C.border}` }}>+</div>
+                      justifyContent: "center", color: armed ? C.danger : C.textMute, fontSize: 16,
+                      lineHeight: 1, cursor: "pointer", borderLeft: `1px solid ${C.border}`,
+                      transition: "color .18s ease" }}>
+          <span style={{ display: "block", lineHeight: 1,
+                         transform: armed ? "rotate(45deg)" : "none",
+                         transition: "transform .18s cubic-bezier(.22,.61,.36,1)" }}>+</span>
+        </div>
       </div>
 
       {/* Animated open/close. max-height rather than height so the strip does not need a measured
