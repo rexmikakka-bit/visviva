@@ -31,6 +31,7 @@ import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { targetFitProfile } from './lib/graph-target.js';
+import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
@@ -2520,6 +2521,54 @@ Republic Fleet Command Mindlink`;
   // Nonsense in, null out — the caller renders the reference as stale instead of crashing the graph.
   check('gtgt', 'an unknown ship yields null', targetFitProfile('Not A Ship', mk('active'), null) === null ? 1 : 0, 1, 0);
   check('gtgt', 'a fit with no slots yields null', targetFitProfile(cruiser, {}, null) === null ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13h-3. FIT PICKER ORDER — the flat "pick a fit" lists, sorted most-recent-first
+//      The target-fit / projection / command pickers flatten every hull's fits into one list, where
+//      `fitsDB`'s object key order is whichever hull first had a fit saved to it and means nothing.
+//      Two hazards the comparator has to survive, both already documented in RecentFitsList: the
+//      field is a display STRING, and it is DAY-GRANULAR so today's fits all tie.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFIT PICKER ORDER');
+  const F = (ship, name, modified) => ({ ship, fit: { name, modified } });
+  const order = rows => rows.slice().sort(byRecentlyModified).map(r => r.fit.name).join(',');
+
+  // Newest first, across hulls — the whole point of flattening the list.
+  check('order', 'most recently modified comes first',
+        order([F('Rifter', 'old', 'Jan 3, 2026'), F('Caracal', 'new', 'Aug 6, 2026'),
+               F('Rupture', 'mid', 'May 1, 2026')]), 'new,mid,old');
+  // A month name is not a number: sorting the raw strings puts "Aug" before "Jan" before "May", which
+  // is alphabetical and looks plausible enough to ship. This is the same date set, and the expected
+  // order is the one only a real parse produces.
+  check('order', 'the dates are parsed, not compared as text',
+        order([F('A', 'jan', 'Jan 3, 2026'), F('B', 'aug', 'Aug 6, 2026'), F('C', 'may', 'May 1, 2026')]),
+        'aug,may,jan');
+  // Same day is the COMMON case — a session's worth of edits all carry today's date. Falling back to
+  // the name keeps the list stable instead of leaving it in the arbitrary order the sort replaced.
+  check('order', 'same-day fits fall back to name',
+        order([F('X', 'zulu', 'Aug 6, 2026'), F('Y', 'alpha', 'Aug 6, 2026'), F('Z', 'mike', 'Aug 6, 2026')]),
+        'alpha,mike,zulu');
+  // An old backup or a pre-tags fit has nothing usable here. Sorting it to the bottom is a choice:
+  // treated as 0 it would parse as 1970 — no, worse, `Date.parse(undefined)` is NaN and a NaN
+  // comparator return leaves the array in whatever order the engine's sort happened to visit.
+  // Named so the ALPHABETICAL order is the wrong one: if the parse returns NaN the subtraction is
+  // NaN, `if (d)` treats that as falsy, and the undated fit rides the name tiebreak to the top —
+  // passing a check whose undated row happened to sort late by name anyway.
+  check('order', 'an undated fit sorts last',
+        order([F('A', 'aaa-undated', undefined), F('B', 'zzz-dated', 'Jan 3, 2026')]), 'zzz-dated,aaa-undated');
+  check('order', 'an unparseable date sorts last',
+        order([F('A', 'aaa-junk', 'sometime last tuesday'), F('B', 'zzz-dated', 'Jan 3, 2026')]), 'zzz-dated,aaa-junk');
+  check('order', 'undated fits still order among themselves',
+        order([F('A', 'beta', null), F('B', 'alpha', null)]), 'alpha,beta');
+
+  // ESI's fittings payload carries NO timestamp — CCP's schema is exactly {description, fitting_id,
+  // items, name, ship_type_id} — so Import from EVE orders by the id, which the server assigns on
+  // save and which ascends. Verified against https://esi.evetech.net/meta/openapi.json.
+  const ids = rows => rows.slice().sort(byNewestFitting).map(r => String(r.fitting_id)).join(',');
+  check('order', 'ESI fittings list newest save first', ids([{fitting_id:3},{fitting_id:9},{fitting_id:5}]), '9,5,3');
+  check('order', 'a fitting with no id sorts last', ids([{fitting_id:2},{name:'x'}]), '2,undefined');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

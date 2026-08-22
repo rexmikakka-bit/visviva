@@ -5,6 +5,7 @@ import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, mutaLabel } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
+import { byRecentlyModified } from "../lib/fit-order.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
 
 const BOOSTER_SIDE_EFFECTS = {
@@ -270,10 +271,13 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
   // result cannot change while typing, so it is keyed on the inputs that actually decide it.
   // `filterFn` is module-scope (hasCommandBursts) or undefined, never an inline arrow, so its
   // identity is stable and this does not silently re-run anyway.
+  // Sorted most-recently-modified first. `fitsDB` is a plain object keyed by hull, so its natural
+  // order here is whichever hull happened to get a fit saved to it first — meaningless once the list
+  // is flattened. See byRecentlyModified for what `modified` can and cannot tell us.
   const allFits=useMemo(()=>{
     const out=[];
     Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))out.push({ship,fit:f});}));
-    return out;
+    return out.sort(byRecentlyModified);
   },[fitsDB,filterFn]);
   const q=search.trim().toLowerCase();
   const filtered=q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;

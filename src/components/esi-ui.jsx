@@ -5,6 +5,7 @@ import { esiFittingToImportShape, slotsToEsiFitting } from "../lib/esi-fits.js";
 import { ESI_CLIENT_ID } from "../esi-config.js";
 import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
+import { byNewestFitting } from "../lib/fit-order.js";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
 function friendlyError(e) {
@@ -223,9 +224,12 @@ export function EsiImportModal({ onClose, onImport }) {
   // Legion I have" far more often than for a fit whose name they remember exactly.
   const q = search.trim().toLowerCase();
   const shipNameOf = f => TYPES[f?.ship_type_id]?.n ?? "";
-  const shown = q
+  // Newest save first. ESI returns the fittings in its own order, which is not the order they were
+  // saved in and is not anything a pilot can predict; `fitting_id` is the only recency signal the
+  // payload carries. See byNewestFitting.
+  const shown = (q
     ? (fittings ?? []).filter(f => String(f.name ?? "").toLowerCase().includes(q) || shipNameOf(f).toLowerCase().includes(q))
-    : (fittings ?? []);
+    : (fittings ?? [])).slice().sort(byNewestFitting);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
