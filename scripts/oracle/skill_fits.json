@@ -1,0 +1,97 @@
+{
+  "_comment": [
+    "Fits for the skill-sensitivity sweep (skill_sweep.py -> skill_sweep_compare.mjs). Chosen to",
+    "COVER SKILL SURFACE, not to be good fits: between them they touch turrets, missiles, drones,",
+    "fighters, mining, remote reps, EWAR, cloaking, armor and shield tank, cap, propulsion and",
+    "targeting. A skill that no fit here exercises simply reports as inert on both sides and tells",
+    "you nothing, so adding a fit is how you widen the sweep's reach.",
+    "Shared by both halves so the two engines cannot silently diverge on what they are fitting."
+  ],
+  "fits": {
+    "rifter_projectile": {
+      "ship": "Rifter",
+      "high": [{ "name": "200mm AutoCannon II", "state": "active", "ammo": "Republic Fleet EMP S" }],
+      "mid": [{ "name": "1MN Afterburner II", "state": "active" }],
+      "low": [
+        { "name": "Gyrostabilizer II", "state": "online" },
+        { "name": "Small Armor Repairer II", "state": "active" }
+      ],
+      "rigs": [{ "name": "Small Auxiliary Nano Pump I", "state": "online" }]
+    },
+    "megathron_hybrid": {
+      "ship": "Megathron",
+      "high": [{ "name": "Neutron Blaster Cannon II", "state": "active", "ammo": "Void L" }],
+      "mid": [{ "name": "500MN Microwarpdrive II", "state": "active" }],
+      "low": [
+        { "name": "Magnetic Field Stabilizer II", "state": "online" },
+        { "name": "1600mm Steel Plates II", "state": "online" },
+        { "name": "Multispectrum Energized Membrane II", "state": "online" }
+      ],
+      "rigs": [{ "name": "Large Trimark Armor Pump I", "state": "online" }]
+    },
+    "caracal_missile": {
+      "ship": "Caracal",
+      "high": [{ "name": "Heavy Missile Launcher II", "state": "active", "ammo": "Scourge Fury Heavy Missile" }],
+      "mid": [
+        { "name": "Large Shield Extender II", "state": "online" },
+        { "name": "Medium Shield Booster II", "state": "active" },
+        { "name": "Missile Guidance Computer II", "state": "active" }
+      ],
+      "low": [{ "name": "Ballistic Control System II", "state": "online" }],
+      "rigs": [{ "name": "Medium Warhead Rigor Catalyst I", "state": "online" }]
+    },
+    "vexor_drone": {
+      "ship": "Vexor",
+      "low": [{ "name": "Drone Damage Amplifier II", "state": "online" }],
+      "drones": [{ "name": "Hammerhead II", "qty": 5, "active": true }]
+    },
+    "guardian_logi": {
+      "ship": "Guardian",
+      "high": [
+        { "name": "Large Remote Armor Repairer II", "state": "active" },
+        { "name": "Large Remote Capacitor Transmitter II", "state": "active" }
+      ],
+      "mid": [{ "name": "Cap Recharger II", "state": "online" }],
+      "low": [
+        { "name": "Damage Control II", "state": "online" },
+        { "name": "Multispectrum Energized Membrane II", "state": "online" }
+      ]
+    },
+    "griffin_ewar": {
+      "ship": "Griffin",
+      "mid": [
+        { "name": "Multispectral ECM II", "state": "active" },
+        { "name": "Remote Sensor Dampener II", "state": "active" },
+        { "name": "Stasis Webifier II", "state": "active" },
+        { "name": "Warp Scrambler II", "state": "active" }
+      ]
+    },
+    "buzzard_cloak": {
+      "ship": "Buzzard",
+      "high": [{ "name": "Covert Ops Cloaking Device II", "state": "active" }],
+      "mid": [
+        { "name": "5MN Y-T8 Compact Microwarpdrive", "state": "active" },
+        { "name": "Scan Rangefinding Array II", "state": "online" }
+      ],
+      "low": [{ "name": "Nanofiber Internal Structure II", "state": "online" }]
+    },
+    "retriever_mining": {
+      "ship": "Retriever",
+      "high": [{ "name": "Modulated Strip Miner II", "state": "active", "ammo": "Simple Asteroid Mining Crystal Type A II" }],
+      "mid": [{ "name": "Medium Shield Extender II", "state": "online" }],
+      "low": [{ "name": "Mining Laser Upgrade II", "state": "online" }]
+    },
+    "hound_bomb": {
+      "ship": "Hound",
+      "high": [{ "name": "Bomb Launcher II", "state": "active", "ammo": "Concussion Bomb" }],
+      "mid": [{ "name": "Medium Shield Extender II", "state": "online" }],
+      "low": [{ "name": "Ballistic Control System II", "state": "online" }]
+    },
+    "thanatos_fighter": {
+      "ship": "Thanatos",
+      "mid": [{ "name": "Networked Sensor Array", "state": "active" }],
+      "low": [{ "name": "Capital Armor Repairer II", "state": "active" }],
+      "fighters": [{ "name": "Firbolg I", "qty": 9, "active": true }]
+    }
+  }
+}

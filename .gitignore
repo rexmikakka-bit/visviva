@@ -31,7 +31,9 @@ pyfa-master/
 # ── Oracle: personal pyfa fit dumps (OPSEC — NEVER commit) ────────────────────
 # scripts/oracle/*.py and *.mjs are tooling and SHOULD be committed, but the
 # scanned/exported fit dumps contain the user's real fits, some OPSEC-sensitive.
-scripts/oracle/_*.jsonl
+# The leading underscore is the convention for "working data, not tooling", so ignore it
+# whatever the extension — the sweeps also drop .log and .txt scratch beside the .jsonl.
+scripts/oracle/_*
 scripts/oracle/*.err
 scripts/oracle/__pycache__/
 

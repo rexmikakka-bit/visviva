@@ -3220,8 +3220,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   // ── 9b. Fighters (squadron DPS, speed, EHP, per-ability toggles) ───────────
   // Fighters aren't dogma-engine FitItems, so their multipliers are composed analytically from the
-  // modifiers Pyfa applies: Fighters (+5%/lvl), racial Fighter Specialization (+2%/lvl, T2), Heavy
-  // Fighters (+5%/lvl, heavy), Drone Interfacing (+10%/lvl), the hull fighter-damage bonus
+  // modifiers Pyfa applies: Fighters (+5%/lvl), racial Fighter Specialization (+2%/lvl), Heavy
+  // Fighters (+5%/lvl), Drone Interfacing (+10%/lvl), the hull fighter-damage bonus
   // (carrier/super/titan-role) and Drone Damage Amplifiers (stacking-penalized). Fighter Support
   // Units shorten cycle time (RoF) and boost velocity/shield. Each ability can be toggled on/off,
   // which flows through to the fighter (and total) DPS and the displayed speed.
@@ -3241,7 +3241,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const fighterDetails = [];
   const fighters = opts.fighters ?? [];
   if (fighters.length) {
-    const lvl = 5;
+    // Fighters never enter the dogma engine, so every one of these skills has to be read by hand.
+    // They used to be a single hardcoded `lvl = 5`, which is right for the all-V default and wrong
+    // for every other pilot — an ESI-synced character at Drone Interfacing IV read fighter DPS 10%
+    // high, and no all-V baseline could ever have caught it.
+    const sk = (n) => fit.getSkillLevel(n);
+    const skFighters = sk('Fighters'), skInterfacing = sk('Drone Interfacing'),
+          skHeavy = sk('Heavy Fighters'), skLight = sk('Light Fighters'),
+          skNav = sk('Drone Navigation'), skDurability = sk('Drone Durability');
     // Hull fighter-damage bonus (pre-scaled by racial capital skill in the full fit → apply flat).
     let shipFtrMult = 1;
     for (const a of ['shipBonusCarrierG1','shipBonusCarrierC1','shipBonusCarrierA1','shipBonusCarrierM1',
@@ -3278,9 +3285,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       if (TYPES[fi2.typeID]?.gn === 'Drone Navigation Computer') { const sf = TYPES[fi2.typeID]?.attrs?.speedFactor; if (sf) dncVals.push(sf); }
     }
     const dncMult = stackMult(dncVals);
-    const fightersSkill = 1 + 0.05*lvl, droneInterfacing = 1 + 0.10*lvl, specMult = 1 + 0.02*lvl, heavyMult = 1 + 0.05*lvl;
-    const droneNavSkill = 1 + 0.05*lvl;      // Drone Navigation (+5%/lvl velocity, all fighters)
-    const droneDurability = 1 + 0.05*lvl;    // Drone Durability (+5%/lvl shield/hull, all fighters)
+    const fightersSkill = 1 + 0.05*skFighters, droneInterfacing = 1 + 0.10*skInterfacing;
+    const heavyMult = 1 + 0.05*skHeavy;
+    const droneNavSkill = 1 + 0.05*skNav;         // Drone Navigation (+5%/lvl velocity)
+    const droneDurability = 1 + 0.05*skDurability; // Drone Durability (+5%/lvl shield/hull)
     const abBonusBoost = 1 + (s.get('shipBonusCarrierG5') ?? 0)/100; // hull support-fighter AB speed-bonus boost (pre-scaled)
     const prof = (opts.damageProfile && opts.damageProfile.length === 4) ? opts.damageProfile : [1,1,1,1];
     const profSum = prof.reduce((a,b)=>a+b,0) || 1;
@@ -3293,11 +3301,19 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const isHeavy  = (fa.fighterSquadronIsHeavy ?? 0) === 1;
       const isLight  = (fa.fighterSquadronIsLight ?? 0) === 1;
       const isSupport= (fa.fighterSquadronIsSupport ?? 0) === 1;
-      const isT2     = / II$/.test(f.name);
       const sqActive = f.active !== false; // active squadron (in space) — like the drone active checkbox
-      let mult = fightersSkill * droneInterfacing * shipFtrMult * ddaMult;
-      if (isT2 && isLight) mult *= specMult; // racial Fighter Specialization: light T2 fighters only
-      if (isHeavy)         mult *= heavyMult; // Heavy Fighters skill (heavy fighters instead of a racial spec)
+      // Every fighter bonus in eos is gated on the FIGHTER requiring the skill, and a Standup
+      // (structure) fighter requires nothing at all — same shape as structure charges taking no
+      // missile skills. Ungated, a Sotiyo's Standup Templar II read 1042 DPS against eos's 555.8,
+      // exactly the ×1.875 that Fighters V and Drone Interfacing V would have added.
+      const req = (n) => (TYPES[ftid]?.rs ?? []).includes(n);
+      // The racial specialization is named by the fighter itself, so read the level of whichever one
+      // it asks for rather than inferring "T2 light" from the name.
+      const racialSpec = (TYPES[ftid]?.rs ?? []).find((n) => n.endsWith(' Fighter Specialization'));
+      let mult = shipFtrMult * ddaMult;
+      if (req('Fighters'))       mult *= fightersSkill * droneInterfacing;
+      if (racialSpec)            mult *= 1 + 0.02*sk(racialSpec);
+      if (req('Heavy Fighters')) mult *= heavyMult;
       const tog = f.abilities || {};
       const isOn = (def) => tog[def.key] !== undefined ? !!tog[def.key] : (def.kind === 'damage'); // damage on by default
       const abilities = [];
@@ -3332,7 +3348,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       // unpenalized) × FSU velocity (penalized among FSUs) × a propulsion penalty group that stacks
       // the Drone Navigation Computer bonus together with the active AB/MWD burst. So the DNC is full
       // at cruise, but gets stacking-penalized behind the burst when a prop ability is toggled on.
-      const velSkill = (isLight ? (1 + 0.05*lvl) : 1) * droneNavSkill;
+      const velSkill = (req('Light Fighters') ? (1 + 0.05*skLight) : 1) * (req('Fighters') ? droneNavSkill : 1);
       const velCore = (fa.maxVelocity ?? 0) * velSkill * fsuVel; // everything except the prop group
       const baseSpeed = velCore * stackMult(dncVals);            // cruise: DNC only in the prop group
       let speedActive = baseSpeed, burstFrom = null;
@@ -3347,10 +3363,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       }
       // EHP: shield boosted by Drone Durability (+25%), the hull fighter-HP bonus, and FSU shield
       // (unpenalized), weighted by the incoming damage profile; structure (hull) also gets Drone Durability.
-      const shield = (fa.shieldCapacity ?? 0) * droneDurability * shipHpMult * fsuSh;
+      const durMult = req('Fighters') ? droneDurability : 1;
+      const shield = (fa.shieldCapacity ?? 0) * durMult * shipHpMult * fsuSh;
       const avgRes = (prof[0]*(fa.shieldEmDamageResonance ?? 1) + prof[1]*(fa.shieldThermalDamageResonance ?? 1) +
                       prof[2]*(fa.shieldKineticDamageResonance ?? 1) + prof[3]*(fa.shieldExplosiveDamageResonance ?? 1)) / profSum;
-      const structure = (fa.hp ?? 0) * droneDurability;
+      const structure = (fa.hp ?? 0) * durMult;
       const ehp = avgRes > 0 ? (shield/avgRes + structure) : (shield + structure);
       fighterDetails.push({
         name: f.name, qty: squads, sqSize, active: sqActive,

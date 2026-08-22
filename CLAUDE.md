@@ -268,6 +268,26 @@ core `runMigrations` is DOM-free and covered by the regression suite.
       baselines (9.0M EHP low-power / 29.25M EHP full-power; 146.7 weaponDps / 440 volley;
       1417.5 km missile range).
 
+11. **Fighters never enter the dogma engine, so their skills are applied BY HAND — with the levels
+    read from the pilot and gated on the fighter requiring the skill.** `calc.js` composes a
+    fighter's multipliers analytically (section 9b), and it got both halves wrong for a long time:
+
+    - A single `lvl = 5` stood in for Fighters, Drone Interfacing, the racial Fighter Specialization,
+      Heavy Fighters, Drone Navigation and Drone Durability. That is exactly right for the all-V
+      default and wrong for every other pilot, so **no baseline in the suite could ever have caught
+      it** — a character synced from ESI at Drone Interfacing IV still read fighter DPS as if at V.
+      Use `fit.getSkillLevel('<EVE skill name>')`, which is the same API the AoE-skill pass uses.
+    - eos gates **every** fighter bonus on `mod.item.requiresSkill(...)`, and a **Standup (structure)
+      fighter's required-skill list is EMPTY** — the same rule as structure charges taking no missile
+      skills (gotcha 10). Ungated, a Sotiyo's Standup Templar II read 1042 DPS against eos's 555.8,
+      exactly the ×1.875 that Fighters V and Drone Interfacing V add.
+
+    The racial specialization is **named by the fighter** (`Firbolg II` → `Gallente Fighter
+    Specialization`), so read whichever one it asks for rather than inferring "T2 and light" from the
+    name. Only T2 *light* fighters carry one, which is why that proxy worked, but it cannot tell you
+    the level of the right racial skill. Pinned in `regression.test.mjs` section 18; found by the
+    skill sweep, not by a fit diff, for the reason in the "SKILL sweep" section below.
+
 ### Two different sets of skills — don't conflate them
 
 `SKILL_DEFAULTS` (~167) is the set the **dogma engine reads**: train these and your numbers change.
@@ -769,6 +789,42 @@ evenly across all four values.)
 **Tell eos the system security.** `oracle_batch.py` sets `fit.systemSecurity` from the spec. Skip it
 and eos silently uses its nullsec default, so every hisec fit reads as a 20% rig-bonus "divergence"
 that is really a harness mismatch.
+
+### The SKILL sweep — a different question from the fit sweeps
+
+```bash
+/c/Python314/python scripts/oracle/skill_sweep.py > scripts/oracle/_skills.jsonl
+node scripts/oracle/skill_sweep_compare.mjs scripts/oracle/_skills.jsonl [--verbose]
+```
+
+`oracle_compare.mjs` asks "do the two engines agree on this fit's numbers", with everything at V on
+both sides. A skill that is a silent no-op in OUR engine is **invisible** to that. This asks "does
+each SKILL do the same thing in both engines" by zeroing one skill at a time and comparing how far
+each stat moves — so an ignored skill shows up as a zero delta against a live one. It reports
+RELATIVE movement deliberately, so a unit mismatch cannot masquerade as a missing skill. Fits live
+in `skill_fits.json`, chosen to cover skill surface (turrets, missiles, drones, fighters, mining,
+logi, EWAR, cloak, bombs); a skill no fit exercises reports inert on both sides and is counted, not
+listed — that is a coverage gap to widen, not a pass.
+
+**Four harness traps, all of which manufacture fake findings** — every one cost a false lead:
+
+- eos's `Character.addSkill()` only replaces a skill when the new level is **higher**, so handing it
+  a level-0 skill on an all-V character is silently ignored. `Skill.setLevel(0, ignoreRestrict=True)`
+  is the one that works (`ignoreRestrict` stops the strict-skill cascade from zeroing dependents too).
+- eos's `capDelta` reads two private fields that `calculateModifiedAttributes()` does not fill; it
+  returns a flat 0 until something touches `fit.capUsed` and triggers `simulateCap()`. Left dead, it
+  made 18 cap skills look like ours-only.
+- eos's `fit.maxSpeed` is the ship's engine-computed `maxVelocity`, and eos applies the prop mod
+  there. We apply ours afterwards in `calc.js`, so the like-for-like field is `maxVelocityAB` (which
+  falls back to the unpropped speed when nothing is propping). Compare against `cs.exact.*`, not the
+  display fields — those are rounded, and rounding quantises movement to about the noise threshold.
+- **One eos `Fighter` object IS one squadron**; its `amount` is how many fighters are inside it. Nine
+  squadrons is nine appended objects, not `amount = 9` — and fighters need `fighter.owner = fit` set
+  by hand (drones don't), or `getDroneDps()` raises on `owner.factorReload`. On our side fighters go
+  in `opts.fighters`, not the drones argument, which is silently accepted and yields 0.
+
+Teeth: reverting the skill-prescale ordering fix in `dogma-engine.js` turns a clean run into
+`INERT HERE: Bomb Deployment [hound_bomb]`.
 
 `eos_bootstrap.py` wires eos headless; `oracle.py` builds a fit from a spec (ship + modules + charges
 + drones + implants + boosters + all-skills-at-V) and prints `getWeaponDps()`, `getWeaponVolley()`,

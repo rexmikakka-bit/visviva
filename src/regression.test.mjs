@@ -4215,6 +4215,60 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 18. FIGHTER SKILLS — read from the pilot's sheet, and gated on the fighter requiring them
+//
+// Fighters never enter the dogma engine (calc.js composes their multipliers by hand), so the skill
+// levels and the skill FILTERS both have to be applied there. Neither was:
+//
+//   1. A single `lvl = 5` stood in for Fighters, Drone Interfacing, the racial Fighter
+//      Specialization, Heavy Fighters, Drone Navigation and Drone Durability. Correct for the all-V
+//      default and wrong for every other pilot, which is why no baseline here could catch it — a
+//      character synced from ESI at Drone Interfacing IV still read fighter DPS as if at V.
+//   2. eos gates every fighter bonus on the FIGHTER requiring the skill, and a Standup (structure)
+//      fighter requires nothing at all — the same rule as structure charges taking no missile
+//      skills. Ungated, we handed them Fighters V and Drone Interfacing V anyway.
+//
+// Found by a skill-sensitivity sweep (scripts/oracle/skill_sweep.py) that zeroes one skill at a
+// time in both engines and compares how far each stat moves — a skill we ignore shows up as a zero
+// delta against a live one, which comparing all-V totals can never reveal.
+//
+// eos numbers below come from that harness. Note that in eos one Fighter object IS one squadron
+// (`amount` is fighters WITHIN it), so nine squadrons is nine appended objects, not amount=9.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFIGHTER SKILLS');
+
+  const carrier = (fighter, skills) => calcFitStats(
+    { typeID: tid('Thanatos'), name: 'Thanatos' },
+    { high: [], mid: [M('Networked Sensor Array', 'active')], low: [M('Capital Armor Repairer II', 'active')], rigs: [] },
+    [], skills, { fighters: [{ typeID: tid(fighter), name: fighter, qty: 9, active: true }] },
+  ).fighterDps.total;
+  const lower = (key) => ({ ...SKILLS_ALL_V, [key]: 0 });
+
+  // All V is unchanged by the fix — that is the point, and it is what made the bug invisible.
+  check('fighter', 'Thanatos + 9 Firbolg I, all V', carrier('Firbolg I', null), 4718.973214285713, 1e-9);
+  check('fighter', 'Drone Interfacing 0 (-1/3)', carrier('Firbolg I', lower('droneInterfacing')), 3145.9821428571436, 1e-9);
+  check('fighter', 'Fighters 0 (-1/5)', carrier('Firbolg I', lower('fighters')), 3775.1785714285716, 1e-9);
+
+  // The racial specialization is named by the fighter, not guessed from "T2 and light": a Firbolg II
+  // asks for the Gallente one, so the Amarr one must leave it alone. A T1 Firbolg asks for neither.
+  check('fighter', 'Thanatos + 9 Firbolg II, all V', carrier('Firbolg II', null), 5733.823660714287, 1e-9);
+  check('fighter', 'Gallente Fighter Spec 0', carrier('Firbolg II', lower('gallenteFighterSpecialization')), 5212.566964285713, 1e-9);
+  check('fighter', 'Amarr Fighter Spec 0 (wrong race, inert)', carrier('Firbolg II', lower('amarrFighterSpecialization')), 5733.823660714287, 1e-9);
+  check('fighter', 'Gallente Fighter Spec 0 on a T1 fighter (inert)', carrier('Firbolg I', lower('gallenteFighterSpecialization')), 4718.973214285713, 1e-9);
+
+  // Standup fighters carry an EMPTY required-skill list, so no personal skill reaches them. Zeroing
+  // the two that dominate a ship fighter's damage must not move this number at all.
+  const sotiyo = (skills) => calcFitStats({ typeID: tid('Sotiyo'), name: 'Sotiyo' },
+    { high: [], mid: [], low: [], rigs: [] }, [], skills,
+    { fighters: [{ typeID: tid('Standup Templar II'), name: 'Standup Templar II', qty: 1, active: true }] },
+  ).fighterDps.total;
+  check('fighter', 'Sotiyo + Standup Templar II', sotiyo(null), 555.8142857142857, 1e-9);
+  check('fighter', 'Standup ignores Drone Interfacing', sotiyo(lower('droneInterfacing')), 555.8142857142857, 1e-9);
+  check('fighter', 'Standup ignores Fighters', sotiyo(lower('fighters')), 555.8142857142857, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
