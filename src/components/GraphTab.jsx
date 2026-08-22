@@ -7,7 +7,7 @@ import { FitPickerSheet } from "./effects.jsx";
 import { targetFitProfile } from "../lib/graph-target.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
-  calcRangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor,
+  calcRangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, calcAngularSpeed,
   stackingPenalty, simulateCapTrace,
 } from "../calc.js";
 
@@ -77,6 +77,16 @@ const GRAPH_CONFIG=[
   {key:"lock",label:"Lock",icon:"target",color:C.danger,yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
 ];
 
+// The one distance to evaluate at when the X axis is sweeping something other than range: the reach of
+// the longest-ranged weapon on the fit, or 30 km if it has none. The speed and sig axes hold range
+// constant at this while they vary the tracking inputs, and the angular-velocity readout quotes it, so
+// the two cannot describe different engagements.
+function engagementDistanceM(cs){
+  let d = 0;
+  for (const w of (cs?.graphWeapons ?? [])) d = Math.max(d, w.kind==="missile" ? (w.lowerRange||0) : (w.optimal || 0));
+  return d > 0 ? d : 30000;
+}
+
 function generateCurve(catKey,yKey,xKey,params={}){
   const{targetProfile="ideal",shipVelFrac=1,ship={},cs=null,xZoom=1}=params;
   // The X zoom control has to widen/narrow the DATA DOMAIN, not just the axis — otherwise zooming out
@@ -130,9 +140,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
       return [s*sigMultAt(dM), v*webMultAt(dM)];
     };
     // Fixed engagement distance for the speed/sig axes (hold range constant, vary tracking inputs).
-    let engDist = 0;
-    for (const w of (cs?.graphWeapons ?? [])) engDist = Math.max(engDist, w.kind==="missile" ? (w.lowerRange||0) : (w.optimal || 0));
-    if (engDist <= 0) engDist = 30000;
+    const engDist = engagementDistanceM(cs);
     const atkSpeed = params.selfVel ?? 0, atkAngle = params.selfAngle ?? 0;
     const tgtAngle = params.targetAngle ?? 0;
     const shipRadius = cs?.shipRadius ?? 0;
@@ -489,11 +497,24 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange,ma
   </svg>);
 }
 
-// Screen angle (atan2 convention: 0=East, 90=South, 180=West, -90/270=North) that a heading of
-// 0 deg (value=0, "pointing straight at the enemy") is drawn at. Each compass picks where its own
-// enemy marker sits — see VectorCompass's `enemyPos` prop — and this is what maps the physics
-// value (unaffected by any of this — see the sin() in transversalSpeed) onto that screen position.
-const ENEMY_SCREEN_ANGLE={N:-90,E:0,S:90,W:180};
+// BOTH compasses draw in ONE shared frame: 0 deg is East on either wheel, so two arrows pointing the
+// same way on screen are two ships moving the same way in the world.
+//
+// This has to be shared, because the transversal both wheels feed is a single subtraction across one
+// axis — |atkSpeed·sin(atk) − tgtSpeed·sin(tgt)|, eve-uni's formula, which pyfa's _calcAngularSpeed
+// implements identically and which assumes the target sits to the attacker's right. Each wheel used to
+// draw its own 0 pointing at its own enemy marker, which put the Target's arrow 180 deg out of the
+// frame its number is read in: the picture and the number described different manoeuvres. Aligning the
+// two on screen — the thing you would do to fly a stern chase — computed as a head-on pass, so getting
+// low transversal meant hunting for a pair of angles that looked wrong.
+//
+// Nothing about the physics moves: a stored angle keeps the number it always had and the DPS it always
+// produced. Only the arrow that was misdrawing it does. pyfa's own picker takes an `offset` for this
+// and passes 0 for both wheels for the same reason.
+//
+// The enemy markers stay where they are (East on Your Ship, West on Target) and are now purely
+// positional — you on the left, the target on the right, which is exactly the frame the formula wants.
+// So heading 0 closes on the target and, on the Target wheel, is the target running from you.
 const COMPASS_DIRS=["N","NE","E","SE","S","SW","W","NW"];
 
 function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChange,enemyPos}){
@@ -511,11 +532,8 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
   // px toward wherever that wheel's own enemyPos happens to be.
   const r=rMax*velFrac;
   const atZero=r<0.5;
-  const offsetDeg=ENEMY_SCREEN_ANGLE[enemyPos];
-  const theta=value+offsetDeg;   // screen angle of the drawn arrow
+  const theta=value;   // screen angle of the drawn arrow; the frame is shared, see COMPASS_DIRS above
   const rad=theta*Math.PI/180,nx=cx+r*Math.cos(rad),ny=cy+r*Math.sin(rad);
-  // Same offset applied to the readout letter, so "45deg NE" always names the arrow's actual
-  // screen direction — not a direction fixed to wherever the enemy happens to sit on this wheel.
   const cardinal=COMPASS_DIRS[((Math.round((theta+90)/45)%8)+8)%8];
 
   function handlePt(clientX,clientY,rect){
@@ -524,13 +542,13 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
     const dx=(clientX-rect.left)/scale-cx;
     const dy=(clientY-rect.top)/scale-cy;
     const dist=Math.sqrt(dx*dx+dy*dy);
-    const angle=Math.round((((Math.atan2(dy,dx)*180/Math.PI)-offsetDeg)%360+360)%360);
+    const angle=Math.round(((Math.atan2(dy,dx)*180/Math.PI)%360+360)%360);
     const newVelFrac=Math.min(dist/rMax,1);
     onChange(angle);
     onVelocityChange&&onVelocityChange(Math.round(newVelFrac*safeMV));
   }
-  // Double-tap / double-click a compass to park it: heading 0 (straight toward wherever this
-  // compass's enemy marker sits), speed 0.
+  // Double-tap / double-click a compass to park it: heading 0 (East, along the line between the two
+  // ships), speed 0. At zero speed the heading contributes nothing either way.
   // The first tap of a double still moves the vector — harmless, since the reset lands on top of it
   // and the alternative is delaying every single tap by the double-tap window just to find out.
   const reset=()=>{if(immobile)return;onChange(0);onVelocityChange&&onVelocityChange(0);};
@@ -583,9 +601,9 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
         :<><line x1={cx} y1={cy} x2={nx} y2={ny} stroke={C.accent} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,2"/>
            <circle cx={nx} cy={ny} r={4} fill={C.accent} stroke={C.surface} strokeWidth="1.5"/></>}
       <circle cx={cx} cy={cy} r={2.5} fill={C.textMid}/>
-      {/* The enemy marker is a plain dot, no label, sitting wherever `enemyPos` says — right for
-          Your Ship, left for Target (see TargetControls) — so pointing both wheels at 0deg
-          literally points them at each other. All four cardinal points still get their letter. */}
+      {/* The enemy marker is a plain dot, no label: right for Your Ship, left for Target, which lays
+          the pair out as one picture — you on the left, the target on the right. It marks a POSITION,
+          not this wheel's zero; the zero is East on both (see COMPASS_DIRS above). */}
       {enemyPos==="N"&&<circle cx={cx} cy={cy-rMax-9} r={3.2} fill={C.danger}/>}
       {enemyPos==="S"&&<circle cx={cx} cy={cy+rMax+9} r={3.2} fill={C.danger}/>}
       {enemyPos==="E"&&<circle cx={cx+rMax+9} cy={cy} r={3.2} fill={C.danger}/>}
@@ -724,7 +742,7 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   );
 }
 
-function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj,targetFit,targetFitStats,onPickFit,onClearFit}){
+function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,angularSpeed,angularDistM,showTransversal,setShowTransversal,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj,targetFit,targetFitStats,onPickFit,onClearFit}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
   const fitActive=targetProfile===TARGET_FIT;
@@ -765,7 +783,17 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   // which is the number but not the meaning. Clearing the field puts it back to infinite.
   const sigVal = (tgtSig==null||tgtSig>=IDEAL_SIG) ? "" : Math.round(tgtSig);
   const trans = Math.round(transversalSpeed);
+  // Coloured off the transversal in both units. Angular has no threshold that means anything on its
+  // own — 0.05 rad/s is nothing to a frigate's guns and hopeless for a battleship's — so a scale built
+  // on it would be inventing a judgement. Tapping between the two units must not change the verdict.
   const transColor = trans<50?C.success:trans>400?C.danger:C.warning;
+  // rad/s spans orders of magnitude across a distance axis: ~2 at knife-fight range, ~0.001 at 200 km.
+  // A fixed decimal count either truncates the near end to 2.0000 or flattens the far end to 0.00.
+  // Not finite when the two hulls are touching and neither has a radius, which is a real reading at
+  // the very left of a distance axis on a fit with no ship resolved.
+  const fmtAngular = v => !Number.isFinite(v) ? "--" : v>=1 ? v.toFixed(2) : v>=0.1 ? v.toFixed(3) : v.toFixed(4);
+  // Whole km past 10, where a decimal would only jitter under a scrubbing finger.
+  const fmtRangeKm = m => { const km=m/1000; return km>=10?String(Math.round(km)):km.toFixed(1); };
   const inputStyle={width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${C.border}`,color:C.text};
   return(<div style={{background:C.surfaceAlt,borderRadius:10,border:`1px solid ${C.border}`,padding:12,marginBottom:14}}>
     <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Target Profile</div>
@@ -862,9 +890,16 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel} enemyPos="E"/>
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
         <div style={{width:1,height:18,background:C.border}}/>
-        <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center"}}>
-          <div style={{fontSize:14,fontWeight:800,color:transColor}}>{trans}</div>
-          <div style={{fontSize:8,color:C.textMute}}>m/s transversal</div>
+        {/* Tap to swap units. Transversal is what you fly and needs no context; angular velocity is
+            what a turret is judged against, since tracking is quoted in rad/s — but it only exists at
+            a range, so its label names the one it was taken at. Which of the two you think in is a
+            habit rather than a per-visit whim, so the choice sticks. */}
+        <div onClick={()=>setShowTransversal(v=>!v)} title={showTransversal?"Transversal — tap for angular velocity":"Angular velocity — tap for transversal"}
+             style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center",cursor:"pointer"}}>
+          <div style={{fontSize:14,fontWeight:800,color:transColor,fontVariantNumeric:"tabular-nums"}}>
+            {showTransversal?trans:fmtAngular(angularSpeed)}</div>
+          <div style={{fontSize:8,color:C.textMute}}>
+            {showTransversal?"m/s transversal":`rad/s @ ${fmtRangeKm(angularDistM)}km`}</div>
         </div>
         <div style={{width:1,height:18,background:C.border}}/>
       </div>
@@ -945,6 +980,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // `?? IDEAL_SIG` also migrates a setup persisted before Ideal became an explicit number, where
   // infinite sig was stored as null.
   const[tgtSig,setTgtSig]=useState(()=>gp('tgtSig',IDEAL_SIG)??IDEAL_SIG);
+  // Which unit the readout between the wheels shows. Transversal by default: it is the number you fly
+  // and it stands on its own, where angular velocity only means something once you also know the range
+  // it is read at. Angular is a tap away, and the choice sticks.
+  const[showTransversal,setShowTransversal]=useState(()=>gp('showTransversal',true));
   // The selected point, stored as its x VALUE so it survives the remount, follows a zoom, and
   // re-reads against another fit's curve when you switch fit tabs.
   const[cursorX,setCursorX]=useState(()=>gp('cursorX',null));
@@ -960,8 +999,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,xZoom,yZoom,cursorX]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX]);
   // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
   // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
   // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
@@ -1060,12 +1099,29 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // value, so zooming back out or switching to a longer-ranged fit restores the same point.
   const cursorLive=cursorX!=null&&cursorX<=xMax;
   const cursorY=cursorLive?interpCurveAt(pts,cursorX):null;
+  // Angular velocity is transversal over the range it is seen across, so unlike transversal it needs a
+  // distance to exist at all. Scrubbing a distance axis names one, and following the cursor is the
+  // point — that is the reading you would have in space at that range. Otherwise it falls back to the
+  // same engagement distance the speed and sig axes hold themselves at, and the readout quotes which
+  // range it used either way, so the number is never floating free of one.
+  const angularDistM=(validX==="dist"&&cursorLive)?cursorX*1000:engagementDistanceM(cs);
+  const angularSpeed=calcAngularSpeed(selfVelEff,selfAngle,cs?.shipRadius??0,angularDistM,targetVel,targetAngle,0);
   const displayVal=cursorY!=null?cursorY:baseHeadline;
   const displayX=cursorY!=null?cursorX:null;
-  // What the same point would be worth with application perfect, as a share. Shown only when there is
-  // a real gap — against an ideal target the two are the same number and the chip would be noise.
+  // What the same point would be worth with application perfect, as a share.
+  //
+  // Shown for the whole of a damage graph, including where it reads 100%. It used to appear only where
+  // the two curves differed, which meant scrubbing across the distance where a fit starts applying fully
+  // mounted and unmounted the line under the headline — and moved the graph below it — on every pass.
+  // A row that comes and goes while you are dragging along it is worse than a row that says 100%.
+  //
+  // Null only when there is no ghost column at all (every non-damage category), where the question does
+  // not exist. Past every weapon's range both columns are 0 and the share is 0/0, so that reads "--"
+  // rather than inventing a number, and the row keeps its height either way.
   const displayGhost=pts.length?(cursorY!=null?interpCurveAt(pts,cursorX,2):pts[_baseIdx][2]):null;
-  const appliedPct=(displayGhost>0&&displayVal!=null&&displayGhost>displayVal*1.005)?Math.round(displayVal/displayGhost*100):null;
+  const hasIdeal=displayGhost!=null;
+  // Clamped: application cannot beat perfect, and float dust at the ceiling must not print 101%.
+  const appliedPct=(displayGhost>0&&displayVal!=null)?Math.min(100,Math.round(displayVal/displayGhost*100)):null;
   const fmt=v=>v==null?"--":v>=10000?`${(v/1000).toFixed(1)}k`:v>=100?v.toFixed(0):v.toFixed(1);
   return(<div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
@@ -1148,7 +1204,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       <div>
         <span style={{fontSize:22,fontWeight:800,color:cat.color}}>{fmt(displayVal)}</span>
         <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span>
-        {appliedPct!=null&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct}%</div>}
+        {hasIdeal&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct!=null?`${appliedPct}%`:"--"}</div>}
       </div>
       <div style={{textAlign:"right"}}>
         {displayX!=null&&<div style={{fontSize:11,color:C.textMute}}>@ <span style={{color:C.text,fontWeight:600}}>{fmt(displayX)}</span> {xAxis?.label?.split(",")[0]}</div>}
@@ -1170,7 +1226,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}
       marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}}/></div>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} angularSpeed={angularSpeed} angularDistM={angularDistM} showTransversal={showTransversal} setShowTransversal={setShowTransversal} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}}/></div>}
     {showFitPicker&&<FitPickerSheet title="Target Fit" fitsDB={fitsDB??{}} pinned={openTabFits}
       onSelect={(shipName,fit)=>{setTargetFit({ship:shipName,name:fit.name});setTargetProfile(TARGET_FIT);}}
       onClose={()=>setShowFitPicker(false)}/>}

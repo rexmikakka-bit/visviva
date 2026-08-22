@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -2936,6 +2936,39 @@ Republic Fleet Command Mindlink`;
   // And the sig axis is not degenerate: a small target must still be mitigated, or the axis is
   // decorative. This is what the removed branch got wrong.
   check('ideal', 'a 40m frigate still mitigates a torpedo', calcMissileFactor(450, 71, 5.55, 0, 40) < 0.1 ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13c-2. VECTOR COMPASS FRAME — the two heading wheels share ONE frame
+//      Transversal is a single subtraction across one axis, so an attacker angle and a target angle
+//      only mean anything measured the same way round. The Target wheel used to draw its zero at its
+//      own enemy marker, 180 deg out of the frame its number is read in, so two arrows aligned on
+//      screen — a stern chase — computed as a head-on pass.
+//
+//      The wheels live in JSX the suite cannot import, so what is pinned here is the property the
+//      drawing has to express: same heading and same speed is zero transversal, and a 180 deg flip of
+//      one side is emphatically not free. If the second group ever reads zero, the two wheels can be
+//      drawn in opposite frames again without anything noticing.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nVECTOR COMPASS FRAME');
+  const D = { r: 0, dist: 1000 };
+  const ang = (aSpd, aDeg, tSpd, tDeg) => calcAngularSpeed(aSpd, aDeg, D.r, D.dist, tSpd, tDeg, D.r);
+  // Parallel flight, any heading: the sin terms are identical and cancel exactly.
+  let worstParallel = 0;
+  for (const a of [0, 37, 90, 151, 204, 270, 342])
+    worstParallel = Math.max(worstParallel, ang(1000, a, 1000, a));
+  check('vec', 'equal heading + equal speed = no transversal', worstParallel, 0, 0);
+  // Head-on across the line of sight: the components oppose and add up.
+  check('vec', 'opposed beam runs add up', ang(1000, 90, 1000, 270), 2, 1e-9);
+  // The bug, stated as a number: reading one wheel 180 deg out turns the user's own low-transversal
+  // pair into a near-worst-case one. 204 deg is the heading off the report that found this.
+  check('vec', 'flipping one wheel 180 deg is not free', ang(1000, 204, 1000, 204 + 180), 2 * Math.abs(Math.sin(204 * Math.PI / 180)), 1e-9);
+  // Radial flight contributes nothing from either side — the frame's zero is along the line of sight.
+  check('vec', 'closing head-on has no transversal', ang(5000, 0, 5000, 0), 0, 0);
+  check('vec', 'a stern chase has no transversal', ang(5000, 180, 5000, 180), 0, 0);
+  // pyfa's _calcAngularSpeed, hand-evaluated: |2000·sin(30) − 500·sin(150)| / (100 + 1000 + 50).
+  check('vec', 'matches pyfa\'s angular speed', calcAngularSpeed(2000, 30, 100, 1000, 500, 150, 50), 750 / 1150, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
