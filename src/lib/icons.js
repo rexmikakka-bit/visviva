@@ -66,6 +66,19 @@ const eveRender = (typeID, size = 64) => {
   return `https://images.evetech.net/types/${typeID}/render?size=${size}`;  // fallback (online only)
 };
 
+// A HERO-sized render, for the one place a hull's art is the subject rather than a label.
+//
+// This is the single spot in the app allowed to prefer the network, and it is safe precisely because
+// it cannot fail into nothing: the caller paints the bundled render first and only swaps this in once
+// it has decoded, so an offline device loses sharpness and keeps the picture. Do not reuse it anywhere
+// the image is the only image — that is what eveRender is for.
+//
+// It is fetched rather than bundled because the maths does not work: the art is ~13 KB per hull at
+// 256 but ~39 KB at 512, and across 440 hulls that is 5.6 MB against 17 MB — the latter roughly
+// doubling the app's download for a picture most sessions never open.
+const eveRenderHi = (typeID, size = 512) =>
+  typeID ? `https://images.evetech.net/types/${typeID}/render?size=${size}` : null;
+
 const hasLocalArt = () => Object.keys(_iconByID).length > 0;
 
-export { eveIcon, eveRender, hasLocalArt };
+export { eveIcon, eveRender, eveRenderHi, hasLocalArt };

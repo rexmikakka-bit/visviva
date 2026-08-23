@@ -804,8 +804,11 @@ function TraitsPanel({typeID, empty="No trait data available."}){
     <div style={{marginBottom:14}}>
       {header&&<div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{header}</div>}
       {(bonuses||[]).map((b,i)=>(
-        <div key={i} style={{display:'flex',gap:8,padding:'3px 0'}}>
-          {b.number&&<span style={{fontSize:12,fontWeight:700,color:C.accent,minWidth:44,flexShrink:0}}>{b.number}</span>}
+        <div key={i} style={{display:'flex',gap:6,padding:'2px 0'}}>
+          {/* No minimum width. Reserving one aligned the descriptions into a column at the cost of a
+              gutter after the short values that read as a missing word, and the values are all two to
+              four characters anyway, so the column was nearly straight without paying for it. */}
+          {b.number&&<span style={{fontSize:12,fontWeight:700,color:C.accent,flexShrink:0}}>{b.number}</span>}
           <span style={{fontSize:12,color:C.textMid}}>{b.text}</span>
         </div>
       ))}

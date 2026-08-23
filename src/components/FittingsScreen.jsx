@@ -3,7 +3,7 @@ import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.
 import { nextFitId } from "../lib/fit-tabs.js";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
-import { eveIcon, eveRender } from "../lib/icons.js";
+import { eveIcon, eveRender, eveRenderHi } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
 import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
@@ -229,8 +229,114 @@ function FitRow({ship, fit, active, act, tagColors, showShip, hideTag, onOpen}){
   </div>);
 }
 
+// The hull's art as the subject of its own sheet, the way the in-game show-info window does it.
+//
+// Two images, deliberately. The bundled render paints immediately and is the whole answer offline; the
+// hero-sized one is fetched and cross-faded in only once it has DECODED, which is why the swap is done
+// from an Image() rather than by pointing src at the network and hoping. Pointing src straight at it
+// would blank the frame for as long as the fetch took and leave it blank forever on a plane.
+//
+// The bundled art is 64px, so before the swap lands this is an upscale and looks it. That is the
+// intended trade — a soft picture reads as "loading", an empty box reads as broken — and it stops
+// mattering once the 256px hero set is bundled.
+function ShipHero({typeID, height, children}) {
+  const bundled = eveRender(typeID, 512);
+  const [hi, setHi] = useState(null);
+  useEffect(() => {
+    setHi(null);
+    const url = eveRenderHi(typeID, 512);
+    if (!url) return;
+    let dead = false;
+    const img = new Image();
+    img.onload = () => { if (!dead) setHi(url); };
+    img.src = url;
+    return () => { dead = true; };
+  }, [typeID]);
+
+  // CCP's renders are square with the hull centred, and this frame is a wide band, so `cover` cropped
+  // the nose and the engines off. Two copies of the same image instead: `contain` shows the whole hull,
+  // and a blurred, over-scaled `cover` copy fills the side bands it leaves behind. The alternative was
+  // letterboxing onto flat black, which reads as a broken image rather than a deliberate frame — these
+  // renders are JPEGs on a nebula backdrop, not transparent cutouts, so there is no third option.
+  //
+  // The blur layer is scaled past the frame because a blur samples beyond its own edges and would
+  // otherwise fade to transparent in a visible band down both sides.
+  // The pair fades as one — the opacity lives on the wrapper so the sharp copy cannot arrive ahead of
+  // its own backdrop.
+  const img = (src) => (
+    <div style={{position:'absolute',inset:0,opacity:1,transition:'opacity .35s ease'}}>
+      <img src={src} alt="" aria-hidden="true"
+           style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'cover',
+                   transform:'scale(1.2)',filter:'blur(22px) saturate(.75)',opacity:.6}}
+           onError={e=>{e.target.style.opacity='0';}}/>
+      <img src={src} alt="" aria-hidden="true"
+           style={{position:'absolute',inset:0,width:'100%',height:'100%',objectFit:'contain',
+                   objectPosition:'center 38%'}}
+           onError={e=>{e.target.style.opacity='0';}}/>
+    </div>
+  );
+  // Positioned OVER the sheet's scroll box rather than stacked above it, so that shrinking it changes
+  // no layout at all. Laid out in the flow, every pixel the hero gave up was a pixel the scroll box
+  // gained, which cut the scrollable distance by the same amount the scroll had just travelled — the
+  // browser then clamped scrollTop back, the hero grew again, and the two flip-flopped forever. The
+  // scroll box reserves the space with a fixed-height spacer instead.
+  //
+  // pointerEvents:none so a swipe that starts on the art still scrolls the content underneath; the
+  // close button opts back in.
+  return (
+    <div style={{position:'absolute',top:0,left:0,right:0,height,zIndex:3,overflow:'hidden',
+                 pointerEvents:'none',borderRadius:'16px 16px 0 0',background:'#05070b'}}>
+      {bundled && img(bundled)}
+      {hi && img(hi)}
+      {/* Two scrims doing different jobs. The vertical one dissolves the picture into the sheet so
+          there is no seam between art and UI; the corner one darkens only behind the title, because
+          these backdrops range from near-black to a bright nebula and white text cannot survive the
+          bright ones unaided. */}
+      {/* Kept low and late now that the hull is shown whole: the old stops started fading at a third
+          of the way down and washed out the middle of the ship. */}
+      <div style={{position:'absolute',inset:0,background:
+        `linear-gradient(to bottom, rgba(26,26,29,0) 64%, rgba(26,26,29,.55) 88%, ${C.surface} 100%)`}}/>
+      <div style={{position:'absolute',inset:0,background:
+        'linear-gradient(to top right, rgba(0,0,0,.6), rgba(0,0,0,.18) 45%, transparent 70%)'}}/>
+      {children}
+    </div>
+  );
+}
+
+// What the hero shrinks to once the content is scrolled. Set by what has to stay legible — the name
+// and the close button — not by a fraction of the full height.
+const HERO_MIN = 78;
+// The full height is the sheet's own WIDTH, because CCP's renders are square: at any other height the
+// hull is either cropped or floating in side bands. Capped so that a squat window cannot hand the
+// whole sheet to the picture and leave the tabs with nothing — the sheet itself stops at 92vh, and
+// this reserves the tab strip plus a couple of rows underneath it. A phone is nowhere near that cap
+// (390 wide against 844 tall), so on the device this is simply the full width.
+const heroMaxFor = (width, vh) => Math.max(HERO_MIN, Math.round(Math.min(width, vh * 0.92 - 34 - 120)));
+
 export function ShipInfoSheet({ship, cs, onClose}) {
   const [tab, setTab] = useState('traits');
+  // Scroll-driven, so no CSS transition on the height: the pixels are already coming one frame at a
+  // time and easing them would make the art lag the finger.
+  const [scrollY, setScrollY] = useState(0);
+  const scrollRef = useRef(null);
+  // Measured off the sheet rather than window.innerWidth, so the hero is square against the box it is
+  // actually in — the two agree today and would stop agreeing the moment this sheet is ever inset.
+  const sheetRef = useRef(null);
+  const [heroMax, setHeroMax] = useState(() => heroMaxFor(window.innerWidth, window.innerHeight));
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+    const sync = () => setHeroMax(heroMaxFor(el.clientWidth, window.innerHeight));
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // A short tab leaves nothing to scroll, so a hero collapsed on the previous tab would have no way
+  // back up. Reset both the container and our copy of its position whenever the content changes.
+  useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; setScrollY(0); }, [tab, ship?.typeID]);
+  const collapse = Math.min(1, Math.max(0, scrollY) / Math.max(1, heroMax - HERO_MIN));
+  const heroH = heroMax - (heroMax - HERO_MIN) * collapse;
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
@@ -314,36 +420,74 @@ export function ShipInfoSheet({ship, cs, onClose}) {
     <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column'}}
          onClick={onClose}>
       <div style={{flex:1,background:'rgba(0,0,0,.5)'}}/>
-      <div style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'85vh',
+      {/* Taller than the usual sheet because the art is the point of it — and the cap has to clear
+          HERO_MAX plus the tab strip, or the picture is paying for the extra height without showing
+          any more of the ship. */}
+      <div ref={sheetRef}
+           style={{position:'relative',background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'92vh',
                    display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}}
            onClick={e=>e.stopPropagation()}>
-        <div style={{display:'flex',alignItems:'center',gap:12,padding:'16px 16px 12px',borderBottom:`1px solid ${C.border}`}}>
-          <img src={eveIcon(ship?.typeID,64)}
-               style={{width:48,height:48,borderRadius:8,background:'#0d0d1a',flexShrink:0}}
-               onError={e=>e.target.style.opacity='0'} alt=""/>
-          <div>
-            <div style={{fontSize:16,fontWeight:700,color:C.text}}>{ship?.name}</div>
-            <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{ship?.groupName}</div>
+        <ShipHero typeID={ship?.typeID} height={heroH}>
+          {/* The grab handle moves onto the art rather than sitting above it — the sheet has no
+              header bar left to hold it, and the picture goes all the way to the top edge. */}
+          <div style={{position:'absolute',top:8,left:'50%',transform:'translateX(-50%)',width:36,height:4,
+                       borderRadius:2,background:'rgba(255,255,255,.35)'}}/>
+          {/* Close sits on its own scrim: over a bright nebula a bare glyph disappears. */}
+          <button onClick={onClose} aria-label="Close"
+            style={{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:15,border:'none',
+                    cursor:'pointer',color:'#fff',fontSize:18,lineHeight:1,pointerEvents:'auto',
+                    background:'rgba(0,0,0,.42)',backdropFilter:'blur(6px)'}}>×</button>
+          <div style={{position:'absolute',left:16,right:16,bottom:10}}>
+            {/* Faction and class, in the eyebrow-over-name order the snapshot card already uses, so a
+                hull introduces itself the same way wherever you meet it. hullClass is CCP's own group
+                name via lookupShip — ships.json's is wrong on 64 hulls.
+                It gives up its height as well as its opacity on collapse: fading it in place would
+                leave the name floating over a blank strip. */}
+            {/* lineHeight stated rather than inherited: the box is sized in pixels to collapse it, and
+                the app's inherited line-height is taller than that box, so the descender row of the
+                capitals was being clipped off. */}
+            <div style={{fontSize:10,lineHeight:'14px',letterSpacing:'.5px',fontWeight:700,
+                         textTransform:'uppercase',color:C.accent,textShadow:'0 1px 3px rgba(0,0,0,.8)',
+                         opacity:1-collapse,height:(1-collapse)*14,overflow:'hidden',
+                         whiteSpace:'nowrap',textOverflow:'ellipsis'}}>
+              {[ship?.race, ship?.hullClass ?? ship?.groupName].filter(Boolean).join(' • ')}
+            </div>
+            {/* Shrinks toward a header-bar-sized title rather than scrolling away, so the collapsed
+                hero still says which ship you are reading about. */}
+            <div style={{fontSize:26-collapse*9,fontWeight:700,letterSpacing:'-.01em',lineHeight:1.1,
+                         color:'#fff',textTransform:'uppercase',textShadow:'0 2px 10px rgba(0,0,0,.75)',
+                         whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+              {ship?.name}
+            </div>
           </div>
-          <button onClick={onClose} style={{marginLeft:'auto',background:'none',border:'none',
-            color:C.textMute,fontSize:20,cursor:'pointer',padding:'0 4px'}}>×</button>
-        </div>
-        <div style={{display:'flex',borderBottom:`1px solid ${C.border}`}}>
-          {tabs.map(t => (
-            <button key={t} onClick={()=>setTab(t)}
-              style={{flex:1,padding:'9px 4px',background:'none',border:'none',cursor:'pointer',
-                      fontSize:12,fontWeight:600,color:tab===t?C.accent:C.textMute,
-                      borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',
-                      textTransform:'capitalize'}}>
-              {t}
-            </button>
-          ))}
-        </div>
-        {/* The bottom inset is on the SCROLL container, not the sheet: this sheet is hand-rolled and
+        </ShipHero>
+        {/* minHeight:0 because a flex child will not shrink below its content by default, which would
+            let the sheet grow past its own cap instead of this box scrolling — and the hero collapse
+            is driven entirely by this box's scrollTop. */}
+        <div ref={scrollRef} onScroll={e=>setScrollY(e.currentTarget.scrollTop)}
+             style={{flex:1,minHeight:0,overflowY:'auto'}}>
+          {/* The hero's reserved space. Fixed at the hero's FULL height while the hero itself shrinks,
+              which is what keeps the scrollable distance constant — see the note on ShipHero. */}
+          <div style={{height:heroMax}}/>
+          {/* Sticks at exactly the hero's collapsed height, so the two arrive together: the strip stops
+              travelling on the same pixel the art stops shrinking. */}
+          <div style={{position:'sticky',top:HERO_MIN,zIndex:2,display:'flex',background:C.surface,
+                       borderBottom:`1px solid ${C.border}`}}>
+            {tabs.map(t => (
+              <button key={t} onClick={()=>setTab(t)}
+                style={{flex:1,padding:'9px 4px',background:'none',border:'none',cursor:'pointer',
+                        fontSize:12,fontWeight:600,color:tab===t?C.accent:C.textMute,
+                        borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',
+                        textTransform:'capitalize'}}>
+                {t}
+              </button>
+            ))}
+          </div>
+        {/* The bottom inset is on the SCROLLED content, not the sheet: this sheet is hand-rolled and
             sits flush on the bottom edge, so without it the last line of a description ends up under
             the home indicator and inside the screen's curved corners. Padding here scrolls with the
             content, so that line can be brought clear rather than merely being given a smaller box. */}
-        <div style={{flex:1,overflowY:'auto',padding:'14px 16px calc(28px + env(safe-area-inset-bottom, 0px))'}}>
+        <div style={{padding:'14px 16px calc(28px + env(safe-area-inset-bottom, 0px))'}}>
           {tab==='traits' && <TraitsPanel typeID={ship?.typeID}/>}
           {/* pre-wrap: CCP's descriptions are multi-paragraph, separated by blank lines; without
               it they collapse into one undifferentiated wall of text. */}
@@ -403,6 +547,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
               })}
             </div>
           )}
+        </div>
         </div>
       </div>
     </div>
