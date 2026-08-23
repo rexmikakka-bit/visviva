@@ -742,10 +742,7 @@ function buildSlotsFromEFT(ship,parsedMods,subsystems){
     const isRigMod=secKey==="rigs";
     const modType=isCapBooster?"capbooster":isWeaponMod?"weapon":isRigMod?"rig":"passive";
     const hasCycle=!!(modInfo?.duration&&modInfo.duration>0)||(modInfo?.capUse!=null&&modInfo.capUse>0)||!!(mod.typeID&&TYPES[mod.typeID]?.attrs?.duration>0);
-    // Micro Jump Drives / Field Generators cycle but shouldn't count as "active" for stats — default online.
-    const _gName=TYPES[mod.typeID]?.gn??TYPES[mod.typeID]?.groupName??'';
-    const isMJD=/Micro Jump Drive|Micro Jump Field Generator/i.test(_gName);
-    const defaultState=isRigMod?"online":isMJD?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
+    const defaultState=isRigMod?"online":isMicroJumpDrive(mod.typeID)?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
     const state=mod.state??defaultState;
     // Compute maxCharges from module capacity and charge volume:
     let maxChargesVal = undefined;
@@ -1184,6 +1181,21 @@ function groupChargesForBrowser(charges){
     return a.range-b.range||a.family.localeCompare(b.family);
   });
   return groups;
+}
+
+// Micro Jump Drives and Field Generators cycle, so the "anything that cycles starts active" default
+// would light them up — but an MJD is a one-shot escape, not something you sit there running, and
+// leaving it on charges the fit for cap it will never actually spend. Both places that fit a module
+// (the browser, and an imported EFT) have to agree on this, so the rule lives here rather than being
+// restated in each.
+// The group name alone is not enough: the capital pair is filed under "Capital Mobility Modules",
+// so the name is tested too, anchored at the end to keep out the "Micro Jump Drive Operation" skill
+// and the "Mobile Micro Jump Unit" deployable, neither of which is ever fitted to a slot.
+export function isMicroJumpDrive(typeID){
+  const t=TYPES[typeID]??TYPES[String(typeID)];
+  if(!t)return false;
+  return /Micro Jump (Drive|Field Generator)/i.test(t.gn??t.groupName??'')
+      || /Micro Jump (Drive|Field Generator)$/i.test(t.n??t.name??'');
 }
 
 // True if a module accepts charges (reads chargeGroup1-6 from authoritative TYPES data).

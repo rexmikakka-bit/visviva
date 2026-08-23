@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -4162,6 +4162,63 @@ Republic Fleet Command Mindlink`;
   const rig = validStatesFor(modOf('Small Core Defense Field Extender I', 'rig'));
   check('gesture', 'a rig refuses every gesture',
     GESTURES.filter((g) => gestureTarget(rig, 'online', g) === null).length, 3, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16b. MICRO JUMP DRIVES DEFAULT TO ONLINE, NOT ACTIVE
+//
+// Every other cycling module starts running when you fit it, which is the right default for a
+// hardener or a repairer — but an MJD is a one-shot escape, not something you sit there cycling. Left
+// active it charges the fit ~1000 GJ of cap it will never actually spend, so the cap column reads
+// wrong on any fit carrying one.
+//
+// The bug was DRIFT between the two places a module's default state is decided: buildSlotsFromEFT
+// (EFT paste and ESI import) already forced them online, and the in-app module browser did not — so
+// the same fit read differently depending on how it was built. The rule now lives in ONE exported
+// predicate that both call, and this section pins the predicate rather than either call site.
+//
+// Matching on the group name alone is not enough: the three capital MJDs are filed under "Capital
+// Mobility Modules", so the type name is tested too. Anchoring that at the end is what keeps out the
+// "Micro Jump Drive Operation" skill and the "Mobile Micro Jump Unit" / "Tournament Micro Jump Unit"
+// deployables — none of which is ever fitted to a slot.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMICRO JUMP DRIVE DEFAULT STATE');
+
+  for (const n of ['Medium Micro Jump Drive', 'Large Micro Jump Drive', 'Capital Micro Jump Drive',
+                   'Xarasier Medium Micro Jump Drive', 'Xarasier Large Micro Jump Drive',
+                   'Xarasier Capital Micro Jump Drive', 'Micro Jump Field Generator',
+                   'Capital Micro Jump Field Generator'])
+    check('mjd', `${n} is an MJD`, isMicroJumpDrive(tid(n)) ? 1 : 0, 1, 0);
+
+  // The near misses, each a different way the match could over-reach: a SKILL whose name starts with
+  // the module's, two DEPLOYABLES that do the same job from a can, and the prop mods an MJD sits
+  // beside in the mid rack and which must keep starting active.
+  for (const n of ['Micro Jump Drive Operation', 'Mobile Micro Jump Unit', 'Tournament Micro Jump Unit',
+                   '500MN Microwarpdrive II', '1MN Afterburner II', 'Damage Control II'])
+    check('mjd', `${n} is not`, isMicroJumpDrive(tid(n)) ? 1 : 0, 0, 0);
+
+  // Swept over the whole bundle, not just the names above: a regex written against a handful of names
+  // can quietly swallow a group, and the count is what notices. Eight is every fittable MJD there is.
+  let matched = 0;
+  for (const id in TYPES) if (isMicroJumpDrive(id)) matched++;
+  check('mjd', 'exactly the 8 fittable MJDs match', matched, 8, 0);
+
+  // End to end through the import path, which is the half that was already correct — it is here so a
+  // change to the shared predicate cannot fix one site and break the other.
+  const eft = `[Megathron, MJD test]
+
+Large Micro Jump Drive
+500MN Quad LiF Restrained Microwarpdrive
+`;
+  const p = parseEFT(eft);
+  const slots = buildSlotsFromEFT(lookupShip(p.shipName), p.mods, p.subsystems);
+  const stateOf = (name) => slots.mid.find((m) => m.name === name)?.state;
+  check('mjd', 'an imported MJD arrives online', stateOf('Large Micro Jump Drive'), 'online', 0);
+  // The control: the module beside it in the same rack still starts running, so "online" is a rule
+  // about MJDs and not a regression in the cycling default itself.
+  check('mjd', 'an imported MWD still arrives active',
+    stateOf('500MN Quad LiF Restrained Microwarpdrive'), 'active', 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
