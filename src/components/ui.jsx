@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT } from "../lib/core.js";
+import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, fitCostRatioOf, fitCostFits } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -906,23 +906,20 @@ const CalGlyph = ({size=10,color="currentColor"}) => (
 // green throughout the UI, so it is a real association rather than decoration.
 const RES_INK = { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig };
 
-// `headroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}} for the fit the module
-// would be added to. Given it, a figure the fit cannot afford turns red — the same mark the Variations
-// tab puts on a swap that won't fit. The browser is only ever opened on an EMPTY slot, so unlike the
-// variations case there is no fitted module to back out first: the room left is just total - used.
+// `headroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}, ratios} for the fit the
+// module would be added to. Given it, a figure the fit cannot afford turns red — the same mark the
+// Variations tab puts on a swap that won't fit. The browser is only ever opened on an EMPTY slot, so
+// unlike the variations case there is no fitted module to back out first: the room left is just
+// total - used.
 //
 // Only the NUMBER tints; the glyph keeps its own hue so the icon goes on meaning "this is PG/CPU/
-// calibration" rather than "fits/doesn't". Same base-attribute arithmetic as the figure it colours,
-// which is deliberately not a claim about the engine's skill-adjusted cost to the tf — Weapon Upgrades
-// and its kin can shave up to 25% off what a module is actually charged, so this errs toward flagging
-// early rather than promising a fit it can't guarantee.
+// calibration" rather than "fits/doesn't". Exact whenever the fit already carries a module of the
+// same group (a fifth launcher, a second plate) and best-effort otherwise, which is the common case
+// for the first module of its kind.
 function FitCost({item, size=11, headroom}) {
   const {cpu,pg,calib} = fitCostParts(item);
-  const fits = (key, val) => {
-    const hr = headroom?.[key];
-    if (!hr) return null;
-    return val <= (hr.total ?? 0) - (hr.used ?? 0) + 1e-6;
-  };
+  const ratio = fitCostRatioOf(headroom, item?.typeID);
+  const fits = (key, val) => fitCostFits(headroom?.[key], val, 0, ratio?.[key]);
   // Same glyph size FitCostDelta uses in the Variations tab (no size*0.95 shrink) — at ~10px the
   // CPU chip's corner pins were fine enough to disappear into a blob, reading as an unrelated diamond
   // rather than the same icon shown one tab over.
@@ -986,14 +983,19 @@ function DeltaMark({dir, text, better}) {
 // `baseTypeID` null = this IS the fitted module: show the values as a reference, with nothing to
 // compare them against.
 //
-// `resourceHeadroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}} for the fit
-// this module sits in. When given (and this isn't the fitted-module reference row), each figure's
+// `resourceHeadroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}, ratios} for the
+// fit this module sits in. When given (and this isn't the fitted-module reference row), each figure's
 // number tints red if the SWAP wouldn't fit (stays the normal colour if it would) — the glyph is
 // left alone so the icon's own colour keeps meaning "this is PG/CPU/calibration", not "fits/doesn't".
 // Rest of the fit's usage is `used - base` (backing the fitted module out), so
-// `val <= total - (used - base)` is "yes, room for it". Deliberately base-attribute arithmetic, same
-// as the delta above it — not a claim that this matches the engine's skill-adjusted cost to the tf,
-// just whether the swap is in the right ballpark.
+// `val <= total - (used - base)` is "yes, room for it".
+//
+// Both sides of that are scaled by the fitted module's group multiplier first, because `used` is
+// engine-computed while `val`/`base` are base attributes — see `costRatio`. Here it is always EXACT:
+// the module being measured against is by definition fitted, so its own ratio is in the map. The
+// ratio is taken from the FITTED module rather than each variant, which is also what makes a family
+// that straddles two dogma groups (a Medium Ancillary Remote Shield Booster next to a plain one)
+// come out right.
 //
 // `mutations` (optional): the FITTED module's abyssal roll. It describes the module every row is
 // measured against, so it applies to `b` on every variant row, and to `v` only on the fitted module's
@@ -1007,12 +1009,11 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
   // With DeltaMark as a flex child it was getting gap(3.5) + marginLeft(3) = 6.5px, visibly wider.
   const cell = k => ({display:"inline-flex",alignItems:"center",gap:3.5,color:RES_INK[k]});
   const num  = {color:C.text,fontWeight:700};
+  const ratio = fitCostRatioOf(resourceHeadroom, baseTypeID);
   const part = (key, Glyph, val, base, unit) => {
     const d = val - base;
-    const hr = resourceHeadroom?.[key];
-    const fits = (hr && baseTypeID != null)
-      ? val <= (hr.total ?? 0) - (hr.used ?? 0) + base + 1e-6
-      : null;
+    const fits = baseTypeID == null ? null
+      : fitCostFits(resourceHeadroom?.[key], val, base, ratio?.[key]);
     return (
       <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}${fits == null ? '' : fits ? ' — fits' : " — won't fit"}`}>
         <span style={{display:"inline-flex",alignItems:"center",gap:3.5}}>

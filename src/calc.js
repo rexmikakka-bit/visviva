@@ -978,9 +978,10 @@ function moduleStrengthStats(fitItem) {
       // Carried alongside the figure rather than hardcoded at the tooltip: these used to be GJ-only
       // modules, and remote reps are HP.
       out.strengthPerSecUnit = def.unit.trim();
-      // Carried alongside the figure rather than hardcoded at the tooltip: these used to be GJ-only
-      // modules, and remote reps are HP.
-      out.strengthText  += `/${cycleS}s`;
+      // Both figures on the row. The per-cycle amount is what you compare between modules of the same
+      // size, but the sustained rate is what decides whether a neut wins the cap war or a logi holds
+      // the rep, and it used to live only in the tooltip — which is a tap away on a phone.
+      out.strengthText += `/${cycleS}s (${out.strengthPerSec}${def.unit}/s)`;
     }
   }
   return out;
@@ -1966,6 +1967,36 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     cpuUsed += (fitItem.get('cpu')         ?? 0);
     pgUsed  += (fitItem.get('power')       ?? 0);
     calUsed += (fitItem.get('upgradeCost') ?? 0);
+  }
+
+  // What a module is actually CHARGED, over what its type says it costs.
+  //
+  // The three figures above are engine-computed — Weapon Upgrades, Advanced Weapon Upgrades, hull
+  // fitting bonuses and engineering rigs are all already in them. The cost printed against a module
+  // in the browser and the Variations tab is deliberately its BASE attribute (that is what a player
+  // expects to read off an item), so a go/no-go test that compares the one against the other invents
+  // headroom that does not exist: a Scimitar halves remote shield booster CPU, so a 61 tf variant
+  // measured against a backed-out base of 78 looks like it fits when the real question is 30.5
+  // against 39. Handing the ratio out lets the UI keep printing base values and still colour
+  // honestly.
+  //
+  // Keyed by dogma GROUP, and one entry per group is enough, because every member of a variant
+  // family takes the same multiplier: fitting-reduction modifiers filter on group and on required
+  // skills, and neither varies across a family. Regression section 16c sweeps that.
+  // State is not consulted — a modifier applies to an offline module as much as an online one, and
+  // the ratio is what its cost WOULD be, which is exactly the question the browser is asking.
+  const fitCostRatios = new Map();
+  for (const { slot, fitItem } of modItems) {
+    if (!fitItem) continue;
+    const gn = TYPES[slot.typeID]?.gn ?? TYPES[String(slot.typeID)]?.gn;
+    if (!gn || fitCostRatios.has(gn)) continue;
+    // A zero base is a module that does not use the resource at all; 1 keeps it a no-op rather than
+    // a NaN that would silently disable the colouring.
+    const ratio = (attr) => {
+      const b = fitItem.getBase(attr) ?? 0;
+      return b > 0 ? (fitItem.get(attr) ?? 0) / b : 1;
+    };
+    fitCostRatios.set(gn, { cpu: ratio('cpu'), pg: ratio('power'), cal: ratio('upgradeCost') });
   }
 
   // ── 7. Capacitor ──────────────────────────────────────────────────────────
@@ -3712,6 +3743,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     pgTotal:  Math.round(pgTotal  * 100) / 100,
     calUsed:  Math.round(calUsed),
     calTotal: ship.calibration ?? 400,
+    // Group name -> {cpu, pg, cal} multiplier; see where it is built for why the fitting UI needs it.
+    // Unrounded on purpose: it is scaled onto a cost before being compared, so rounding it here
+    // would land on the wrong side of a fit that clears by a fraction of a tf.
+    fitCostRatios,
 
     // HP
     shieldHP, armorHP, hullHP,

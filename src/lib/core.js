@@ -1198,6 +1198,38 @@ export function isMicroJumpDrive(typeID){
       || /Micro Jump (Drive|Field Generator)$/i.test(t.n??t.name??'');
 }
 
+// ── Fitting go/no-go ─────────────────────────────────────────────────────────
+// The cost printed against a module in the browser and the Variations tab is deliberately its BASE
+// attribute — that is what show-info says, and what a player expects to read off an item. The fit's
+// used/total are engine-computed, with skills, hull bonuses and engineering rigs already applied.
+// Comparing one against the other is what used to make the mark lie: on a Scimitar, which halves
+// remote shield booster CPU, a 61 tf variant measured against a backed-out base of 78 read as
+// fitting when the real question was 30.5 against 39.
+//
+// So the base cost is scaled by its group's multiplier before the comparison. calcFitStats hands the
+// multipliers out as `fitCostRatios` (group name -> {cpu,pg,cal}); these two functions are the only
+// place either the lookup or the arithmetic happens, so the browser and the Variations tab cannot
+// drift apart on the answer.
+
+// Null when nothing of that group is fitted, which is only reachable from the browser — the
+// Variations tab measures against a module that is by definition already on the fit.
+export function fitCostRatioOf(headroom,typeID){
+  const gn=TYPES[typeID]?.gn??TYPES[String(typeID)]?.gn;
+  return (gn?headroom?.ratios?.get(gn):null)??null;
+}
+
+// `base` is the cost being displaced: the fitted module's base cost for a swap, 0 when filling an
+// empty slot. Both it and `val` are base attributes, so BOTH get scaled — the module coming out was
+// only ever charged its effective cost, and backing out the base frees room that never existed.
+// `m` null (nothing of the group fitted) falls back to 1, which is the pre-ratio behaviour and errs
+// the same way it always did: toward flagging early, since these modifiers only ever reduce a cost.
+// Null when there is no headroom to test against, meaning "no opinion" rather than "won't fit".
+export function fitCostFits(hr,val,base=0,m=1){
+  if(!hr)return null;
+  const k=m??1;
+  return val*k<=(hr.total??0)-(hr.used??0)+base*k+1e-6;
+}
+
 // True if a module accepts charges (reads chargeGroup1-6 from authoritative TYPES data).
 // Used for module classification and charge-tab gating so any chargeable module works going forward.
 function moduleTakesCharges(typeID,name){

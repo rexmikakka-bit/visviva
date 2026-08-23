@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -3364,9 +3364,13 @@ Republic Fleet Command Mindlink`;
   // ...but never both forms at once: values-with-names supersedes names-only.
   check('str', 'a split figure carries no name-only list', String(st('sebo').strengthAttrs), 'undefined');
   check('str', 'a single-attribute module carries neither', String(st('paint').strengthAttrs), 'undefined');
-  check('str', 'Small Energy Neutralizer II', txt('neut'), '55 GJ/6s');
+  // Per-cycle amount AND sustained rate, both on the row. The amount is what you compare between two
+  // modules of the same size; the rate is what decides the cap war, and it used to be tooltip-only —
+  // which on a phone is a tap away. The cycle stays because it is the third quantity, not a repeat:
+  // it is what tells you how long you have to hold the target.
+  check('str', 'Small Energy Neutralizer II', txt('neut'), '55 GJ/6s (9.2 GJ/s)');
   check('str', 'neut GJ per second', st('neut').strengthPerSec, 9.2, 1e-9);
-  check('str', 'Small Energy Nosferatu II', txt('nos'), '10 GJ/2.5s');
+  check('str', 'Small Energy Nosferatu II', txt('nos'), '10 GJ/2.5s (4 GJ/s)');
   // Tackle carries warpScrambleStrength and would read "2 pts", but the figure is fixed per module
   // and already implied by the name, so it is left off the row on purpose. Asserted so it cannot
   // drift back in as a side effect of widening the table.
@@ -3465,21 +3469,23 @@ Republic Fleet Command Mindlink`;
   const csMut = calcFitStats(guardian, { high: [mut], mid: [], low: [], rigs: [] }, [], null, {});
   const sr = k => csRR.slotEngineStats.get(rr[k]) ?? {};
 
-  check('str', 'Large Remote Armor Repairer II', String(sr('rarmor').strengthText), '512 HP/6s');
+  check('str', 'Large Remote Armor Repairer II', String(sr('rarmor').strengthText), '512 HP/6s (85.3 HP/s)');
   check('str', 'remote armor rep HP per second', sr('rarmor').strengthPerSec, 85.3, 1e-9);
   // The per-second unit travels with the figure. It was hardcoded to GJ back when neuts and nos were
-  // the only per-cycle rows, which would have printed "85.3 GJ/s" for an armor repairer.
+  // the only per-cycle rows, which would have printed "85.3 GJ/s" for an armor repairer. Now that the
+  // rate is on the row rather than in the tooltip, that mistake would be visible on every logi fit.
   check('str', 'remote rep names HP, not GJ', String(sr('rarmor').strengthPerSecUnit), 'HP');
   check('str', 'remote cap transmitter still names GJ', String(sr('rcap').strengthPerSecUnit), 'GJ');
-  check('str', 'Large Remote Capacitor Transmitter II', String(sr('rcap').strengthText), '351 GJ/5s');
-  check('str', 'Large Remote Shield Booster II', String(sr('rshield').strengthText), '680 HP/8s');
-  check('str', 'Large Remote Hull Repairer II', String(sr('rhull').strengthText), '230 HP/6s');
+  check('str', 'Large Remote Capacitor Transmitter II', String(sr('rcap').strengthText), '351 GJ/5s (70.2 GJ/s)');
+  check('str', 'Large Remote Shield Booster II', String(sr('rshield').strengthText), '680 HP/8s (85 HP/s)');
+  check('str', 'Large Remote Hull Repairer II', String(sr('rhull').strengthText), '230 HP/6s (38.3 HP/s)');
   check('str', 'Heavy Mutadaptive Remote Armor Repairer I unspooled',
-        String((csMut.slotEngineStats.get(mut) ?? {}).strengthText), '392 HP/6s');
+        String((csMut.slotEngineStats.get(mut) ?? {}).strengthText), '392 HP/6s (65.3 HP/s)');
   // eos (module.py getRepAmount) keys the x3 purely on "a charge is loaded" — an ARAR takes nothing
   // but paste. The bare attribute is 37; printing that would understate a loaded one by two thirds.
-  check('str', 'a paste-loaded ARAR reps x3', String(sr('ararPaste').strengthText), '111 HP/3s');
-  check('str', 'an unloaded ARAR reps its bare amount', String(sr('ararBare').strengthText), '37 HP/3s');
+  // The rate is multiplied too, which is the half a tooltip-only figure let slide unnoticed.
+  check('str', 'a paste-loaded ARAR reps x3', String(sr('ararPaste').strengthText), '111 HP/3s (37 HP/s)');
+  check('str', 'an unloaded ARAR reps its bare amount', String(sr('ararBare').strengthText), '37 HP/3s (12.3 HP/s)');
   check('str', 'paste-loaded ARAR HP per second', sr('ararPaste').strengthPerSec, 37, 1e-9);
 }
 
@@ -4219,6 +4225,130 @@ Large Micro Jump Drive
   // about MJDs and not a regression in the cycling default itself.
   check('mjd', 'an imported MWD still arrives active',
     stateOf('500MN Quad LiF Restrained Microwarpdrive'), 'active', 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 16c. FITTING GO/NO-GO — base costs measured against engine-computed headroom
+//
+// A user reported the Variations tab marking a swap as fitting, then going over CPU when he made it.
+// It was a unit mismatch, not a rounding one: `used`/`total` come from calcFitStats and already carry
+// skills, hull bonuses and engineering rigs, while the cost printed against each variant is
+// deliberately its BASE attribute — which is what show-info says and what he wants to read. Backing
+// the fitted module out at its BASE cost therefore frees room the fit never had.
+//
+// The Scimitar makes it plain because its role bonus halves remote shield booster CPU. The fit below
+// is his, and it is already over: 568.5 tf used against 556.25 available. Swapping the third Pithum
+// (base 78, charged 39) for a Gistum (base 61, charged 30.5) takes it to 560 — still over. The old
+// arithmetic asked `61 <= 556.25 - 568.5 + 78`, i.e. is there 65.75 tf of room, and said yes.
+//
+// The fix is `fitCostFits`, which scales BOTH the incoming cost and the displaced one by the group's
+// multiplier before comparing. Both checks below are kept, the old form beside the new, because the
+// bug is only visible as the disagreement between them.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFITTING GO/NO-GO (base cost vs engine headroom)');
+
+  const scimEFT = (third) => `[Scimitar, nano rtc xlasb]
+
+Damage Control II
+True Sansha Capacitor Power Relay
+True Sansha Power Diagnostic System
+True Sansha Power Diagnostic System
+
+50MN Cold-Gas Enduring Microwarpdrive
+Multispectrum Shield Hardener II
+Republic Fleet Large Shield Extender
+Shadow Serpentis Remote Tracking Computer
+X-Large Ancillary Shield Booster, Navy Cap Booster 400
+
+Pithum C-Type Medium Remote Shield Booster
+Pithum C-Type Medium Remote Shield Booster
+${third}
+Gistum C-Type Medium Remote Shield Booster
+
+Medium Capacitor Control Circuit II
+Medium Capacitor Control Circuit II
+`;
+  const scimStats = (third) => {
+    const p = parseEFT(scimEFT(third));
+    const ship = lookupShip(p.shipName);
+    return calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {});
+  };
+  const PITHUM = 'Pithum C-Type Medium Remote Shield Booster';
+  const GISTUM = 'Gistum C-Type Medium Remote Shield Booster';
+  const before = scimStats(PITHUM);
+  const after  = scimStats(GISTUM);
+
+  // The fit as he had it, and as it reads after the swap. Both over the 556.25 tf the hull provides,
+  // which is what makes "won't fit" the right answer and the old mark a lie rather than a rounding
+  // disagreement. These three matched his device to the decimal.
+  check('gono', 'Scimitar cpuTotal', before.cpuTotal, 556.25, 1e-9);
+  check('gono', 'cpuUsed with 3 Pithum', before.cpuUsed, 568.5, 1e-9);
+  check('gono', 'cpuUsed after swapping one for a Gistum', after.cpuUsed, 560, 1e-9);
+
+  // The multiplier itself. 0.5 is the Scimitar's role bonus to Shield Emission Systems CPU; the two
+  // controls are there because a map that returned 0.5 for everything would pass the check above.
+  const ratios = before.fitCostRatios;
+  const hr = { pg:  {used:before.pgUsed,  total:before.pgTotal},
+               cpu: {used:before.cpuUsed, total:before.cpuTotal},
+               cal: {used:before.calUsed, total:before.calTotal}, ratios };
+  check('gono', 'remote shield boosters are charged half CPU', fitCostRatioOf(hr, tid(PITHUM))?.cpu, 0.5, 1e-9);
+  check('gono', 'the MWD is charged full CPU', fitCostRatioOf(hr, tid('50MN Cold-Gas Enduring Microwarpdrive'))?.cpu, 1, 1e-9);
+  // Not every reduction is a hull bonus: Shield Upgrades takes 25% off a shield extender's POWERGRID
+  // and nothing off its CPU, so the two resources have to be tracked apart.
+  const ext = fitCostRatioOf(hr, tid('Republic Fleet Large Shield Extender'));
+  check('gono', 'shield extender powergrid is skill-reduced', ext?.pg, 0.75, 1e-9);
+  check('gono', 'shield extender CPU is not', ext?.cpu, 1, 1e-9);
+
+  // The bug and the fix, side by side, on the exact swap he made. `m = 1` is the arithmetic that
+  // shipped; anything that makes the second of these come out true has reintroduced it.
+  const baseCpuOf = (n) => TYPES[tid(n)]?.attrs?.cpu ?? TYPES[String(tid(n))]?.a?.cpu;
+  check('gono', 'Pithum base CPU', baseCpuOf(PITHUM), 78, 1e-9);
+  check('gono', 'Gistum base CPU', baseCpuOf(GISTUM), 61, 1e-9);
+  check('gono', 'unscaled, the swap wrongly reads as fitting',
+    fitCostFits(hr.cpu, baseCpuOf(GISTUM), baseCpuOf(PITHUM), 1) ? 1 : 0, 1, 0);
+  check('gono', 'scaled, the swap correctly reads as not fitting',
+    fitCostFits(hr.cpu, baseCpuOf(GISTUM), baseCpuOf(PITHUM), fitCostRatioOf(hr, tid(PITHUM)).cpu) ? 1 : 0, 0, 0);
+  // Powergrid on the same swap is unaffected and must stay a yes — the fix is not "flag more things".
+  check('gono', 'the same swap still fits on powergrid',
+    fitCostFits(hr.pg, TYPES[tid(GISTUM)].attrs.power, TYPES[tid(PITHUM)].attrs.power, 1) ? 1 : 0, 1, 0);
+
+  // The BROWSER case: an empty slot, so nothing is displaced and `base` is 0. A 78 tf module charged
+  // 39 fits in 50 tf of room; unscaled it would be turned away. The null ratio is the fallback for a
+  // group nothing is fitted from yet — it errs toward flagging early, which is the old behaviour.
+  const room = {used: 0, total: 50};
+  check('gono', 'browser: a half-price module fits the room it really needs',
+    fitCostFits(room, 78, 0, 0.5) ? 1 : 0, 1, 0);
+  check('gono', 'browser: at face value it would not',
+    fitCostFits(room, 78, 0, 1) ? 1 : 0, 0, 0);
+  check('gono', 'browser: an unknown group falls back to face value',
+    fitCostFits(room, 78, 0, fitCostRatioOf(hr, tid('Large Shield Booster II'))?.cpu) ? 1 : 0, 0, 0);
+  // No headroom at all is "no opinion", not "won't fit" — the browser can be opened without a fit.
+  check('gono', 'no headroom means no mark', fitCostFits(null, 78, 0, 1) === null ? 1 : 0, 1, 0);
+
+  // ── Why ONE ratio per group is enough to colour a whole variant family ──
+  // The Variations tab derives the multiplier from the FITTED module and scales every row by it.
+  // That is only sound while all members of a family are charged the same fraction, which they are:
+  // fitting-reduction modifiers filter on dogma group and on required skills, and neither varies
+  // across a family. It holds even where a family straddles two groups — the Medium Ancillary Remote
+  // Shield Booster is its own group and still takes the Scimitar's 0.5.
+  //
+  // Swept rather than asserted on one pair, because the thing that would break it is a future bonus
+  // filtered on something finer (meta level, tech level), and that would show up on some members and
+  // not others. If this ever fails, the tab has to stop sharing a ratio — not have the count updated.
+  for (const [hull, rack, seed] of [['Scimitar', 'high', PITHUM],
+                                    ['Megathron', 'high', 'Heavy Neutron Blaster II'],
+                                    ['Guardian',  'high', 'Large Remote Armor Repairer II']]) {
+    const ship = lookupShip(hull);
+    const fam = variantsOf(tid(seed));
+    const seen = new Set();
+    for (const v of fam) {
+      const cs = calcFitStats(ship, {...EMPTY, [rack]: [{typeID: v.typeID, state: 'online'}]}, [], null, {});
+      const r = fitCostRatioOf({ratios: cs.fitCostRatios}, v.typeID);
+      if (r) seen.add(`${r.cpu.toFixed(6)}/${r.pg.toFixed(6)}`);
+    }
+    check('gono', `${hull}: ${fam.length} ${seed} variants share one fitting multiplier`, seen.size, 1, 0);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -44,7 +44,8 @@ function strengthTip(e){
     t=`${e.strengthAttrs[0].toUpperCase()}${e.strengthAttrs.slice(1)} ${STRENGTH_NOUN[e.strengthKind]} — ${STRENGTH_UNIT[e.strengthKind]}`;
   // ECM's figure is a bare jam strength with no unit to name, hence the guard.
   else t=(STRENGTH_LABEL[e.strengthKind]??"")+(STRENGTH_UNIT[e.strengthKind]?` — ${STRENGTH_UNIT[e.strengthKind]}`:"");
-  if(e.strengthPerSec) t+=` (${e.strengthPerSec} ${e.strengthPerSecUnit}/s)`;
+  // The per-second rate is on the row itself now, so repeating it here would just be the tooltip
+  // reading the badge back. `strengthPerSec` is still carried for anything else that wants the number.
   return t;
 }
 
@@ -539,6 +540,9 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     pg:  {used:_cs.pgUsed  ??0, total:_cs.pgTotal  ??0},
     cpu: {used:_cs.cpuUsed ??0, total:_cs.cpuTotal ??0},
     cal: {used:_cs.calUsed ??0, total:_cs.calTotal ??400},
+    // used/total are engine-computed and the printed costs are base attributes, so the comparison
+    // needs a multiplier to be honest — see calcFitStats' fitCostRatios.
+    ratios:_cs.fitCostRatios,
   };
 
   return(
