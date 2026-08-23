@@ -226,7 +226,13 @@ function Rack({ label, mods, cs }) {
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
         <span style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase" }}>{label}</span>
         <span style={{ flex: 1, height: 1, background: T.line2 }} />
-        <span style={{ fontSize: 11, color: T.dim, fontWeight: 600 }}>{rows.reduce((a, r) => a + r.n, 0)}</span>
+        {/* Filled over the hull's slot count. The bare filled count could not distinguish a full rack
+            from a half-empty one, so a Rifter flying two of its four highs described itself as a
+            two-high hull. The arrays are generated at the hull's size with empty placeholders
+            (generateEmptySlots), so their length IS the slot count. */}
+        <span style={{ fontSize: 11, color: T.dim, fontWeight: 600 }}>
+          {rows.reduce((a, r) => a + r.n, 0)}<span style={{ opacity: 0.6 }}>/{mods.length}</span>
+        </span>
       </div>
       {rows.map((r, i) => <ModRow key={i} {...r} />)}
     </div>
@@ -365,6 +371,10 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   // Shield stays CYAN rather than blue so it does not read as the em segment in the DPS bar beside it,
   // and armor stays green because no damage type is green; hull is neutral, which is also what it is.
   const layerColor = { shield: "#37bdf0", armor: "#2ecc8b", hull: "#93a3b8" };
+  // ModRow's default when a module carries no state, so the legend has to agree on it.
+  const statesUsed = new Set();
+  for (const rack of ["subsystems", "high", "mid", "low", "rigs"])
+    for (const m of (slots?.[rack] ?? [])) if (isReal(m)) statesUsed.add(m.state || "online");
   const activeDrones = (drones ?? []).filter((d) => d?.name);
   const activeFighters = (fighters ?? []).filter((f) => f?.name);
   const imp = shortenImplants(implants);
@@ -478,10 +488,16 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           )}
         </div>
 
+        {/* Only the states this fit actually uses. The legend was a fixed three, which both over- and
+            under-claimed: it advertised Overheated on fits with nothing overheated, and never listed
+            Offline at all — so a deliberately offline module showed a colour the key did not explain. */}
         <div style={{ display: "flex", gap: 14, fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 14, flexWrap: "wrap" }}>
-          {[["Active", T.good], ["Overheated", T.overheat], ["Online", T.onl]].map(([l, c]) => (
-            <span key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}</span>
-          ))}
+          {[["active", "Active", T.good], ["overheated", "Overheated", T.overheat],
+            ["online", "Online", T.onl], ["offline", "Offline", T.dim]]
+            .filter(([st]) => statesUsed.has(st))
+            .map(([, l, c]) => (
+              <span key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}</span>
+            ))}
         </div>
 
         <div style={{ flex: 1 }}>
@@ -550,7 +566,10 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         </div>
 
         <div>
-          <div style={{ fontSize: 12, color: T.muted, fontWeight: 600, marginBottom: 7 }}>Resist Profile</div>
+          {/* Every other caption on the card — the hero panels, the three blocks, the racks — is 11px
+              uppercase with letterspacing. These two were 12px sentence case and read as a different
+              rank of heading than the panels they label. */}
+          <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>Resist Profile</div>
           <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "50px repeat(4,1fr) 58px", gap: "6px 9px", alignItems: "center" }}>
               <div />
@@ -589,7 +608,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
 
         {showProj && (
           <div>
-            <div style={{ fontSize: 12, color: T.muted, fontWeight: 600, marginBottom: 7 }}>Projected</div>
+            <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>Projected</div>
             <Projected links={proj.links} incoming={proj.incoming} />
           </div>
         )}
