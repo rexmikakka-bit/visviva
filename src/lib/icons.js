@@ -24,6 +24,10 @@ const _RENDER_FILES    = import.meta.glob("../assets/renders/*.png",    { eager:
 // Per-typeID icons downloaded from images.evetech.net for types that carry no iconID in CCP's data
 // (drones, fighters, deployables). Keyed by typeID rather than iconID — see bundle-icons.mjs.
 const _TYPE_ICON_FILES = import.meta.glob("../assets/type-icons/*.png", { eager: true, query: "?url", import: "default" });
+// 256px renders for the one place a hull's art is shown at the width of the screen. pyfa has nothing
+// bigger than 64 to copy, so these were downloaded once — see scripts/fetch-hero-renders.mjs, which
+// also records why 256 and not 512.
+const _HERO_FILES      = import.meta.glob("../assets/hero-renders/*.png", { eager: true, query: "?url", import: "default" });
 
 const _iconByID = {};      // iconID -> bundled url
 for (const [p, u] of Object.entries(_ICON_FILES)) {
@@ -41,6 +45,12 @@ const _typeIconByID = {};  // typeID -> bundled url (for types with no iconID)
 for (const [p, u] of Object.entries(_TYPE_ICON_FILES)) {
   const m = p.match(/\/(\d+)\.png$/);
   if (m) _typeIconByID[m[1]] = u;
+}
+
+const _heroByType = {};    // typeID -> bundled 256px url
+for (const [p, u] of Object.entries(_HERO_FILES)) {
+  const m = p.match(/\/(\d+)\.png$/);
+  if (m) _heroByType[m[1]] = u;
 }
 
 // ⚠️ SHIPS AND STRUCTURES HAVE NO iconID AT ALL — 417 of 423 hulls and 17 of 18 structures carry
@@ -66,19 +76,46 @@ const eveRender = (typeID, size = 64) => {
   return `https://images.evetech.net/types/${typeID}/render?size=${size}`;  // fallback (online only)
 };
 
-// A HERO-sized render, for the one place a hull's art is the subject rather than a label.
+// The BUNDLED hero render — the offline answer for the one place a hull's art is the subject rather
+// than a label, and what that place paints first.
+//
+// It falls back to the 64px render rather than to the network, because this is the image that has to
+// exist: eveRenderHi is layered over it and may never arrive. One hull (Boobook) has no render on
+// CCP's server at all and lands here.
+const eveHeroRender = (typeID) => {
+  if (!typeID) return null;
+  return _heroByType[typeID] ?? eveRender(typeID);
+};
+
+// A HERO-sized render at 512, fetched.
 //
 // This is the single spot in the app allowed to prefer the network, and it is safe precisely because
-// it cannot fail into nothing: the caller paints the bundled render first and only swaps this in once
-// it has decoded, so an offline device loses sharpness and keeps the picture. Do not reuse it anywhere
+// it cannot fail into nothing: the caller paints eveHeroRender first and only swaps this in once it
+// has decoded, so an offline device loses sharpness and keeps the picture. Do not reuse it anywhere
 // the image is the only image — that is what eveRender is for.
 //
-// It is fetched rather than bundled because the maths does not work: the art is ~13 KB per hull at
-// 256 but ~39 KB at 512, and across 440 hulls that is 5.6 MB against 17 MB — the latter roughly
+// 512 is fetched rather than bundled because the maths does not work: the art is ~12 KB per hull at
+// 256 but ~39 KB at 512, and across 440 hulls that is 5.3 MB against 17 MB — the latter roughly
 // doubling the app's download for a picture most sessions never open.
 const eveRenderHi = (typeID, size = 512) =>
   typeID ? `https://images.evetech.net/types/${typeID}/render?size=${size}` : null;
 
+// Warm the browser's HTTP cache with a hull's hero render ahead of anyone asking to see it, so the
+// ship sheet opens sharp rather than blurred-then-sharp. Nothing here draws: an Image() whose src is
+// set performs the fetch and the response lands in the cache, and eveRenderHi's own load in the sheet
+// then resolves out of it. Once per hull per session.
+//
+// Deliberately fire-and-forget. Offline this fails silently and costs nothing that matters — the sheet
+// still has the bundled render, which is the whole reason it is safe to prefer the network there at
+// all. Do not add error handling that makes a plane look like a failure state.
+const _heroPrefetched = new Set();
+const prefetchRenderHi = (typeID) => {
+  if (!typeID || _heroPrefetched.has(typeID)) return;
+  _heroPrefetched.add(typeID);
+  const img = new Image();
+  img.src = eveRenderHi(typeID);
+};
+
 const hasLocalArt = () => Object.keys(_iconByID).length > 0;
 
-export { eveIcon, eveRender, eveRenderHi, hasLocalArt };
+export { eveIcon, eveHeroRender, eveRender, eveRenderHi, hasLocalArt, prefetchRenderHi };

@@ -3,7 +3,7 @@ import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.
 import { nextFitId } from "../lib/fit-tabs.js";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
-import { eveIcon, eveRender, eveRenderHi } from "../lib/icons.js";
+import { eveIcon, eveHeroRender, eveRender, eveRenderHi, prefetchRenderHi } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
 import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
@@ -236,11 +236,11 @@ function FitRow({ship, fit, active, act, tagColors, showShip, hideTag, onOpen}){
 // from an Image() rather than by pointing src at the network and hoping. Pointing src straight at it
 // would blank the frame for as long as the fetch took and leave it blank forever on a plane.
 //
-// The bundled art is 64px, so before the swap lands this is an upscale and looks it. That is the
-// intended trade — a soft picture reads as "loading", an empty box reads as broken — and it stops
-// mattering once the 256px hero set is bundled.
-function ShipHero({typeID, height, children}) {
-  const bundled = eveRender(typeID, 512);
+// The bundled copy is the 256px hero set, NOT the 64px render the rest of the app labels things with.
+// At the width of a phone, 64px upscales into visible pixels — the sheet spent its whole first frame
+// looking broken, which is the opposite of what a placeholder is for.
+function ShipHero({typeID, height, full, children}) {
+  const bundled = eveHeroRender(typeID);
   const [hi, setHi] = useState(null);
   useEffect(() => {
     setHi(null);
@@ -286,8 +286,15 @@ function ShipHero({typeID, height, children}) {
   return (
     <div style={{position:'absolute',top:0,left:0,right:0,height,zIndex:3,overflow:'hidden',
                  pointerEvents:'none',borderRadius:'16px 16px 0 0',background:'#05070b'}}>
-      {bundled && img(bundled)}
-      {hi && img(hi)}
+      {/* The picture keeps its full size and the FRAME closes over it, rather than the picture being
+          scaled down to fit — collapsing by scaling shrank the ship away from the sides and gave back
+          the side bands the square sizing exists to avoid. It closes on the centre, so the band left
+          at the end is the one the hull is actually in; anchored at the top it would collapse onto
+          empty backdrop, because CCP centres the hull in the square. */}
+      <div style={{position:'absolute',left:0,right:0,top:-(full-height)/2,height:full}}>
+        {bundled && img(bundled)}
+        {hi && img(hi)}
+      </div>
       {/* Two scrims doing different jobs. The vertical one dissolves the picture into the sheet so
           there is no seam between art and UI; the corner one darkens only behind the title, because
           these backdrops range from near-black to a bright nebula and white text cannot survive the
@@ -337,6 +344,33 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   useEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = 0; setScrollY(0); }, [tab, ship?.typeID]);
   const collapse = Math.min(1, Math.max(0, scrollY) / Math.max(1, heroMax - HERO_MIN));
   const heroH = heroMax - (heroMax - HERO_MIN) * collapse;
+
+  // The handle was a painted pill with nothing behind it, so the × was the only way out. This is the
+  // same gesture BottomSheet already implements — drag down to peek behind, release past a third of
+  // the sheet or with a flick to dismiss, otherwise spring back — rather than a second dialect of it.
+  const [dragY, setDragY] = useState(0);
+  const drag = useRef(null);
+  const onGrabStart = e => { const t = e.touches?.[0] ?? e; drag.current = {y:t.clientY, t:Date.now(), moved:0}; };
+  const onGrabMove = e => {
+    if (!drag.current) return;
+    e.stopPropagation();                       // a sheet drag must never reach the page's tab swipe
+    const t = e.touches?.[0] ?? e;
+    // Downward only: dragging up lifts the sheet off the bottom edge and exposes the backdrop under it.
+    const dy = Math.max(0, t.clientY - drag.current.y);
+    drag.current.moved = dy;
+    setDragY(dy);
+  };
+  const onGrabEnd = () => {
+    const d = drag.current; drag.current = null;
+    if (!d) return;
+    const h = sheetRef.current?.offsetHeight ?? 400;
+    // Floored at one frame: two touchmoves can land in the same millisecond, and dividing by that
+    // reads every drag as a flick. And a flick needs distance as well as speed, or a twitch throws
+    // the sheet away when you meant to peek behind it.
+    const velocity = d.moved / Math.max(16, Date.now() - d.t);
+    if (d.moved > h * 0.33 || (d.moved > 28 && velocity > 0.7)) onClose?.(); else setDragY(0);
+  };
+  const dragging = drag.current != null;
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
@@ -425,13 +459,24 @@ export function ShipInfoSheet({ship, cs, onClose}) {
           any more of the ship. */}
       <div ref={sheetRef}
            style={{position:'relative',background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'92vh',
-                   display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}}
+                   display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',
+                   transform:`translateY(${dragY}px)`,
+                   // No transition while a finger is down, or the sheet lags behind the drag.
+                   transition:dragging?'none':'transform 200ms cubic-bezier(.22,.61,.36,1)'}}
            onClick={e=>e.stopPropagation()}>
-        <ShipHero typeID={ship?.typeID} height={heroH}>
+        <ShipHero typeID={ship?.typeID} height={heroH} full={heroMax}>
           {/* The grab handle moves onto the art rather than sitting above it — the sheet has no
-              header bar left to hold it, and the picture goes all the way to the top edge. */}
-          <div style={{position:'absolute',top:8,left:'50%',transform:'translateX(-50%)',width:36,height:4,
-                       borderRadius:2,background:'rgba(255,255,255,.35)'}}/>
+              header bar left to hold it, and the picture goes all the way to the top edge.
+              The pill is the affordance, not the hit target: the strip it sits in is the full width
+              of the sheet and reaches well below it, and opts back into pointer events that the hero
+              as a whole declines. touchAction:none stops the browser claiming the drag as a scroll. */}
+          <div onTouchStart={onGrabStart} onTouchMove={onGrabMove} onTouchEnd={onGrabEnd}
+               onMouseDown={onGrabStart} role="button" tabIndex={-1} aria-label="Drag to dismiss"
+               style={{position:'absolute',top:0,left:0,right:0,padding:'8px 0 16px',
+                       pointerEvents:'auto',touchAction:'none',cursor:'grab'}}>
+            <div style={{width:36,height:4,borderRadius:2,margin:'0 auto',
+                         background:'rgba(255,255,255,.35)'}}/>
+          </div>
           {/* Close sits on its own scrim: over a bright nebula a bare glyph disappears. */}
           <button onClick={onClose} aria-label="Close"
             style={{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:15,border:'none',
@@ -571,6 +616,19 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     return "Fit";
   });
   useEffect(()=>{try{localStorage.setItem('axis_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
+  // Fetch the hero render for every hull you have a fit open on, so its info sheet opens sharp instead
+  // of upscaling the 64px bundled copy while the network catches up. These are the hulls most likely to
+  // be asked about, and openFitTabs is a handful of entries.
+  // The names are remembered separately from the images: openFitTabs is rebuilt every render, and
+  // lookupShip scans the whole ship list, so without this the scan would run on every keystroke.
+  const _warmedHulls=useRef(new Set());
+  useEffect(()=>{
+    for(const t of openFitTabs??[]){
+      if(!t?.ship||_warmedHulls.current.has(t.ship))continue;
+      _warmedHulls.current.add(t.ship);
+      prefetchRenderHi(lookupShip(t.ship)?.typeID);
+    }
+  },[openFitTabs]);
   // Sub-tab swipe — see lib/use-tab-swipe.js. Shared with the Effects screen's four sections rather
   // than duplicated, so the horizontal-scroller escape and the axis lock only exist once.
   const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SUBTABS,fitSubTab,setFitSubTab);
