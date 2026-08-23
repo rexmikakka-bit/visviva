@@ -262,14 +262,6 @@ export default function App(){
   },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const droneInfo=_droneCs?.droneInfo??[];
   const fittedDrones=_droneCs?.fittedDrones??null;
-  const activeDroneDps=useMemo(()=>{
-    const shipName=activeFit?.ship;
-    if(!shipName) return 0;
-    try{
-      const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
-      return cs?.droneDps?.total ?? 0;
-    }catch{ return 0; }
-  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const fighterInfo=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName||!(fighters?.length)) return [];
@@ -627,7 +619,7 @@ export default function App(){
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
-        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} activeDroneDps={activeDroneDps} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
+        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
         {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
       </div>

@@ -4456,6 +4456,48 @@ Medium Capacitor Control Circuit II
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 19. MAX ACTIVE DRONES — the limit bandwidth cannot express
+//
+// Drone bandwidth is not a drone count, and on most drone boats it is the looser of the two: a
+// Vexor's 75 Mbit flies seven mediums, the game flies five. Nothing in the app knew the count limit
+// existed, so a fit could be drawn with more drones in space than it can legally launch.
+//
+// It cannot be read off the engine. BOTH contributing effects target domain='charID' — the pilot,
+// not the ship — which the dispatcher skips, so ship.get('maxActiveDrones') is 0 for every hull in
+// the game. calc.js therefore composes it by hand, exactly as it does the fighter skills above, and
+// these checks are what stop that hand-rolled copy drifting.
+//
+// The pieces, both confirmed against eos (Effect918 / the Drones skill handler in eos/effects.py):
+//   * the DRONES skill carries maxActiveDroneBonus = 1 and grants that per level, so all-V is 5;
+//   * the Guardian-Vexor — the ONLY type in the bundle carrying effect 918 — adds shipBonusGC2,
+//     +1 per Gallente Cruiser level, which reaches calc.js already pre-scaled by that skill.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nMAX ACTIVE DRONES');
+
+  const maxDrones = (ship, skills) => calcFitStats({ typeID: tid(ship), name: ship },
+    { high: [], mid: [], low: [], rigs: [] }, [], skills, {}).maxActiveDrones;
+
+  check('drones', 'Vexor, all V', maxDrones('Vexor', null), 5, 0);
+  check('drones', 'Rifter (no drone bay at all)', maxDrones('Rifter', null), 5, 0);
+
+  // The Ishtar is the check with teeth for "bandwidth is not the limit": it carries 125 Mbit — the
+  // same as the Guardian-Vexor and more than the Vexor — and still flies five.
+  check('drones', 'Ishtar flies 5 despite 125 Mbit', maxDrones('Ishtar', null), 5, 0);
+
+  // The one exception in the game. Five from the skill, five from the hull.
+  check('drones', 'Guardian-Vexor, all V', maxDrones('Guardian-Vexor', null), 10, 0);
+
+  // Read from the pilot, not hardcoded — an ESI-synced character at Drones III launches three. The
+  // hull bonus is scaled by GALLENTE CRUISER, not by Drones, so it stays at 5 while the base falls.
+  const dronesIII = { ...SKILLS_ALL_V, drones: 3 };
+  check('drones', 'Vexor at Drones III', maxDrones('Vexor', dronesIII), 3, 0);
+  check('drones', 'Guardian-Vexor at Drones III', maxDrones('Guardian-Vexor', dronesIII), 8, 0);
+  check('drones', 'Guardian-Vexor at Gallente Cruiser III',
+        maxDrones('Guardian-Vexor', { ...SKILLS_ALL_V, gallenteCruiser: 3 }), 8, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);

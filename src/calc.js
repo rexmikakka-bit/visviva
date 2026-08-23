@@ -3110,6 +3110,22 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // to droneControlDistance by the engine. Drones deal full DPS within it and none beyond it.
   const droneControlRange = s.get('droneControlDistance') ?? 20000;
 
+  // How many drones may be IN SPACE at once — the limit bandwidth cannot express. A Vexor's 75 Mbit
+  // flies seven mediums as far as bandwidth is concerned; the game flies five.
+  //
+  // Computed here rather than read off the engine because both contributing effects target
+  // domain='charID' — the pilot, not the ship — which the dispatcher skips, so `maxActiveDrones`
+  // comes back 0 for every hull. Same shape as the fighter skills below: eos hand-implements it too.
+  //
+  // The limit is the DRONES skill, +1 per level, so an all-V pilot gets the familiar 5 and an
+  // ESI-synced one at Drones III correctly gets 3.
+  const _dronesSkill = TYPES[typeIDByName('Drones')]?.attrs?.maxActiveDroneBonus ?? 1;
+  let maxActiveDrones = _dronesSkill * fit.getSkillLevel('Drones');
+  // Effect 918 (shipDronesMaxGC2) — the Guardian-Vexor and nothing else in the game. Its
+  // shipBonusGC2 is +1 drone per Gallente Cruiser level and arrives here already pre-scaled by that
+  // skill, so it is added flat.
+  if ((TYPES[shipTypeID]?.e ?? []).includes(918)) maxActiveDrones += s.get('shipBonusGC2') ?? 0;
+
   // Per-drone EFFECTIVE stats for the Drones tab. These MUST come from the engine, not from the raw
   // type data: the UI used to snapshot base values when the drone was added, so skills, implants
   // (e.g. Overmind 'Goliath' Drone Tuner), boosters and ship bonuses were all ignored — a Federation
@@ -3863,6 +3879,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     droneBay:       s.get('droneCapacity') || ship.droneBay || 0,   // || not ?? — base=0 ships get subsystem bonus
     droneBandwidth: s.get('droneBandwidth') || ship.droneBandwidth || 0,
     droneControlRange: Math.round(s.get('droneControlDistance') ?? 20000),
+    maxActiveDrones,
     volume:         s.get('volume') ?? ship.volume ?? 0,
     cargoCapacity:  s.get('capacity') ?? 0,
     warpCapNeed:    ship.warpCapNeed ?? 0,

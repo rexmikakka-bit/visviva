@@ -107,7 +107,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
   </BottomSheet>);
 }
 
-export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fighters,setFighters,fighterInfo=[],activeDroneDps=0,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
+export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fighters,setFighters,fighterInfo=[],maxActiveDrones=5,shipDroneBay=0,shipDroneBandwidth=0,shipFighter={cap:0,tubes:0,light:0,heavy:0,support:0}}){
   const[showDronePicker,setShowDronePicker]=useState(false);
   const[showFighterPicker,setShowFighterPicker]=useState(false);
   const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
@@ -121,6 +121,11 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
   const bayUsed=drones.reduce((s,d)=>s+d.qty*getDroneVol(d),0);
   // Bandwidth counts only ACTIVE drones — the bay holds spares, the bandwidth flies them.
   const bwUsed=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty*getDroneBW(d),0);
+  // Bandwidth is not the drone limit, and on most drone boats it is the looser of the two: a Vexor's
+  // 75 Mbit flies seven mediums, the game flies five. Counted across every flying stack, because the
+  // limit is on drones in space and not on any one stack.
+  const activeCount=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty,0);
+  const droneSlotsFree=maxActiveDrones-activeCount;
   const addDrone=d=>{
     const bayFree=shipDroneBay-bayUsed, bwFree=shipDroneBandwidth-bwUsed;
     const ex=drones.find(e=>e.name===d.name);
@@ -128,7 +133,8 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     // stack is flying — spares cost none. Its active state is the user's and is left alone.
     if(ex){
       const{qty}=droneAddQty({bandwidth:getDroneBW(ex),volume:getDroneVol(ex),
-                              bwFree:ex.active?bwFree:Infinity,bayFree});
+                              bwFree:ex.active?bwFree:Infinity,bayFree,
+                              max:ex.active?Math.max(1,droneSlotsFree):maxActiveDrones});
       setDrones(drones.map(e=>e.name===d.name?{...e,qty:e.qty+qty}:e));return;
     }
     setDrones(prev=>{
@@ -141,8 +147,11 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
       const trk = dta?.trackingSpeed ?? d.tracking ?? 0;
       const vel = dta?.maxVelocity ?? d.maxVelocity ?? d.velocity ?? 0;
       const hp_ = dta?.hp ?? d.hp ?? 0;
-      const{qty,active}=droneAddQty({bandwidth:bw,volume:vol,bwFree,bayFree});
-      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
+      const{qty,active}=droneAddQty({bandwidth:bw,volume:vol,bwFree,bayFree,max:Math.max(1,droneSlotsFree)});
+      // Launched only if it fits under BOTH limits. Added while already flying a full set, the stack
+      // goes to the bay rather than silently putting the fit over — the bay is where spares live and
+      // carrying them is legal, so there is nothing to warn about.
+      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active:active&&qty<=droneSlotsFree,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
     });}
   const addFighter=f=>{setFighters(prev=>[...prev,{id:Date.now(),name:f.name,tier:f.tier,typeID:f.typeID,role:f.role||null,qty:1,active:true,abilities:{}}]);};
   const toggleFighterActive=id=>setFighters(fighters.map(f=>f.id===id?{...f,active:f.active===false?true:false}:f));
@@ -183,7 +192,17 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
           <span style={{color:C.textMid}}>/{shipDroneBandwidth} Mbit/s</span>
         </span>
       </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:11,color:C.danger,fontWeight:600}}>DPS: {activeDroneDps>=100?Math.round(activeDroneDps):activeDroneDps.toFixed(1)}</span><button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
+        {/* Drone DPS used to sit here, and it was the one number on this screen you could not act on
+            — it is already on the stats panel, and it cost a whole second calcFitStats pass to put a
+            duplicate in the corner. What you cannot see anywhere else is how many drones are in
+            space, because bandwidth does not answer it and nothing else on this screen counts them.
+            Red is a real warning: over the limit the fit cannot be flown as drawn. */}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:11,fontWeight:600,fontVariantNumeric:"tabular-nums",
+                        color:activeCount>maxActiveDrones?C.danger:C.textMid}}>
+            Active: <span style={{color:activeCount>maxActiveDrones?C.danger:C.text,fontWeight:700}}>{activeCount}</span>/{maxActiveDrones}
+          </span>
+          <button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
       </div>
       <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${shipDroneBay>0?Math.min((bayUsed/shipDroneBay)*100,100):0}%`,height:"100%",background:bayUsed>shipDroneBay?C.danger:C.rig,borderRadius:99}}/></div>
     </div>
