@@ -289,7 +289,9 @@ function HeroStat({ cap, num, numColor, sub, bars }) {
       <div style={{ fontWeight: 700, fontSize: 36, lineHeight: 1, margin: "4px 0 3px", letterSpacing: "-.02em", color: numColor }}>{num}</div>
       <div style={{ fontSize: 12.5, color: T.muted, fontWeight: 500, display: "flex", justifyContent: "flex-start", gap: 12 }}>{sub}</div>
       <div style={{ display: "flex", height: 5, borderRadius: 3, overflow: "hidden", marginTop: 9, background: "rgba(0,0,0,.25)" }}>
-        {bars.filter((x) => x.w > 0).map((x, i) => <i key={i} style={{ display: "block", height: "100%", width: `${x.w}%`, background: x.c }} />)}
+        {/* border-box so the divider eats into the segment rather than pushing the total past 100% —
+            the last segment is the smallest and would be the one clipped. */}
+        {bars.filter((x) => x.w > 0).map((x, i) => <i key={i} style={{ display: "block", boxSizing: "border-box", height: "100%", width: `${x.w}%`, background: x.c, borderRight: "1.5px solid rgba(0,0,0,.55)" }} />)}
       </div>
     </div>
   );
@@ -356,7 +358,13 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const dmgTotal = (dmg.em ?? 0) + (dmg.th ?? 0) + (dmg.kin ?? 0) + (dmg.exp ?? 0);
   const ehp = s.totalEHP ?? 0;
   const capD = s.capDelta ?? 0;
-  const layerColor = { shield: T.accent, armor: T.faction, hull: T.dim };
+  // Separated on saturation and brightness as well as hue, because the bar is 5px tall and the old set
+  // (T.accent / T.faction / T.dim) was three mid-luminance, low-saturation colours — shield and armor
+  // sat 43 degrees apart at nearly the same lightness and read as one band, and hull was dark enough to
+  // vanish into its own track. Same reasoning theme.js records for the module state colours.
+  // Shield stays CYAN rather than blue so it does not read as the em segment in the DPS bar beside it,
+  // and armor stays green because no damage type is green; hull is neutral, which is also what it is.
+  const layerColor = { shield: "#37bdf0", armor: "#2ecc8b", hull: "#93a3b8" };
   const activeDrones = (drones ?? []).filter((d) => d?.name);
   const activeFighters = (fighters ?? []).filter((f) => f?.name);
   const imp = shortenImplants(implants);
@@ -402,6 +410,22 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const projRep = ehpOf(proj.remoteReps?.shield, s.resists?.shield) + ehpOf(proj.remoteReps?.armor, s.resists?.armor) + ehpOf(proj.remoteReps?.hull, s.resists?.hull);
   const rep = (s.armorRepEhpS ?? 0) + (s.shieldRepEhpS ?? 0) + projRep;
   const sust = (s.armorRepSustainedEhpS ?? 0) + (s.shieldRepSustainedEhpS ?? 0);
+  // A loaded ancillary carries a one-shot POOL on top of the fit's EHP — you get it once per reload
+  // and only while the charges last. So it rides beside the headline as an addition rather than
+  // being folded into it, which is the same split the Stats tab shows and the only form that says
+  // "this is a pool, not more buffer". The combined figure goes on the line below because that is
+  // what an "X EHP plus clip" comparison actually quotes, and a static card cannot offer the tap
+  // that toggles between them in the app.
+  //
+  // It takes SUSTAINED's place rather than being a third figure, which keeps that line to one row
+  // and, on these fits, costs nothing: an ASB runs off its own charges rather than the ship's cap,
+  // so sustained comes out equal to peak and the slot was printing the rep figure twice. An AAR does
+  // draw cap and does differ (140.6 peak against 131.8 sustained on a bare Myrmidon), but for the
+  // window the clip lasts the pool is the more interesting number — and the Stats tab still carries
+  // sustained for anyone who wants it.
+  //
+  // Already weighted by the same incoming damage profile as totalEHP (see calc.js), so the two sum.
+  const clip = s.ancilClipEHP ?? 0;
   const eyebrow = [shipFaction, shipClass].filter(Boolean).join(" • ") || shipName;
 
   // Tactical mode (T3 destroyers + Anhinga). Mirrors the selector in tabs.jsx: the mode lives on
@@ -516,8 +540,12 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <HeroStat cap="Total DPS" num={fmt(s.totalDps?.total)} numColor={T.accent}
             sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drone DPS <b style={{ color: T.text }}>{fmt((s.droneDps?.total ?? 0) + (s.fighterDps?.total ?? 0))}</b></span></>}
             bars={dmgTotal > 0 ? ["em", "th", "kin", "exp"].map((k) => ({ w: ((dmg[k] ?? 0) / dmgTotal) * 100, c: DMG[k] })) : []} />
-          <HeroStat cap="Effective HP" num={fmtK(ehp)} numColor="#fff"
-            sub={<><span>Rep <b style={{ color: T.good }}>{fmt(rep)}</b> ehp/s</span><span>Sust <b style={{ color: T.text }}>{fmt(sust)}</b></span></>}
+          <HeroStat cap="Effective HP" numColor="#fff"
+            num={<>{fmtK(ehp)}{clip > 0 && <span style={{ fontSize: 21, color: T.good, letterSpacing: 0, marginLeft: 7 }}>+{fmtK(clip)}</span>}</>}
+            sub={<><span>Rep <b style={{ color: T.good }}>{fmt(rep)}</b> ehp/s</span>
+              {clip > 0
+                ? <span>w/ ancil. <b style={{ color: T.text }}>{fmtK(ehp + clip)}</b></span>
+                : <span>Sust <b style={{ color: T.text }}>{fmt(sust)}</b></span>}</>}
             bars={ehp > 0 ? [["shield", s.shieldEHP], ["armor", s.armorEHP], ["hull", s.hullEHP]].map(([k, v]) => ({ w: ((v ?? 0) / ehp) * 100, c: layerColor[k] })) : []} />
         </div>
 
