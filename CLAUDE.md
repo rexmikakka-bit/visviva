@@ -23,7 +23,7 @@ numbers disagree with pyfa, we are wrong until proven otherwise.
 
 ```bash
 npm run verify                    # the real gate: lint + imports + build + offline + effect coverage + regression
-node src/regression.test.mjs      # just the suite — must print "ALL N REGRESSION CHECKS PASSED" (currently 594)
+node src/regression.test.mjs      # just the suite — must print "ALL N REGRESSION CHECKS PASSED" (currently 993)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin
@@ -31,6 +31,53 @@ down. **If a check fails, you broke something real.** Do not update the expected
 output unless you have re-validated against pyfa first and can say why the old number was wrong.
 
 CI runs this on every PR (`.github/workflows/regression.yml`).
+
+### A fresh clone
+
+```bash
+git clone https://github.com/rexmikakka-bit/visviva.git
+cd visviva
+npm install
+npm test          # if this is not green on a clean checkout, stop and ask
+npm run dev
+```
+
+That is the whole setup — `npm test` needs no build step and no local data files. The two optional
+downloads below are **gitignored on purpose**: both are large, both are publicly downloadable, and
+neither is needed to run, develop or test the app.
+
+| command | what it does |
+| --- | --- |
+| `npm run dev` | dev server |
+| `npm test` | the pyfa-validated fit baselines |
+| `npm run check` | lint (runtime-fatal rules) + import-path resolution |
+| `npm run build` | production build |
+| `node scripts/check-effect-coverage.mjs` | fails if a data regen adds a new silent no-op effect |
+| `npm run verify` | all of the above — the gate CI runs |
+
+**A pyfa SOURCE checkout** is needed only to regenerate the bundled art, and only if CCP adds new
+art. Take the source ZIP from <https://github.com/pyfa-org/Pyfa>, extract to `Pyfa-master/`, then
+`node scripts/bundle-icons.mjs` (which also wants `eve.db`). This is the same clone the oracle needs,
+and its version is enforced — see "Driving pyfa's eos engine directly".
+
+**`eve.db`** is needed only to regenerate the dogma bundles. It ships inside pyfa's **Windows release**
+ZIP (a *different* download from the source above) at `app/eve.db`, from
+<https://github.com/pyfa-org/Pyfa/releases>. Take the version the baselines were validated against.
+
+You do **not** need `sqlite-latest.sqlite`, CCP's raw SDE dump. Nothing in this project reads it, and
+pyfa's `eve.db` is a different, much more compact schema — see the note under the oracle section.
+
+### Art is bundled, not fetched
+
+Item and ship art is committed (~6.5 MB) so the app works fully offline and does not hammer anyone's
+image CDN. Roughly 1,000 types have no art and fall back to a generic glyph; that is expected, not a
+missing file. `node scripts/bundle-icons.mjs` regenerates it and needs both optional downloads above.
+
+### Branch, don't push to main
+
+Work on a branch and let CI run, unless the user has asked for something else in the moment (they
+often do, and that is theirs to decide). `App.jsx`, `calc.js`, `ui.jsx` and the data bundles are the
+files most likely to conflict — keep changes to them focused.
 
 ---
 

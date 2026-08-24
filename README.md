@@ -1,114 +1,82 @@
 # Axis
 
-An EVE Online ship-fitting calculator for mobile. React + Vite. It reimplements pyfa's dogma engine
-in JavaScript, and **pyfa v2.68.0 (EVE client build 3424810) is the reference implementation** — when
-our numbers disagree with pyfa, we are wrong until proven otherwise.
+A ship-fitting calculator for **EVE Online**, built for your phone.
 
-Formerly *Vis Viva*. The repository, the app bundle ID (`com.rexmikakka.visviva`) and the ESI
-callback scheme (`eveauth-visviva://`) deliberately keep the old name — renaming those breaks the
-update path for existing installs and the registered ESI callback, and none of them are user-visible.
+Axis reimplements pyfa's dogma engine in JavaScript, so you get the same numbers pyfa gives you —
+stacking penalties, hull and subsystem bonuses, implant sets, command bursts, environment effects,
+overheating — on a screen you actually have with you. It is free, has no ads, needs no account, and
+works with no signal.
 
-## Getting started
+Formerly *Vis Viva*.
 
-```bash
-git clone https://github.com/rexmikakka-bit/visviva.git
-cd visviva
-npm install
-npm test        # ALL 386 REGRESSION CHECKS PASSED  <- if this fails, stop and ask
-npm run dev
-```
+## Getting it
 
-That's the whole setup. `npm test` needs no build step and no local data files.
+- **iOS** — TestFlight.
+- **Android** — the APK on the [Releases page](https://github.com/rexmikakka-bit/visviva/releases).
+  Sideload it; you may need to allow installs from unknown sources.
 
-### Optional extras (the app works fine without these)
+## What it does
 
-Everything below is **gitignored on purpose** — it's large, and it's all publicly downloadable, so
-nobody needs to send you files.
+**Find a ship.** A nested browser that follows the way people actually talk about hulls —
+Battleships → Faction Battleships → Pirate Faction — with every fittable hull in the game reachable,
+including structures. Search by name if you already know what you want.
 
-**1. A pyfa checkout (only needed to REGENERATE the bundled art).**
-Ship/module art lives in `src/assets/` and is committed, so the app works offline out of the box —
-you do not need this to develop. You only need it if CCP adds new art and the assets must be rebuilt:
-download the pyfa **source** ZIP from <https://github.com/pyfa-org/Pyfa>, extract it to `pyfa-master/`
-in the repo root, then run `node scripts/bundle-icons.mjs` (it also needs `eve.db`, below).
+**Fit it.** High/mid/low slots, rigs, subsystems and service slots, with module states you can cycle
+(offline, online, active, overheated). Drag in drones and fighters, load charges, stock the cargo
+hold, and plug in implants and boosters. Fitting resources, slot counts, powergrid, CPU, calibration
+and drone bay/bandwidth all update as you go, and turn red when you have gone over.
 
-**2. `eve.db` (only if you regenerate the dogma bundles).**
-Not needed to run or develop the app. It ships inside pyfa's **Windows release** ZIP (a different
-download from the source above), at `app/eve.db`. Grab **v2.68.0** — the version our regression
-baselines were validated against — from <https://github.com/pyfa-org/Pyfa/releases>, and put
-`eve.db` in the repo root.
+**See what it does.** A stats panel covering DPS and volley, effective HP and resist profile, active
+and passive tank, capacitor stability, speed and agility, targeting, sensor strength, scan
+resolution, warp speed and align time.
 
-You do **not** need `sqlite-latest.sqlite` (the raw CCP dump). Nothing in this project reads it.
+**Graph it.** Damage, EWAR, reps, shield regen, capacitor, mobility, warp time and lock time — each
+plottable against distance, time, target speed or target signature radius, aimed at a frigate,
+cruiser or battleship profile or at another one of your saved fits.
 
-### Regenerating the dogma bundles
+**Fly it with someone else's help.** Project other saved fits onto this one as links, command
+bursts, remote reps, webs, neuts, paints or EWAR, and set the system you are sitting in — wormhole
+class effects, metaliminal storms and event beacons are all modelled.
 
-Only when moving to a new EVE build. Requires `eve.db` above. Read
-**CLAUDE.md → "Upgrading eve.db"** first — it is not a routine action.
+**Fly it with your skills.** Every fit records whose skills it is flown with: all level V, an Alpha
+clone, or your real character synced from EVE. The skill check in the fit header tells you whether
+you can actually fly what you have drawn, and what you are missing.
 
-```bash
-python scripts/build-bundle.py --dry-run   # report what CCP changed
-python scripts/build-bundle.py             # write the bundles
-npm test                                   # baselines MUST still pass
-```
+**Abyssal modules.** Roll and store mutated modules with their real rolled attributes, and compare
+variations of any module side by side.
 
-### Art is bundled, not fetched
+**Look things up.** Tap any item for its description, traits, full attribute list, market price and
+every variation of it — T1, T2, faction, storyline, deadspace and officer.
 
-`src/assets/icons/` and `src/assets/renders/` are committed (~6.5 MB) and compiled into the build, so
-the shipped app needs **no network** for images. Do not point the globs in `src/lib/icons.js` at
-anything outside the repo — they used to point at the gitignored `pyfa-master/`, which meant every
-release build silently fell back to CCP's image server.
+**Move fits around.** Import and export EFT text, import and export directly against your
+character's in-game saved fittings over ESI, and share a fit as a rendered image. Everything you
+save can be backed up to a file and restored.
 
-About 1,000 types have no art in pyfa's set; those still fall back to the image server (fine online,
-hidden offline).
+**Prices.** Optional market pricing per module and for the whole fit, plus a one-tap optimizer that
+swaps every module for its cheapest **stat-identical** variant — same numbers, less ISK.
 
-## Before you open a PR
+## Accuracy
 
-```bash
-npm run verify
-```
+pyfa v2.68.0 (EVE client build 3424810) is the reference implementation. Where Axis disagrees with
+pyfa, Axis is treated as wrong until proven otherwise.
 
-Runs everything CI runs: runtime-fatal lint, import-path resolution, production build, the
-no-silent-no-op effect gate, and the 55 pyfa-validated fit baselines. If it's green locally, CI will
-be green.
+Correctness is held in place by a regression suite of **993 checks** — real fits whose every number
+was validated by hand against pyfa, and in many cases against pyfa's `eos` engine driven directly as
+a library. It runs on every change. A number in this app is not "whatever the code currently
+prints"; it is a value someone confirmed.
 
-| command | what it does |
-| --- | --- |
-| `npm run dev` | dev server |
-| `npm test` | 55 pyfa-validated fit baselines |
-| `npm run check` | lint (runtime-fatal rules) + import-path resolution |
-| `npm run build` | production build |
-| `node scripts/check-effect-coverage.mjs` | fails if a data regen adds a new silent no-op effect (see CLAUDE.md → "Upgrading eve.db") |
-| `npm run verify` | all of the above — run this before pushing |
+## Offline and private
 
-## Working on this
+All ship and module art is bundled into the app (~6.5 MB), so nothing is fetched while you fit. Your
+fits, skills and settings live on your device — there is no server, no account and no telemetry.
+Connecting an EVE character over ESI is entirely optional, uses CCP's official login, and is the
+only thing that ever talks to the network besides market prices, which are fetched only when you ask
+for them.
 
-**Read [CLAUDE.md](./CLAUDE.md) first.** It documents the architecture, the layering
-(`core -> ui -> tabs -> App`), and — importantly — the gotchas that have each cost a full debugging
-session. A few that will bite you otherwise:
+## Contributing
 
-- `numShots` is not a stored attribute; clip size must be derived from the charge bay.
-- Booster bonuses are unpenalised; module bonuses are not.
-- Group modifiers can target a **charge's** group rather than the module's.
-- Attributes have **default values**, so `getBase()` on an absent attribute returns the default, not 0.
-- The Asklepian and Nirvana implant sets require **different** set products despite identical dogma.
-  This is deliberate and validated against pyfa. **Do not "fix" it.**
-
-### The regression suite is not optional
-
-Every number in `src/regression.test.mjs` was validated by hand against pyfa. They are not "whatever
-the code currently prints". If a check fails, you broke something real — do not update the expected
-value to match your output unless you have re-checked against pyfa and can say why the old number was
-wrong.
-
-### Don't hand-edit generated files
-
-`src/data/dogma-*.json`, `data-bundle.js`, `modules.json`, `module-variations.json` and
-`pyfa-types.json` are generated. Regenerate them with `scripts/build-bundle.py`; hand fixes belong in
-`scripts/data-patches.json`, which is re-applied on every build.
-
-### Branch, don't push to main
-
-Work on a branch, open a PR, let CI run. `App.jsx` and the data bundles are the files most likely to
-conflict — keep changes to them focused.
+The engine internals, the data pipeline and the hard-won gotchas are documented in
+[CLAUDE.md](./CLAUDE.md). Start there.
 
 ---
 
