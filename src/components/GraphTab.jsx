@@ -790,14 +790,21 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   const sigVal = (tgtSig==null||tgtSig>=IDEAL_SIG) ? "" : Math.round(tgtSig);
   const trans = Math.round(transversalSpeed);
   // Coloured off the transversal in both units. Angular has no threshold that means anything on its
-  // own — 0.05 rad/s is nothing to a frigate's guns and hopeless for a battleship's — so a scale built
+  // own — 3°/s is nothing to a frigate's guns and hopeless for a battleship's — so a scale built
   // on it would be inventing a judgement. Tapping between the two units must not change the verdict.
   const transColor = trans<50?C.success:trans>400?C.danger:C.warning;
-  // rad/s spans orders of magnitude across a distance axis: ~2 at knife-fight range, ~0.001 at 200 km.
-  // A fixed decimal count either truncates the near end to 2.0000 or flattens the far end to 0.00.
+  // calcAngularSpeed returns rad/s — that's the unit the trackingSpeed attribute itself ships in
+  // (see Stats > Firepower and the module info panel, both "rad/s"), and calcTrackingFactor plugs
+  // the two together directly, so the INTERNAL value must stay radians or the tracking/DPS math the
+  // regression suite validates against pyfa breaks. But EVE's own overview "Angular Velocity" column
+  // shows deg/s — CCP converts it for that one readout and nowhere else, a real inconsistency in the
+  // client, not ours. This on-screen readout mirrors the overview, so it converts for DISPLAY ONLY.
+  const angularSpeedDeg = angularSpeed * (180/Math.PI);
+  // deg/s spans orders of magnitude across a distance axis: ~115 at knife-fight range, ~0.06 at 200 km.
+  // A fixed decimal count either truncates the near end to 115.00 or flattens the far end to 0.06→0.1.
   // Not finite when the two hulls are touching and neither has a radius, which is a real reading at
   // the very left of a distance axis on a fit with no ship resolved.
-  const fmtAngular = v => !Number.isFinite(v) ? "--" : v>=1 ? v.toFixed(2) : v>=0.1 ? v.toFixed(3) : v.toFixed(4);
+  const fmtAngular = v => !Number.isFinite(v) ? "--" : v>=10 ? v.toFixed(1) : v>=1 ? v.toFixed(2) : v>=0.1 ? v.toFixed(3) : v.toFixed(4);
   // Whole km past 10, where a decimal would only jitter under a scrubbing finger.
   const fmtRangeKm = m => { const km=m/1000; return km>=10?String(Math.round(km)):km.toFixed(1); };
   const inputStyle={width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${C.border}`,color:C.text};
@@ -897,15 +904,15 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
         <div style={{width:1,height:18,background:C.border}}/>
         {/* Tap to swap units. Transversal is what you fly and needs no context; angular velocity is
-            what a turret is judged against, since tracking is quoted in rad/s — but it only exists at
-            a range, so its label names the one it was taken at. Which of the two you think in is a
-            habit rather than a per-visit whim, so the choice sticks. */}
+            what a turret is judged against — shown in deg/s to match EVE's own overview column — but
+            it only exists at a range, so its label names the one it was taken at. Which of the two
+            you think in is a habit rather than a per-visit whim, so the choice sticks. */}
         <div onClick={()=>setShowTransversal(v=>!v)} title={showTransversal?"Transversal — tap for angular velocity":"Angular velocity — tap for transversal"}
              style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center",cursor:"pointer"}}>
           <div style={{fontSize:14,fontWeight:800,color:transColor,fontVariantNumeric:"tabular-nums"}}>
-            {showTransversal?trans:fmtAngular(angularSpeed)}</div>
+            {showTransversal?trans:fmtAngular(angularSpeedDeg)}</div>
           <div style={{fontSize:8,color:C.textMute}}>
-            {showTransversal?"m/s transversal":`rad/s @ ${fmtRangeKm(angularDistM)}km`}</div>
+            {showTransversal?"m/s transversal":`°/s @ ${fmtRangeKm(angularDistM)}km`}</div>
         </div>
         <div style={{width:1,height:18,background:C.border}}/>
       </div>
