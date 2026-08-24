@@ -13,8 +13,8 @@
 > (`lib/storage-migrate.js`). Saved fits were always `pyfa-*` and were untouched. Backup files now
 > tag `"app": "axis"` but `isBackupApp()` still accepts `"visviva"`, so old backups restore.
 
-A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It reimplements pyfa's dogma
-engine in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
+A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It implements EVE's dogma
+system in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
 numbers disagree with pyfa, we are wrong until proven otherwise.
 
 ---

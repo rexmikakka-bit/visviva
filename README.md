@@ -2,10 +2,11 @@
 
 A ship-fitting calculator for **EVE Online**, built for your phone.
 
-Axis reimplements pyfa's dogma engine in JavaScript, so you get the same numbers pyfa gives you —
+Axis implements EVE's dogma system in JavaScript, so you get the same numbers pyfa gives you —
 stacking penalties, hull and subsystem bonuses, implant sets, command bursts, environment effects,
-overheating — on a screen you actually have with you. It is free, has no ads, needs no account, and
-works with no signal.
+overheating — on a screen you actually have with you. pyfa v2.68.0 is the reference implementation:
+where Axis disagrees with pyfa, Axis is treated as wrong until proven otherwise. It is free, has no
+ads, needs no account, and works with no signal.
 
 Formerly *Vis Viva*.
 
