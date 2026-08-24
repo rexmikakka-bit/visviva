@@ -95,8 +95,8 @@ is read from the game data at runtime. Roughly 42% of its rows fall directly out
 conventions;
 the remainder encodes mappings pyfa's authors worked out.
 
-pyfa itself is **not** redistributed here. `Pyfa-master/` and `eve.db` are gitignored, and neither
-the repository nor the built app contains pyfa code.
+pyfa itself is **not** redistributed here — neither this repository nor the built app contains any
+pyfa code.
 
 This has not been cleared with pyfa's maintainers. If you are one of them and would rather this data
 were not used, please open an issue — it will be removed.
