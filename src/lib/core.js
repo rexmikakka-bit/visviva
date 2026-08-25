@@ -746,7 +746,7 @@ function buildSlotsFromEFT(ship,parsedMods,subsystems){
     const isRigMod=secKey==="rigs";
     const modType=isCapBooster?"capbooster":isWeaponMod?"weapon":isRigMod?"rig":"passive";
     const hasCycle=!!(modInfo?.duration&&modInfo.duration>0)||(modInfo?.capUse!=null&&modInfo.capUse>0)||!!(mod.typeID&&TYPES[mod.typeID]?.attrs?.duration>0);
-    const defaultState=isRigMod?"online":isMicroJumpDrive(mod.typeID)?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
+    const defaultState=isRigMod?"online":(isMicroJumpDrive(mod.typeID)||isAssaultDamageControl(mod.typeID))?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
     const state=mod.state??defaultState;
     // Compute maxCharges from module capacity and charge volume:
     let maxChargesVal = undefined;
@@ -1200,6 +1200,21 @@ export function isMicroJumpDrive(typeID){
   if(!t)return false;
   return /Micro Jump (Drive|Field Generator)/i.test(t.gn??t.groupName??'')
       || /Micro Jump (Drive|Field Generator)$/i.test(t.n??t.name??'');
+}
+
+// Same reasoning as the MJD above, for the same "anything that cycles starts active" default:
+// an Assault Damage Control shares its GROUP with the plain passive Damage Control (which has no
+// duration and can never be toggled at all), but is itself activated — burning cap and its cooldown
+// every cycle the instant it's added, before the pilot has chosen when to trigger the emergency
+// resist spike it exists for. Detected structurally (group + a duration attribute actually present)
+// rather than by name, so a faction/deadspace variant like Breach Control or a future abyssal roll
+// is covered without a name list to maintain — the passive Damage Control in the same group has no
+// `duration` attribute at all and so never matches.
+export function isAssaultDamageControl(typeID){
+  const t=TYPES[typeID]??TYPES[String(typeID)];
+  if(!t)return false;
+  if((t.gn??t.groupName)!=='Damage Control')return false;
+  return ((t.attrs??t.a)?.duration??0)>0;
 }
 
 // ── Fitting go/no-go ─────────────────────────────────────────────────────────
