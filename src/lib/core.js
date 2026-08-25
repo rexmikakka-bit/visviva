@@ -254,6 +254,18 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
    containing block and never moving. index.css owns the top of that chain. */
 .app-shell{height:100%;overflow:hidden}
 
+/* Scroll anchoring OFF everywhere. Each screen already tracks and restores its own scroll
+   position by hand (use-scroll-memory.js) and drives header-collapse / tab-strip-close off the
+   scroll position it sees (App.jsx's window-capture scroll listener) — so a browser-initiated
+   scrollTop correction is not a convenience here, it is a second, uncoordinated writer.
+   Concretely: expanding the fit-tabs strip (FitTabs.jsx) grows a sibling ABOVE a screen's
+   flex:1 scroller, which shrinks that scroller's own box. With the user scrolled to the exact
+   bottom, Chromium's default scroll anchoring "corrects" scrollTop to keep the bottom content
+   flush — which fires a real scroll event, which App.jsx reads as the user scrolling down, which
+   immediately re-closes the strip it was told to open. Confirmed Android + dev server (Chromium
+   scroll-anchoring default ON) only, never iOS (Safari's anchoring doesn't fire the same way). */
+.app-shell,.app-shell *{overflow-anchor:none}
+
 /* Phones get the full screen width; the 430px column is a DESKTOP affordance, and capping there
    left a dead strip either side on any phone wider than 430pt (an iPhone Pro Max is 440). */
 .app-col,.vv-sheet{width:100%;max-width:430px}
