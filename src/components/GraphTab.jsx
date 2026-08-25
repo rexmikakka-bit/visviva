@@ -87,6 +87,24 @@ function engagementDistanceM(cs){
   return d > 0 ? d : 30000;
 }
 
+// Your own fitted web(s) at a given distance — range-scaled and stacking-penalised, same as the
+// Damage graph's application curve. Shared so the transversal/angular readouts can't disagree with
+// that curve about how fast a webbed target is actually moving; see the damage curve's own
+// `webMultAt` (built from this) for the reasoning.
+function ownWebMultAt(ownProj, distM) {
+  const ms = (ownProj?.webs || []).map(w => 1 + (w.speedFactor * calcRangeFactor(w.optimal, w.falloff, distM, true)) / 100);
+  return ms.length ? stackingPenalty(ms) : 1;
+}
+// Grapplers need no separate handling here: CCP files them in their own group but
+// computeProjectedReps already folds both into `webs` (see the damage curve's own comment on this).
+
+// Is your own scrambler/disruptor in range at `distM`? A scram doesn't scale speed itself — it just
+// turns the target's MWD off, a state it either has or doesn't (hard-edged, no falloff) — so this
+// only answers "in range", and the caller decides what turning the MWD off is worth.
+function ownScrammedAt(ownProj, distM) {
+  return (ownProj?.scrams || []).some(s => distM <= (s.optimal || 0));
+}
+
 function generateCurve(catKey,yKey,xKey,params={}){
   const{targetProfile="ideal",shipVelFrac=1,ship={},cs=null,xZoom=1}=params;
   // The X zoom control has to widen/narrow the DATA DOMAIN, not just the axis — otherwise zooming out
@@ -121,7 +139,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // in their own group but `computeProjectedReps` already folds both into `webs`.
     const PJ = params.ownProj || {};
     const rfE = (o,f,d) => calcRangeFactor(o,f,d,true);
-    const webMultAt = (dM) => { const ms=(PJ.webs||[]).map(w=>1+(w.speedFactor*rfE(w.optimal,w.falloff,dM))/100); return ms.length?stackingPenalty(ms):1; };
+    const webMultAt = (dM) => ownWebMultAt(PJ, dM);
     const sigMultAt = (dM) => { const ms=(PJ.painters||[]).map(p=>1+((p.sigBonus||0)*rfE(p.optimal,p.falloff,dM))/100); return ms.length?stackingPenalty(ms):1; };
     // A scrambler does not modify an attribute — it turns the target's microwarpdrive OFF, which is a
     // state the target either has or doesn't. `tgtNoMwd` is the same profile's not-MWDing sig/speed
@@ -129,7 +147,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     // sig or speed it is null, because there is no way to know how much of a typed 200 m is MWD bloom.
     // Tackle is hard-edged (no falloff), so this flips at exactly the scrambler's engine-computed
     // range — which on a Mordu's hull is a good deal further out than the module's own 9 km.
-    const scrammedAt = (dM) => (PJ.scrams||[]).some(s => dM <= (s.optimal||0));
+    const scrammedAt = (dM) => ownScrammedAt(PJ, dM);
     // `free` names the quantity the X AXIS is sweeping. Substituting the MWD-off value for it would
     // overwrite the axis with a constant and draw a flat line across a graph whose entire subject is
     // that quantity — the same trap the tgtSig branch fell into once before (see above).
@@ -1055,9 +1073,6 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // which may predate the siege module being fitted.
   const selfMaxVel=cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500;
   const selfVelEff=Math.max(0,Math.min(selfVel,selfMaxVel));
-  // Real transversal: component of relative velocity perpendicular to the line of sight (m/s).
-  // North (up) on the compass = toward/away from the target (radial); E/W = across (transversal).
-  const transversalSpeed=Math.abs(selfVelEff*Math.sin(selfAngle*Math.PI/180)-targetVel*Math.sin(targetAngle*Math.PI/180));
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
@@ -1112,13 +1127,24 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // value, so zooming back out or switching to a longer-ranged fit restores the same point.
   const cursorLive=cursorX!=null&&cursorX<=xMax;
   const cursorY=cursorLive?interpCurveAt(pts,cursorX):null;
-  // Angular velocity is transversal over the range it is seen across, so unlike transversal it needs a
-  // distance to exist at all. Scrubbing a distance axis names one, and following the cursor is the
-  // point — that is the reading you would have in space at that range. Otherwise it falls back to the
-  // same engagement distance the speed and sig axes hold themselves at, and the readout quotes which
-  // range it used either way, so the number is never floating free of one.
+  // Angular velocity is transversal over the range it is seen across, so it needs a distance to exist
+  // at all (transversal itself is range-independent — the distance below is only for looking up how
+  // hard a range-scaled web is biting, not for the vector maths). Scrubbing a distance axis names one,
+  // and following the cursor is the point — that is the reading you would have in space at that range.
+  // Otherwise it falls back to the same engagement distance the speed and sig axes hold themselves at,
+  // and the readout quotes which range it used either way, so the number is never floating free of one.
   const angularDistM=(validX==="dist"&&cursorLive)?cursorX*1000:engagementDistanceM(cs);
-  const angularSpeed=calcAngularSpeed(selfVelEff,selfAngle,cs?.shipRadius??0,angularDistM,targetVel,targetAngle,0);
+  // Same two effects the Damage graph's application curve already accounts for (see `ownWebMultAt` /
+  // `ownScrammedAt`), applied here too so the transversal/angular readouts can't disagree with the
+  // curve right next to them about how fast the target is actually moving. A scrambler in range swaps
+  // in the MWD-off speed first (only possible against a preset target whose MWD variant is known —
+  // see `tgtNoMwd`'s own comment), THEN the web multiplier scales that down further.
+  const targetVelNoMwd=(tgtNoMwd&&ownScrammedAt(ownProj,angularDistM))?tgtNoMwd.vel:targetVel;
+  const targetVelWebbed=targetVelNoMwd*ownWebMultAt(ownProj,angularDistM);
+  // Real transversal: component of relative velocity perpendicular to the line of sight (m/s).
+  // North (up) on the compass = toward/away from the target (radial); E/W = across (transversal).
+  const transversalSpeed=Math.abs(selfVelEff*Math.sin(selfAngle*Math.PI/180)-targetVelWebbed*Math.sin(targetAngle*Math.PI/180));
+  const angularSpeed=calcAngularSpeed(selfVelEff,selfAngle,cs?.shipRadius??0,angularDistM,targetVelWebbed,targetAngle,0);
   const displayVal=cursorY!=null?cursorY:baseHeadline;
   const displayX=cursorY!=null?cursorX:null;
   // What the same point would be worth with application perfect, as a share.
