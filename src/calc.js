@@ -78,7 +78,7 @@ export const SKILL_DEFAULTS = {
   xlCruiseMissileSpec:5, xlTorpedoSpec:5, xlTorpedoes:5,
   // Drone
   droneInterfacing:5, drones:5, lightDroneOperation:5, mediumDroneOperation:5,
-  heavyDroneOperation:5, droneAvionics:5,
+  heavyDroneOperation:5, droneAvionics:5, mutatedDroneSpecialization:5,
   amarrDroneSpecialization:5, caldariDroneSpecialization:5,
   gallenteDroneSpecialization:5, minmatarDroneSpecialization:5,
   // Racial battleship / marauder
@@ -175,6 +175,7 @@ export const SKILL_CAMEL_TO_PYFA = {
   cruiseMissileSpec:'Cruise Missile Specialization', torpedoSpec:'Torpedo Specialization',
   lightMissileSpec:'Light Missile Specialization', rocketSpec:'Rocket Specialization',
   droneInterfacing:'Drone Interfacing', drones:'Drones',
+  mutatedDroneSpecialization:'Mutated Drone Specialization',
   lightDroneOperation:'Light Drone Operation', mediumDroneOperation:'Medium Drone Operation',
   heavyDroneOperation:'Heavy Drone Operation', droneAvionics:'Drone Avionics',
   amarrDroneSpecialization:'Amarr Drone Specialization',
@@ -1412,7 +1413,7 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   for (const drone of (opts.drones ?? [])) {
     if (anyDroneActive && drone.active !== true) continue;
     const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
-    if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
+    if (dtid && TYPES[dtid]) droneItems.push({ item: fit.addDrone(dtid, drone.mutations), qty: drone.qty ?? drone.count ?? 1, name: drone.name ?? TYPES[dtid].n });
   }
   // The system the SOURCE is sitting in affects what it projects too (a Wolf-Rayet logi reps the
   // same, but a storm changes its damage). Cheap to thread through and wrong to omit.
@@ -1707,7 +1708,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     const dtid = drone.typeID ?? (typeIDByName(drone.name) ?? tidByName(drone.name));
     const isActive = anyActiveFlag ? (drone.active === true) : true;
     if (dtid && TYPES[dtid]) {
-      const di = fit.addDrone(dtid);
+      const di = fit.addDrone(dtid, drone.mutations);
       droneItems.push({ item: di, qty: drone.qty ?? drone.count ?? 1, raw: drone, active: isActive });
     } else {
       droneItems.push({ item: null, qty: drone.qty ?? drone.count ?? 1, raw: drone, active: isActive });
@@ -3154,7 +3155,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const vol = ((item.get('emDamage') ?? 0) + (item.get('thermalDamage') ?? 0)
                  + (item.get('kineticDamage') ?? 0) + (item.get('explosiveDamage') ?? 0)) * dm;
       droneInfo.push({
-        name: raw?.name ?? item.name, qty, active: active !== false,
+        id: raw?.id, name: raw?.name ?? item.name, qty, active: active !== false,
         optimal:  item.get('maxRange') ?? 0,
         falloff:  item.get('falloff') ?? 0,
         tracking: item.get('trackingSpeed') ?? 0,

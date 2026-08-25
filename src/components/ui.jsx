@@ -1799,6 +1799,33 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
   </>);
 }
 
+// Drone bottom sheet — mirrors ModuleMenu's Info/Variations/Mutate tabs. No State or Charge tab:
+// a drone's active/qty controls already live inline in the drone row, and drones take no charges.
+// No Remove button either, for the same reason — the row's own "x" already does that.
+function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
+  const _hasMuta=(MUTA_BY_TYPE[drone.typeID]??MUTA_BY_TYPE[String(drone.typeID)]??[]).length>0||drone.mutaplasmid;
+  const[tab,setTab]=useState("info");
+  const tabs=["info","variations",...(_hasMuta?["mutate"]:[])];
+  const tabLabel={info:"Info",variations:"Variations",mutate:"Mutate"};
+  return(<BottomSheet title={drone.name} onClose={onClose} height="78vh">
+    <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
+      {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
+    </div>
+    <div style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
+      {tab==="info"&&<ModuleInfoTab typeID={drone.typeID} mod={drone} engineItem={engineItem}/>}
+      {tab==="variations"&&<ModuleVariationsTab typeID={drone.typeID} currentName={drone.name}
+        baseMutations={drone.mutaplasmid?drone.mutations:null} baseMutaplasmid={drone.mutaplasmid}
+        onSwap={v=>{
+          // Same reasoning as ModuleMenu's swap: the roll is dropped, always. A mutaplasmid that
+          // survives a base-type swap would land on a drone it was never rolled for and silently
+          // reapply the old drone's numbers to a different type.
+          onUpdateDrone({name:v.name,typeID:v.typeID,mutaplasmid:undefined,mutations:undefined});onClose();
+        }}/>}
+      {tab==="mutate"&&<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={drone} onUpdateMod={onUpdateDroneLive||onUpdateDrone}/></div>}
+    </div>
+  </BottomSheet>);
+}
+
 function ImportFitSheet({onClose,onImport}){
   const[text,setText]=useState("");
   const[parsed,setParsed]=useState(null);
@@ -1930,4 +1957,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, TraitsPanel, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, DroneMenu, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, TraitsPanel, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };

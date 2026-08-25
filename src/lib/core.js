@@ -665,7 +665,11 @@ function parseEFT(text){
     if(qm){
       const itemName=qm[1].trim(),qty=parseInt(qm[2],10);
       const drone=Object.values(dronesData).find(d=>d.name===itemName);
-      if(drone){drones.push({name:itemName,qty,drone});continue;}
+      if(drone){
+        const _ab=modRef?abyssalByRef[modRef]:null;
+        drones.push({name:itemName,qty,drone,mutaplasmid:_ab?.mutaID,mutations:_ab?.mutations});
+        continue;
+      }
       // Fighters (category 87): each EFT line is one squadron (the "xN" is the squadron size).
       // Aggregate repeated lines of the same fighter into a squadron count.
       const fTid=tidByName(itemName);

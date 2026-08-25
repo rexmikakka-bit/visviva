@@ -411,7 +411,8 @@ export default function App(){
       const bw=dta?.droneBandwidthUsed ?? d.drone.bandwidth ?? 5;
       return {id:Date.now()+i,name:d.name,size:d.drone.size,qty:d.qty,active:false,
         range:d.drone.range??0,tracking:d.drone.tracking??0,velocity:d.drone.velocity??0,hp:d.drone.hp??0,
-        dps:d.drone.dps??0,bandwidth:bw,volume:dta?.volume??d.drone.volume,typeID:d.drone.typeID};
+        dps:d.drone.dps??0,bandwidth:bw,volume:dta?.volume??d.drone.volume,typeID:d.drone.typeID,
+        mutaplasmid:d.mutaplasmid??undefined,mutations:d.mutations??undefined};
     });
     const newFighters=(pFighters??[]).map((f,i)=>{
       const t=f.typeID??tidByName(f.name); const gn=TYPES[t]?.gn??TYPES[t]?.groupName??"";

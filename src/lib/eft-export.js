@@ -30,15 +30,33 @@ export function mutaplasmidName(mutaID) {
   return mutaplasmidData?.[mutaID]?.n ?? mutaplasmidData?.[String(mutaID)]?.n ?? null;
 }
 
-// An abyssal module keeps its BASE name, so nothing in a list row would otherwise reveal that its
-// numbers came from a roll. The mutaplasmid's leading word is its grade — except for the Glorified
-// tier, whose names read "Glorified <grade> …", so both words matter and only the second is short
-// enough to sit in a badge.
+// An abyssal item keeps its BASE name, so nothing in a list row would otherwise reveal that its
+// numbers came from a roll. Two naming schemes exist and both collapse to "the one word that
+// actually distinguishes this roll from every other roll of the same mutaplasmid family":
+//   module: "<Grade> <ModuleName> Mutaplasmid" (Glorified tier: "Glorified <Grade> <ModuleName> …")
+//     — the grade word IS the leading word (after an optional "Glorified").
+//   drone:  "Exigent <Size> Drone <Family> Mutaplasmid" (Glorified: "Glorified Exigent <Size> Drone
+//     <Family> …") — "Exigent" is constant across every drone mutaplasmid (there is no other drone
+//     grade), so it carries no information and is dropped; "<Size>"/"Drone" are already shown by the
+//     row itself. Only "<Family>" (Navigation/Firepower/Durability/Projection/Precision, or the
+//     mining variants' own words) distinguishes one drone roll from another.
+// The two schemes are told apart by checking for the constant "Exigent" token, not by the presence
+// of the word "Drone" anywhere in the name — "Radical Drone Damage Amplifier Mutaplasmid" is a
+// MODULE mutaplasmid (for the Drone Damage Amplifier module) and must still return "Radical".
 export function abyssalGrade(mutaID) {
   if (!mutaID) return null;
-  const w = (mutaplasmidName(mutaID) ?? "").split(" ");
-  if (w[0] === "Glorified") return w[1] ? `G. ${w[1]}` : "G. Abyssal";
-  return w[0] || "Abyssal";
+  const words = (mutaplasmidName(mutaID) ?? "").replace(/ Mutaplasmid$/, "").split(" ");
+  let glorified = false;
+  if (words[0] === "Glorified") { glorified = true; words.shift(); }
+  let tag;
+  if (words[0] === "Exigent") {
+    const SKIP = new Set(["Light", "Medium", "Heavy", "Sentry", "Drone"]);
+    tag = words.slice(1).filter(w => !SKIP.has(w)).join(" ") || null;
+  } else {
+    tag = words[0] || null;
+  }
+  if (!tag) return glorified ? "G. Abyssal" : "Abyssal";
+  return glorified ? `G. ${tag}` : tag;
 }
 
 // EFT is a sequence of SECTIONS separated by two blank lines, each of which may hold sub-sections
@@ -71,8 +89,19 @@ export function fitToEFT(fit, opts = {}) {
   }
   if (rackSections.length) sections.push(rackSections.join("\n\n"));
 
+  // An abyssal drone exports exactly like an abyssal module — base name + "[n]" marker, roll in the
+  // trailing block — except the marker sits after the "xN" stack count, and the trailing block's own
+  // header line has no "xN": the roll is described per-unit, independent of how many sit in the stack.
   const droneLines = [];
-  for (const d of (drones ?? [])) if (d?.name && d.qty > 0) droneLines.push(`${d.name} x${d.qty}`);
+  for (const d of (drones ?? [])) {
+    if (!d?.name || !(d.qty > 0)) continue;
+    let marker = "";
+    if (mutations && d.mutaplasmid && d.mutations && Object.keys(d.mutations).length) {
+      mutants.push({ base: d.name, mutaID: d.mutaplasmid, mutations: d.mutations });
+      marker = ` [${mutants.length}]`;
+    }
+    droneLines.push(`${d.name} x${d.qty}${marker}`);
+  }
   // One line per SQUADRON, with xN the squadron SIZE — that is what "x5" means for fighters in EFT,
   // unlike drones where it is the count. parseEFT reads them back on the same convention.
   const fighterLines = [];

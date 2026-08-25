@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, AccordionSection, ItemDetailSheet } from "./ui.jsx";
+import { BottomSheet, AccordionSection, DroneMenu } from "./ui.jsx";
 import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, droneAddQty } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
+import { abyssalGrade, mutaplasmidName } from "../lib/eft-export.js";
 
 export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   const[search,setSearch]=useState("");
@@ -128,14 +129,16 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
   const droneSlotsFree=maxActiveDrones-activeCount;
   const addDrone=d=>{
     const bayFree=shipDroneBay-bayUsed, bwFree=shipDroneBandwidth-bwUsed;
-    const ex=drones.find(e=>e.name===d.name);
+    // An abyssal roll is its own item, never merged with a plain stack of the same name — pyfa
+    // never stacks a mutated drone with an unmutated one either.
+    const ex=drones.find(e=>e.name===d.name && !e.mutaplasmid);
     // Topping up a stack already in the bay: the bay always caps it, but bandwidth only does if that
     // stack is flying — spares cost none. Its active state is the user's and is left alone.
     if(ex){
       const{qty}=droneAddQty({bandwidth:getDroneBW(ex),volume:getDroneVol(ex),
                               bwFree:ex.active?bwFree:Infinity,bayFree,
                               max:ex.active?Math.max(1,droneSlotsFree):maxActiveDrones});
-      setDrones(drones.map(e=>e.name===d.name?{...e,qty:e.qty+qty}:e));return;
+      setDrones(drones.map(e=>e===ex?{...e,qty:e.qty+qty}:e));return;
     }
     setDrones(prev=>{
       const dtid = d.typeID ?? (d.name ? tidByName(d.name) : null);
@@ -243,31 +246,46 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     )}
     <div style={{flex:1,overflowY:"auto"}}>
       {!usesFighters&&(<>
-      <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"5px 12px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
+      <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"5px 23px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
         {["","Name","Range","Track","Speed","EHP"].map((h,i)=><span key={i} style={{fontSize:9,fontWeight:700,color:C.textMute,textAlign:i>1?"center":"left"}}>{h}</span>)}
       </div>
       {drones.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No drones - tap + Add</div>}
       <div style={{padding:"8px 10px"}}>
         {drones.map(drone=>(<div key={drone.id} style={{background:C.surface,border:`1px solid ${drone.active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,overflow:"hidden"}}>
-          <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"10px 12px",alignItems:"center"}}>
-            <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d))} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:drone.active?C.accent:""}}>{drone.active?"✓":""}</button>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              {drone.typeID&&<img className="eve-icon" src={eveIcon(drone.typeID,32)} width={24} height={24} alt="" onError={e=>{e.target.style.display="none";}}/>}
-              <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name,droneId:drone.id})}><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div><span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span></div>
+          <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name,droneId:drone.id})}>
+            <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:`10px 12px ${drone.mutaplasmid?4:10}px`,alignItems:"center"}}>
+              <button onClick={(e)=>{e.stopPropagation();setDrones(drones.map(d=>d.id===drone.id?{...d,active:!d.active}:d));}} style={{width:24,height:24,borderRadius:5,background:drone.active?C.accentLight:"none",border:`1px solid ${drone.active?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:drone.active?C.accent:""}}>{drone.active?"✓":""}</button>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                {drone.typeID&&<img className="eve-icon" src={eveIcon(drone.typeID,32)} width={24} height={24} alt="" onError={e=>{e.target.style.display="none";}}/>}
+                <div><div style={{fontSize:12,fontWeight:600,color:drone.active?C.text:C.textMid,lineHeight:1.2,wordBreak:"break-word"}}>{drone.name}</div>
+                  <span style={{fontSize:9,color:sizeColor(drone.size),fontWeight:700}}>{drone.size}</span>
+                </div>
+              </div>
+              {(()=>{
+                // Matched by row id, not name: an abyssal roll and a plain drone of the same base
+                // type are now two separate rows (never merged), and matching by name alone would
+                // let one row's stats leak onto the other.
+                const info=(drone.id!=null?droneInfo.find(x=>x.id===drone.id):null)
+                  ??droneInfo.find(x=>x.name===drone.name)??{};
+                const r=info.optimal??0, f=info.falloff??0, trk=info.trackingNorm??0,
+                      v=info.velocity??0, ehp=info.ehp??0;
+                const kfmt=n=>n>=1000?`${(n/1000).toFixed(2).replace(/0$/,"")}k`:n.toFixed(2);
+                const trimZeros=n=>parseFloat(n.toFixed(2));
+                const cells=[
+                  r>0?`${trimZeros(r/1000)}${f>0?`+${trimZeros(f/1000)}`:""} km`:"-",
+                  trk>0?kfmt(trk):"-",
+                  v>0?`${Math.round(v)} m/s`:"-",
+                  ehp>0?Math.round(ehp).toLocaleString():"-",
+                ];
+                return cells.map((val,i)=><span key={i} style={{fontSize:10,color:C.textMid,textAlign:"center",lineHeight:1.2}}>{val}</span>);
+              })()}
             </div>
-            {(()=>{
-              const info=droneInfo.find(x=>x.name===drone.name)??{};
-              const r=info.optimal??0, f=info.falloff??0, trk=info.trackingNorm??0,
-                    v=info.velocity??0, ehp=info.ehp??0;
-              const kfmt=n=>n>=1000?`${(n/1000).toFixed(2).replace(/0$/,"")}k`:n.toFixed(2);
-              const cells=[
-                r>0?`${(r/1000).toFixed(2)}${f>0?`+${(f/1000).toFixed(2)}`:""} km`:"-",
-                trk>0?kfmt(trk):"-",
-                v>0?`${Math.round(v)} m/s`:"-",
-                ehp>0?Math.round(ehp).toLocaleString():"-",
-              ];
-              return cells.map((val,i)=><span key={i} style={{fontSize:10,color:C.textMid,textAlign:"center"}}>{val}</span>);
-            })()}
+            {drone.mutaplasmid&&(
+              <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"0 12px 8px"}}>
+                <span/>
+                <span title={mutaplasmidName(drone.mutaplasmid)} style={{justifySelf:"start",fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:.3,textTransform:"uppercase",color:C.danger,background:`${C.danger}22`,border:`1px solid ${C.danger}`,borderRadius:4,padding:"2px 5px",display:"inline-flex",alignItems:"center",gap:3}}>▲ {abyssalGrade(drone.mutaplasmid)}</span>
+              </div>
+            )}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px 8px",borderTop:`1px solid ${C.border}`}}>
             <span style={{fontSize:10,color:C.textMute}}>Qty:</span>
@@ -326,9 +344,18 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     {showDronePicker&&<DroneBrowserSheet existingDrones={drones} onAdd={addDrone} onClose={()=>setShowDronePicker(false)}/>}
     {showFighterPicker&&<FighterBrowserSheet onAdd={addFighter} onClose={()=>setShowFighterPicker(false)}/>}
     {/* Keyed by the drone ROW's id, not its name: two rows can hold the same drone type, and the
-        engine tracks them separately. */}
-    {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}
-      item={fittedDrones?.get(infoItem.droneId)}
-      onSwap={v=>setDrones(ds=>ds.map(x=>x.id===infoItem.droneId?{...x,name:v.name,typeID:v.typeID}:x))}/>}
+        engine tracks them separately. Mirrors ModuleMenu's updateMod — a partial object merged
+        into the row by id, so the Mutate tab's per-keystroke updates don't need the whole row. */}
+    {infoItem&&(()=>{
+      const drone=drones.find(d=>d.id===infoItem.droneId);
+      if(!drone)return null;
+      const updateDrone=(updated,keepOpen=false)=>{
+        setDrones(ds=>ds.map(d=>d.id===infoItem.droneId?{...d,...updated}:d));
+        if(!keepOpen)setInfoItem(null);
+      };
+      return <DroneMenu drone={drone} onClose={()=>setInfoItem(null)}
+        onUpdateDrone={u=>updateDrone(u)} onUpdateDroneLive={u=>updateDrone(u,true)}
+        engineItem={fittedDrones?.get(infoItem.droneId)}/>;
+    })()}
   </div>);
 }

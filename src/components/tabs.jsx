@@ -868,7 +868,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       // `qty` on a fighter is SQUADRONS, but the market sells them one at a time, so the priced
       // quantity is squadrons x squadron size (a single Templar II squadron is six hulls).
       drones:[
-        ...(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1})),
+        // Same reasoning as `modules` above: a rolled drone's worth is the roll, not its base
+        // item's market price.
+        ...(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1,
+          abyssal:d.mutaplasmid!=null||metaOf(d.typeID,null)==='Abyssal'})),
         ...(fighters??[]).map(f=>{const t=f.typeID??tidByName(f.name);
           return{typeID:t,qty:(f.qty??1)*((t!=null?TYPES[t]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
       ].filter(d=>d.typeID),

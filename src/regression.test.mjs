@@ -4497,6 +4497,108 @@ Medium Capacitor Control Circuit II
         maxDrones('Guardian-Vexor', { ...SKILLS_ALL_V, gallenteCruiser: 3 }), 8, 0);
 }
 
+// 20. ABYSSAL DRONE FIT — a real pyfa export (Alligator + a rolled Caldari Navy Vespa), exercising
+//     the abyssal-drone feature end to end: parseEFT reads the drone's mutaplasmid block, calcFitStats
+//     applies the roll, and the Alligator's own +500%/+250% drone role bonuses (Effect5821/7184-7186,
+//     both OwnerRequiredSkillModifier off "Medium Drone Operation", unpenalised) stack with Drone
+//     Interfacing, DDA IIs and the Dread Guristas DDA on top of it.
+//
+//     droneDps first came out ~10% under a hand-read pyfa screenshot (469.2 vs "516"), and a
+//     hand-built oracle script matched our WRONG number byte-for-byte — a false-confirming match,
+//     because both were built under the same missing-skill assumption. The real gap: "Mutated Drone
+//     Specialization" (typeID 60515), a skill that exists ONLY to buff abyssal drones and was
+//     entirely unwired — not in SKILL_DEFAULTS, so the engine's skill pass never saw it at all.
+//
+//     Worse, even with the skill added, `requiresSkill()` alone would still have missed it. A
+//     mutated drone's SDE identity is swapped to a size-specific placeholder type (pyfa:
+//     getItemWithBaseItemAttribute) — "Medium Mutated Drone" (60479) for this Vespa — whose OWN
+//     requiredSkillN list is ["Drones","Medium Drone Operation","Mutated Drone Specialization"],
+//     one entry longer than the real Caldari Navy Vespa's (31874: ["Medium Drone Operation","Drones"]).
+//     We mutate the base item's attributes in place rather than swapping typeID, so `requiresSkill()`
+//     (dogma-engine.js) now special-cases it: a mutated drone requires "Mutated Drone Specialization"
+//     regardless of what its base type's requiredSkillN says. Every other drone skill (Drone
+//     Interfacing, Medium Drone Operation, the racial specializations) was unaffected — those are all
+//     already on the real Vespa's own requirement list.
+//
+//     Confirmed by pyfa's Attributes/Affected-by tabs on the real fit: "Mutated Drone Specialization:
+//     Damage Modifier * 1.10" (2%/level × V), a row the un-fixed engine could never produce since the
+//     skill wasn't loaded at all. 29.325 (our old, wrong damageMultiplier) × 1.10 = 32.26 ≈ pyfa's
+//     displayed "32.3x" — and 469.2 × 1.10 = 516.1, exactly the screenshot's "516". droneDps is now
+//     516.1250766743026, volley 2064.5003066972104. maxVelocityAB (5622) and alignTime (36.69) were
+//     already exact matches and are pinned alongside as a sanity check that the rest of the fit (MWD,
+//     rigs, implants, boosters) is unaffected by the drone roll.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nABYSSAL DRONE FIT (Alligator)');
+
+  const ALLIGATOR_EFT = `[Alligator, AIRCRAFT CARRIER copy]
+
+Drone Damage Amplifier II
+Drone Damage Amplifier II
+Dread Guristas Drone Damage Amplifier
+True Sansha Power Diagnostic System
+
+500MN Y-T8 Compact Microwarpdrive
+Sentient Drone Navigation Computer
+Sentient Drone Navigation Computer
+Sensor Booster II, Targeting Range Script
+Sentient Omnidirectional Tracking Link, Tracking Speed Script
+Sentient Omnidirectional Tracking Link, Tracking Speed Script
+
+Skirmish Command Burst II, Rapid Deployment Charge
+Drone Link Augmentor II
+Drone Link Augmentor II
+Drone Link Augmentor II
+Drone Link Augmentor II
+Small Remote Shield Booster II
+[Empty High slot]
+
+Medium Ancillary Current Router II
+Medium Drone Durability Enhancer II
+Medium Ionic Field Projector I
+
+
+Caldari Navy Vespa x2 [1]
+
+
+High-grade Snake Alpha
+High-grade Snake Beta
+High-grade Snake Gamma
+High-grade Snake Delta
+High-grade Snake Epsilon
+High-grade Snake Omega
+Eifyr and Co. 'Rogue' Evasive Maneuvering EM-705
+Zor's Custom Navigation Hyper-Link
+Eifyr and Co. 'Gunslinger' Surgical Strike SS-905
+Skirmish Command Mindlink
+
+Strong Mindflood Booster
+Agency 'Overclocker' SB7 Dose III
+
+
+[1] Caldari Navy Vespa
+  Exigent Medium Drone Durability Mutaplasmid
+  armorHP 336.0, damageMultiplier 1.6, falloff 3300.0, hp 300.0, maxRange 4800.0, maxVelocity 2308.2, shieldCapacity 1084.0, trackingSpeed 0.778
+`;
+
+  const p = parseEFT(ALLIGATOR_EFT);
+  const ship = lookupShip(p.shipName);
+  const slots = buildSlotsFromEFT(ship, p.mods, p.subsystems);
+  check('alligator', 'drone parsed with its roll', p.drones?.[0]?.mutaplasmid, '60474', 0);
+
+  const st = calcFitStats(ship, slots, p.drones ?? [], SKILLS_ALL_V, {
+    implants: p.implantNames ?? [],
+    boosters: (p.boosterNames ?? []).map(n => ({ name: n, active: true })),
+  });
+
+  // Hard baselines — match pyfa's "Mutated Drone Specialization" damage row and the original
+  // screenshot's 516 DPS / 2065 volley (see comment above).
+  check('alligator', 'drone DPS', st.droneDps.total, 516.1250766743026, 1e-5);
+  check('alligator', 'drone volley', st.droneVolley.total, 2064.5003066972104, 1e-5);
+  check('alligator', 'maxVelocityAB (MWD)', st.maxVelocityAB, 5622, 0);
+  check('alligator', 'align time', st.alignTime, 36.69, 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

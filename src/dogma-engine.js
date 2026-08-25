@@ -341,8 +341,17 @@ export class DogmaItem {
   get level()      { return this._level; }
   set level(v)     { this._level = v; }
 
+  // A mutated drone's SDE identity is swapped to a size-specific placeholder type (pyfa:
+  // getItemWithBaseItemAttribute) — "Medium Mutated Drone" etc — whose OWN requiredSkillN list adds
+  // "Mutated Drone Specialization" on top of the base item's requirements (Drones, Medium Drone
+  // Operation, ...). We mutate the base item's attributes in place rather than swapping typeID, so
+  // that extra requirement has to be added by hand here, or every bonus gated on it (Effect1730's
+  // damage bonus, the mining-amount equivalent) silently reads as "doesn't apply" on every abyssal
+  // drone roll.
   requiresSkill(skillName) {
-    return (this._td.rs ?? []).includes(skillName);
+    if ((this._td.rs ?? []).includes(skillName)) return true;
+    if (skillName === 'Mutated Drone Specialization' && this._mutations && this.categoryID === 18) return true;
+    return false;
   }
 
   // Effect IDs from type data
@@ -471,8 +480,10 @@ export class Fit {
     this._subsystems = (typeIDs || []).filter(Boolean).map(tid => new DogmaItem(tid));
     return this._subsystems;
   }
-  addDrone(typeID) {
+  addDrone(typeID, mutations = null) {
     const item = new DogmaItem(typeID);
+    item._mutations = mutations || null;
+    if (mutations) for (const [k, v] of Object.entries(mutations)) item.attrs.setBase(k, v);
     this._drones.push(item);
     return item;
   }
