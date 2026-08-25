@@ -210,7 +210,7 @@ function ModRow({ m, meta, n }) {
             </span>
           )}
           {meta.rng && <span style={{ color: "#8fb0c6", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.rng}</span>}
-          {meta.trk != null && <span style={{ color: T.dim, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.trk} rad/s</span>}
+          {meta.trk != null && <span style={{ color: T.dim, fontSize: 11, fontWeight: 600, whiteSpace: "nowrap" }}>{meta.trk.toFixed(1)} rad/s</span>}
           {st === "overheated" && <svg viewBox="0 0 24 24" width={13} height={13} fill={T.overheat}><path d={FLAME} /></svg>}
         </span>
       )}
