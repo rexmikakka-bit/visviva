@@ -42,9 +42,17 @@ export function useTabSwipe(tabs, current, onChange) {
   // bubbled up here, the axis locked to "x", and the whole panel slid sideways instead. Detected
   // structurally (overflow-x + actual overflow) rather than by tagging specific components, so
   // every horizontal scroller in the app is covered by the same rule.
+  //
+  // A native <input type="range"> is the same problem in a different shape: dragging its thumb is
+  // itself a horizontal gesture, but the element has no overflow to detect (it isn't a scroller at
+  // all). Without this a range slider anywhere in a swiped panel — the Projected tab's rep-range
+  // slider, the Fit tab's pilot-security slider — dragged the whole tab sideways instead of moving
+  // the thumb, because the browser only starts suppressing the touchmove for its own drag AFTER the
+  // slider has already lost the axis race to this handler.
   const inHScroller = (node) => {
     for (let el = node; el instanceof Element; el = el.parentElement) {
       if (el === panelRef.current?.parentElement) break;
+      if (el.tagName === "INPUT" && el.type === "range") return true;
       if (el.scrollWidth > el.clientWidth + 2) {
         const ox = getComputedStyle(el).overflowX;
         if (ox === "auto" || ox === "scroll") return true;

@@ -168,9 +168,12 @@ export default function App(){
     ? checkFitSkills(lookupShip(activeFit.ship)??{name:activeFit.ship,typeID:tidByName(activeFit.ship)},slots,drones,fighters,fitSkills)
     : {ok:true,missing:[]},
   [activeFit,slots,drones,fighters,fitSkills]);
-  const externalBursts=useMemo(()=>{
+  // Shared by the local fit's own command tab AND by each PROJECTED fit's command tab below — a
+  // projected logi (e.g. a Guardian) can carry its own cmdFits (its own Sleipnir/Claymore links),
+  // saved on that fit exactly like the active fit's are (see the fitsDB-writeback effect below).
+  const buildExternalBursts=(cmdFitsList)=>{
     const out=[];
-    for(const cf of cmdFits){
+    for(const cf of (cmdFitsList??[])){
       // `active` is opt-OUT (undefined counts as on), so fits saved before the toggle existed keep
       // applying and no storage migration is needed.
       if(cf.active===false)continue;
@@ -187,7 +190,8 @@ export default function App(){
       for(const b of bursts)out.push(b);
     }
     return out;
-  },[cmdFits,fitsDB,sourceSkills]);
+  };
+  const externalBursts=useMemo(()=>buildExternalBursts(cmdFits),[cmdFits,fitsDB,sourceSkills]);
   const projectedEffects=useMemo(()=>{
     // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
     // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
@@ -213,7 +217,10 @@ export default function App(){
       // All V for the same reason as externalBursts above: a PROJECTED fit is another pilot's
       // ship, so the local skill sheet has no business scaling its logi reps, webs or neuts —
       // unless that fit names its own pilot.
-      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
+      // The projected fit's OWN command links (e.g. a Guardian sitting under its own Sleipnir's
+      // Rapid Repair burst) boost ITS reps before they ever reach the target — read from that
+      // fit's saved cmdFits, not the locally-edited fit's, or a boosted logi projects as if unboosted.
+      const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones,externalBursts:buildExternalBursts(fit.cmdFits)});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
       if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});
