@@ -410,7 +410,7 @@ export default function App(){
         const key=Object.entries(T3C_SUBSYSTEM_GROUPS).find(([,g])=>g===gn)?.[0];
         if(key)byGroup[key]={id:`sub${order.indexOf(key)}`,name:s.name,typeID:s.typeID,type:"subsystem",subGroup:key};
       }
-      return order.map((k,i)=>byGroup[k]??{id:`sub${i}`,name:"[Empty Subsystem Slot]",icon:null,type:"empty",subGroup:k});
+      return order.map((k,i)=>byGroup[k]??{id:`sub${i}`,name:`[Empty ${k} Subsystem Slot]`,icon:null,type:"empty",subGroup:k});
     })():undefined;
     const newSlots=buildSlotsFromEFT(ship,mods,subSlots);
     const newDrones=pDrones.map((d,i)=>{

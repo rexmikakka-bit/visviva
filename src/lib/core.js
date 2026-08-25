@@ -569,9 +569,11 @@ function generateEmptySlots(ship,subsystems){
       // straight from parseEFT carries only a name and typeID — importFit stamps the ids by group
       // order, but a direct caller doesn't, and four slots sharing the id `undefined` collapse onto
       // one another anywhere they are keyed. Spread last so an id that IS already there wins.
+      // Slot index maps to subsystem category in T3C_SUBSYSTEM_GROUPS' declared order
+      // (Core/Defensive/Offensive/Propulsion) — same order t3cSlotLayout and every T3C fit uses.
       subsystems:Array.from({length:4},(_,i)=>subs[i]
         ?{id:`sub${i}`,type:"subsystem",...subs[i]}
-        :{id:`sub${i}`,name:`[Empty Subsystem Slot]`,icon:null,type:"empty"}),
+        :{id:`sub${i}`,name:`[Empty ${Object.keys(T3C_SUBSYSTEM_GROUPS)[i]} Subsystem Slot]`,icon:null,type:"empty"}),
       high:make("h","High",layout.hiSlots),
       mid: make("m","Mid", layout.medSlots),
       low: make("l","Low", layout.lowSlots),

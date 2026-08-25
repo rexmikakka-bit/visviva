@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, slotIcons, validStatesFor } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { Hint } from "./Hint.jsx";
@@ -58,7 +58,9 @@ const isTurretWeapon    = tid => usesTurretHardpoint(TYPES[String(tid)]?.e);
 const isMissileLauncher = tid => usesLauncherHardpoint(TYPES[String(tid)]?.e);
 
 // Returns null if module can fit the ship, or an error string if not.
-function checkFitRestriction(modTypeID, ship) {
+// `subsystems` is the fit's current T3C subsystem array (sub0=Core, sub1=Defensive, sub2=Offensive,
+// sub3=Propulsion) — irrelevant for any other hull, so callers not dealing with T3Cs can omit it.
+function checkFitRestriction(modTypeID, ship, subsystems) {
   if (!ship?.typeID || !modTypeID) return null;
   const attrs = TYPES[String(modTypeID)]?.a ?? {};
 
@@ -93,6 +95,26 @@ function checkFitRestriction(modTypeID, ship) {
   const allowedGroups = CAN_FIT_GROUP_KEYS.map(k => attrs[k]).filter(v => v != null);
   const allowedTypes  = CAN_FIT_TYPE_KEYS.map(k => attrs[k]).filter(v => v != null);
   if (attrs.fitsToShipType != null) allowedTypes.push(attrs.fitsToShipType); // T3 subsystems
+
+  // T3 Strategic Cruisers only: a Covert Ops Cloaking Device or Covert Cynosural Field Generator
+  // additionally needs the ship's Defensive subsystem to be its "Covert Reconfiguration" variant.
+  // CCP's canFitShipGroup on these modules whitelists the whole Strategic Cruiser GROUP (963)
+  // unconditionally — any T3C passes the check below regardless of subsystem — but the real client
+  // gates it further, and there is no dogma attribute encoding that; the only place it shows up in
+  // CCP's data is the subsystem's own role-bonus text. Confirmed present on exactly the four
+  // "<Hull> Defensive - Covert Reconfiguration" subsystems (Legion/Tengu/Proteus/Loki) and no other
+  // Defensive variant, so matched by TEXT rather than a hand-listed subsystem table — a future T3C
+  // hull's Covert Reconfiguration subsystem is covered automatically.
+  if (isT3Cruiser(ship?.name) && allowedGroups.includes(963)) {
+    const modGN = TYPES[String(modTypeID)]?.gn ?? TYPES[String(modTypeID)]?.groupName;
+    if (modGN === 'Cloaking Device' || modGN === 'Cynosural Field Generator') {
+      const defSub = subsystems?.[1];
+      const grantsCovert = defSub?.typeID != null &&
+        (shipTraits[String(defSub.typeID)]?.role?.bonuses ?? []).some(b => /Covert Ops Cloaking Device/i.test(b.text ?? ''));
+      if (!grantsCovert) return 'Needs the Covert Reconfiguration Defensive subsystem';
+    }
+  }
+
   if (!allowedGroups.length && !allowedTypes.length) return null;
   const shipGroupID = TYPES[String(ship.typeID)]?.g ?? null;
   if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
@@ -496,7 +518,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   };
   const addMod=(secKey,id,modData)=>{
     if(ship&&modData.typeID){
-      const fitErr=checkFitRestriction(modData.typeID,ship);
+      const fitErr=checkFitRestriction(modData.typeID,ship,slots.subsystems);
       if(fitErr){showFitError(fitErr);return;}
       if(groupFittedRoom(slots,_cs.groupLimits,modData.typeID,id)<1){showFitError(groupFittedError(modData.typeID));return;}
       if(secKey==='high'&&isTurretWeapon(modData.typeID)){
