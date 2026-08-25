@@ -317,12 +317,25 @@ const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
 // why magnitude, not sign, is the rule. It also covers Stasis Grapplers (−80…−88), Structure Stasis
 // Webifiers and webifying drones, all of which had the identical reversed colouring.
 const SIGNED_BONUS_RE = /^(aoeCloudSizeBonus|aoeVelocityBonus|missileVelocityBonus|explosionDelayBonus|trackingSpeedBonus|maxRangeBonus|falloffBonus|maxTargetRangeBonus|scanResolutionBonus|speedFactor)$/;
+// `signatureRadiusBonus` means opposite things depending on who it lands on, and — unlike
+// speedFactor above — the SIGN can't tell you which: both cases apply a POSITIVE value. An MWD/AB
+// applies it to its OWN ship (bigger sig is bad); a Target Painter or Structure Disruption Battery
+// applies the identical attribute to a locked TARGET (bigger is a bigger debuff on the enemy, and is
+// the improvement). Neither is a real modifierInfo entry derivedDirection can read — both are
+// hardcoded engine/calc passes (MWD's Effect6730, the EWAR modules' calc.js dispatch) that ship with
+// empty modifierInfo — so this is keyed off the module's group name, mirroring calc.js's own
+// group-name dispatch for the exact same attribute (see the 'Target Painter' branch there).
+const TARGET_FACING_SIG_GROUPS = new Set(['Target Painter', 'Structure Disruption Battery']);
 export function directionOf(k, v, b, typeID) {
   if (v == null || b == null) return null;
   // The booster side-effect family first: CCP flags every one highIsGood=1 AND signs them
   // inconsistently, so neither the derived rule nor the raw flag can be trusted for them.
   if (PENALTY_RE.test(k))       return Math.abs(v) < Math.abs(b);   // weaker penalty wins
   if (SIDE_EFFECT_CHANCE_RE.test(k)) return v < b;                  // less chance of a side effect
+  if (k === 'signatureRadiusBonus') {
+    const gn = TYPES[typeID]?.gn ?? TYPES[String(typeID)]?.gn;
+    if (TARGET_FACING_SIG_GROUPS.has(gn)) return v > b;             // bigger debuff on the target wins
+  }
   // What the module's own effects say it does. Authoritative where it resolves.
   const derived = derivedDirection(typeID, k);
   if (derived !== null)         return derived ? v > b : v < b;
