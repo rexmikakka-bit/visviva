@@ -3488,18 +3488,34 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const cn = fitItem.get('capacitorNeed') ?? 0;
       localRepairers.push({ tank:'hull', repPS: ps, capPS: cn / (dur / 1000), cn });
 
-    } else if (gn === 'Remote Shield Booster') {
+    } else if (gn === 'Remote Shield Booster' || gn === 'Ancillary Remote Shield Booster') {
+      // The Ancillary variant sits in its OWN dogma group (not plain 'Remote Shield Booster'), which
+      // is how it went missing from this card entirely — the projected/incoming path a few hundred
+      // lines up had the identical gap once (see its comment). Its rep amount is engine-computed
+      // and already includes the loaded charge's bonus, so no manual multiplier is needed here —
+      // only its cap cost differs: loaded with a cap-booster charge it runs off the CHARGE, not ship
+      // capacitor, exactly like the local Ancillary Shield Booster above.
       const amt = fitItem.get('shieldBonus') ?? 0;
       const ps  = amt / (dur / 1000);
       remoteShieldPS += ps;
-      remoteShieldCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
+      const ammo3 = (slot.ammo ?? '').replace(/\s*\(\d+\)$/, '');
+      const cTid3 = ammo3 ? (typeIDByName(ammo3) ?? tidByName(ammo3)) : null;
+      const isCapCharged3 = gn === 'Ancillary Remote Shield Booster' && cTid3 && (TYPES[cTid3]?.g ?? TYPES[cTid3]?.groupID) === 87;
+      remoteShieldCapPS += isCapCharged3 ? 0 : (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
       remoteRepModules.push({ name: slot.name, typeID: fitItem.typeID, kind: 'shield', repPS: Math.round(ps * 10) / 10,
         amount: Math.round(amt), cycleMs: Math.round(dur),
         optimal: Math.round((fitItem.get('maxRange') ?? 0) / 1000 * 10) / 10,
         falloff: Math.round((fitItem.get('falloffEffectiveness') ?? 0) / 1000 * 10) / 10 });
 
-    } else if (gn === 'Remote Armor Repairer') {
-      const amt = fitItem.get('armorDamageAmount') ?? 0;
+    } else if (gn === 'Remote Armor Repairer' || gn === 'Ancillary Remote Armor Repairer') {
+      // Same story as the shield case, and unlike it the paste bonus is NOT engine-computed (the
+      // engine never folds a charge attribute into armorDamageAmount) — mirrors the local Ancillary
+      // Armor Repairer's pasteMult above and the projected path's identical fix. eos keys the bonus
+      // purely on "a charge is loaded" (saveddata/module.py): an Ancillary Remote Armor Repairer
+      // takes nothing but Nanite Repair Paste, so no ammo-name check is needed here.
+      const isAncillaryR = gn === 'Ancillary Remote Armor Repairer';
+      const pasteMultR = (isAncillaryR && slot.ammo) ? (fitItem.get('chargedArmorDamageMultiplier') || 3) : 1;
+      const amt = (fitItem.get('armorDamageAmount') ?? 0) * pasteMultR;
       const ps  = amt / (dur / 1000);
       remoteArmorPS += ps;
       remoteArmorCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
