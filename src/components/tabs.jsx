@@ -1274,25 +1274,39 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         // Triglavian logistics: a Mutadaptive remote armor repairer spools its rep amount.
         const spoolRep = (cs.remoteRepModules||[]).find(m=>(m.spoolFactor??1)>1);
         const armorMax = spoolRep ? (cs.remoteArmorPS??0) - (spoolRep.repPS??0) + (spoolRep.repPSMax??0) : (cs.remoteArmorPS??0);
+        // HP repaired per GJ spent, not GJ per HP — the reciprocal lands the number in the same
+        // small-double-digit range as the rate cells either side of it (7-8, not 0.12-0.13), and
+        // "bigger is better" here matches every other figure on this card. capPS===0 with reps
+        // present (drone-only, or an ASB on cap-booster charges — remote ASBs don't currently exist,
+        // but the guard costs nothing) means the layer heals for free.
+        const effOf = (gj) => gj==null ? null : gj===0 ? Infinity : 1/gj;
         // pyfa column order: Cap, Shield, Armor, Hull
         const cols=[
           {key:"cap",   label:"Cap",    unit:"GJ/s", val:cs.remoteCapPS??0,    color:C.rig},
-          {key:"shield",label:"Shield", unit:"HP/s", val:cs.remoteShieldPS??0, color:C.mid},
+          {key:"shield",label:"Shield", unit:"HP/s", val:cs.remoteShieldPS??0, color:C.mid,
+            eff: effOf(cs.remoteShieldGJPerHP)},
           {key:"armor", label:"Armor",  unit:"HP/s", val:cs.remoteArmorPS??0,  color:C.warning,
-            disp: spoolRep ? `${fmtF(cs.remoteArmorPS??0)}-${fmtF(armorMax)} HP/s` : null},
-          {key:"hull",  label:"Hull",   unit:"HP/s", val:cs.remoteHullPS??0,   color:C.danger},
+            disp: spoolRep ? `${fmtF(cs.remoteArmorPS??0)}-${fmtF(armorMax)} HP/s` : null,
+            eff: effOf(cs.remoteArmorGJPerHP)},
+          {key:"hull",  label:"Hull",   unit:"HP/s", val:cs.remoteHullPS??0,   color:C.danger,
+            eff: effOf(cs.remoteHullGJPerHP)},
         ];
         return(
           <div style={card}>
             <SectionHead id="remotereps" title="Remote Reps"/>
             {isOpen("remotereps")&&<>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:spoolRep?`1px solid ${C.border}`:"none"}}>
-              {cols.map((col,i)=>(
-                <div key={col.key} style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none"}}>
-                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>{col.label}</div>
-                  <div style={{fontSize:12,fontWeight:700,color:col.val>0?col.color:C.textMute}}>{col.disp??`${fmtF(col.val)} ${col.unit}`}</div>
-                </div>
-              ))}
+              {cols.map((col,i)=>{
+                // Tap a Shield/Armor/Hull cell to swap its rate for GJ efficiency, same gesture as
+                // the Capacitor card's Capacity/In-Out/Peak-regen cells.
+                const can=col.eff!=null, on=can&&exactCells.has(`remoteEff_${col.key}`);
+                const content=on?(col.eff===Infinity?"Free":`${fmtF(col.eff)} HP/GJ`):(col.disp??`${fmtF(col.val)} ${col.unit}`);
+                return(<div key={col.key} onClick={can?()=>toggleExact(`remoteEff_${col.key}`):undefined}
+                            style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none",cursor:can?"pointer":"default"}}>
+                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>{on?"Efficiency":col.label}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:col.val>0?col.color:C.textMute}}>{content}</div>
+                </div>);
+              })}
             </div>
             {spoolRep&&(spoolRep.spoolTimeS??0)>0&&<div style={{padding:"5px 12px",background:`${C.surfaceAlt}88`,display:"flex",justifyContent:"space-between",fontSize:10}}>
               <span style={{color:C.textMute}}>Spool-up time</span>

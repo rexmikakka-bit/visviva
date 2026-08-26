@@ -3434,6 +3434,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const localRepairers = []; // {tank, repPS, capPS, cn} for sustainable tank calc
   // Remote reps (logistics): rep/s delivered to other ships + cap transmitted.
   let remoteShieldPS = 0, remoteArmorPS = 0, remoteHullPS = 0, remoteCapPS = 0;
+  // Cap spent per layer, GJ/s — for the GJ/HP efficiency figure. Logistic drones (below) rep for
+  // free, so they contribute 0 here and correctly pull a fit's blended efficiency toward "free"
+  // rather than being excluded from it.
+  let remoteShieldCapPS = 0, remoteArmorCapPS = 0, remoteHullCapPS = 0;
   const remoteRepModules = []; // per-module detail for the Remote Reps panel
   const isBastionActive = modItems.some(({slot,fitItem}) =>
     fitItem && isActive(slot.state) && fitItem.groupName === 'Siege Module');
@@ -3488,6 +3492,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const amt = fitItem.get('shieldBonus') ?? 0;
       const ps  = amt / (dur / 1000);
       remoteShieldPS += ps;
+      remoteShieldCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
       remoteRepModules.push({ name: slot.name, typeID: fitItem.typeID, kind: 'shield', repPS: Math.round(ps * 10) / 10,
         amount: Math.round(amt), cycleMs: Math.round(dur),
         optimal: Math.round((fitItem.get('maxRange') ?? 0) / 1000 * 10) / 10,
@@ -3497,6 +3502,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const amt = fitItem.get('armorDamageAmount') ?? 0;
       const ps  = amt / (dur / 1000);
       remoteArmorPS += ps;
+      remoteArmorCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
       remoteRepModules.push({ name: slot.name, typeID: fitItem.typeID, kind: 'armor', repPS: Math.round(ps * 10) / 10,
         amount: Math.round(amt), cycleMs: Math.round(dur),
         optimal: Math.round((fitItem.get('maxRange') ?? 0) / 1000 * 10) / 10,
@@ -3507,6 +3513,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const amt = fitItem.get('armorDamageAmount') ?? 0;
       const ps  = amt / (dur / 1000);
       remoteArmorPS += ps;
+      remoteArmorCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
       const spool = MUTADAPTIVE_SPOOL[fitItem.typeID];
       let spoolFactor = 1, spoolTimeS = 0;
       if (spool && spool.max > 0 && spool.perCycle > 0) {
@@ -3527,6 +3534,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       const amt = fitItem.get('structureDamageAmount') ?? 0;
       const ps  = amt / (dur / 1000);
       remoteHullPS += ps;
+      remoteHullCapPS += (fitItem.get('capacitorNeed') ?? 0) / (dur / 1000);
       remoteRepModules.push({ name: slot.name, typeID: fitItem.typeID, kind: 'hull', repPS: Math.round(ps * 10) / 10,
         amount: Math.round(amt), cycleMs: Math.round(dur),
         optimal: Math.round((fitItem.get('maxRange') ?? 0) / 1000 * 10) / 10,
@@ -3564,6 +3572,15 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       remoteRepModules.push({ name: item.name, typeID: item.typeID, kind: 'hull', repPS: Math.round(ps * 10) / 10,
         amount: Math.round(hAmt), cycleMs: Math.round(ddur * 1000), qty, isDrone: true, optimal: 0, falloff: 0 }); }
   }
+
+  // GJ spent per HP repaired, per layer — meaningful whether or not the fit's cap is stable, unlike
+  // a cap-throttled "sustained" figure (which only diverges from peak once the WHOLE fit is unstable,
+  // hiding an efficiency difference between two fits that are both cap-stable). Logistic drones rep
+  // for free and were never added to the cap accumulators above, so they correctly pull the blended
+  // ratio toward 0 rather than being excluded. Null when the layer has no reps at all (nothing to rate).
+  const remoteShieldGJPerHP = remoteShieldPS > 0 ? remoteShieldCapPS / remoteShieldPS : null;
+  const remoteArmorGJPerHP  = remoteArmorPS  > 0 ? remoteArmorCapPS  / remoteArmorPS  : null;
+  const remoteHullGJPerHP   = remoteHullPS   > 0 ? remoteHullCapPS   / remoteHullPS   : null;
 
   // ── Sustainable tank (pyfa calculateSustainableTank) ──────────────────────
   // Peak rep is what each repairer does at 100% duty. When cap is unstable, reps
@@ -3781,6 +3798,9 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     remoteArmorPS:  Math.round(remoteArmorPS * 10) / 10,
     remoteHullPS:   Math.round(remoteHullPS * 10) / 10,
     remoteCapPS:    Math.round(remoteCapPS * 10) / 10,
+    remoteShieldGJPerHP: remoteShieldGJPerHP != null ? Math.round(remoteShieldGJPerHP * 1000) / 1000 : null,
+    remoteArmorGJPerHP:  remoteArmorGJPerHP  != null ? Math.round(remoteArmorGJPerHP  * 1000) / 1000 : null,
+    remoteHullGJPerHP:   remoteHullGJPerHP   != null ? Math.round(remoteHullGJPerHP   * 1000) / 1000 : null,
     remoteRepModules,
     shieldRechargeMs,
 
