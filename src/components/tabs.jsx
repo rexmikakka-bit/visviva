@@ -8,6 +8,7 @@ import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, isT3Cr
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
+import { useViewMemory } from "../lib/use-view-memory.js";
 import { useRowSwipe } from "../lib/use-row-swipe.js";
 import { Hint } from "./Hint.jsx";
 
@@ -273,7 +274,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // an identical unloaded one. Same for any two launchers carrying different ammo.
   const engineStatsBySlotID=new Map();
   if(_cs.slotEngineStats){for(const[slot,stats]of _cs.slotEngineStats){if(slot.id!=null)engineStatsBySlotID.set(slot.id,stats);}}
-  const[grouped,setGrouped]=useState(true);
+  const[grouped,setGrouped]=useViewMemory("Fit:grouped",true);
   const[dragUI,setDragUI]=useState(null); // {secKey,fromIdx,overIdx} — visual state during pointer drag
   const dragInfo=useRef(null);             // live drag data (avoids re-render churn during move)
   const rowRefs=useRef({});                // `${secKey}:${rowIdx}` → row element (for hit-testing)
@@ -703,7 +704,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               const swipeable=sec.key!=="subsystems";
               return(
                 <div key={row.id||row.name} style={{position:"relative"}}>
-                  {swipeable&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
+                  {/* Hidden while this row is being dragged to reorder: the button sits BEHIND the row
+                      and is only invisible because the row is opaque, so the drag's 0.45 opacity
+                      showed it through. The two gestures are mutually exclusive anyway. */}
+                  {swipeable&&!isDragSrc&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
                     style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,
                             background:C.danger,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>}
                   {/* no-select on the ROW, not just the handle: the press starts on the handle but the
@@ -899,13 +903,16 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   const _scroll=useScrollMemory("Stats");
   // Per-section collapse state — all open by default.
-  const [collapsed,setCollapsed]=useState({});
+  // Everything on this page that you SET rather than read goes through useViewMemory, because this
+  // panel unmounts on every tab swipe and plain state would come back at its default. The two
+  // pickers below are the exception: a modal has to reopen closed.
+  const [collapsed,setCollapsed]=useViewMemory("Stats:collapsed",{});
   const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
   const isOpen=(k)=>!collapsed[k];
   // Firepower: which stat's damage-type split to show. Cap: toggle readouts.
-  const [dmgSource,setDmgSource]=useState("weapon");
-  const [capDeltaMode,setCapDeltaMode]=useState("net");
-  const [peakMode,setPeakMode]=useState("regen");
+  const [dmgSource,setDmgSource]=useViewMemory("Stats:dmgSource","weapon");
+  const [capDeltaMode,setCapDeltaMode]=useViewMemory("Stats:capDeltaMode","net");
+  const [peakMode,setPeakMode]=useViewMemory("Stats:peakMode","regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
   const [showProfilePicker,setShowProfilePicker]=useState(false);
   const [showTargetPicker,setShowTargetPicker]=useState(false);
@@ -994,16 +1001,16 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   },[priceItems,prices]);
   // Separate from `collapsed` (which is open-by-default): these nested rows default to CLOSED,
   // so absence from the set means closed.
-  const[openPriceGroups,setOpenPriceGroups]=useState({});
+  const[openPriceGroups,setOpenPriceGroups]=useViewMemory("Stats:openPriceGroups",{});
   // Which cells are currently showing their unrounded value (Targeting & Misc, and the EHP figures
   // in Resistances). Keyed by label, so it survives a row appearing and disappearing with the hull.
-  const[exactCells,setExactCells]=useState(()=>new Set());
+  const[exactCells,setExactCells]=useViewMemory("Stats:exactCells",()=>new Set());
   const toggleExact=k=>setExactCells(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});
   // Whether the ancillary clip pool is folded INTO the EHP figure or shown added onto it. Split by
   // default: a clip is conditional (it lasts one reload cycle and needs the charges to still be
   // there), so the sum has to be something you opt into, not a headline number that quietly makes
   // every ancillary fit look 50% tougher than its resists say.
-  const[clipMerged,setClipMerged]=useState(false);
+  const[clipMerged,setClipMerged]=useViewMemory("Stats:clipMerged",false);
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
