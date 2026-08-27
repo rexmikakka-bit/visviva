@@ -1179,6 +1179,124 @@ export function computeCommandBursts(ship, slots, skills = SKILL_DEFAULTS, opts 
   return bursts;
 }
 
+// ── Fitting go/no-go: what EVERY fittable module would actually cost on this fit ──────────────
+//
+// The browser and the Variations tab print a module's BASE cpu/pg/calibration (that is what a player
+// expects to read off an item), but the fit's headroom is engine-computed. Comparing the two directly
+// invents headroom that does not exist, so the UI needs a per-module multiplier to scale the base by
+// before testing it — see fitCostRatioOf/fitCostFits in lib/core.js.
+//
+// Reading those multipliers off the modules ALREADY on the fit only answers for groups the fit
+// happens to carry; everything else fell back to 1 and coloured red even when skills and hull bonuses
+// would have made it fit. This probes instead: one throwaway Fit carrying a representative of every
+// fitting-modifier class in the game, so a single engine pass answers for all ~4,200 fittable types.
+//
+// ⚠️ It must be its OWN Fit, never extra modules appended to the real one. Some modules apply effects
+// even offline — Prototype Cloaking Device I still halves scanResolution and inflates signatureRadius
+// — so probes on the live fit would corrupt the displayed stats. Inside a throwaway fit that is
+// harmless: bulk-probe ratios were verified identical to measuring each module alone.
+const _COST_ATTRS = [['cpu', 'cpu'], ['pg', 'power'], ['cal', 'upgradeCost']];
+
+// Keyed by GROUP + REQUIRED SKILLS. Group alone is NOT enough, and the difference is not exotic:
+// every hull splits Capacitor Battery, Shield Resistance Amplifier, Missile Launcher Light and Siege
+// Module, because size-filtered fitting bonuses filter on the required skill, which varies inside one
+// group. Group+skill is exact — verified against every type's own ratio across 63 hulls, 453k
+// comparisons. lib/core.js's fitCostRatioOf looks up with this same function, so the table and the
+// lookup cannot drift. JSON rather than a delimiter-joined string, because both group names and skill
+// names contain spaces, so any printable separator lets ["A B", []] collide with ["A", ["B"]].
+export function fitCostClassOf(t) {
+  return t?.gn ? JSON.stringify([t.gn, [...(t.rs ?? [])].sort()]) : null;
+}
+
+let _probeReps = null;
+function probeRepresentatives() {
+  if (_probeReps) return _probeReps;
+  // A representative is chosen PER ATTRIBUTE, because members of one class do not all pay the same
+  // resources (Standup Reactor Control Units cost CPU where the ship ones do not) and a zero base
+  // yields the divide guard's 1 rather than a measurement. In practice this is still ~1 module each.
+  const byClass = new Map();
+  for (const tid in TYPES) {
+    const t = TYPES[tid];
+    if (!t?.gn) continue;
+    const cat = t.c ?? t.category;
+    if (cat !== 7 && cat !== 66) continue;          // Module, Structure Module
+    const a = t.a ?? t.attrs ?? {};
+    const cls = fitCostClassOf(t);
+    let e = byClass.get(cls);
+    if (!e) byClass.set(cls, e = {});
+    for (const [slot, attr] of _COST_ATTRS) if ((a[attr] ?? 0) > 0 && e[slot] == null) e[slot] = Number(tid);
+  }
+  // Only memoize once TYPES is populated, so an early call cannot cache an empty table.
+  const reps = [...new Set([...byClass.values()].flatMap(e => Object.values(e)))];
+  if (reps.length > 0) _probeReps = { byClass, reps };
+  return { byClass, reps };
+}
+
+// Returns Map<classKey, {cpu,pg,cal}> — the multiplier each class's base cost is actually charged at.
+// Deliberately NOT part of calcFitStats: it costs roughly what a full stats pass does, and only the
+// module browser and Variations tab ever need it, so callers should compute it lazily and cache.
+export function computeFitCostRatios(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
+  const out = new Map();
+  if (!ship || !slots) return out;
+  const shipTypeID = ship.typeID ?? tidByName(ship.name);
+  if (!shipTypeID || !TYPES[shipTypeID]) return out;
+  const { byClass, reps } = probeRepresentatives();
+  if (!reps.length) return out;
+
+  const sk = { ...SKILL_DEFAULTS, ...skills };
+  const fit = new Fit(shipTypeID);
+  for (const [camel, level] of Object.entries(sk)) fit.setSkill(SKILL_CAMEL_TO_PYFA[camel] ?? camel, level);
+  for (const skillName of getAllSkills()) if (fit._skills?.[skillName] == null) fit.setSkill(skillName, 5);
+
+  // Everything that can reduce a fitting cost, and nothing that cannot — drones are skipped because
+  // no drone modifies a module's cpu/pg/calibration, and they are pure cost in a pass this size.
+  const allSlots = [...(slots.high ?? []), ...(slots.mid ?? []), ...(slots.low ?? []), ...(slots.rigs ?? []), ...(slots.services ?? [])];
+  for (const s of allSlots) {
+    if (!s.typeID || s.type === 'empty' || s.orphan) continue;
+    const m = fit.addModule(s.typeID, s.state ?? 'active', s.mutations);
+    if (s.ammo) { const cn = s.ammo.replace(/\s*\(\d+\)$/, ''); const ct = typeIDByName(cn) ?? tidByName(cn); if (ct && TYPES[ct]) fit.setCharge(m, ct); }
+  }
+  for (const imp of (opts.implants ?? [])) {
+    if (!imp.name || imp.name === '[Empty]') continue;
+    const tid = typeIDByName(imp.name) ?? tidByName(imp.name) ?? imp.typeID;
+    if (tid && TYPES[tid]) fit.addImplant(tid);
+  }
+  for (const bst of (opts.boosters ?? [])) {
+    if (!bst.name || bst.active === false) continue;
+    const tid = bst.typeID ?? typeIDByName(bst.name) ?? tidByName(bst.name);
+    if (tid && TYPES[tid]) fit.addBooster(tid);
+  }
+  applyTacticalMode(fit, ship, slots);
+  const envRaw = opts.environment ?? slots.environment ?? null;
+  if (envRaw) {
+    const et = typeof envRaw === 'number' ? envRaw : (typeIDByName(envRaw) ?? tidByName(envRaw));
+    if (et && TYPES[et]) fit.setEnvironment(et);
+  }
+  const subTids = (Array.isArray(slots.subsystems) ? slots.subsystems : [])
+    .map(s => s && (s.typeID ?? typeIDByName(s.name) ?? tidByName(s.name))).filter(Boolean);
+  if (subTids.length) fit.setSubsystems(subTids);
+
+  fit._pilotSec = opts.pilotSec ?? 0;
+  if (opts.systemSecurity) fit.systemSecurity = opts.systemSecurity;
+
+  const probes = new Map();
+  for (const tid of reps) probes.set(tid, fit.addModule(tid, 'offline'));
+  fit.calculate();
+
+  for (const [cls, e] of byClass) {
+    const r = {};
+    for (const [slot] of _COST_ATTRS) {
+      const it = e[slot] != null ? probes.get(e[slot]) : null;
+      const attr = _COST_ATTRS.find(p => p[0] === slot)[1];
+      const b = it ? (it.getBase(attr) ?? 0) : 0;
+      // 1, not null: a class no member of which pays this resource cannot fail on it either.
+      r[slot] = b > 0 ? (it.get(attr) ?? 0) / b : 1;
+    }
+    out.set(cls, r);
+  }
+  return out;
+}
+
 // Build a fit and extract its active remote shield/armor repairers: rep-per-second (with the source
 // module's overheat state already applied by the engine) and optimal/falloff range. For projecting
 // remote assistance onto another fit, scaled by distance.
@@ -1274,12 +1392,31 @@ function applyModuleBursts(burstByType, modItems) {
 // CRUCIAL: the resistance multiplies each SOURCE MODULE's bonus BEFORE stacking, not the stacked
 // total afterwards — stack(b·r) ≠ stack(b)·r. Applying it after gave a sieged Phoenix Navy Issue
 // 25.9 km lock range against eos's 95.1; per-module it reproduces eos exactly.
+// Jam chance (eos Fit.jamChance). Each source is read against the TARGET's own sensor type — a Radar
+// ship shrugs off a jammer's scanLadarStrengthBonus entirely, however big it is — then combined as
+// independent chances of failing to break lock, NOT summed:
+//   chance = 1 - Π(1 - min(1, jamStrength_i / sensorStrength))
+// `entries` are the {byType} records computeProjectedReps emits, already scaled for range and the
+// target's ECMResistance by the caller. Exported because the Stats tab and the Projected card both
+// need it: this project has already shipped an Effects card whose number disagreed with the value
+// actually applied, so there is deliberately only one implementation.
+export function jamChanceFrom(entries, sensorStrength, sensorType) {
+  if (!(sensorStrength > 0) || !sensorType) return 0;
+  let retainLock = 1;
+  for (const e of (entries ?? [])) {
+    const str = e.byType?.[sensorType] ?? 0;
+    if (str > 0) retainLock *= 1 - Math.min(1, str / sensorStrength);
+  }
+  return (1 - retainLock) * 100;
+}
+
 const EWAR_RESIST_ATTRS = {
   damp:     'sensorDampenerResistance',   // remote sensor dampeners  → lock range / scan res
   web:      'stasisWebifierResistance',   // stasis webifiers         → velocity
   neut:     'energyWarfareResistance',    // energy neutralisers      → capacitor
   painter:  'targetPainterResistance',    // target painters          → signature
   disrupt:  'weaponDisruptionResistance', // tracking/guidance disruptors
+  ecm:      'ECMResistance',              // ECM jammers → jam chance
 };
 
 /** The projection-resistance multipliers of a fit, keyed as in EWAR_RESIST_ATTRS. All default to 1. */
@@ -1548,13 +1685,18 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
         guideDisr.push({ name: slot.name, missileRange: mv, explosionDelay: fitItem.get('explosionDelayBonus') ?? 0, aoeVel: fitItem.get('aoeVelocityBonus') ?? 0, aoeCloud: fitItem.get('aoeCloudSizeBonus') ?? 0, optimal, falloff });
       }
     } else if (gn === 'ECM') {
-      const sb = Math.max(
-        fitItem.get('scanGravimetricStrengthBonus') ?? 0,
-        fitItem.get('scanLadarStrengthBonus') ?? 0,
-        fitItem.get('scanMagnetometricStrengthBonus') ?? 0,
-        fitItem.get('scanRadarStrengthBonus') ?? 0,
-      );
-      if (sb > 0) ecm.push({ name: slot.name, strength: sb, optimal, falloff });
+      // Jam chance is per SENSOR TYPE (eos: min(1, strength/sensors) per jammer, see
+      // fit.jamChance), not the jammer's own strongest attribute — a multispectral jammer's
+      // "strength" against a Radar ship is scanRadarStrengthBonus, not whichever of its four
+      // attributes happens to be biggest. Keep all four so the caller can pick by the TARGET's
+      // sensor type once it knows it.
+      const byType = {
+        Gravimetric: fitItem.get('scanGravimetricStrengthBonus') ?? 0,
+        Ladar: fitItem.get('scanLadarStrengthBonus') ?? 0,
+        Magnetometric: fitItem.get('scanMagnetometricStrengthBonus') ?? 0,
+        Radar: fitItem.get('scanRadarStrengthBonus') ?? 0,
+      };
+      if (Object.values(byType).some(v => v > 0)) ecm.push({ name: slot.name, byType, optimal, falloff });
     }
   }
   // Logistic-drone reps. All maintenance bots share groupName 'Logistic Drone'; the layer is
@@ -1970,35 +2112,11 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     calUsed += (fitItem.get('upgradeCost') ?? 0);
   }
 
-  // What a module is actually CHARGED, over what its type says it costs.
-  //
-  // The three figures above are engine-computed — Weapon Upgrades, Advanced Weapon Upgrades, hull
-  // fitting bonuses and engineering rigs are all already in them. The cost printed against a module
-  // in the browser and the Variations tab is deliberately its BASE attribute (that is what a player
-  // expects to read off an item), so a go/no-go test that compares the one against the other invents
-  // headroom that does not exist: a Scimitar halves remote shield booster CPU, so a 61 tf variant
-  // measured against a backed-out base of 78 looks like it fits when the real question is 30.5
-  // against 39. Handing the ratio out lets the UI keep printing base values and still colour
-  // honestly.
-  //
-  // Keyed by dogma GROUP, and one entry per group is enough, because every member of a variant
-  // family takes the same multiplier: fitting-reduction modifiers filter on group and on required
-  // skills, and neither varies across a family. Regression section 16c sweeps that.
-  // State is not consulted — a modifier applies to an offline module as much as an online one, and
-  // the ratio is what its cost WOULD be, which is exactly the question the browser is asking.
-  const fitCostRatios = new Map();
-  for (const { slot, fitItem } of modItems) {
-    if (!fitItem) continue;
-    const gn = TYPES[slot.typeID]?.gn ?? TYPES[String(slot.typeID)]?.gn;
-    if (!gn || fitCostRatios.has(gn)) continue;
-    // A zero base is a module that does not use the resource at all; 1 keeps it a no-op rather than
-    // a NaN that would silently disable the colouring.
-    const ratio = (attr) => {
-      const b = fitItem.getBase(attr) ?? 0;
-      return b > 0 ? (fitItem.get(attr) ?? 0) / b : 1;
-    };
-    fitCostRatios.set(gn, { cpu: ratio('cpu'), pg: ratio('power'), cal: ratio('upgradeCost') });
-  }
+  // (The fitting go/no-go multipliers used to be derived here, from the modules already on the fit.
+  // That only ever answered for groups the fit happened to carry — everything else fell back to a
+  // raw base cost and coloured red even when skills and hull bonuses made it fit. They now come from
+  // computeFitCostRatios, which probes every fittable class in one pass and is called lazily by the
+  // UI that needs it, so this pass no longer pays for it.)
 
   // ── 7. Capacitor ──────────────────────────────────────────────────────────
   // Engine applies Energy Management/Systems Op skill boosts
@@ -3646,6 +3764,8 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   const maxTargets = Math.min(s.get('maxLockedTargets'), PILOT_MAX_LOCKED_TARGETS);
   const sensorStrength = s.get('scanRadarStrength') || s.get('scanLadarStrength') ||
                          s.get('scanMagnetometricStrength') || s.get('scanGravimetricStrength') || 0;
+  // sensorStrength is engine-computed, so any ECCM on this fit is already priced in on the denominator.
+  const jamChance = jamChanceFrom(opts.projectedEcm, sensorStrength, ship?.sensorType);
 
   // ── 12. Final stats ───────────────────────────────────────────────────────
   const shieldEHP = layerEHP(shieldHP, effectiveResists.shield);
@@ -3793,11 +3913,6 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     pgTotal:  Math.round(pgTotal  * 100) / 100,
     calUsed:  Math.round(calUsed),
     calTotal: ship.calibration ?? 400,
-    // Group name -> {cpu, pg, cal} multiplier; see where it is built for why the fitting UI needs it.
-    // Unrounded on purpose: it is scaled onto a cost before being compared, so rounding it here
-    // would land on the wrong side of a fit that clears by a fraction of a tf.
-    fitCostRatios,
-
     // HP
     shieldHP, armorHP, hullHP,
     shieldEHP, armorEHP, hullEHP,
@@ -3900,6 +4015,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
     lockTime:       lockTime ? Math.round(lockTime * 100) / 100 : null,
     sensorStrength: Math.round(sensorStrength * 10) / 10,
     sensorType:     ship.sensorType ?? '',
+    jamChance:      Math.round(jamChance * 10) / 10,
 
     // The UNROUNDED originals of the figures above, for the Targeting panel's tap-to-reveal.
     //

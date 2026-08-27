@@ -594,7 +594,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <Block title="Targeting">
             <KV k="Range" v={fmt(s.targetRange, 1)} unit="km" />
             <KV k="Scan res" v={fmt(s.scanRes)} unit="mm" />
-            <KV k="Sensor" v={fmt(s.sensorStrength, 1)} />
+            <KV k="Sensor" v={`${fmt(s.sensorStrength, 1)}${s.jamChance > 0 ? ` (${s.jamChance}%)` : ""}`} />
             <KV k="Targets" v={fmt(s.maxTargets)} />
           </Block>
           <Block title="Capacitor">

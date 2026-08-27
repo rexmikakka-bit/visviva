@@ -308,7 +308,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     dmax=dom(dmax);
     const valAt=(dM)=>{
       if(yKey==="neutsCap") return (P.neuts||[]).reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff,dM),0);
-      if(yKey==="ecmStr")   return (P.ecm||[]).reduce((s,e)=>s+e.strength*rf(e.optimal,e.falloff,dM),0);
+      if(yKey==="ecmStr")   return (P.ecm||[]).reduce((s,e)=>s+Math.max(0,...Object.values(e.byType||{}))*rf(e.optimal,e.falloff,dM),0);
       if(yKey==="webSpeed"){const ms=(P.webs||[]).map(w=>1+(w.speedFactor*rf(w.optimal,w.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
       if(yKey==="tdRange"){const ms=(P.trackDisr||[]).map(t=>1+((t.optimalBonus||0)*rf(t.optimal,t.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
       if(yKey==="gdRange"){const gd=(P.guideDisr||[]);if(!gd.length)return 0;

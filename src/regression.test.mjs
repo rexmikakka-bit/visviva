@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -808,6 +808,76 @@ function check(group, label, actual, expected, tol = 0.005) {
   const fed  = calcFitStats(guardian, slots, [], null, { projectedCapGJs: 140.4 });
   check('projcap', 'incoming cap raises cap delta by the transfer rate',
         fed.capDelta - base.capDelta, 140.4, 0.01);
+}
+
+// -----------------------------------------------------------------------------
+// 11h. PROJECTED ECM -> JAM CHANCE (eos Fit.jamChance). Sources combine as independent chances of
+//      failing to break lock, not as a sum: chance = 1 - PROD(1 - min(1, strength_i / sensors)).
+//      Two things here are easy to get wrong and both shipped broken once:
+//        - the strength that counts is the one matching the TARGET's sensor type, so a Radar ship
+//          ignores a jammer's scanLadarStrengthBonus however big it is. Keyed off the target, not
+//          off the jammer's own strongest attribute.
+//        - the entries calcFitStats takes are {byType} records, the same shape computeProjectedReps
+//          emits. App.jsx flattened them to bare maps, which read as zero strength and silently
+//          printed no jam chance at all next to sensor strength.
+//      ECM jammers carry remoteResistanceID 2253 = ECMResistance, so they ARE resisted like other
+//      EWAR. ECCM is priced in separately, on the denominator (engine-computed sensorStrength).
+// -----------------------------------------------------------------------------
+{
+  console.log('\nPROJECTED ECM / JAM CHANCE');
+  const kit = { typeID: tid('Kitsune'), name: 'Kitsune' };
+  const jam = computeProjectedReps(kit,
+    { high: [], mid: [M('Multispectral ECM II', 'active'), M('Multispectral ECM II', 'active'),
+                      M('Multispectral ECM II', 'active')],
+      low: [M('Signal Distortion Amplifier II', 'online'), M('Signal Distortion Amplifier II', 'online')],
+      rigs: [] }, null, {});
+  check('jam', 'three jammers are collected', jam.ecm?.length, 3, 0);
+  // Two Signal Distortion Amplifier II stack-penalised onto a 6-point base multispectral jammer.
+  check('jam', 'multispectral strength per sensor type', jam.ecm?.[0]?.byType?.Gravimetric, 7.7714, 0.001);
+  check('jam', 'a multispectral jammer is equal against all four',
+        jam.ecm?.[0]?.byType?.Radar - jam.ecm?.[0]?.byType?.Gravimetric, 0, 0);
+
+  const basi = lookupShip('Basilisk');
+  const bare = { high: [], mid: [], low: [], rigs: [] };
+  // Fed STRAIGHT through, unreshaped: what computeProjectedReps emits is what calcFitStats consumes,
+  // and pinning that contract here is what stops the two drifting apart again. (App.jsx rebuilds the
+  // records to fold in range and resistance, so it has to preserve the shape.)
+  const jammed = calcFitStats(basi, bare, [], null, { projectedEcm: jam.ecm });
+  check('jam', 'Basilisk sensor strength', jammed.sensorStrength, 26.4, 1e-6);
+  // 1 - (1 - 7.7714/26.4)^3
+  check('jam', 'three multispectral jammers on a Basilisk', jammed.jamChance, 64.9, 1e-3);
+  check('jam', 'no jammers means no jam chance', calcFitStats(basi, bare, [], null, {}).jamChance, 0, 0);
+
+  // Keyed off the TARGET's sensor type: a Gravimetric-only jammer is inert against a Radar hull.
+  const gravOnly = [{ byType: { Gravimetric: 20, Ladar: 0, Magnetometric: 0, Radar: 0 } }];
+  check('jam', 'a Gravimetric jammer bites a Gravimetric hull',
+        calcFitStats(basi, bare, [], null, { projectedEcm: gravOnly }).jamChance, 75.8, 0.001);
+  const apoc = lookupShip('Apocalypse');   // Amarr -> Radar
+  check('jam', 'the same jammer is inert against a Radar hull',
+        calcFitStats(apoc, bare, [], null, { projectedEcm: gravOnly }).jamChance, 0, 0);
+  // A single source stronger than the sensor is capped at certainty, never over 100%.
+  check('jam', 'an overwhelming jammer caps at 100%',
+        calcFitStats(basi, bare, [], null, { projectedEcm: [{ byType: { Gravimetric: 500 } }] }).jamChance, 100, 0);
+
+  // ECM is resisted like any other EWAR — the comment that first shipped with this feature claimed it
+  // was not. A sieged dread carries ECMResistance ~0, i.e. siege makes you unjammable, so this is a
+  // 5-order-of-magnitude effect rather than a rounding one: getting it wrong is not subtle.
+  const dreadEcm = { typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' };
+  check('jam', 'sieged dread ECM resistance',
+        projectionResistances(dreadEcm, { high: [M('Siege Module II', 'active')], mid: [], low: [], rigs: [] }, null).ecm,
+        0.00001, 0.001);
+  check('jam', 'no siege -> jammable normally',
+        projectionResistances(dreadEcm, { high: [], mid: [], low: [], rigs: [] }, null).ecm, 1, 0);
+
+  // The Projected card scales for range/resistance itself and then calls the SAME combiner the Stats
+  // tab does. Pinning them equal is the point: an Effects card printing a number the fit does not
+  // apply is a bug this project has shipped before.
+  const scaled = jam.ecm.map(e => ({ byType: Object.fromEntries(
+    Object.entries(e.byType).map(([k, v]) => [k, v * 0.5])) }));   // as if half strength at range
+  // Both to the 1 dp each surface actually prints — cs.jamChance is rounded there, the card .toFixed(1)s.
+  check('jam', 'the card combiner agrees with the Stats tab',
+        Math.round(jamChanceFrom(scaled, jammed.sensorStrength, jammed.sensorType) * 10) / 10,
+        calcFitStats(basi, bare, [], null, { projectedEcm: scaled }).jamChance, 1e-9);
 }
 
 // -----------------------------------------------------------------------------
@@ -4269,11 +4339,12 @@ Gistum C-Type Medium Remote Shield Booster
 Medium Capacitor Control Circuit II
 Medium Capacitor Control Circuit II
 `;
-  const scimStats = (third) => {
+  const scimFit = (third) => {
     const p = parseEFT(scimEFT(third));
     const ship = lookupShip(p.shipName);
-    return calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {});
+    return { ship, slots: buildSlotsFromEFT(ship, p.mods, p.subsystems) };
   };
+  const scimStats = (third) => { const { ship, slots } = scimFit(third); return calcFitStats(ship, slots, [], null, {}); };
   const PITHUM = 'Pithum C-Type Medium Remote Shield Booster';
   const GISTUM = 'Gistum C-Type Medium Remote Shield Booster';
   const before = scimStats(PITHUM);
@@ -4288,7 +4359,8 @@ Medium Capacitor Control Circuit II
 
   // The multiplier itself. 0.5 is the Scimitar's role bonus to Shield Emission Systems CPU; the two
   // controls are there because a map that returned 0.5 for everything would pass the check above.
-  const ratios = before.fitCostRatios;
+  const _scim = scimFit(PITHUM);
+  const ratios = computeFitCostRatios(_scim.ship, _scim.slots, null, {});
   const hr = { pg:  {used:before.pgUsed,  total:before.pgTotal},
                cpu: {used:before.cpuUsed, total:before.cpuTotal},
                cal: {used:before.calUsed, total:before.calTotal}, ratios };
@@ -4314,40 +4386,61 @@ Medium Capacitor Control Circuit II
     fitCostFits(hr.pg, TYPES[tid(GISTUM)].attrs.power, TYPES[tid(PITHUM)].attrs.power, 1) ? 1 : 0, 1, 0);
 
   // The BROWSER case: an empty slot, so nothing is displaced and `base` is 0. A 78 tf module charged
-  // 39 fits in 50 tf of room; unscaled it would be turned away. The null ratio is the fallback for a
-  // group nothing is fitted from yet — it errs toward flagging early, which is the old behaviour.
+  // 39 fits in 50 tf of room; unscaled it would be turned away.
   const room = {used: 0, total: 50};
   check('gono', 'browser: a half-price module fits the room it really needs',
     fitCostFits(room, 78, 0, 0.5) ? 1 : 0, 1, 0);
   check('gono', 'browser: at face value it would not',
     fitCostFits(room, 78, 0, 1) ? 1 : 0, 0, 0);
-  check('gono', 'browser: an unknown group falls back to face value',
-    fitCostFits(room, 78, 0, fitCostRatioOf(hr, tid('Large Shield Booster II'))?.cpu) ? 1 : 0, 0, 0);
+
+  // ── The reason the ratios are PROBED rather than read off the fitted modules ──
+  // They used to be derived only from what the fit already carried, so a candidate whose class was
+  // not represented fell back to face value and coloured red even when the hull made it fit. This
+  // Scimitar carries no ancillary remote shield booster, and that group takes the same role bonus:
+  // under the old derivation it read 1, and browsing for one lied. Nothing about the group is
+  // special — it is simply absent from the fit, which is the ordinary case for anything being
+  // browsed FOR.
+  check('gono', 'a class the fit does not carry still gets its real multiplier',
+    fitCostRatioOf(hr, tid('Medium Ancillary Remote Shield Booster'))?.cpu, 0.5, 1e-9);
+  // The control: absent AND unbonused must still read 1, or the probe is just returning 0.5 blindly.
+  check('gono', 'an absent, unbonused class reads face value',
+    fitCostRatioOf(hr, tid('Large Shield Booster II'))?.cpu, 1, 1e-9);
+
   // No headroom at all is "no opinion", not "won't fit" — the browser can be opened without a fit.
   check('gono', 'no headroom means no mark', fitCostFits(null, 78, 0, 1) === null ? 1 : 0, 1, 0);
 
-  // ── Why ONE ratio per group is enough to colour a whole variant family ──
-  // The Variations tab derives the multiplier from the FITTED module and scales every row by it.
-  // That is only sound while all members of a family are charged the same fraction, which they are:
-  // fitting-reduction modifiers filter on dogma group and on required skills, and neither varies
-  // across a family. It holds even where a family straddles two groups — the Medium Ancillary Remote
-  // Shield Booster is its own group and still takes the Scimitar's 0.5.
+  // ── The probe table must agree with measuring each module for real ──
+  // One representative stands in for a whole CLASS (dogma group + required skills), and all of them
+  // are measured in a single engine pass alongside each other. Two things could break that: a bonus
+  // filtered on something finer than the class (meta level, tech level), which would show up on some
+  // members and not others; or cross-talk between the probes themselves, since some modules apply
+  // effects even offline (Prototype Cloaking Device I still halves scanResolution).
   //
-  // Swept rather than asserted on one pair, because the thing that would break it is a future bonus
-  // filtered on something finer (meta level, tech level), and that would show up on some members and
-  // not others. If this ever fails, the tab has to stop sharing a ratio — not have the count updated.
+  // So this checks the probe's answer against the ground truth — the module actually fitted, alone,
+  // read straight off its engine item. If it ever fails, the table has to key on something finer; do
+  // not relax the check. The classes below are chosen to span a hull role bonus (Scimitar), a skill
+  // reduction (Megathron/Guardian) and a family that straddles two groups.
   for (const [hull, rack, seed] of [['Scimitar', 'high', PITHUM],
                                     ['Megathron', 'high', 'Heavy Neutron Blaster II'],
                                     ['Guardian',  'high', 'Large Remote Armor Repairer II']]) {
     const ship = lookupShip(hull);
+    const probed = computeFitCostRatios(ship, EMPTY, null, {});
     const fam = variantsOf(tid(seed));
-    const seen = new Set();
+    let compared = 0, disagreed = 0;
     for (const v of fam) {
-      const cs = calcFitStats(ship, {...EMPTY, [rack]: [{typeID: v.typeID, state: 'online'}]}, [], null, {});
-      const r = fitCostRatioOf({ratios: cs.fitCostRatios}, v.typeID);
-      if (r) seen.add(`${r.cpu.toFixed(6)}/${r.pg.toFixed(6)}`);
+      const slots = {...EMPTY, [rack]: [{id: 'h0', typeID: v.typeID, state: 'online'}]};
+      const item = calcFitStats(ship, slots, [], null, {})?.fittedItems?.get('h0');
+      const r = fitCostRatioOf({ratios: probed}, v.typeID);
+      if (!item || !r) continue;
+      for (const [slot, attr] of [['cpu', 'cpu'], ['pg', 'power'], ['cal', 'upgradeCost']]) {
+        const b = item.getBase(attr) ?? 0;
+        if (b <= 0) continue;              // costs nothing, so it cannot fail on this resource
+        compared++;
+        if (Math.abs((item.get(attr) ?? 0) / b - r[slot]) > 1e-9) disagreed++;
+      }
     }
-    check('gono', `${hull}: ${fam.length} ${seed} variants share one fitting multiplier`, seen.size, 1, 0);
+    check('gono', `${hull}: ${fam.length} ${seed} variants (${compared} costs) match the probe table`, disagreed, 0, 0);
+    check('gono', `${hull}: the ${seed} sweep actually compared something`, compared > 0 ? 1 : 0, 1, 0);
   }
 }
 

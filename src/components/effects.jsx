@@ -6,7 +6,7 @@ import { BottomSheet, ItemDetailSheet, mutaLabel } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { byRecentlyModified } from "../lib/fit-order.js";
-import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
+import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, jamChanceFrom, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
 
 const BOOSTER_SIDE_EFFECTS = {
   "Blue Pill":     [{attr:"Shield Capacity",penalty:"-22.5%"},{attr:"Turret Optimal Range",penalty:"-22.5%"},{attr:"Cap Capacity",penalty:"-22.5%"},{attr:"Missile Explosion Velocity",penalty:"-22.5%"}],
@@ -389,7 +389,7 @@ const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
 // card here cannot claim a different number from the one the fit is actually getting — a projected
 // or command fit is flown by the pilot it names, or by the app-wide sheet if it names none, and that
 // decision belongs in one place.
-export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,sourceSkills=()=>SKILL_DEFAULTS,environment,setEnvironment,onOpenFit}){
+export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,sourceSkills=()=>SKILL_DEFAULTS,environment,setEnvironment,jamTarget,openFitTabs,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SECTION_IDS,section,setSection);
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
@@ -397,6 +397,23 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
   const[showProjPicker,setShowProjPicker]=useState(false);
   const[showCmdPicker,setShowCmdPicker]=useState(false);
   const[showEnvPicker,setShowEnvPicker]=useState(false);
+  // The open fit tabs as both pickers' shortcut list, same as the graph's target picker. They arrive
+  // already reconciled against fitsDB, so a pointer here always names a fit that exists. The fit
+  // being EDITED is kept in: projecting a fit onto itself is how you check your own logi or your own
+  // webs, and a command ship boosting itself is the normal case rather than a mistake.
+  //
+  // Keyed on the tabs' names, NOT on the array: App calls resolveTabs in its render body, so
+  // openFitTabs is a fresh array on every render and depending on its identity would defeat both
+  // memos below.
+  const _tabKey=(openFitTabs??[]).map(t=>`${t.ship}::${t.name}`).join("|");
+  const openTabFits=useMemo(()=>(openFitTabs??[])
+    .map(t=>{const f=fitsDB?.[t.ship]?.find(x=>x.name===t.name);return f?{ship:t.ship,fit:f}:null;})
+    .filter(Boolean),[_tabKey,fitsDB]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // The command picker hides fits that run no burst, so its shortcut list has to hide them too, or
+  // the one list in that sheet meant to be the fast path becomes the only place you can pick a fit
+  // that produces an empty card. Same predicate as the list below it, by construction — and gated on
+  // the sheet being open, because hasCommandBursts runs a dogma pass per fit.
+  const cmdTabFits=useMemo(()=>showCmdPicker?openTabFits.filter(({ship,fit})=>hasCommandBursts(ship,fit)):[],[showCmdPicker,openTabFits]);
 
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
@@ -477,10 +494,22 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const tdOpt=stk((eff.trackDisr||[]).map(t=>(t.optimalBonus||0)*rf(t.optimal,t.falloff)));
         const tdFall=stk((eff.trackDisr||[]).map(t=>(t.falloffBonus||0)*rf(t.optimal,t.falloff)));
         const gdRange=stk((eff.guideDisr||[]).map(g=>g.missileRange*rf(g.optimal,g.falloff)));
+        // Strength is the strongest of the jammer's four racial attrs, matching the MOD_STRENGTH badge
+        // a locally fitted jammer gets. Jam CHANCE is target-relative and needs the edited fit's own
+        // engine-computed sensor strength and type, handed down as jamTarget — so it is 0 when no fit
+        // is open, and 0 against a hull whose sensor the jammer does not cover.
+        const ecmStrengths=(eff.ecm||[]).map(e=>Math.max(0,...Object.values(e.byType))*rf(e.optimal,e.falloff));
+        const ecmMax=ecmStrengths.length?Math.max(...ecmStrengths):0;
+        // Range and the target's ECMResistance folded in here, exactly as App.jsx's projection memo
+        // does, because this card carries its own range slider. jamChanceFrom then does the combining
+        // — shared with the Stats tab so the card cannot print a number the fit does not apply.
+        const jamChance=jamChanceFrom((eff.ecm||[]).map(e=>({byType:Object.fromEntries(
+            Object.entries(e.byType).map(([k,v])=>[k,(v||0)*(jamTarget?.resist??1)*rf(e.optimal,e.falloff)]))})),
+          jamTarget?.strength??0,jamTarget?.type??"");
         const hasReps=totals.shield+totals.armor+totals.hull>0.5;
-        const hasWeb=webMs.length>0, hasNeut=neutGJs>0.05, hasCap=capGJs>0.05;
+        const hasWeb=webMs.length>0, hasNeut=neutGJs>0.05, hasCap=capGJs>0.05, hasEcm=ecmMax>0.5, hasJam=jamChance>0.05;
         const hasPaint=Math.abs(painterSig)>0.5, hasDamp=Math.abs(dampLock)>0.5, hasTD=Math.abs(tdTrack)>0.5, hasTDrng=Math.abs(tdOpt)>0.5||Math.abs(tdFall)>0.5, hasGD=Math.abs(gdRange)>0.5;
-        const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasTDrng||hasGD;
+        const hasAny=hasReps||hasWeb||hasNeut||hasCap||hasPaint||hasDamp||hasTD||hasTDrng||hasGD||hasEcm||hasJam;
         const setRange=(km)=>setProjFits(projFits.map((p,j)=>j===i?{...p,rangeKm:Math.max(0,km)}:p));
         // Opt-out, matching App.jsx's guard: a fit saved before the toggle existed has no `active`
         // and must keep applying.
@@ -512,12 +541,14 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
               {hasTD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(tdTrack)}%</div><div style={{fontSize:9,color:C.textMute}}>your tracking</div></div>}
               {hasTDrng&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(Math.abs(tdOpt)>=Math.abs(tdFall)?tdOpt:tdFall)}%</div><div style={{fontSize:9,color:C.textMute}}>your turret range</div></div>}
               {hasGD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(gdRange)}%</div><div style={{fontSize:9,color:C.textMute}}>your missile range</div></div>}
+              {hasEcm&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(ecmMax)}</div><div style={{fontSize:9,color:C.textMute}}>ECM strength</div></div>}
+              {hasJam&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{jamChance.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Jam chance</div></div>}
             </div>
           ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>Nothing on this fit projects onto a target</div>}
         </div>);
       })}
       <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
-      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} onSelect={(ship,fit)=>{
+      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} pinned={openTabFits} onSelect={(ship,fit)=>{
         const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
         const rangeKm=optims.length?Math.round(Math.min(...optims)/1000):30;
@@ -544,7 +575,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>);
       })}
       <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
-      {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} filterFn={hasCommandBursts} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
+      {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} filterFn={hasCommandBursts} pinned={cmdTabFits} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
     </div>)}
     </div>
     </div>

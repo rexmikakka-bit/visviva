@@ -200,6 +200,10 @@ export default function App(){
     const capEntries=[];   // projected Remote Capacitor Transmitters, kept for the Projected list
     const col={sig:[],lock:[],scan:[],trk:[],topt:[],tfall:[],mrng:[],edly:[],avel:[],acld:[]};
     const boosts={lock:[],scan:[]};   // projected Remote Sensor Boosters -> attribute pool, not the debuff stack
+    // ECM is kept as raw per-type strengths, range-factored but NOT yet reduced to one number —
+    // which of the four attributes matters depends on the TARGET's sensor type, which calcFitStats
+    // (not this memo) knows. See calcFitStats's jamChance for the combination itself.
+    const ecmEntries=[];
     // Target EWAR resistance. Overwhelmingly a COMMAND BURST effect (buff 19, Electronic Hardening)
     // rather than a hull attribute, so externalBursts has to go in or every boosted fit reads as
     // having no resistance and projected damps/disruptors hit at full strength. Applied PER SOURCE
@@ -237,20 +241,30 @@ export default function App(){
       if(!noAssist)for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
       for(const t of (eff.trackDisr||[])){const f=rz('disrupt')*rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
       for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
+      // ECM jammers carry remoteResistanceID 2253 = ECMResistance, so they are resisted like any other
+      // EWAR (eos multiplies the strength by getResistance before addProjectedEcm). ECCM is priced in
+      // separately, on the denominator: jamChance divides by this fit's engine-computed sensorStrength.
+      for(const e of (eff.ecm||[])){const f=rz('ecm')*rf(e.optimal,e.falloff);const bt={};for(const k in e.byType)bt[k]=(e.byType[k]||0)*f;ecmEntries.push({byType:bt,ship:pf.ship});}
     }
     const reps={shield:applyRemoteRepDiminishing(repEntries.shield),armor:applyRemoteRepDiminishing(repEntries.armor),hull:applyRemoteRepDiminishing(repEntries.hull)};
     const webMult=webMults.length?stackingPenalty(webMults):1;
     const stackPct=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
     const debuffs={sig:stackPct(col.sig),lockRange:stackPct(col.lock),scanRes:stackPct(col.scan),tracking:stackPct(col.trk),turretOptimal:stackPct(col.topt),turretFalloff:stackPct(col.tfall),missileRange:stackPct(col.mrng),explosionDelay:stackPct(col.edly),aoeVel:stackPct(col.avel),aoeCloud:stackPct(col.acld)};
     const hasDebuff=Object.values(debuffs).some(v=>Math.abs(v)>0.05);
-    return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts};
+    // ecmResist is handed out so the Projected card can scale a jammer the same way this memo does;
+    // the card applies its OWN range factor (it has a per-card range slider), so it cannot reuse
+    // ecmEntries directly.
+    return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts,ecm:ecmEntries,ecmResist:rz('ecm')};
   },[projFits,fitsDB,fitSkills,sourceSkills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
   const snapshotStats=useMemo(()=>{
     const shipName=activeFit?.ship;
     if(!shipName) return null;
     try{
-      return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{fighters,implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
+      // lookupShip, not the bare {name,typeID} shape other calcFitStats calls below use — jamChance
+      // needs ship.sensorType, which only lookupShip's fuller record carries.
+      const sh=lookupShip(shipName)??{name:shipName,typeID:tidByName(shipName)};
+      return calcFitStats(sh,slots,drones??[],fitSkills,{fighters,implants,boosters,externalBursts,projectedEcm:projectedEffects?.ecm,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
   },[activeFit,slots,drones,fighters,fitSkills,implants,boosters,externalBursts,projectedEffects]);
   const shipMeta=useMemo(()=>{
@@ -633,7 +647,7 @@ export default function App(){
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
-        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
+        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} openFitTabs={openFitTabs} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} jamTarget={{strength:snapshotStats?.sensorStrength??0,type:snapshotStats?.sensorType??"",resist:projectedEffects?.ecmResist??1}} onOpenFit={(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);}}/>}
       </div>
       {/* Every tab except Fittings operates ON a fit — Cargo, Drones, Implants and Effects all have
           nothing to act on with no ship selected, so the bar is five dead buttons taking a row of

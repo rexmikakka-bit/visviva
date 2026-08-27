@@ -14,7 +14,7 @@ import marketGroupsData from "../data/marketGroups.json" with { type: "json" };
 import marketTreeData   from "../data/market-tree.json" with { type: "json" };
 import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
 import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
-import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace } from "../calc.js";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace, fitCostClassOf } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { classifyHull } from "./ship-taxonomy.js";
 
@@ -1260,23 +1260,24 @@ export function isAssaultDamageControl(typeID){
 // remote shield booster CPU, a 61 tf variant measured against a backed-out base of 78 read as
 // fitting when the real question was 30.5 against 39.
 //
-// So the base cost is scaled by its group's multiplier before the comparison. calcFitStats hands the
-// multipliers out as `fitCostRatios` (group name -> {cpu,pg,cal}); these two functions are the only
-// place either the lookup or the arithmetic happens, so the browser and the Variations tab cannot
-// drift apart on the answer.
-
-// Null when nothing of that group is fitted, which is only reachable from the browser — the
-// Variations tab measures against a module that is by definition already on the fit.
+// So the base cost is scaled by its class's multiplier before the comparison. calc.js's
+// computeFitCostRatios hands the multipliers out keyed by GROUP + REQUIRED SKILLS; these two
+// functions are the only place either the lookup or the arithmetic happens, so the browser and the
+// Variations tab cannot drift apart on the answer.
+//
+// The key itself (fitCostClassOf) lives in calc.js next to the probe pass that builds the table, so
+// the two sides cannot drift apart on what a class is.
 export function fitCostRatioOf(headroom,typeID){
-  const gn=TYPES[typeID]?.gn??TYPES[String(typeID)]?.gn;
-  return (gn?headroom?.ratios?.get(gn):null)??null;
+  const cls=fitCostClassOf(TYPES[typeID]??TYPES[String(typeID)]);
+  return (cls?headroom?.ratios?.get(cls):null)??null;
 }
 
 // `base` is the cost being displaced: the fitted module's base cost for a swap, 0 when filling an
 // empty slot. Both it and `val` are base attributes, so BOTH get scaled — the module coming out was
 // only ever charged its effective cost, and backing out the base frees room that never existed.
-// `m` null (nothing of the group fitted) falls back to 1, which is the pre-ratio behaviour and errs
-// the same way it always did: toward flagging early, since these modifiers only ever reduce a cost.
+// `m` null falls back to 1 — raw base cost, which errs toward flagging early since these modifiers
+// only ever reduce a cost. The probe table covers every fittable type, so this is now only the window
+// before it has been computed, not the ordinary case it used to be.
 // Null when there is no headroom to test against, meaning "no opinion" rather than "won't fit".
 export function fitCostFits(hr,val,base=0,m=1){
   if(!hr)return null;

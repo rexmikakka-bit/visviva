@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import modulesData from "../data/modules.json";
-import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
@@ -266,7 +266,7 @@ const enforceGroupLimit=(slots,limits,changedId)=>{
 
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _scroll=useScrollMemory("Fit");
-  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
+  const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
   // stats. A missile launcher's range comes entirely from its charge (velocity x flight time), so an
   // unloaded launcher has no range at all — keying by typeID let a loaded launcher's range bleed onto
@@ -567,6 +567,19 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // representative id (see the row onClick above), so this is the only place that reconnects it to
   // the rest of its rack.
   const menuRow=moduleMenu?getDisplayRows(moduleMenu.secKey).find(r=>(r.groupIds??[r.id]).includes(moduleMenu.modId)):null;
+  const _ratioCache=useRef(null);
+  const getFitCostRatios=()=>{
+    const key=[ship,slots,skills,implants,boosters];
+    const c=_ratioCache.current;
+    if(c&&c.key.every((v,i)=>v===key[i]))return c.val;
+    const t0=performance.now();
+    const val=(ship&&slots)
+      ?computeFitCostRatios(ship,slots,skills,{implants,boosters,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})
+      :new Map();
+    if(import.meta.env?.DEV)console.debug(`[axis] fit-cost probe pass: ${(performance.now()-t0).toFixed(1)} ms (${val.size} classes)`);
+    _ratioCache.current={key,val};
+    return val;
+  };
   // Same used/total figures ResourceStrip shows, handed to the Variations tab so it can flag whether
   // a swap would still fit — see FitCostDelta's resourceHeadroom doc.
   const resourceHeadroom={
@@ -574,8 +587,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     cpu: {used:_cs.cpuUsed ??0, total:_cs.cpuTotal ??0},
     cal: {used:_cs.calUsed ??0, total:_cs.calTotal ??400},
     // used/total are engine-computed and the printed costs are base attributes, so the comparison
-    // needs a multiplier to be honest — see calcFitStats' fitCostRatios.
-    ratios:_cs.fitCostRatios,
+    // needs a multiplier to be honest — see computeFitCostRatios.
+    //
+    // A GETTER, and that is the point: the probe pass costs roughly what a full stats pass does, and
+    // only the module browser and the Variations tab ever read it, so a fit nobody opens either on
+    // pays nothing. The cache is keyed on object identity because React state already gives us a new
+    // `slots` (or `skills`/`implants`/`boosters`) object on every edit that could move a ratio.
+    get ratios(){return getFitCostRatios();},
   };
 
   return(
@@ -980,7 +998,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;
@@ -1067,6 +1085,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // Cap: incoming GJ/s (peak regen + injector fill) and cap-battery neut resistance %.
   const capInGJs      = peakRegen(cs.capCapacity,cs.capRechargeMs)+(cs.capFillPS??0);
   const neutResistPct = (1-(cs.energyWarfareResist??1))*100;
+  // Which projected ships are actually jamming, for the Sensor tooltip. Filtered on THIS hull's
+  // sensor type: a jammer that only covers the other three contributes nothing to jamChance and
+  // must not be named as though it did.
+  const jammers = [...new Set((projectedEffects?.ecm??[])
+    .filter(e=>(e.byType?.[cs.sensorType]??0)>0).map(e=>e.ship).filter(Boolean))].join(", ");
 
   return(
     <div ref={_scroll} style={{flex:1,overflowY:"auto",padding:"10px 10px 20px"}}>
@@ -1196,10 +1219,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const showArmor =(cs.armorRepPS??0)>0||incArmor>0.05;
             const showHull  =(cs.hullRepPS??0)>0||incHull>0.05;
             const peak=[
-              {label:"Shield Regen", val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
-              {label:"Shield Boost", val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
-              {label:"Armor Rep",    val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
-              {label:"Hull Rep",     val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
+              {label:"Regen",  val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
+              {label:"Shield", val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
+              {label:"Armor",  val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
+              {label:"Hull",   val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
             ];
             // Sustained row values, aligned to the same columns (regen has no sustained variant → blank).
             // Sustained includes the full incoming remote rep (supplier-cap-independent).
@@ -1219,9 +1242,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:showSustained?`1px solid ${C.border}`:"none"}}>
                 {peak.map((rr,i,arr)=>(
                   <div key={rr.label} style={{padding:"8px 8px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none"}}>
-                    {/* lineHeight pinned: "Shield Boost" wraps to two lines in this column, and
-                        without it the label inherits the body's 1.93 and the two lines sit ~17px
-                        apart. Same inherited-line-height trap as the app header. */}
+                    {/* lineHeight pinned rather than inherited: at the body's 1.93 a 9px label
+                        takes ~17px of line box, and that alone is where this card's height comes
+                        from. Firepower and Remote Reps pin theirs to match. */}
                     <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{rr.label}</div>
                     <div style={{fontSize:12,fontWeight:700,color:rr.val.startsWith("0")?C.textMute:rr.color}}>{rr.val}</div>
                   </div>
@@ -1273,7 +1296,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             return(
             <div key={label} onClick={()=>setDmgSource(srcKey)} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
               <div style={{fontSize:14,fontWeight:800,color:val==="0"?C.textMute:(sel?C.accent:C.text)}}>{val}</div>
-              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:1}}>{label}</div>
+              {/* 1.2 + a 4px gap, the same recipe as Recharge Rates, so the two cards are the same
+                  height. :root's `145%` line-height inherits as a LENGTH, so the value line box is
+                  23.2px here regardless of it being 14px rather than 12px — only the label needed
+                  pinning, and the arithmetic comes out identical. */}
+              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4,lineHeight:1.2}}>{label}</div>
             </div>);
           })}
         </div>
@@ -1324,7 +1351,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 const content=on?(col.eff===Infinity?"Free":`${fmtF(col.eff)} HP/GJ`):(col.disp??`${fmtF(col.val)} ${col.unit}`);
                 return(<div key={col.key} onClick={can?()=>toggleExact(`remoteEff_${col.key}`):undefined}
                             style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none",cursor:can?"pointer":"default"}}>
-                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5}}>{on?"Efficiency":col.label}</div>
+                  {/* lineHeight pinned to match Recharge Rates — see the note there. */}
+                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{on?"Efficiency":col.label}</div>
                   <div style={{fontSize:12,fontWeight:700,color:col.val>0?col.color:C.textMute}}>{content}</div>
                 </div>);
               })}
@@ -1376,7 +1404,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             :<span style={{fontSize:11,fontWeight:700,color:C.danger}}>Unstable - depleted in {fmtDur(cs.capTime)}</span>;
         })()}/>
         {isOpen("cap")&&<>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
           {/* Tap to unround, same as the Targeting & Misc cells: fmtN abbreviates a capital's
               capacitor to "78.8k GJ", and those hidden digits are what a cap-stability margin turns
               on. Inert — and offers no pointer — when the abbreviation is already the whole number. */}
@@ -1404,7 +1432,6 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Neut resist</div></>}
           </div>
         </div>
-        <Row label="Recharge time" value={`${((cs.capRechargeMs??0)/1000).toFixed(0)} s`} last/>
         </>}
       </div>
 
@@ -1431,7 +1458,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               ["Align",     `${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
               ["Scan res.", `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
               ["Signature", `${fmtN(cs.sigRadius??0)} m`,     p(x.sigRadius,2," m")],
-              ["Sensor",    `${cs.sensorStrength??0} ${cs.sensorType??""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}`:null],
+              ["Sensor",    `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
               ["Warp",      `${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
@@ -1447,8 +1474,14 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const br=(i%2===0)?`1px solid ${C.border}`:"none";
             const can=exact!=null&&exact!==val;
             const on=can&&exactCells.has(label);
+            // The parenthesised percentage on Sensor is jam chance, not part of the sensor strength,
+            // so that row spends its tooltip naming it rather than on the exact value — which is
+            // still one tap away, like every other cell.
+            const tip=label==="Sensor"&&cs.jamChance>0
+              ?`${cs.jamChance}% Jam chance${jammers?` (${jammers})`:""}`
+              :(can?exact:undefined);
             return(<div key={label} onClick={can?()=>toggleExact(label):undefined}
-                        title={can?exact:undefined}
+                        title={tip}
                         style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,cursor:can?"pointer":"default"}}>
               <span style={{color:C.textMid,flexShrink:0}}>{label}</span>
               <span style={{fontWeight:600,color:C.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</span>
