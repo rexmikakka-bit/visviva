@@ -32,17 +32,20 @@ export function useRowSwipe() {
   const close = (el) => { setX(el, 0, true); setOpenKey(null); };
 
   const swipeHandlers = (key) => ({
-    // Marks the row for useTabSwipe's `skip` check. stopPropagation below is not enough on its own:
-    // it only fires once this gesture's axis has locked, so the first AXIS_LOCK_PX of travel still
-    // reach the tab swipe and let IT lock to "x" first — which is what dragged the whole Fit panel
-    // sideways while a row was being revealed.
-    "data-rowswipe": "",
+    // Tells useTabSwipe which DIRECTION this row claims, so it can stand down for that one and keep
+    // the other. A closed row owns rightward only — it has nothing to the left to reveal, so a
+    // leftward drag is still "go to Stats". An open one owns both, because leftward closes it.
+    //
+    // It has to be an attribute rather than stopPropagation alone: stopPropagation fires only once
+    // this gesture's axis has locked, so the first AXIS_LOCK_PX of travel reach the tab swipe
+    // regardless and let IT lock to "x" first.
+    "data-rowswipe": openKey === key ? "open" : "closed",
     onTouchStart: e => {
       // Starting a gesture on a different row closes whatever was already revealed, so at most
       // one Remove button is ever showing.
       if (openKey && openKey !== key) setOpenKey(null);
       const t = e.touches[0];
-      if (t) drag.current = { key, x: t.clientX, y: t.clientY, axis: null };
+      if (t) drag.current = { key, x: t.clientX, y: t.clientY, axis: null, owns: false };
     },
     onTouchMove: e => {
       if (drag.current.key !== key) return;
@@ -51,16 +54,19 @@ export function useRowSwipe() {
       if (!drag.current.axis) {
         if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
         drag.current.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+        // Decided once, at the moment the gesture commits to an axis, and then latched: a drag that
+        // wanders back across its own start must not change hands halfway through.
+        drag.current.owns = drag.current.axis === "x" && (openKey === key || dx > 0);
       }
-      if (drag.current.axis !== "x") return;
+      if (drag.current.axis !== "x" || !drag.current.owns) return;
       e.stopPropagation(); // keep this out of the Fit/Stats/Graph tab swipe above it
       const base = openKey === key ? REVEAL_PX : 0;
       setX(e.currentTarget, Math.min(REVEAL_PX + 16, Math.max(0, base + dx * 0.9)), false);
     },
     onTouchEnd: e => {
       if (drag.current.key !== key) return;
-      const wasX = drag.current.axis === "x";
-      drag.current = { key: null, x: 0, y: 0, axis: null };
+      const wasX = drag.current.axis === "x" && drag.current.owns;
+      drag.current = { key: null, x: 0, y: 0, axis: null, owns: false };
       if (!wasX) return;
       // Read the position back off the node rather than re-deriving it from touch coordinates —
       // it already reflects the clamping onTouchMove applied, including the "closing from open"

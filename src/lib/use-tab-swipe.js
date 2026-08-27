@@ -26,7 +26,7 @@ const AXIS_LOCK_PX = 8; // movement before the gesture decides whether it is hor
  *   (`slideDir` > 0 = came from the right).
  */
 export function useTabSwipe(tabs, current, onChange) {
-  const swipe = useRef({ x: 0, y: 0, axis: null, skip: false });
+  const swipe = useRef({ x: 0, y: 0, axis: null, skip: false, claimed: null });
   const panelRef = useRef(null);
   const [slideDir, setSlideDir] = useState(0);   // -1 = came from the left, +1 = from the right
 
@@ -50,26 +50,35 @@ export function useTabSwipe(tabs, current, onChange) {
   // the thumb, because the browser only starts suppressing the touchmove for its own drag AFTER the
   // slider has already lost the axis race to this handler.
   //
-  // A swipe-to-delete row (useRowSwipe, tagged data-rowswipe) is the third shape: it is a real
-  // horizontal gesture that owns itself. Its own stopPropagation cannot cover the first few pixels,
-  // because it fires only once that gesture's axis has locked — by which point this handler has
-  // locked too and the panel has already started moving.
-  const inHScroller = (node) => {
+  // A swipe-to-delete row (useRowSwipe, tagged data-rowswipe) is the third shape, and it is only a
+  // PARTIAL claim: the row owns the direction it can actually reveal something in, and the tab swipe
+  // keeps the other one. So this returns which directions to stand down for rather than a boolean,
+  // and the decision is deferred to the moment the axis locks and the direction is known.
+  // The row's own stopPropagation cannot cover the first few pixels, because it fires only once that
+  // gesture's axis has locked — by which point this handler has locked too and the panel has already
+  // started moving.
+  //
+  // "all"   — not ours under any circumstances (a horizontal scroller, a range slider)
+  // "both"  — an OPEN row: rightward reveals further, leftward closes it
+  // "right" — a CLOSED row: nothing to its left to reveal, so leftward is still "go to Stats"
+  const standDownFor = (node) => {
     for (let el = node; el instanceof Element; el = el.parentElement) {
       if (el === panelRef.current?.parentElement) break;
-      if (el.hasAttribute("data-rowswipe")) return true;
-      if (el.tagName === "INPUT" && el.type === "range") return true;
+      const row = el.getAttribute("data-rowswipe");
+      if (row) return row === "open" ? "both" : "right";
+      if (el.tagName === "INPUT" && el.type === "range") return "all";
       if (el.scrollWidth > el.clientWidth + 2) {
         const ox = getComputedStyle(el).overflowX;
-        if (ox === "auto" || ox === "scroll") return true;
+        if (ox === "auto" || ox === "scroll") return "all";
       }
     }
-    return false;
+    return null;
   };
 
   const onTouchStart = e => {
     const t = e.touches[0];
-    if (t) swipe.current = { x: t.clientX, y: t.clientY, axis: null, skip: inHScroller(e.target) };
+    const claimed = standDownFor(e.target);
+    if (t) swipe.current = { x: t.clientX, y: t.clientY, axis: null, skip: claimed === "all", claimed };
   };
   const onTouchMove = e => {
     if (swipe.current.skip) return;
@@ -79,8 +88,12 @@ export function useTabSwipe(tabs, current, onChange) {
     if (!swipe.current.axis) {
       if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
       swipe.current.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+      // Latched with the axis, for the same reason useRowSwipe latches its own side: a drag that
+      // wanders back across its start must not take the panel with it halfway through.
+      const c = swipe.current.claimed;
+      if (swipe.current.axis === "x" && (c === "both" || (c === "right" && dx > 0))) swipe.current.skip = true;
     }
-    if (swipe.current.axis !== "x") return;
+    if (swipe.current.skip || swipe.current.axis !== "x") return;
     const i = tabs.indexOf(current);
     // Rubber-band at the ends: there is nothing to swipe to, so resist rather than lie.
     const atEdge = (dx > 0 && i === 0) || (dx < 0 && i === tabs.length - 1);
@@ -89,7 +102,7 @@ export function useTabSwipe(tabs, current, onChange) {
   const onTouchEnd = e => {
     const t = e.changedTouches[0];
     const wasX = swipe.current.axis === "x" && !swipe.current.skip;
-    swipe.current.axis = null; swipe.current.skip = false;
+    swipe.current.axis = null; swipe.current.skip = false; swipe.current.claimed = null;
     if (!t || !wasX) { setX(0, true); return; }
     const dx = t.clientX - swipe.current.x;
     const i = tabs.indexOf(current);
