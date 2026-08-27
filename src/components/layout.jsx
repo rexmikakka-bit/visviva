@@ -326,7 +326,8 @@ const BOOSTER_ICON=eveIcon(15479,32);
 
 export function BottomNav({active,onChange}){
   const tabs=[
-    {key:"fittings",label:"Fittings",navKey:"fit"},
+    // `key` stays "fittings" — App.jsx switches on it and it is persisted as the last bottom tab.
+    {key:"fittings",label:"Fitting",navKey:"fit"},
     {key:"cargo",   label:"Cargo",   navKey:"cargo"},
     {key:"drones",  label:"Drones",  navKey:"drones"},
     {key:"implants",label:"Implants",navKey:"implants"},

@@ -21,6 +21,10 @@ import { IconPencil, IconCopy, IconClose, IconSearch } from "./glyphs.jsx";
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
 // on first render, and no-undef cannot see it.
 const _SUBTABS=["Fit","Stats","Graph"];
+// Display only. These strings are also the persisted value of `axis_fit_subtab` and the keys
+// useScrollMemory files each tab's scroll position under, so renaming them would silently reset
+// both for everyone already using the app. The label is the only part that should ever move.
+const _SUBTAB_LABEL={Fit:"Modules",Stats:"Stats",Graph:"Graph"};
 
 // Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
 // player) because the shapes read as "back" and "back to the start" without a label to explain them.
@@ -1028,7 +1032,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         </div>
         <div style={{width:70,flexShrink:0}}/>
       </div>
-      <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:13,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{t}</button>)}</div>
+      <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===t?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{_SUBTAB_LABEL[t]}</button>)}</div>
     </div>
     <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
       {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
