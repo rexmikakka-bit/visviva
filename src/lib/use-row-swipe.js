@@ -20,7 +20,14 @@ const REVEAL_PX = 72;   // width of the revealed Remove button
 const COMMIT_PX = 40;   // past this on release, snap open instead of springing back
 const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs vertical
 
-export function useRowSwipe() {
+/**
+ * @param isBlocked optional () => boolean, asked on every touch: while it is true no row may be
+ *   swiped. The caller's drag-to-reorder is the case that needs it — that runs on POINTER events
+ *   and this runs on TOUCH events, two independent streams, so the reorder's own preventDefault and
+ *   stopPropagation cannot reach these handlers. Without it, pulling the reorder handle sideways
+ *   also slid the row open and brought Remove out from behind it.
+ */
+export function useRowSwipe(isBlocked) {
   const drag = useRef({ key: null, x: 0, y: 0, axis: null });
   const [openKey, setOpenKey] = useState(null);
 
@@ -41,6 +48,7 @@ export function useRowSwipe() {
     // regardless and let IT lock to "x" first.
     "data-rowswipe": openKey === key ? "open" : "closed",
     onTouchStart: e => {
+      if (isBlocked?.()) return;
       // Starting a gesture on a different row closes whatever was already revealed, so at most
       // one Remove button is ever showing.
       if (openKey && openKey !== key) setOpenKey(null);
@@ -49,6 +57,10 @@ export function useRowSwipe() {
     },
     onTouchMove: e => {
       if (drag.current.key !== key) return;
+      // The reorder can begin AFTER this gesture armed — pointerdown and touchstart arrive in an
+      // order that is not worth depending on — so hand the row back and disarm rather than trusting
+      // the check in onTouchStart to have caught it.
+      if (isBlocked?.()) { drag.current.key = null; close(e.currentTarget); return; }
       const t = e.touches[0]; if (!t) return;
       const dx = t.clientX - drag.current.x, dy = t.clientY - drag.current.y;
       if (!drag.current.axis) {

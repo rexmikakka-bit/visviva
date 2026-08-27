@@ -311,7 +311,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   });
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
-  const rowSwipe=useRowSwipe();
+  const rowSwipe=useRowSwipe(()=>dragInfo.current!=null);
   const[fitError,setFitError]=useState(null);
   const showFitError=msg=>{setFitError(msg);setTimeout(()=>setFitError(null),3000);};
 
