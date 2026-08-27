@@ -17,6 +17,7 @@ import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
+import { IconClipboard, IconCharacter } from "./components/glyphs.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
@@ -657,7 +658,7 @@ export default function App(){
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
     {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
-      {icon:"&#128229;",label:"From EFT",sub:"Paste from clipboard",onSelect:async()=>{
+      {icon:IconClipboard,label:"From EFT",sub:"Paste from clipboard",onSelect:async()=>{
         // Skip the sheet on the golden path: read the clipboard and import immediately, so a fit
         // copied in-game lands in three fewer taps ("Read from Clipboard" + "Import '<name>'" gone).
         // Anything that isn't a clean success — unreadable/empty clipboard, text that isn't EFT —
@@ -672,11 +673,11 @@ export default function App(){
         importFit(parsed);
         setPriceBanner({kind:"success",msg:`Imported "${parsed.fitName}"`});setTimeout(()=>setPriceBanner(null),3000);
       }},
-      {icon:"&#128640;",label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
+      {icon:IconCharacter,label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
     ]}/>}
     {showExportChooser&&<ChooserSheet title="Export Fit" onClose={()=>setShowExportChooser(false)} options={[
-      {icon:"&#128228;",label:"To EFT",sub:"Copy to clipboard",onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
-      {icon:"&#128225;",label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
+      {icon:IconClipboard,label:"To EFT",sub:"Copy to clipboard",onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
+      {icon:IconCharacter,label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} cs={snapshotStats} onClose={()=>setShowShipInfo(false)}/>}
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}

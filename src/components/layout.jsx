@@ -5,6 +5,7 @@ import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
 import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, describeSkillSheet } from "../lib/pilot.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
+import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
@@ -23,7 +24,7 @@ export function ChooserSheet({title, options, onClose}) {
         <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:14}}>{title}</div>
         {options.map(opt=>(
           <button key={opt.label} onClick={opt.onSelect} style={{display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',padding:'14px 12px',background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,marginBottom:8,cursor:'pointer'}}>
-            <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:opt.icon}}/>
+            <MenuGlyph icon={opt.icon}/>
             <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{opt.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{opt.sub}</div></div>
           </button>
         ))}
@@ -123,10 +124,10 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
           clock. env() is 0 on Android and the web, so the 20px is what those still get. */}
       <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       <button onClick={()=>dismiss(onNewFit)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
-        <span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:"&#10133;"}}/>
+        <span style={{display:"flex",color:C.accent,flexShrink:0}}><IconPlus size={21}/></span>
         <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
       </button>
-      {[{icon:"&#128229;",label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:"&#128228;",label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:"&#128247;",label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:"&#128176;",label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:"&#128027;",label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:"&#9881;",label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:20}} dangerouslySetInnerHTML={{__html:item.icon}}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:IconImport,label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:IconExport,label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:IconSnapshot,label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:IconPrice,label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:IconFeedback,label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:IconSettings,label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }

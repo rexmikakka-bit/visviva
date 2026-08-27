@@ -15,6 +15,7 @@ import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
+import { IconPencil, IconCopy, IconClose, IconSearch } from "./glyphs.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
@@ -218,18 +219,18 @@ function FitRow({ship, fit, active, act, tagColors, showShip, hideTag, onOpen}){
     <button onClick={e=>{e.stopPropagation();act.setEditingFitId(fit.id);act.setEditName(fit.name);}}
       title="Rename fit" aria-label={`Rename ${fit.name}`}
       style={btn(`1px solid ${editing?C.accentBorder:C.border}`,editing?C.accent:C.textMid,editing?C.accentLight:C.surfaceAlt)}>
-      <span style={{fontSize:14}}>&#9998;</span></button>
+      <IconPencil size={17}/></button>
     <button onClick={e=>{e.stopPropagation();act.openCopyOfFit(ship,fit.name);}}
       title="Open a copy" aria-label={`Open a copy of ${fit.name}`}
       style={btn(`1px solid ${C.border}`,C.textMid)}>
-      <span style={{fontSize:13}}>&#128203;</span></button>
+      <IconCopy size={17}/></button>
     {/* Deleting a fit is NOT undoable — the undo stack holds a fit's CONTENTS and is dropped the
         moment the active fit changes — so the confirm is the safety, and it stays even though the
         row now sits in lists you scroll past rather than navigate to deliberately. */}
     <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`)){haptic("medium");act.deleteFit(ship,fit);}}}
       title="Delete fit" aria-label={`Delete ${fit.name}`}
       style={btn("1px solid rgba(239,68,68,.25)",C.danger,"rgba(239,68,68,.08)")}>
-      <span style={{fontSize:17}}>&times;</span></button>
+      <IconClose size={17}/></button>
   </div>);
 }
 
@@ -824,9 +825,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     )}
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
+        <span style={{display:"flex",color:C.textMute,flexShrink:0}}><IconSearch size={16}/></span>
         <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ships or fit names..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
-        {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:16,padding:0}}>x</button>}
+        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",padding:0,display:"flex"}}><IconClose size={15}/></button>}
       </div>
     </div>
     <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
@@ -1021,7 +1022,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
             ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingFit(false);}} onBlur={commitRename} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
             :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%"}}>
               <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||"Unnamed Fit"}</span>
-              <span style={{fontSize:15,color:"#ffffffff",flexShrink:0}}>&#9998;</span>
+              <span style={{display:"flex",color:C.textMid,flexShrink:0}}><IconPencil size={14}/></span>
             </button>
           }
         </div>
