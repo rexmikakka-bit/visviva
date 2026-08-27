@@ -14,6 +14,7 @@ import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
+import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
@@ -112,6 +113,7 @@ export function TagChip({name, color, count, onClick, onRemove, dim}) {
 // new tag costs one line of typing and no colour decision — the palette assigns itself, and
 // recolouring lives in the tag's own view where it isn't in the way.
 function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
+  const sheet = useSheetDrag(onClose);
   const [draft, setDraft] = useState("");
   const mine = tagsOf(fit);
   const n = normalizeTag(draft);
@@ -127,15 +129,17 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
   const vv = useVisualViewport();
   const frame = vv ? {top:vv.top,height:vv.height,left:0,right:0} : {inset:0};
   return (
-    <div onClick={onClose} style={{position:"fixed",...frame,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end"}}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70%",overflowY:"auto",background:C.surface,
-        borderTop:`1px solid ${C.border}`,borderRadius:"14px 14px 0 0",padding:"14px 16px 22px"}}>
+    <div onClick={sheet.dismiss} style={{position:"fixed",...frame,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end",
+      opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
+      <div ref={sheet.sheetRef} onClick={e=>e.stopPropagation()} style={{width:"100%",boxSizing:"border-box",maxHeight:"70%",overflowY:"auto",background:C.surface,
+        borderTop:`1px solid ${C.border}`,borderRadius:"14px 14px 0 0",padding:"2px 16px 22px",...sheetTransform(sheet)}}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers} style={{margin:"0 -16px",padding:"8px 0 10px"}}/>
         <div style={{display:"flex",alignItems:"center",marginBottom:2}}>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:700,color:C.text}}>Tags</div>
             <div style={{fontSize:11,color:C.textMute,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fit?.name}</div>
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>&times;</button>
+          <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>&times;</button>
         </div>
 
         <div style={{display:"flex",flexWrap:"wrap",gap:6,margin:"12px 0"}}>
@@ -326,9 +330,15 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   // time and easing them would make the art lag the finger.
   const [scrollY, setScrollY] = useState(0);
   const scrollRef = useRef(null);
-  // Measured off the sheet rather than window.innerWidth, so the hero is square against the box it is
-  // actually in — the two agree today and would stop agreeing the moment this sheet is ever inset.
-  const sheetRef = useRef(null);
+  // The handle was a painted pill with nothing behind it, so the × was the only way out. The gesture
+  // lives in lib/use-sheet-drag, shared with every other sheet in the app — this used to be a second
+  // copy of it, which is exactly the drift that module exists to stop.
+  //
+  // Its ref doubles as the measuring point for the hero: the art is sized off the SHEET rather than
+  // window.innerWidth, so it stays square against the box it is actually in — the two agree today and
+  // would stop agreeing the moment this sheet is ever inset.
+  const sheet = useSheetDrag(onClose);
+  const sheetRef = sheet.sheetRef;
   const [heroMax, setHeroMax] = useState(() => heroMaxFor(window.innerWidth, window.innerHeight));
   useEffect(() => {
     const el = sheetRef.current;
@@ -345,32 +355,6 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   const collapse = Math.min(1, Math.max(0, scrollY) / Math.max(1, heroMax - HERO_MIN));
   const heroH = heroMax - (heroMax - HERO_MIN) * collapse;
 
-  // The handle was a painted pill with nothing behind it, so the × was the only way out. This is the
-  // same gesture BottomSheet already implements — drag down to peek behind, release past a third of
-  // the sheet or with a flick to dismiss, otherwise spring back — rather than a second dialect of it.
-  const [dragY, setDragY] = useState(0);
-  const drag = useRef(null);
-  const onGrabStart = e => { const t = e.touches?.[0] ?? e; drag.current = {y:t.clientY, t:Date.now(), moved:0}; };
-  const onGrabMove = e => {
-    if (!drag.current) return;
-    e.stopPropagation();                       // a sheet drag must never reach the page's tab swipe
-    const t = e.touches?.[0] ?? e;
-    // Downward only: dragging up lifts the sheet off the bottom edge and exposes the backdrop under it.
-    const dy = Math.max(0, t.clientY - drag.current.y);
-    drag.current.moved = dy;
-    setDragY(dy);
-  };
-  const onGrabEnd = () => {
-    const d = drag.current; drag.current = null;
-    if (!d) return;
-    const h = sheetRef.current?.offsetHeight ?? 400;
-    // Floored at one frame: two touchmoves can land in the same millisecond, and dividing by that
-    // reads every drag as a flick. And a flick needs distance as well as speed, or a twitch throws
-    // the sheet away when you meant to peek behind it.
-    const velocity = d.moved / Math.max(16, Date.now() - d.t);
-    if (d.moved > h * 0.33 || (d.moved > 28 && velocity > 0.7)) onClose?.(); else setDragY(0);
-  };
-  const dragging = drag.current != null;
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
@@ -452,33 +436,25 @@ export function ShipInfoSheet({ship, cs, onClose}) {
 
   return (
     <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column'}}
-         onClick={onClose}>
-      <div style={{flex:1,background:'rgba(0,0,0,.5)'}}/>
+         onClick={sheet.dismiss}>
+      <div style={{flex:1,background:'rgba(0,0,0,.5)',opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
       {/* Taller than the usual sheet because the art is the point of it — and the cap has to clear
           HERO_MAX plus the tab strip, or the picture is paying for the extra height without showing
           any more of the ship. */}
       <div ref={sheetRef}
            style={{position:'relative',background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'92vh',
                    display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',
-                   transform:`translateY(${dragY}px)`,
-                   // No transition while a finger is down, or the sheet lags behind the drag.
-                   transition:dragging?'none':'transform 200ms cubic-bezier(.22,.61,.36,1)'}}
+                   ...sheetTransform(sheet)}}
            onClick={e=>e.stopPropagation()}>
         <ShipHero typeID={ship?.typeID} height={heroH} full={heroMax}>
           {/* The grab handle moves onto the art rather than sitting above it — the sheet has no
-              header bar left to hold it, and the picture goes all the way to the top edge.
-              The pill is the affordance, not the hit target: the strip it sits in is the full width
-              of the sheet and reaches well below it, and opts back into pointer events that the hero
-              as a whole declines. touchAction:none stops the browser claiming the drag as a scroll. */}
-          <div onTouchStart={onGrabStart} onTouchMove={onGrabMove} onTouchEnd={onGrabEnd}
-               onMouseDown={onGrabStart} role="button" tabIndex={-1} aria-label="Drag to dismiss"
-               style={{position:'absolute',top:0,left:0,right:0,padding:'8px 0 16px',
-                       pointerEvents:'auto',touchAction:'none',cursor:'grab'}}>
-            <div style={{width:36,height:4,borderRadius:2,margin:'0 auto',
-                         background:'rgba(255,255,255,.35)'}}/>
-          </div>
+              header bar left to hold it, and the picture goes all the way to the top edge. It opts
+              back into the pointer events the hero as a whole declines, and reaches well below the
+              pill so there is something to actually hit. */}
+          <SheetGrabber grabHandlers={sheet.grabHandlers} onArt
+                        style={{position:'absolute',top:0,left:0,right:0,padding:'8px 0 16px',pointerEvents:'auto'}}/>
           {/* Close sits on its own scrim: over a bright nebula a bare glyph disappears. */}
-          <button onClick={onClose} aria-label="Close"
+          <button onClick={sheet.dismiss} aria-label="Close"
             style={{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:15,border:'none',
                     cursor:'pointer',color:'#fff',fontSize:18,lineHeight:1,pointerEvents:'auto',
                     background:'rgba(0,0,0,.42)',backdropFilter:'blur(6px)'}}>×</button>

@@ -6,6 +6,7 @@ import { ESI_CLIENT_ID } from "../esi-config.js";
 import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
+import { useSheetDrag, sheetTransform, SheetGrabber } from "../lib/use-sheet-drag.jsx";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
 function friendlyError(e) {
@@ -196,6 +197,7 @@ export function EsiSkillAlignPanel({ setSkills }) {
 
 // ─── Hamburger menu > Import from ESI ──────────────────────────────────────────────────────────
 export function EsiImportModal({ onClose, onImport }) {
+  const sheet = useSheetDrag(onClose);
   const { characters, activeId, switchActive } = useEsiCharacters();
   const [fittings, setFittings] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -232,8 +234,12 @@ export function EsiImportModal({ onClose, onImport }) {
     : (fittings ?? [])).slice().sort(byNewestFitting);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", maxHeight: "88vh", overflowY: "auto", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 32px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={sheet.dismiss}>
+      {/* The grabber sits OUTSIDE the scroller: it is the sheet's own control, and a handle that
+          scrolls off with the fit list stops being reachable exactly when the sheet is longest. */}
+      <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88vh", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers}/>
+        <div style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Import from EVE</div>
         {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>Connect a character in Settings → ESI first.</div>}
         <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
@@ -258,9 +264,10 @@ export function EsiImportModal({ onClose, onImport }) {
             </div>
           </div>
         ))}
-        <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
+        <button onClick={sheet.dismiss} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
           Cancel
         </button>
+        </div>
       </div>
     </div>
   );
@@ -268,6 +275,7 @@ export function EsiImportModal({ onClose, onImport }) {
 
 // ─── Hamburger menu > Export to EVE ────────────────────────────────────────────────────────────
 export function EsiExportModal({ activeFit, slots, drones, cargoItems, fighters, implants, boosters, onClose }) {
+  const sheet = useSheetDrag(onClose);
   const { characters, activeId, switchActive } = useEsiCharacters();
   const [incCharges, setIncCharges] = useState(true);
   const [incImplants, setIncImplants] = useState(false);
@@ -301,8 +309,9 @@ export function EsiExportModal({ activeFit, slots, drones, cargoItems, fighters,
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={onClose}>
-      <div style={{ width: "100%", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: 20, boxShadow: "0 -8px 32px rgba(0,0,0,.5)" }} onClick={e => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={sheet.dismiss}>
+      <div ref={sheet.sheetRef} style={{ width: "100%", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: "4px 20px 20px", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers} style={{ margin: "0 -20px" }}/>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>Export to EVE</div>
         <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12 }}>Saves this fit into the selected character's in-game Fittings.</div>
         {!activeFit?.ship ? (
@@ -321,7 +330,7 @@ export function EsiExportModal({ activeFit, slots, drones, cargoItems, fighters,
           </>
         )}
         {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 10 }}>{error}</div>}
-        <button onClick={onClose} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
+        <button onClick={sheet.dismiss} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
           Close
         </button>
       </div>

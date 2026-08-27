@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { C } from "../theme.js";
+import { useSheetDrag, sheetTransform, SheetGrabber } from "../lib/use-sheet-drag.jsx";
 
 const REPO_URL = "https://github.com/rexmikakka-bit/visviva";
 
@@ -22,6 +23,7 @@ function fitAsEFT(activeFit, slots, implants, boosters) {
 }
 
 export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
+  const sheet = useSheetDrag(onClose);
   const [title, setTitle] = useState("");
   const [details, setDetails] = useState("");
   const [includeFit, setIncludeFit] = useState(!!activeFit?.ship);
@@ -72,8 +74,10 @@ export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
   };
 
   return (
-    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end"}} onClick={onClose}>
-      <div style={{width:"100%",maxHeight:"88vh",overflowY:"auto",boxSizing:"border-box",background:C.surface,borderRadius:"16px 16px 0 0",padding:20,boxShadow:"0 -8px 32px rgba(0,0,0,.5)"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",alignItems:"flex-end"}} onClick={sheet.dismiss}>
+      <div ref={sheet.sheetRef} style={{width:"100%",maxHeight:"88vh",boxSizing:"border-box",background:C.surface,borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 -8px 32px rgba(0,0,0,.5)",...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers}/>
+        <div style={{overflowY:"auto",padding:"6px 20px 20px"}}>
         <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Send Feedback</div>
         <div style={{fontSize:11,color:C.textMute,marginBottom:14,lineHeight:1.5}}>
           Opens a pre-filled GitHub issue on Axis's repo. You review it there before it's submitted — nothing is sent automatically.
@@ -98,9 +102,10 @@ export function FeedbackModal({activeFit, slots, implants, boosters, onClose}) {
         <button onClick={copyDetails} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,fontSize:12,cursor:"pointer"}}>
           {copied ? "✓ Copied — paste anywhere" : "Copy report to clipboard instead"}
         </button>
-        <button onClick={onClose} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:"none",background:"transparent",color:C.textMute,fontSize:12,cursor:"pointer"}}>
+        <button onClick={sheet.dismiss} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:"none",background:"transparent",color:C.textMute,fontSize:12,cursor:"pointer"}}>
           Cancel
         </button>
+        </div>
       </div>
     </div>
   );

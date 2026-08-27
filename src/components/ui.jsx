@@ -17,6 +17,7 @@ import { fetchPrices } from "../prices.js";
 import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
+import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -81,42 +82,10 @@ function BottomSheet({title,onClose,children,height="70vh"}){
   // The sheet used to appear with a 14px nudge and vanish instantly on close, which read as a cut
   // rather than a movement. It now travels its full height both ways, and the handle is a real
   // control: drag it down to peek at what is behind, release past a third of the way (or with a
-  // flick) to dismiss, otherwise it springs back.
-  const [closing,setClosing]=useState(false);
-  const [dragY,setDragY]=useState(0);
-  const sheetRef=useRef(null);
-  const drag=useRef(null);
-  const EXIT_MS=200;
-  // Close is DEFERRED so the exit animation can play — the caller unmounts us the moment it runs.
-  const dismiss=()=>{ if(closing)return; setClosing(true); setTimeout(()=>onClose?.(),EXIT_MS); };
-
-  const onGrabStart=e=>{
-    const t=e.touches?.[0]??e; drag.current={y:t.clientY,t:Date.now(),moved:0};
-  };
-  const onGrabMove=e=>{
-    if(!drag.current)return;
-    e.stopPropagation();                       // never let a sheet drag reach the page's tab swipe
-    const t=e.touches?.[0]??e;
-    // Downward only: dragging up would lift the sheet off the bottom edge and expose the backdrop
-    // beneath it, which looks broken rather than elastic.
-    const dy=Math.max(0,t.clientY-drag.current.y);
-    drag.current.moved=dy;
-    setDragY(dy);
-  };
-  const onGrabEnd=()=>{
-    const d=drag.current; drag.current=null;
-    if(!d)return;
-    const h=sheetRef.current?.offsetHeight??400;
-    // Floor the elapsed time at one frame: two touchmoves can land in the same millisecond, and
-    // dividing by that produced a velocity in the hundreds — every drag read as a flick.
-    const velocity=d.moved/Math.max(16,Date.now()-d.t);   // px per ms
-    // A flick needs distance AS WELL as speed. Speed alone dismisses on a twitch, which is the
-    // worst possible failure here: you meant to peek behind the sheet and it threw itself away.
-    const flick=d.moved>28&&velocity>0.7;
-    if(d.moved>h*0.33||flick) dismiss(); else setDragY(0);
-  };
-
-  const dragging=drag.current!=null;
+  // flick) to dismiss, otherwise it springs back. The gesture itself lives in lib/use-sheet-drag,
+  // shared with every other sheet in the app.
+  const sheet=useSheetDrag(onClose);
+  const {sheetRef,closing,dragging,dismiss}=sheet;
   return createPortal(
     // stopPropagation on the whole overlay: a sheet is a modal surface, so a drag inside it must
     // never reach the Fit/Stats/Graph swipe handler on an ancestor. React events bubble through the
@@ -125,21 +94,13 @@ function BottomSheet({title,onClose,children,height="70vh"}){
     <div onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}
          style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
-           opacity:closing?0:1,transition:`opacity ${EXIT_MS}ms ease`}}/>
+           opacity:closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen. */}
       <div ref={sheetRef} className={`vv-sheet${closing||dragging?"":" vv-sheet-in"}`}
            style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)",
-                   transform:closing?"translateY(100%)":`translateY(${dragY}px)`,
-                   // No transition while a finger is down, or the sheet lags behind the drag.
-                   transition:dragging?"none":`transform ${EXIT_MS}ms cubic-bezier(.22,.61,.36,1)`}}>
-        {/* The grab area is padded well beyond the 4px pill — the pill is the affordance, not the
-            hit target. touchAction:none stops the browser claiming the gesture as a scroll. */}
-        <div onTouchStart={onGrabStart} onTouchMove={onGrabMove} onTouchEnd={onGrabEnd}
-             onMouseDown={onGrabStart} role="button" tabIndex={-1} aria-label="Drag to dismiss"
-             style={{padding:"10px 0 6px",cursor:"grab",touchAction:"none",flexShrink:0}}>
-          <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"0 auto"}}/>
-        </div>
+                   ...sheetTransform(sheet)}}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
@@ -837,11 +798,13 @@ function TraitsPanel({typeID, empty="No trait data available."}){
 
 // Standalone bottom sheet for item info (triggered from browser or charge list)
 function ItemInfoSheet({typeID, onClose, item, overrides}) {
+  const sheet=useSheetDrag(onClose);
   return (
-    <div style={{position:'fixed',inset:0,zIndex:400,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={onClose}>
-      <div style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'flex-end',padding:'10px 16px 0'}}>
-          <button onClick={onClose} style={{background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
+    <div style={{position:'fixed',inset:0,zIndex:400,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={sheet.dismiss}>
+      <div ref={sheet.sheetRef} style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
+        <div style={{position:'relative'}}>
+          <SheetGrabber grabHandlers={sheet.grabHandlers}/>
+          <button onClick={sheet.dismiss} style={{position:'absolute',top:2,right:16,background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
           <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16}/>

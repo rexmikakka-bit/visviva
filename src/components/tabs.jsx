@@ -265,6 +265,26 @@ const enforceGroupLimit=(slots,limits,changedId)=>{
   return out;
 };
 
+// The mark on the swipe-to-delete button behind a fitted row. It used to read "Remove", which at the
+// 11px the 72px button allowed was a cramped word doing an icon's job — and the row sliding aside is
+// already the sentence, so the button only has to name the verb.
+//
+// It DRAWS rather than appears: the two strokes run in one after the other once the row commits open,
+// which distinguishes "released, this is armed" from the button merely being uncovered mid-drag. The
+// dash length is the diagonal's own (sqrt(200) ~ 14.15, rounded up so nothing is left short), and the
+// second stroke's delay is what makes it read as a stroke of a pen rather than a fade.
+function DeleteX({on}){
+  const stroke=(d)=>({strokeDasharray:15,strokeDashoffset:on?0:15,
+                      transition:`stroke-dashoffset 140ms cubic-bezier(.22,.61,.36,1) ${d}ms`});
+  return(
+    <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true"
+         stroke="#fff" strokeWidth={2.6} strokeLinecap="round" fill="none">
+      <line x1={7} y1={7} x2={17} y2={17} style={stroke(0)}/>
+      <line x1={17} y1={7} x2={7} y2={17} style={stroke(90)}/>
+    </svg>
+  );
+}
+
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
@@ -708,8 +728,12 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       and is only invisible because the row is opaque, so the drag's 0.45 opacity
                       showed it through. The two gestures are mutually exclusive anyway. */}
                   {swipeable&&!isDragSrc&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
-                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,
-                            background:C.danger,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>}
+                    aria-label="Remove"
+                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
+                            alignItems:"center",justifyContent:"center",
+                            background:C.danger,color:"#fff",cursor:"pointer"}}>
+                    <DeleteX on={rowSwipe.openKey===rowKey}/>
+                  </button>}
                   {/* no-select on the ROW, not just the handle: the press starts on the handle but the
                       drag travels across the module names either side, and those are what the browser
                       was selecting. */}

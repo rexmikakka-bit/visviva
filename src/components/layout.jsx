@@ -4,6 +4,7 @@ import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
 import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, describeSkillSheet } from "../lib/pilot.js";
+import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
@@ -14,9 +15,11 @@ const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
 // Generic "pick a method, then we open the real sheet" bottom sheet — used by the hamburger menu's
 // combined Import/Export entries so the menu itself doesn't need one row per method (EFT vs ESI).
 export function ChooserSheet({title, options, onClose}) {
+  const sheet=useSheetDrag(onClose);
   return (
-    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}} onClick={onClose}>
-      <div style={{width:'100%',boxSizing:'border-box',background:C.surface,borderRadius:'16px 16px 0 0',padding:20,boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}} onClick={sheet.dismiss}>
+      <div ref={sheet.sheetRef} style={{width:'100%',boxSizing:'border-box',background:C.surface,borderRadius:'16px 16px 0 0',padding:'4px 20px 20px',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers} style={{margin:'0 -20px'}}/>
         <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:14}}>{title}</div>
         {options.map(opt=>(
           <button key={opt.label} onClick={opt.onSelect} style={{display:'flex',alignItems:'center',gap:12,width:'100%',textAlign:'left',padding:'14px 12px',background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,marginBottom:8,cursor:'pointer'}}>
@@ -24,7 +27,7 @@ export function ChooserSheet({title, options, onClose}) {
             <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{opt.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{opt.sub}</div></div>
           </button>
         ))}
-        <button onClick={onClose} style={{width:'100%',marginTop:4,padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
+        <button onClick={sheet.dismiss} style={{width:'100%',marginTop:4,padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
           Cancel
         </button>
       </div>
@@ -33,6 +36,7 @@ export function ChooserSheet({title, options, onClose}) {
 }
 
 export function ExportFitModal({activeFit, slots, implants, boosters, drones, fighters, cargo, onClose}) {
+  const sheet=useSheetDrag(onClose);
   const _lsGet=()=>{try{return JSON.parse(localStorage.getItem(EXPORT_PREFS_KEY)||'{}');}catch{return {};}};
   const _p=_lsGet();
   const [incCharges,  setIncCharges]  = useState(_p.charges  ?? true);
@@ -70,8 +74,9 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
   );
 
   return (
-    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}} onClick={onClose}>
-      <div style={{width:'100%',background:C.surface,borderRadius:'16px 16px 0 0',padding:20,boxShadow:'0 -8px 32px rgba(0,0,0,.5)'}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}} onClick={sheet.dismiss}>
+      <div ref={sheet.sheetRef} style={{width:'100%',boxSizing:'border-box',background:C.surface,borderRadius:'16px 16px 0 0',padding:'4px 20px 20px',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers} style={{margin:'0 -20px'}}/>
         <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Export EFT Fit</div>
         <div style={{fontSize:11,color:C.textMute,marginBottom:16}}>Select what to include in the exported fit text</div>
         <CheckRow label="Loaded Charges (e.g. Hail L)" val={incCharges} setVal={setIncCharges}/>
@@ -82,7 +87,7 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
         <button onClick={doExport} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:10,border:'none',background:copied?C.rig:C.accent,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
           {copied ? '✓ Copied to clipboard!' : 'Copy EFT to Clipboard'}
         </button>
-        <button onClick={onClose} style={{width:'100%',marginTop:8,padding:'10px',borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
+        <button onClick={sheet.dismiss} style={{width:'100%',marginTop:8,padding:'10px',borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
           Cancel
         </button>
       </div>
@@ -165,6 +170,7 @@ function SkillBook({ok,count,onClick,custom}){
 // the gap list is only meaningful relative to a pilot, and picking a different one rewrites it.
 // `pilot` is a string on the fit (lib/pilot.js): absent means "your skills", the app-wide sheet.
 export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
+  const sheet=useSheetDrag(onClose);
   const chars=(()=>{ try{ return esi.listCharacters(); }catch{ return []; } })();
   const cached=(()=>{ try{ return esi.getAllCharacterSkills(); }catch{ return {}; } })();
   const opts=[
@@ -188,17 +194,17 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
   ];
   const cur=pilot??null;
   return(
-    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
-      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)"}}/>
+    <div onClick={sheet.dismiss} style={{position:"fixed",inset:0,zIndex:300,display:"flex",flexDirection:"column",justifyContent:"flex-end"}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
       {/* The safe-area inset is what every other sheet in the app pays (see ui.jsx's BottomSheet):
           without it the footer line sits under the home indicator on a modern iPhone. */}
-      <div onClick={e=>e.stopPropagation()} style={{position:"relative",width:"100%",maxWidth:430,margin:"0 auto",
+      <div ref={sheet.sheetRef} onClick={e=>e.stopPropagation()} style={{position:"relative",width:"100%",maxWidth:430,margin:"0 auto",
            background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"80vh",display:"flex",flexDirection:"column",overflow:"hidden",
-           paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
-        <div style={{width:36,height:4,background:C.border,borderRadius:99,margin:"10px auto 0"}}/>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+           paddingBottom:"env(safe-area-inset-bottom, 0px)",...sheetTransform(sheet)}}>
+        <SheetGrabber grabHandlers={sheet.grabHandlers} style={{padding:"10px 0 0"}}/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px 12px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:15,fontWeight:700,color:C.text}}>Pilot</span>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>×</button>
+          <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>×</button>
         </div>
         <div style={{overflowY:"auto"}}>
           {opts.map(o=>{
