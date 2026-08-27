@@ -663,7 +663,12 @@ function ItemPrice({typeID}) {
 // charges, whose flight time, velocity, application and damage are computed in calc.js rather than by
 // the engine — see `fittedChargeStats` there. Without it those rows would read current == base and
 // claim nothing had modified them, which is the opposite of true.
-function ItemInfoPanel({typeID, item, mutaplasmid, overrides}) {
+//
+// `bleed` is the host's own horizontal padding, in px. A modified row's highlight runs the full width
+// of the screen rather than stopping at that padding, so the band reads as a property of the row and
+// not as a box drawn inside it. It has to be passed because the four hosts do not agree (14 here and
+// in DroneMenu, 16 in ItemInfoSheet, 14+2 nested in ModuleMenu) and a row cannot see its own inset.
+function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
   const typeDescriptions = useTypeDescriptions();
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
@@ -705,9 +710,15 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides}) {
     const better = changed ? directionOf(k, cur, base, typeID) : null;
     const dir = !changed ? 0
       : (RESIST_ATTRS.has(k) ? -Math.sign(cur - base) : Math.sign(cur - base));
+    // A changed row widens by the host's padding and gives it straight back as its own padding, so
+    // the band reaches the screen edges while the columns do not move. Deliberately not a pair of
+    // offset box-shadows: accentLight is 10% alpha, and a left and a right shadow overlap each other
+    // and the element's own background, so the middle of the row would paint three times over and
+    // come out darker than the ends.
     return (
       <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
-                   padding:'5px 0',borderBottom:`1px solid ${C.border}`,
+                   padding:changed?`5px ${bleed}px`:'5px 0',margin:changed?`0 ${-bleed}px`:0,
+                   borderBottom:`1px solid ${C.border}`,
                    background:changed?`${C.accentLight}`:'transparent'}}>
         <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{fmtAttrName(k)}</span>
         <span style={{fontSize:12,fontWeight:600,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
@@ -833,7 +844,7 @@ function ItemInfoSheet({typeID, onClose, item, overrides}) {
           <button onClick={onClose} style={{background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
-          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides}/>
+          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16}/>
         </div>
       </div>
     </div>
@@ -843,9 +854,9 @@ function ItemInfoSheet({typeID, onClose, item, overrides}) {
 // `engineItem` is the module's DogmaItem on the fit it is sitting in (calcFitStats' `fittedItems`,
 // keyed by slot id). The abyssal roll rides in on `mod` and is only a BADGE here — the rolled numbers
 // themselves are already the engine item's base values, so there is nothing to merge.
-function ModuleInfoTab({typeID, mod, engineItem}) {
+function ModuleInfoTab({typeID, mod, engineItem, bleed}) {
   return <ItemInfoPanel typeID={typeID ?? mod?.typeID} item={engineItem}
-                        mutaplasmid={mod?.mutaplasmid}/>;
+                        mutaplasmid={mod?.mutaplasmid} bleed={bleed}/>;
 }
 
 // Shared by the module browser, the structure module browser and the Variations tab, so the three
@@ -1211,7 +1222,7 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions, item}) 
         ))}
       </div>
       <div style={{padding:"4px 14px 16px"}}>
-        {tab==="info" && <ItemInfoPanel typeID={typeID} item={item}/>}
+        {tab==="info" && <ItemInfoPanel typeID={typeID} item={item} bleed={14}/>}
         {tab==="traits" && <div style={{paddingTop:12}}><TraitsPanel typeID={typeID}/></div>}
         {/* readOnly when the caller gave no handler, so the list stops advertising "tap to swap"
             on rows that cannot do anything — which is how this shipped for boosters. */}
@@ -1770,7 +1781,10 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
             })}
           </div>);
         })()}
-        {tab==="info"&&(<div style={{overflowY:'auto',flex:1,padding:'0 2px'}}><ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem}/></div>)}
+        {/* No wrapper: this used to add a second overflowY:auto (redundant — the tab body above
+            already scrolls) plus 2px of side padding, and a row bleeding out to the screen edge
+            would have been clipped by it 14px short. */}
+        {tab==="info"&&<ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem} bleed={14}/>}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
                                 baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
@@ -1816,7 +1830,7 @@ function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
       {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
     </div>
     <div style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
-      {tab==="info"&&<ModuleInfoTab typeID={drone.typeID} mod={drone} engineItem={engineItem}/>}
+      {tab==="info"&&<ModuleInfoTab typeID={drone.typeID} mod={drone} engineItem={engineItem} bleed={14}/>}
       {tab==="variations"&&<ModuleVariationsTab typeID={drone.typeID} currentName={drone.name}
         baseMutations={drone.mutaplasmid?drone.mutations:null} baseMutaplasmid={drone.mutaplasmid}
         onSwap={v=>{
