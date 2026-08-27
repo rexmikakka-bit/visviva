@@ -116,13 +116,15 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   };
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      {/* Same treatment as the drone bay readouts: used volume at full text colour, capacity one
-          step back, tabular-nums, and red once you are over. This was 11px at textMute, which is
-          the figure you are actually watching while loading cargo. */}
+      {/* Same treatment as the drone bay readouts and the fitting strip: used volume at full text
+          colour, capacity one step back in both colour AND size, tabular-nums, and red once you are
+          over. This was 11px at textMute, which is the figure you are actually watching while
+          loading cargo. The capacity is a fixed property of the hull — it is context for the number
+          that moves, so it should not compete with it at the same size. */}
       <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>Cargo Bay</span>
         <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
           <span style={{fontWeight:700,color:totalVol>cap?C.danger:C.text}}>{totalVol}</span>
-          <span style={{color:C.textMid}}>/{cap.toLocaleString()} m³</span>
+          <span style={{fontSize:10,color:C.textMid}}>/{cap.toLocaleString()} m³</span>
         </span>
       </div>
       <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>

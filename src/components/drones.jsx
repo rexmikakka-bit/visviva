@@ -182,17 +182,19 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
         <span style={{fontSize:12,fontWeight:700,color:C.text}}>Drone Bay</span>
         {/* These two are what you check on every change here, and they were 11px at textMute —
             about 2.4:1 on this surface, below any sensible floor for small text. Used value at full
-            text colour, the ship's total one step back at textMid rather than vanishing, and
-            tabular-nums so digits don't jitter as drones are added. The "BW:" label is gone:
+            text colour and 12px, the ship's total one step back at textMid AND 10px rather than
+            vanishing, and tabular-nums so digits don't jitter as drones are added. The size step
+            matches the fitting strip: the capacity is a fixed property of the hull, so it is context
+            for the figure that moves and should not compete with it. The "BW:" label is gone:
             "Mbit/s" already identifies it, and the label was competing with the number for
             attention. Both turn red when over, which is the only state worth interrupting for. */}
         <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
           <span style={{fontWeight:700,color:bayUsed>shipDroneBay?C.danger:C.text}}>{Math.round(bayUsed)}</span>
-          <span style={{color:C.textMid}}>/{shipDroneBay} m³</span>
+          <span style={{fontSize:10,color:C.textMid}}>/{shipDroneBay} m³</span>
         </span>
         <span style={{fontSize:12,marginLeft:12,fontVariantNumeric:"tabular-nums"}}>
           <span style={{fontWeight:700,color:bwUsed>shipDroneBandwidth?C.danger:C.text}}>{bwUsed}</span>
-          <span style={{color:C.textMid}}>/{shipDroneBandwidth} Mbit/s</span>
+          <span style={{fontSize:10,color:C.textMid}}>/{shipDroneBandwidth} Mbit/s</span>
         </span>
       </div>
         {/* Drone DPS used to sit here, and it was the one number on this screen you could not act on
@@ -203,7 +205,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:11,fontWeight:600,fontVariantNumeric:"tabular-nums",
                         color:activeCount>maxActiveDrones?C.danger:C.textMid}}>
-            Active: <span style={{color:activeCount>maxActiveDrones?C.danger:C.text,fontWeight:700}}>{activeCount}</span>/{maxActiveDrones}
+            Active: <span style={{fontSize:12,color:activeCount>maxActiveDrones?C.danger:C.text,fontWeight:700}}>{activeCount}</span><span style={{fontSize:10}}>/{maxActiveDrones}</span>
           </span>
           <button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
       </div>
@@ -217,7 +219,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
           {/* Same treatment as the drone bay readout above — see the contrast note there. */}
           <span style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
             <span style={{fontWeight:700,color:fighterBayUsed>shipFighter.cap?C.danger:C.text}}>{fmtM3(fighterBayUsed)}</span>
-            <span style={{color:C.textMid}}>/{fmtM3(shipFighter.cap)} m³</span>
+            <span style={{fontSize:10,color:C.textMid}}>/{fmtM3(shipFighter.cap)} m³</span>
           </span>
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
