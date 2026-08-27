@@ -90,6 +90,23 @@ body {
   margin: 0;
 }
 
+/* Form controls do NOT inherit `font` from the document — the UA sheet hands every button, input,
+   select and textarea its own system default. Nothing about that is obvious from reading the app,
+   because almost none of these set a family themselves; they just quietly stayed on system-ui when
+   --sans changed. The app is built out of buttons (~160 of them: every tab bar, the back button,
+   the drawer rows, the mutaplasmid pickers), so without this the new face stops at the edge of most
+   of the chrome. `font-variant-numeric` needs restating for the same reason — the UA's `font`
+   shorthand resets it, which would leave digits inside buttons proportional while the ones beside
+   them are tabular. The few controls that genuinely want another face (the EFT paste boxes, the
+   info glyph) set it inline and still win. */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-variant-numeric: inherit;
+}
+
 #root {
   /* Was `width:1126px` with a 1px inline border on each side — scaffolding from the Vite starter.
      On a phone that border ate 2px of screen, so the app never quite reached the edges. */

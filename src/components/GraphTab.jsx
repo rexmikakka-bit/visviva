@@ -511,13 +511,13 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange,ma
       <line x1={toX(marker.x)} y1={PT} x2={toX(marker.x)} y2={PT+gH} stroke={C.textMute} strokeWidth="1" strokeDasharray="2,4"/>
       {/* Hung from the top-left of the line so it cannot collide with the x-axis tick labels, and
           right-anchored so it grows back INTO the plot rather than off the edge near xMax. */}
-      <text x={toX(marker.x)-3} y={PT+8} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{marker.label}</text>
+      <text x={toX(marker.x)-3} y={PT+8} textAnchor="end" fill={C.textMute} fontSize="8">{marker.label}</text>
     </g>)}
     {cursorPx!=null&&cursorYVal!=null&&(<g><line x1={cursorPx} y1={PT} x2={cursorPx} y2={PT+gH} stroke={C.text} strokeWidth="1" strokeDasharray="3,3" opacity="0.6"/><circle cx={cursorPx} cy={Math.max(PT,Math.min(PT+gH,toY(Math.max(0,cursorYVal))))} r={4} fill={color} stroke={C.surface} strokeWidth="2"/></g>)}
-    {yT.map((v,i)=><text key={i} x={PL-3} y={toY(v)+3} textAnchor="end" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
-    {xT.map((v,i)=><text key={i} x={toX(v)} y={H+4} textAnchor="middle" fill={C.textMute} fontSize="8" fontFamily="sans-serif">{fmt(v)}</text>)}
-    <text x={PL+gW/2} y={H+16} textAnchor="middle" fill={C.textMute} fontSize="9" fontFamily="sans-serif">{xLabel}</text>
-    <text x={9} y={PT+gH/2} textAnchor="middle" fill={C.textMute} fontSize="9" fontFamily="sans-serif" transform={`rotate(-90,9,${PT+gH/2})`}>{yLabel}</text>
+    {yT.map((v,i)=><text key={i} x={PL-3} y={toY(v)+3} textAnchor="end" fill={C.textMute} fontSize="8">{fmt(v)}</text>)}
+    {xT.map((v,i)=><text key={i} x={toX(v)} y={H+4} textAnchor="middle" fill={C.textMute} fontSize="8">{fmt(v)}</text>)}
+    <text x={PL+gW/2} y={H+16} textAnchor="middle" fill={C.textMute} fontSize="9">{xLabel}</text>
+    <text x={9} y={PT+gH/2} textAnchor="middle" fill={C.textMute} fontSize="9" transform={`rotate(-90,9,${PT+gH/2})`}>{yLabel}</text>
   </svg>);
 }
 
@@ -633,7 +633,7 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
       {enemyPos==="E"&&<circle cx={cx+rMax+9} cy={cy} r={3.2} fill={C.danger}/>}
       {enemyPos==="W"&&<circle cx={cx-rMax-9} cy={cy} r={3.2} fill={C.danger}/>}
       {[["N",cx,cy-rMax-13],["S",cx,cy+rMax+13],["W",cx-rMax-10,cy+4],["E",cx+rMax+10,cy+4]].map(([l,x,y])=>(
-        <text key={l} x={x} y={y} textAnchor="middle" fill={C.textMute} fontSize="7" fontFamily="sans-serif">{l}</text>
+        <text key={l} x={x} y={y} textAnchor="middle" fill={C.textMute} fontSize="7">{l}</text>
       ))}
     </svg>
     <div style={{textAlign:"center"}}>

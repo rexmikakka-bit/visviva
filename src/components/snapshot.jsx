@@ -454,7 +454,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
     <div ref={cardRef} style={{
       width: CARD_W, minHeight: 720, display: "flex", alignItems: "stretch", overflow: "hidden",
       background: T.card, color: T.text, borderRadius: 14, border: "1px solid rgba(255,255,255,.08)",
-      fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif", boxSizing: "border-box",
+      fontFamily: "var(--sans)", boxSizing: "border-box",
     }}>
       {/* ── LEFT: loadout ── */}
       <div style={{ width: 500, flexShrink: 0, padding: "24px 22px 18px", display: "flex", flexDirection: "column", borderRight: `1px solid ${T.line}` }}>

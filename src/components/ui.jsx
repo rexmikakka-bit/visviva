@@ -36,13 +36,14 @@ function useTypeDescriptions() {
 // pill AND left the glyph's own ring inside it — a small circle floating in a wide oval. Fixed
 // width/height + borderRadius 50% + a bare "i" is what actually makes it round.
 // Shared by the module browser, the ammo picker and the ship browser so they can't drift apart.
+// The glyph used to be pinned to Arial to stop the "i" varying across platforms; it now inherits,
+// because a bundled face is the stronger version of that guarantee than a font we hope is installed.
 function InfoButton({onClick,title="Item info"}){
   return(
     <button onClick={onClick} title={title} aria-label={title}
       style={{width:19,height:19,flexShrink:0,padding:0,borderRadius:"50%",
               border:`1.5px solid ${C.accent}`,background:C.accentLight,color:C.accent,
               display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-              fontFamily:"Arial, Helvetica, sans-serif",
               fontSize:12,fontWeight:700,lineHeight:1}}>i</button>
   );
 }
