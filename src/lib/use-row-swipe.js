@@ -32,6 +32,11 @@ export function useRowSwipe() {
   const close = (el) => { setX(el, 0, true); setOpenKey(null); };
 
   const swipeHandlers = (key) => ({
+    // Marks the row for useTabSwipe's `skip` check. stopPropagation below is not enough on its own:
+    // it only fires once this gesture's axis has locked, so the first AXIS_LOCK_PX of travel still
+    // reach the tab swipe and let IT lock to "x" first — which is what dragged the whole Fit panel
+    // sideways while a row was being revealed.
+    "data-rowswipe": "",
     onTouchStart: e => {
       // Starting a gesture on a different row closes whatever was already revealed, so at most
       // one Remove button is ever showing.

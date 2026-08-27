@@ -49,9 +49,15 @@ export function useTabSwipe(tabs, current, onChange) {
   // slider, the Fit tab's pilot-security slider — dragged the whole tab sideways instead of moving
   // the thumb, because the browser only starts suppressing the touchmove for its own drag AFTER the
   // slider has already lost the axis race to this handler.
+  //
+  // A swipe-to-delete row (useRowSwipe, tagged data-rowswipe) is the third shape: it is a real
+  // horizontal gesture that owns itself. Its own stopPropagation cannot cover the first few pixels,
+  // because it fires only once that gesture's axis has locked — by which point this handler has
+  // locked too and the panel has already started moving.
   const inHScroller = (node) => {
     for (let el = node; el instanceof Element; el = el.parentElement) {
       if (el === panelRef.current?.parentElement) break;
+      if (el.hasAttribute("data-rowswipe")) return true;
       if (el.tagName === "INPUT" && el.type === "range") return true;
       if (el.scrollWidth > el.clientWidth + 2) {
         const ox = getComputedStyle(el).overflowX;

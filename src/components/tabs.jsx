@@ -1244,7 +1244,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                   <div key={rr.label} style={{padding:"8px 8px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none"}}>
                     {/* lineHeight pinned rather than inherited: at the body's 1.93 a 9px label
                         takes ~17px of line box, and that alone is where this card's height comes
-                        from. Firepower and Remote Reps pin theirs to match. */}
+                        from. Remote Reps pins theirs to match; Firepower deliberately does not. */}
                     <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{rr.label}</div>
                     <div style={{fontSize:12,fontWeight:700,color:rr.val.startsWith("0")?C.textMute:rr.color}}>{rr.val}</div>
                   </div>
@@ -1296,11 +1296,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             return(
             <div key={label} onClick={()=>setDmgSource(srcKey)} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
               <div style={{fontSize:14,fontWeight:800,color:val==="0"?C.textMute:(sel?C.accent:C.text)}}>{val}</div>
-              {/* 1.2 + a 4px gap, the same recipe as Recharge Rates, so the two cards are the same
-                  height. :root's `145%` line-height inherits as a LENGTH, so the value line box is
-                  23.2px here regardless of it being 14px rather than 12px — only the label needed
-                  pinning, and the arithmetic comes out identical. */}
-              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4,lineHeight:1.2}}>{label}</div>
+              {/* Deliberately NOT pinned to Recharge Rates' 1.2 — the inherited line-height leaves
+                  this card taller than its neighbours, which is what makes it read as the headline. */}
+              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4}}>{label}</div>
             </div>);
           })}
         </div>
