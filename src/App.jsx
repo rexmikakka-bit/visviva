@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic } from "./lib/core.js";
+import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
 import { C } from "./theme.js";
@@ -286,6 +286,10 @@ export default function App(){
   const[showShipInfo,setShowShipInfo]=useState(false);
   const[showPilot,setShowPilot]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
+  // Set only when the "From EFT" chooser button's direct clipboard-import couldn't finish on its
+  // own (see the onSelect below) — pre-fills the fallback sheet with whatever text/error it got,
+  // instead of the sheet opening blank and asking the user to hit "Read from Clipboard" again.
+  const[importFitInitial,setImportFitInitial]=useState(null);
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
   const[showFeedback,setShowFeedback]=useState(false);
@@ -639,7 +643,21 @@ export default function App(){
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
     {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
-      {icon:"&#128229;",label:"From EFT",sub:"Paste from clipboard",onSelect:()=>{setShowImportChooser(false);setShowImportFit(true);}},
+      {icon:"&#128229;",label:"From EFT",sub:"Paste from clipboard",onSelect:async()=>{
+        // Skip the sheet on the golden path: read the clipboard and import immediately, so a fit
+        // copied in-game lands in three fewer taps ("Read from Clipboard" + "Import '<name>'" gone).
+        // Anything that isn't a clean success — unreadable/empty clipboard, text that isn't EFT —
+        // falls back to the sheet, pre-filled with what was found, rather than failing silently.
+        setShowImportChooser(false);
+        const{text,why}=await readClipboardText();
+        if(text==null){setImportFitInitial({text:"",err:`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`});setShowImportFit(true);return;}
+        if(!text.trim()){setImportFitInitial({text:"",err:"The clipboard is empty — copy a fit first, then tap this again."});setShowImportFit(true);return;}
+        const parsed=parseEFT(text);
+        if(parsed.error){setImportFitInitial({text,err:parsed.error});setShowImportFit(true);return;}
+        haptic();
+        importFit(parsed);
+        setPriceBanner({kind:"success",msg:`Imported "${parsed.fitName}"`});setTimeout(()=>setPriceBanner(null),3000);
+      }},
       {icon:"&#128640;",label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
     ]}/>}
     {showExportChooser&&<ChooserSheet title="Export Fit" onClose={()=>setShowExportChooser(false)} options={[
@@ -652,7 +670,7 @@ export default function App(){
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
-    {showImportFit&&<ImportFitSheet onClose={()=>setShowImportFit(false)} onImport={importFit}/>}
+    {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}
     {showEsiExport&&<EsiExportModal activeFit={activeFit} slots={slots} drones={drones} cargoItems={cargoItems} fighters={fighters} implants={implants} boosters={boosters} onClose={()=>setShowEsiExport(false)}/>}

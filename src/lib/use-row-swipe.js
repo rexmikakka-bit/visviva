@@ -1,0 +1,72 @@
+// Swipe-to-delete on a fitted-module row, Spotify-style: swipe left to reveal a Remove button
+// behind the row, tap the row again to close it, tap the button (or swipe far enough) to commit.
+//
+// One hook call for the whole list, not one per row — rows come and go as slots are added,
+// removed and reordered, so per-row hook state would have to be rekeyed by hand on every change.
+// Only ONE row is ever open at a time, tracked by a single `openKey` string; the live drag itself
+// is written straight to the row's DOM node via `e.currentTarget`, exactly like useTabSwipe writes
+// to its panel ref, so dragging never re-renders the list underneath the finger.
+import { useRef, useState } from "react";
+import { haptic } from "./core.js";
+
+const REVEAL_PX = 72;   // width of the revealed Remove button
+const COMMIT_PX = 40;   // past this on release, snap open instead of springing back
+const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs vertical
+
+export function useRowSwipe() {
+  const drag = useRef({ key: null, x: 0, y: 0, axis: null });
+  const [openKey, setOpenKey] = useState(null);
+
+  const setX = (el, px, animate) => {
+    if (!el) return;
+    el.style.transition = animate ? "transform .18s cubic-bezier(.22,.61,.36,1)" : "none";
+    el.style.transform = px ? `translateX(${px}px)` : "";
+  };
+  const close = (el) => { setX(el, 0, true); setOpenKey(null); };
+
+  const swipeHandlers = (key) => ({
+    onTouchStart: e => {
+      // Starting a gesture on a different row closes whatever was already revealed, so at most
+      // one Remove button is ever showing.
+      if (openKey && openKey !== key) setOpenKey(null);
+      const t = e.touches[0];
+      if (t) drag.current = { key, x: t.clientX, y: t.clientY, axis: null };
+    },
+    onTouchMove: e => {
+      if (drag.current.key !== key) return;
+      const t = e.touches[0]; if (!t) return;
+      const dx = t.clientX - drag.current.x, dy = t.clientY - drag.current.y;
+      if (!drag.current.axis) {
+        if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return;
+        drag.current.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+      }
+      if (drag.current.axis !== "x") return;
+      e.stopPropagation(); // keep this out of the Fit/Stats/Graph tab swipe above it
+      const base = openKey === key ? -REVEAL_PX : 0;
+      setX(e.currentTarget, Math.max(-REVEAL_PX - 16, Math.min(0, base + dx * 0.9)), false);
+    },
+    onTouchEnd: e => {
+      if (drag.current.key !== key) return;
+      const wasX = drag.current.axis === "x";
+      drag.current = { key: null, x: 0, y: 0, axis: null };
+      if (!wasX) return;
+      // Read the position back off the node rather than re-deriving it from touch coordinates —
+      // it already reflects the clamping onTouchMove applied, including the "closing from open"
+      // case, so there's exactly one source of truth for "how far did this row actually move."
+      const m = /translateX\((-?[\d.]+)px\)/.exec(e.currentTarget.style.transform || "");
+      const cur = m ? parseFloat(m[1]) : 0;
+      if (cur < -COMMIT_PX) { setX(e.currentTarget, -REVEAL_PX, true); setOpenKey(key); haptic(); }
+      else close(e.currentTarget);
+    },
+  });
+
+  // Spread onto the row alongside its normal onClick: while the row is open, a tap closes it
+  // instead of running the normal action (opening the module menu). Row and Remove button are
+  // stacked with the row on top, so a tap that should reach the button never reaches this at all.
+  const guardClick = (key, onClick) => e => {
+    if (openKey === key) { e.stopPropagation(); close(e.currentTarget); return; }
+    onClick(e);
+  };
+
+  return { openKey, swipeHandlers, guardClick, closeRowSwipe: () => setOpenKey(null) };
+}

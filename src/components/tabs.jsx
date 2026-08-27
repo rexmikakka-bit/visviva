@@ -8,6 +8,7 @@ import { TYPES, tidByName, calcFitStats, peakRegen, isT3Cruiser, t3cSlotLayout, 
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
+import { useRowSwipe } from "../lib/use-row-swipe.js";
 import { Hint } from "./Hint.jsx";
 
 // Every figure in a module row's subtext is deliberately unlabelled — a phone row has no width for
@@ -309,6 +310,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   });
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
+  const rowSwipe=useRowSwipe();
   const[fitError,setFitError]=useState(null);
   const showFitError=msg=>{setFitError(msg);setTimeout(()=>setFitError(null),3000);};
 
@@ -461,15 +463,20 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return enforceGroupLimit(next,_cs.groupLimits,row.id);
     });
   };
-  const removeMod=(secKey,modId)=>{
+  // groupIds, when passed, removes every slot in a grouped rack at once — the row's state toggle
+  // and unload-charge button already act on the whole group (see their comments above), so a lone
+  // per-member Remove was the odd one out: it silently split a "3x" row into 2x + empty with no
+  // indication only one of three had gone. Falls back to just modId for an ungrouped row.
+  const removeMod=(secKey,modId,groupIds)=>{
     const labels={high:"High",mid:"Mid",low:"Low",rigs:"Rig",services:"Service"};
+    const ids=new Set(groupIds&&groupIds.length>1?groupIds:[modId]);
     setSlots(prev=>{
       const arr=[];
       for(const m of prev[secKey]??[]){
         // Deleting an ORPHAN leaves nothing behind — the ship has no such slot, so an empty
         // placeholder in its place would offer a slot the fit does not actually have.
-        if(m.id===modId&&m.orphan)continue;
-        arr.push(m.id===modId?{id:m.id,name:`[Empty ${labels[secKey]} Slot]`,icon:null,type:"empty"}:m);
+        if(ids.has(m.id)&&m.orphan)continue;
+        arr.push(ids.has(m.id)?{id:m.id,name:`[Empty ${labels[secKey]} Slot]`,icon:null,type:"empty"}:m);
       }
       return{...prev,[secKey]:reabsorbOrphans(arr)};
     });
@@ -556,6 +563,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 
   const getDisplayRows=(secKey)=>computeDisplayRows(slots[secKey]??[],secKey,grouped);
   const menuMod=moduleMenu?slots[moduleMenu.secKey].find(m=>m.id===moduleMenu.modId):null;
+  // The row backing the open menu, purely to learn its groupIds/count — the menu opens on a single
+  // representative id (see the row onClick above), so this is the only place that reconnects it to
+  // the rest of its rack.
+  const menuRow=moduleMenu?getDisplayRows(moduleMenu.secKey).find(r=>(r.groupIds??[r.id]).includes(moduleMenu.modId)):null;
   // Same used/total figures ResourceStrip shows, handed to the Variations tab so it can flag whether
   // a swap would still fit — see FitCostDelta's resourceHeadroom doc.
   const resourceHeadroom={
@@ -663,14 +674,23 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               );
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
+              const rowKey=sec.key+":"+rowIdx;
+              // Subsystems have no remove path (see ModuleMenu below) — swapping is the only edit,
+              // so their row never gets the swipe gesture at all.
+              const swipeable=sec.key!=="subsystems";
               return(
-                // no-select on the ROW, not just the handle: the press starts on the handle but the
-                // drag travels across the module names either side, and those are what the browser
-                // was selecting.
-                <div key={row.id||row.name} className="no-select"
+                <div key={row.id||row.name} style={{position:"relative"}}>
+                  {swipeable&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
+                    style={{position:"absolute",top:0,right:0,bottom:0,width:72,border:"none",borderRadius:8,
+                            background:C.danger,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>}
+                  {/* no-select on the ROW, not just the handle: the press starts on the handle but the
+                      drag travels across the module names either side, and those are what the browser
+                      was selecting. */}
+                  <div className="no-select"
                 ref={el=>{rowRefs.current[sec.key+":"+rowIdx]=el;}}
-                onClick={()=>sec.key==="subsystems"?setSubInfo({typeID:row.typeID,name:row.name,slotId:row.id}):setModuleMenu({secKey:sec.key,modId:row.id})}
-                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,
+                {...(swipeable?rowSwipe.swipeHandlers(rowKey):{})}
+                onClick={sec.key==="subsystems"?()=>setSubInfo({typeID:row.typeID,name:row.name,slotId:row.id}):rowSwipe.guardClick(rowKey,()=>setModuleMenu({secKey:sec.key,modId:row.id}))}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,position:"relative",zIndex:1,
                         // ORPHANED: the ship no longer has this slot after a subsystem swap. Kept
                         // rather than deleted, and marked hard enough that it cannot be mistaken for
                         // a fitted module — it contributes nothing to any stat.
@@ -823,13 +843,14 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     style={{touchAction:"none",cursor:"grab",flexShrink:0,padding:"6px 4px 6px 8px",marginRight:-4,color:C.textMute,fontSize:14,lineHeight:1,display:"flex",alignItems:"center"}}>
                     &#8801;
                   </div>
+                  </div>
                 </div>
               );
             })}
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}

@@ -10,7 +10,7 @@ import { TARGET_PROFILES } from "../data/target-profiles.js";
 import modulesData from "../data/modules.json";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, fitCostRatioOf, fitCostFits } from "../lib/core.js";
+import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
@@ -1610,7 +1610,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
 // `chargeStats` is calc.js' effective-charge map for THIS slot — see `fittedChargeStats` there. Only
 // the loaded charge gets it: the ammo list offers every compatible charge, but the others aren't on
 // the fit, so type data alone is the honest answer for them.
-function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
+function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -1697,7 +1697,11 @@ function ModuleMenu({mod,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicat
               aren't both visible from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
           {onFillHardpoints&&fillCount>1&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Fill Hardpoints (+{fillCount})</button>}
           {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Duplicate to Next Empty Slot</button>}
-          <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>Remove Module</button>
+          {/* A grouped rack (identical turrets/launchers, shown as one "Nx" row) removes ALL of its
+              members here — matching the state dot and unload-charge button on the same row, which
+              already act on the whole group. The label says so, since a "Remove Module" that quietly
+              took out the whole rack would read like a bug. */}
+          <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>{groupCount>1?`Remove Module Group (${groupCount})`:"Remove Module"}</button>
         </div>)}
         {tab==="charge"&&(mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)&&(()=>{
           const groups=groupChargesForBrowser(getCompatibleCharges(mod));
@@ -1826,38 +1830,30 @@ function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
   </BottomSheet>);
 }
 
-function ImportFitSheet({onClose,onImport}){
-  const[text,setText]=useState("");
+// `initialText`/`initialErr` seed the sheet when the "From EFT" chooser button already tried a
+// direct clipboard-import and couldn't finish it (unreadable/empty clipboard, or the text didn't
+// parse as EFT) — this sheet is that path's fallback, not the only way in, so it opens already
+// showing what went wrong instead of asking the user to tap "Read from Clipboard" a second time.
+function ImportFitSheet({onClose,onImport,initialText="",initialErr=null}){
+  const[text,setText]=useState(initialText);
   const[parsed,setParsed]=useState(null);
-  const[err,setErr]=useState(null);
+  const[err,setErr]=useState(initialErr);
   const process=(t)=>{if(!t.trim()){setParsed(null);setErr(null);return;}const r=parseEFT(t);if(r.error){setParsed(null);setErr(r.error);}else{setParsed(r);setErr(null);}};
   // navigator.clipboard.readText() is not permitted inside the native WebView, which is why this
   // button did nothing in the installed app and the fit had to be pasted by hand. Capacitor's
   // Clipboard plugin reads through the OS instead; the web API stays as the browser fallback.
-  //
-  // Every failure here used to collapse into one generic sentence, which made a device report
-  // ("the button is broken") impossible to act on. Three things were wrong with that:
-  //   * the native error was caught and DISCARDED, so whatever Android actually said was lost;
-  //   * the web fallback then ran ON NATIVE too, where it cannot work — so the message you got
-  //     described the fallback failing, not the real cause;
+  // readClipboardText (lib/core.js) carries the native/web branching and three hard-won fixes:
+  //   * the native error used to be caught and DISCARDED, so whatever Android actually said was lost;
+  //   * the web fallback used to then run ON NATIVE too, where it cannot work — so the message you
+  //     got described the fallback failing, not the real cause;
   //   * an empty clipboard came back as "" which is not == null, so it counted as a success and
   //     the sheet reported an EFT parse error instead of "there's nothing to paste".
   // Android asks for no clipboard permission at all (it is not a runtime permission — API 29+ just
   // requires the app to be focused, and 13+ shows its own paste toast), so a prompt never appearing
-  // is expected and is not the fault. The error text now names the cause.
+  // is expected and is not the fault. The error text names the cause.
   const readClip=async()=>{
     setErr(null);
-    const Cap=(typeof window!=="undefined")&&window.Capacitor;
-    const native=!!Cap?.isNativePlatform?.();
-    let t=null,why=null;
-    if(native){
-      try{
-        const {Clipboard}=await import('@capacitor/clipboard');
-        t=(await Clipboard.read())?.value ?? null;
-      }catch(e){ why=e?.message||String(e); }
-    }else{
-      try{ t=await navigator.clipboard.readText(); }catch(e){ why=e?.message||String(e); }
-    }
+    const{text:t,why}=await readClipboardText();
     if(t==null){setErr(`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`);return;}
     if(!t.trim()){setErr("The clipboard is empty — copy a fit first, then tap this again.");return;}
     haptic();setText(t);process(t);
