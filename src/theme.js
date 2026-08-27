@@ -14,5 +14,11 @@ const C={
   // brightness as well as hue — they were near-identical in luminance and hard to tell apart at 6px.
   offline:"#55555f",online:"#85858f",active:"#1ded96",overheat:"#f97316",
 };
+// Saira, the bundled display face (declared in index.css). Spread onto DISPLAY text only — the
+// wordmark, the drawer's menu labels and the fit header's hull name. Body text, numbers and every
+// stat readout stay on the system font: Saira is squarer and more mannered, which is what gives the
+// large text its character and exactly what makes it tiring in a 10px table cell.
+const DISPLAY={fontFamily:"var(--display)"};
+
 // EVE damage type colours: EM=blue, Thermal=red, Kinetic=green, Explosive=orange
-export { C };
+export { C, DISPLAY };

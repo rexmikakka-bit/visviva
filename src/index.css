@@ -1,3 +1,18 @@
+/* Saira is bundled, not linked. A Google Fonts <link> would FOUT or fail outright offline, and the
+   app is offline-capable by design (the ~6.5 MB of item art is committed for the same reason). This
+   is Google's own latin subset of the VARIABLE face, so 33 KB covers the whole weight axis rather
+   than one weight — which is why the range below is 100-900 and not two separate files. */
+@font-face {
+  font-family: 'Saira';
+  src: url('./assets/fonts/saira-latin.woff2') format('woff2');
+  font-weight: 100 900;
+  font-stretch: 100%;
+  font-style: normal;
+  /* `block` not `swap`: this only sets display text, so a brief invisible beat beats the hull name
+     visibly reflowing from system-ui to Saira on every launch. */
+  font-display: block;
+}
+
 :root {
   --text: #6b6375;
   --text-h: #08060d;
@@ -14,6 +29,9 @@
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
+  /* Display text only — the wordmark, hull name and drawer labels. Body text stays on the system
+     face on purpose: Saira is a display design and gets tiring below ~13px. */
+  --display: 'Saira', system-ui, 'Segoe UI', Roboto, sans-serif;
 
   font: 18px/145% var(--sans);
   letter-spacing: 0.18px;

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { C } from "../theme.js";
+import { C, DISPLAY } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
@@ -12,6 +12,11 @@ import * as esi from "../lib/esi.js";
 import appMark from "../assets/app-mark.png";
 
 const EXPORT_PREFS_KEY = 'pyfa_export_prefs';
+
+// Drawer menu labels. Uppercase via textTransform rather than in the strings, so the accessible name
+// a screen reader announces stays "Import Fit" and not "IMPORT FIT". Caps need the letter-spacing to
+// stay readable and they run wider, hence 12px against the 13px they were set at in sentence case.
+const MENU_LABEL={...DISPLAY,fontSize:12,letterSpacing:"1px",textTransform:"uppercase"};
 
 // Generic "pick a method, then we open the real sheet" bottom sheet — used by the hamburger menu's
 // combined Import/Export entries so the menu itself doesn't need one row per method (EFT vs ESI).
@@ -122,12 +127,12 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
       {/* Same treatment as AppHeader: the drawer's surface runs to the physical top of the screen,
           but its title is inset past the status bar. Without this the wordmark sat under the iOS
           clock. env() is 0 on Android and the web, so the 20px is what those still get. */}
-      <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{...DISPLAY,fontSize:19,fontWeight:700,letterSpacing:"1.6px",textTransform:"uppercase",color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
       <button onClick={()=>dismiss(onNewFit)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
         <span style={{display:"flex",color:C.accent,flexShrink:0}}><IconPlus size={21}/></span>
-        <div><div style={{fontSize:13,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
+        <div><div style={{...MENU_LABEL,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
       </button>
-      {[{icon:IconImport,label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:IconExport,label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:IconSnapshot,label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:IconPrice,label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:IconFeedback,label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:IconSettings,label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:IconImport,label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:IconExport,label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:IconSnapshot,label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:IconPrice,label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:IconFeedback,label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:IconSettings,label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{...MENU_LABEL,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }
@@ -274,7 +279,7 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
                      transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Axis</div>}
         {/* lineHeight 1.2 left the line box 1px shorter than the glyphs need, and `overflow:hidden`
             (there for the ellipsis) then shaved the descenders off names like Apocalypse. */}
-        <div style={{fontSize:collapsed?15:19,fontWeight:700,color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
+        <div style={{...DISPLAY,fontSize:collapsed?15:19,fontWeight:600,letterSpacing:"-.1px",color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
                      overflow:"hidden",textOverflow:"ellipsis",transition:"font-size .2s ease"}}>{shipName}</div>
         {/* `maxHeight` here is the COLLAPSE animation (18 -> 0), not a layout size — but with no
             explicit lineHeight this line inherited the body's 1.93, making its natural box 23.2px.

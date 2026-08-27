@@ -2,7 +2,7 @@ import { useState, useRef, useMemo, useEffect } from "react";
 import { buildShipTaxonomy, shipsUnder, nodeAtPath } from "../lib/ship-taxonomy.js";
 import { nextFitId } from "../lib/fit-tabs.js";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
-import { C } from "../theme.js";
+import { C, DISPLAY } from "../theme.js";
 import { eveIcon, eveHeroRender, eveRender, eveRenderHi, prefetchRenderHi } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
@@ -476,7 +476,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
             </div>
             {/* Shrinks toward a header-bar-sized title rather than scrolling away, so the collapsed
                 hero still says which ship you are reading about. */}
-            <div style={{fontSize:26-collapse*9,fontWeight:700,letterSpacing:'-.01em',lineHeight:1.1,
+            <div style={{...DISPLAY,fontSize:26-collapse*9,fontWeight:600,letterSpacing:'-.01em',lineHeight:1.1,
                          color:'#fff',textTransform:'uppercase',textShadow:'0 2px 10px rgba(0,0,0,.75)',
                          whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
               {ship?.name}
