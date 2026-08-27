@@ -681,7 +681,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               return(
                 <div key={row.id||row.name} style={{position:"relative"}}>
                   {swipeable&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
-                    style={{position:"absolute",top:0,right:0,bottom:0,width:72,border:"none",borderRadius:8,
+                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,
                             background:C.danger,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>Remove</button>}
                   {/* no-select on the ROW, not just the handle: the press starts on the handle but the
                       drag travels across the module names either side, and those are what the browser

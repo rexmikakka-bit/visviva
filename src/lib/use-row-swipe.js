@@ -1,5 +1,12 @@
-// Swipe-to-delete on a fitted-module row, Spotify-style: swipe left to reveal a Remove button
+// Swipe-to-delete on a fitted-module row, Spotify-style: swipe RIGHT to reveal a Remove button
 // behind the row, tap the row again to close it, tap the button (or swipe far enough) to commit.
+//
+// Deliberately the mirror of Spotify's own left-swipe: this row sits inside the Fit tab, which
+// itself swipes left/right against Stats/Graph (useTabSwipe). stopPropagation already keeps a row
+// drag from bubbling into that swipe technically, but a leftward reveal gesture still LOOKS like
+// the tab-swipe's "go to Stats" gesture under a thumb moving fast — so the reveal direction is
+// flipped to the direction the tab swipe can't go from the Fit tab (index 0's left edge rubber-
+// bands), rather than relying on stopPropagation alone to make the two gestures feel distinct.
 //
 // One hook call for the whole list, not one per row — rows come and go as slots are added,
 // removed and reordered, so per-row hook state would have to be rekeyed by hand on every change.
@@ -42,8 +49,8 @@ export function useRowSwipe() {
       }
       if (drag.current.axis !== "x") return;
       e.stopPropagation(); // keep this out of the Fit/Stats/Graph tab swipe above it
-      const base = openKey === key ? -REVEAL_PX : 0;
-      setX(e.currentTarget, Math.max(-REVEAL_PX - 16, Math.min(0, base + dx * 0.9)), false);
+      const base = openKey === key ? REVEAL_PX : 0;
+      setX(e.currentTarget, Math.min(REVEAL_PX + 16, Math.max(0, base + dx * 0.9)), false);
     },
     onTouchEnd: e => {
       if (drag.current.key !== key) return;
@@ -55,7 +62,7 @@ export function useRowSwipe() {
       // case, so there's exactly one source of truth for "how far did this row actually move."
       const m = /translateX\((-?[\d.]+)px\)/.exec(e.currentTarget.style.transform || "");
       const cur = m ? parseFloat(m[1]) : 0;
-      if (cur < -COMMIT_PX) { setX(e.currentTarget, -REVEAL_PX, true); setOpenKey(key); haptic(); }
+      if (cur > COMMIT_PX) { setX(e.currentTarget, REVEAL_PX, true); setOpenKey(key); haptic(); }
       else close(e.currentTarget);
     },
   });
