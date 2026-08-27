@@ -509,19 +509,6 @@ const haptic=(kind="light")=>{try{
 // ── Hull classes ───────────────────────────────────────────────────
 const RACE_COLORS={Caldari:"#38bdf8",Gallente:"#4ade80",Amarr:"#f59e0b",Minmatar:"#f97316"};
 const RACES=["Caldari","Gallente","Amarr","Minmatar"];
-const HULL_CLASSES=[
-  {key:"Frigate",icon:"🔸",color:C.rig},{key:"Assault Frigate",icon:"🔸",color:C.rig},
-  {key:"Interceptor",icon:"🔸",color:C.rig},{key:"Covert Ops",icon:"🔸",color:C.rig},
-  {key:"Electronic Attack Ship",icon:"🔸",color:C.rig},{key:"Stealth Bomber",icon:"🔸",color:C.rig},
-  {key:"Logistics Frigate",icon:"🔸",color:C.rig},{key:"Destroyer",icon:"🔹",color:C.mid},
-  {key:"Tactical Destroyer",icon:"🔹",color:C.mid},{key:"Interdictor",icon:"🔹",color:C.mid},
-  {key:"Cruiser",icon:"🔷",color:C.accent},{key:"Heavy Assault Cruiser",icon:"🔷",color:C.accent},
-  {key:"Recon Ship",icon:"🔷",color:C.accent},{key:"Heavy Interdictor",icon:"🔷",color:C.accent},
-  {key:"Logistics",icon:"🔷",color:C.accent},{key:"Flag Cruiser",icon:"🔷",color:C.accent},
-  {key:"Battlecruiser",icon:"🔶",color:C.warning},{key:"Command Ship",icon:"🔶",color:C.warning},
-  {key:"Attack Battlecruiser",icon:"🔶",color:C.warning},
-  {key:"Battleship",icon:"🔺",color:C.danger},{key:"Black Ops",icon:"🔺",color:C.danger},{key:"Marauder",icon:"🔺",color:C.danger},
-];
 const SAVED_FITS_SEED={};
 const CMD_SHIP_FITS={
   "Claymore":{bursts:["Interdiction Maneuvers: +12.5% Velocity","Evasive Maneuvers: +12.5% Agility","Rapid Deployment: -12.5% Align Time"]},
@@ -819,17 +806,6 @@ const MODULE_VARS={
 const DMG_COLOR={EM:DMG.em.color,Thermal:DMG.th.color,Kinetic:DMG.kin.color,Explosive:DMG.exp.color};
 
 // ── Implant data ───────────────────────────────────────────────────
-const BOOSTER_DRUGS=[
-  {name:"Blue Pill",effect:"Shield Boost Amount",icon:"💙",color:C.mid,variants:[{grade:"Synth",boost:"+10%",sideEffects:false},{grade:"Standard",boost:"+15%",sideEffects:true},{grade:"Improved",boost:"+20%",sideEffects:true},{grade:"Strong",boost:"+25%",sideEffects:true}]},
-  {name:"Crash",effect:"Armor Repair Amount",icon:"🟠",color:C.warning,variants:[{grade:"Synth",boost:"+10%",sideEffects:false},{grade:"Standard",boost:"+15%",sideEffects:true},{grade:"Improved",boost:"+20%",sideEffects:true},{grade:"Strong",boost:"+25%",sideEffects:true}]},
-  {name:"Drop",effect:"Armor HP",icon:"🟤",color:"#b45309",variants:[{grade:"Synth",boost:"+3%",sideEffects:false},{grade:"Standard",boost:"+4%",sideEffects:true},{grade:"Improved",boost:"+6%",sideEffects:true},{grade:"Strong",boost:"+8%",sideEffects:true}]},
-  {name:"Exile",effect:"Armor Rep (Self-Only)",icon:"💚",color:C.rig,variants:[{grade:"Synth",boost:"+10%",sideEffects:false},{grade:"Standard",boost:"+15%",sideEffects:true},{grade:"Improved",boost:"+20%",sideEffects:true},{grade:"Strong",boost:"+25%",sideEffects:true}]},
-  {name:"Mindflood",effect:"Capacitor Capacity",icon:"GJ",color:C.warning,variants:[{grade:"Synth",boost:"+5%",sideEffects:false},{grade:"Standard",boost:"+8%",sideEffects:true},{grade:"Improved",boost:"+12%",sideEffects:true},{grade:"Strong",boost:"+16%",sideEffects:true}]},
-  {name:"Sooth Sayer",effect:"Shield HP",icon:"🔷",color:C.mid,variants:[{grade:"Synth",boost:"+3%",sideEffects:false},{grade:"Standard",boost:"+4%",sideEffects:true},{grade:"Improved",boost:"+6%",sideEffects:true},{grade:"Strong",boost:"+8%",sideEffects:true}]},
-  {name:"X-Instinct",effect:"Signature Radius",icon:"🟢",color:C.rig,variants:[{grade:"Synth",boost:"-1.5%",sideEffects:false},{grade:"Standard",boost:"-2%",sideEffects:true},{grade:"Improved",boost:"-3%",sideEffects:true},{grade:"Strong",boost:"-4%",sideEffects:true}]},
-  {name:"Frentix",effect:"Turret Optimal and Falloff",icon:"🔴",color:C.danger,variants:[{grade:"Synth",boost:"+5%",sideEffects:false},{grade:"Standard",boost:"+8%",sideEffects:true},{grade:"Improved",boost:"+12%",sideEffects:true},{grade:"Strong",boost:"+16%",sideEffects:true}]},
-  {name:"Pyrolancea",effect:"Damage (All Types)",icon:"🔥",color:C.danger,variants:[{grade:"Synth",boost:"+3%",sideEffects:false},{grade:"Standard",boost:"+5%",sideEffects:true},{grade:"Improved",boost:"+7%",sideEffects:true},{grade:"Strong",boost:"+9%",sideEffects:true}]},
-];
 
 // ── EFT-import lookup helpers ──────────────────────────────────────
 const BOOSTER_NAME_SET=new Set(Object.values(BOOSTER_DATA).flatMap(s=>Object.values(s).flat()));
@@ -856,13 +832,6 @@ const IMPLANT_NAME_TO_SLOT=(()=>{const m=new Map();
 
 // ── Drone / cargo browser data ─────────────────────────────────────
 const FIGHTER_CATALOG={"Light":{"Amarr":[{"name":"Equite I","tier":"T1","typeID":40358},{"name":"Templar I","tier":"T1","typeID":23055},{"name":"Equite II","tier":"T2","typeID":40552},{"name":"Templar II","tier":"T2","typeID":40556},{"name":"Imperial Navy Equite","tier":"Navy","typeID":83585},{"name":"Imperial Navy Templar","tier":"Navy","typeID":83579}],"Caldari":[{"name":"Dragonfly I","tier":"T1","typeID":23057},{"name":"Locust I","tier":"T1","typeID":40359},{"name":"Dragonfly II","tier":"T2","typeID":40557},{"name":"Locust II","tier":"T2","typeID":40554},{"name":"Caldari Navy Dragonfly","tier":"Navy","typeID":83582},{"name":"Caldari Navy Locust","tier":"Navy","typeID":83586}],"Gallente":[{"name":"Firbolg I","tier":"T1","typeID":23059},{"name":"Satyr I","tier":"T1","typeID":40360},{"name":"Firbolg II","tier":"T2","typeID":40558},{"name":"Satyr II","tier":"T2","typeID":40555},{"name":"Federation Navy Firbolg","tier":"Navy","typeID":83583},{"name":"Federation Navy Satyr","tier":"Navy","typeID":83587}],"Minmatar":[{"name":"Einherji I","tier":"T1","typeID":23061},{"name":"Gram I","tier":"T1","typeID":40361},{"name":"Einherji II","tier":"T2","typeID":40559},{"name":"Gram II","tier":"T2","typeID":40553},{"name":"Republic Fleet Einherji","tier":"Navy","typeID":83584},{"name":"Republic Fleet Gram","tier":"Navy","typeID":83589}]},"Heavy":{"Faction":[{"name":"Shadow","tier":"Navy","typeID":2948}],"Gallente":[{"name":"Antaeus I","tier":"T1","typeID":40364},{"name":"Cyclops I","tier":"T1","typeID":32325},{"name":"Antaeus II","tier":"T2","typeID":40562},{"name":"Cyclops II","tier":"T2","typeID":40563}],"Amarr":[{"name":"Ametat I","tier":"T1","typeID":40362},{"name":"Malleus I","tier":"T1","typeID":32340},{"name":"Ametat II","tier":"T2","typeID":40560},{"name":"Malleus II","tier":"T2","typeID":40561}],"Minmatar":[{"name":"Gungnir I","tier":"T1","typeID":40365},{"name":"Tyrfing I","tier":"T1","typeID":32342},{"name":"Gungnir II","tier":"T2","typeID":40564},{"name":"Tyrfing II","tier":"T2","typeID":40565}],"Caldari":[{"name":"Mantis I","tier":"T1","typeID":32344},{"name":"Termite I","tier":"T1","typeID":40363},{"name":"Mantis II","tier":"T2","typeID":40567},{"name":"Termite II","tier":"T2","typeID":40566}]},"Support":{"Amarr":[{"name":"Cenobite I","tier":"T1","typeID":37599},{"name":"Cenobite II","tier":"T2","typeID":40568},{"name":"Imperial Navy Cenobite","tier":"Navy","typeID":83591}],"Caldari":[{"name":"Scarab I","tier":"T1","typeID":40345},{"name":"Scarab II","tier":"T2","typeID":40569},{"name":"Caldari Navy Scarab","tier":"Navy","typeID":83592}],"Gallente":[{"name":"Siren I","tier":"T1","typeID":40346},{"name":"Siren II","tier":"T2","typeID":40570},{"name":"Federation Navy Siren","tier":"Navy","typeID":83593}],"Minmatar":[{"name":"Dromi I","tier":"T1","typeID":40347},{"name":"Dromi II","tier":"T2","typeID":40571},{"name":"Republic Fleet Dromi","tier":"Navy","typeID":83594}]}};
-const CARGO_BROWSER={
-  "Ammunition and Charges":[{name:"Antimatter Charge L",vol:0.025,priceM:0.0012,icon:"💊"},{name:"Void L",vol:0.025,priceM:0.0028,icon:"💊"},{name:"Null L",vol:0.025,priceM:0.0024,icon:"💊"},{name:"Cap Booster 400",vol:3.0,priceM:0.8,icon:"GJ"},{name:"Cap Booster 800",vol:6.0,priceM:1.6,icon:"GJ"},{name:"Navy Cap Booster 800",vol:6.0,priceM:4.2,icon:"GJ"}],
-  "Consumables":[{name:"Nanite Repair Paste",vol:0.1,priceM:0.55,icon:"🔬"},{name:"Agency 'Overclocker' SB5",vol:0.1,priceM:0.20,icon:"🧪"},{name:"Synth Mindflood Booster",vol:0.1,priceM:0.50,icon:"💊"}],
-  "Salvage":[{name:"Armor Plates",vol:0.5,priceM:0.015,icon:"🔩"},{name:"Burned Logic Circuit",vol:0.1,priceM:0.008,icon:"🔩"},{name:"Contaminated Nanite Compound",vol:0.1,priceM:0.025,icon:"🔩"}],
-  "Minerals":[{name:"Tritanium",vol:0.01,priceM:0.000005,icon:"📦"},{name:"Mexallon",vol:0.01,priceM:0.00006,icon:"📦"},{name:"Zydrine",vol:0.01,priceM:0.0004,icon:"📦"},{name:"Megacyte",vol:0.01,priceM:0.006,icon:"📦"}],
-  "Mobile Structures":[{name:"Mobile Depot",vol:50,priceM:1.2,icon:"🏗"},{name:"Mobile Tractor Unit",vol:100,priceM:6,icon:"🏗"}],
-};
 
 // ── Target profile stats for graph ────────────────────────────────
 // Display units for warfare buff types (buffID → unit suffix). Most are percentages.
@@ -1521,4 +1490,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_DRUGS, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CARGO_BROWSER, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, HULL_CLASSES, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
