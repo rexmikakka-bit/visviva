@@ -14,10 +14,10 @@ const C={
   // brightness as well as hue — they were near-identical in luminance and hard to tell apart at 6px.
   offline:"#55555f",online:"#85858f",active:"#1ded96",overheat:"#f97316",
 };
-// Saira, the bundled display face (declared in index.css). Spread onto DISPLAY text only — the
-// wordmark, the drawer's menu labels and the fit header's hull name. Body text, numbers and every
-// stat readout stay on the system font: Saira is squarer and more mannered, which is what gives the
-// large text its character and exactly what makes it tiring in a 10px table cell.
+// Saira, the bundled face (declared in index.css). It is now the app's base family, so spreading this
+// is a no-op for the family itself — it stays because the call sites that use it (wordmark, hull name,
+// drawer labels) are marking text as DISPLAY, and that intent is what would carry the difference if
+// the two stacks ever split again.
 const DISPLAY={fontFamily:"var(--display)"};
 
 // EVE damage type colours: EM=blue, Thermal=red, Kinetic=green, Explosive=orange

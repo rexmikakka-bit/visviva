@@ -8,9 +8,10 @@
   font-weight: 100 900;
   font-stretch: 100%;
   font-style: normal;
-  /* `block` not `swap`: this only sets display text, so a brief invisible beat beats the hull name
-     visibly reflowing from system-ui to Saira on every launch. */
-  font-display: block;
+  /* `swap`, not `block`. While Saira only set the wordmark and hull name, `block` was right — a brief
+     invisible beat beat watching one heading reflow. Now it sets EVERY string in the app, and `block`
+     means a cold start renders a completely blank app until the font resolves. */
+  font-display: swap;
 }
 
 :root {
@@ -26,14 +27,19 @@
   --shadow:
     rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
+  --sans: 'Saira', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --heading: 'Saira', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
-  /* Display text only — the wordmark, hull name and drawer labels. Body text stays on the system
-     face on purpose: Saira is a display design and gets tiring below ~13px. */
+  /* Same stack as --sans now that Saira sets everything. Kept as its own name because the call sites
+     that use it (wordmark, hull name, drawer labels) mean "this is display text", not "this is Saira" —
+     if the two ever diverge again, they diverge here rather than at 40 inline styles. */
   --display: 'Saira', system-ui, 'Segoe UI', Roboto, sans-serif;
 
   font: 18px/145% var(--sans);
+  /* Saira's default figures are proportional and unusually uneven — `1` is 389/1000em against `8` at
+     682. Right-aligned stat columns visibly shuffle as values change without this. The font ships a
+     real `tnum`, so this costs nothing. Must stay AFTER the `font:` shorthand, which resets it. */
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.18px;
   color-scheme: light dark;
   color: var(--text);
