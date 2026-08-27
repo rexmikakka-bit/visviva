@@ -724,10 +724,15 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               const swipeable=sec.key!=="subsystems";
               return(
                 <div key={row.id||row.name} style={{position:"relative"}}>
-                  {/* Hidden while this row is being dragged to reorder: the button sits BEHIND the row
-                      and is only invisible because the row is opaque, so the drag's 0.45 opacity
-                      showed it through. The two gestures are mutually exclusive anyway. */}
-                  {swipeable&&!isDragSrc&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
+                  {/* Not rendered at all while a reorder is live, on ANY row rather than just the one
+                      being dragged. The button sits BEHIND the row and is only ever invisible because
+                      the row is opaque — so every way a row can stop being opaque leaks it, and there
+                      are two: the dragged row dims to 0.45, and the row being dragged OVER takes
+                      C.accentLight, which is rgba(...,0.1) and leaves the row 90% see-through. Fixing
+                      only the first (which is what `!isDragSrc` did) left the drop target showing a
+                      red Remove button through itself. Enumerating the ways is the losing move; no row
+                      should be offering a delete during a reorder anyway. */}
+                  {swipeable&&!dragUI&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
                     aria-label="Remove"
                     style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
                             alignItems:"center",justifyContent:"center",
