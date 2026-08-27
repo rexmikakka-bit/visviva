@@ -596,8 +596,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     get ratios(){return getFitCostRatios();},
   };
 
+  // overflowX must be stated, not left to default: `overflow-y:auto` alone makes overflow-x compute
+  // to `auto` too, and a row swiped open translates 72px past this box's right edge — real
+  // scrollable overflow, which the browser then pans NATIVELY. That is what dragged the whole list
+  // sideways while a Remove button was being revealed, and no amount of stopPropagation could reach
+  // it: native scrolling is not a React event.
   return(
-    <div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
+    <div ref={_scroll} style={{flex:1,overflowY:"auto",overflowX:"hidden",display:"flex",flexDirection:"column"}}>
       {/* `top` must clear the notch/Dynamic Island: a plain 16px put "No turret slots available"
           underneath the iPhone sensor bar, where it is unreadable. Same treatment as the price
           banner in App.jsx — env(safe-area-inset-top) is 0 on Android and the web, so the constant
@@ -709,6 +714,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 {...(swipeable?rowSwipe.swipeHandlers(rowKey):{})}
                 onClick={sec.key==="subsystems"?()=>setSubInfo({typeID:row.typeID,name:row.name,slotId:row.id}):rowSwipe.guardClick(rowKey,()=>setModuleMenu({secKey:sec.key,modId:row.id}))}
                 style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",opacity:isDragSrc?0.45:1,position:"relative",zIndex:1,
+                        // pan-y, not "none": vertical scrolling still has to start from a row, since
+                        // rows are most of the list. It claims the horizontal axis for the reveal
+                        // gesture, so the browser stops treating a sideways drag as a pan of its own.
+                        touchAction:swipeable?"pan-y":undefined,
                         // ORPHANED: the ship no longer has this slot after a subsystem swap. Kept
                         // rather than deleted, and marked hard enough that it cannot be mistaken for
                         // a fitted module — it contributes nothing to any stat.

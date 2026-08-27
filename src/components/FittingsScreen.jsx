@@ -572,9 +572,14 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                     const dir = changed ? Math.sign(r.cur - r.base) : 0;
                     const better = changed && r.attr ? directionOf(r.attr, r.cur, r.base, ship?.typeID) : null;
                     const valColor = better == null ? C.text : (better ? C.rig : C.danger);
+                    // A changed row widens by this panel's own 16px inset and gives it straight back
+                    // as padding, so the band reaches the screen edges while the columns do not move.
+                    // The scroll box above has no padding of its own, so -16 lands exactly on its
+                    // edge and creates no overflow.
                     return (
                     <div key={r.label} style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
-                      padding:'5px 0',borderBottom:`1px solid ${C.border}`,
+                      padding:changed?'5px 16px':'5px 0',margin:changed?'0 -16px':0,
+                      borderBottom:`1px solid ${C.border}`,
                       background:changed?C.accentLight:'transparent'}}>
                       <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{r.label}</span>
                       <span style={{fontSize:12,fontWeight:600,color:valColor,textAlign:'right',
