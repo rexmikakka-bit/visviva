@@ -99,6 +99,12 @@ export const IconClose = (p) => (
   <Glyph {...p}><path d="M6.5 6.5l11 11"/><path d="M17.5 6.5l-11 11"/></Glyph>
 );
 
+// Drawn to the same span as IconClose (6.5 -> 17.5) so a check and a cross sitting side by side as
+// confirm/cancel read as one pair rather than two differently-sized glyphs.
+export const IconCheck = (p) => (
+  <Glyph {...p}><path d="M6.5 12.5l4 4 7-9"/></Glyph>
+);
+
 // The eyelet is a stroked circle, not the filled dot the usual luggage-tag glyph uses — same reason
 // nothing else here is filled (see the header): a fill needs to match whatever surface it lands on.
 export const IconTag = (p) => (

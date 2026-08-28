@@ -22,6 +22,7 @@ export { resolveTabs, MAX_OPEN_TABS, sameTab, nextFitId } from "../lib/fit-tabs.
 import { useEffect, useRef, useState } from "react";
 import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
+import { IconCheck } from "./glyphs.jsx";
 
 
 
@@ -248,10 +249,13 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
     <div style={{ ...STICKY, background: C.bg, borderBottom: `1px solid ${C.border}` }}>
       <div style={{ display: "flex", alignItems: "center", height: 22 }}>
         {armed ? (
-          <div role="button" aria-label={`Close all ${tabs.length} tabs`}
-               onClick={() => { setArmed(false); haptic("medium"); onCloseAll?.(); }}
-               style={{ flex: 1, display: "flex", alignItems: "center", height: "100%",
-                        padding: "0 8px", cursor: "pointer" }}>
+          // A LABEL, not a button. This used to be a full-width confirm, so the prompt asking whether
+          // to destroy every open tab was itself the largest tap target in the rail — and closing
+          // tabs is not undoable. Now that the check carries the job visibly, a second invisible
+          // target for it is only a way to lose your tabs by brushing the strip. The confirm hitbox
+          // should be exactly the button you can see.
+          <div style={{ flex: 1, display: "flex", alignItems: "center", height: "100%",
+                        padding: "0 8px" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: C.danger }}>
               Close all {tabs.length} tab{tabs.length === 1 ? "" : "s"}?
             </span>
@@ -267,6 +271,20 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
                              transition: "background .18s ease",
                              background: isActive(t) ? C.accent : C.borderStrong }}/>
             ))}
+          </div>
+        )}
+        {/* The red text to the left already confirms, but nothing SHOWED that: armed, the only thing
+            that looked like a button was the x — so testers reported tapping it, landing on cancel,
+            and concluding the feature was broken. A tinted green check gives the destructive prompt
+            the confirm half it was missing, and pairs with the x as accept/dismiss instead of
+            leaving one lone glyph to mean both. */}
+        {armed && (
+          <div role="button" aria-label={`Confirm closing all ${tabs.length} tabs`}
+               onClick={() => { setArmed(false); haptic("medium"); onCloseAll?.(); }}
+               style={{ flexShrink: 0, width: 34, height: "100%", display: "flex", alignItems: "center",
+                        justifyContent: "center", color: C.success, cursor: "pointer",
+                        background: "rgba(34,197,94,0.12)", borderLeft: `1px solid ${C.border}` }}>
+            <IconCheck size={15}/>
           </div>
         )}
         {/* Armed, the + spins 45 degrees into an x rather than swapping glyph — the rotation is what
