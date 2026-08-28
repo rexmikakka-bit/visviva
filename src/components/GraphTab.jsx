@@ -919,17 +919,22 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
           reports. The caller already ends its own fallback chain with 500 for the genuinely-unknown
           case, so passing the number straight through is what lets 0 mean immobilised. */}
       <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel} enemyPos="E"/>
-      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
+      {/* FIXED width, and the readout fills it. This column sits between the two wheels in a
+          space-around row, so anything that changes its width moves BOTH wheels — and the two labels
+          are different lengths ("m/s transversal" is wider than "°/s @ 25km"), so merely toggling the
+          unit shunted the wheels apart. Sized to the longer label so neither overflows; if one ever
+          does, it overflows rather than pushing, which keeps the wheels where they are. */}
+      <div style={{width:96,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
         <div style={{width:1,height:18,background:C.border}}/>
         {/* Tap to swap units. Transversal is what you fly and needs no context; angular velocity is
             what a turret is judged against — shown in deg/s to match EVE's own overview column — but
             it only exists at a range, so its label names the one it was taken at. Which of the two
             you think in is a habit rather than a per-visit whim, so the choice sticks. */}
         <div onClick={()=>setShowTransversal(v=>!v)} title={showTransversal?"Transversal — tap for angular velocity":"Angular velocity — tap for transversal"}
-             style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 8px",textAlign:"center",cursor:"pointer"}}>
-          <div style={{fontSize:14,fontWeight:800,color:transColor,fontVariantNumeric:"tabular-nums"}}>
+             style={{width:"100%",boxSizing:"border-box",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 4px",textAlign:"center",cursor:"pointer"}}>
+          <div style={{fontSize:14,fontWeight:800,color:transColor,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
             {showTransversal?trans:fmtAngular(angularSpeedDeg)}</div>
-          <div style={{fontSize:8,color:C.textMute}}>
+          <div style={{fontSize:8,color:C.textMute,whiteSpace:"nowrap"}}>
             {showTransversal?"m/s transversal":`°/s @ ${fmtRangeKm(angularDistM)}km`}</div>
         </div>
         <div style={{width:1,height:18,background:C.border}}/>
