@@ -84,7 +84,7 @@ blurry at the 26-30 CSS px the module rows draw them at (2x is already upscaling
 The bundled art is now 64px icons / 128px renders / 128px type-icons, all from CCP. Keep the script:
 it is the only thing that maps pyfa's graphicID-named render files onto typeIDs, and it works offline.
 
-Two traps here:
+Five traps here:
 
 - **Files under `renders/` and `hero-renders/` are JPEG bytes with a `.png` name.** CCP's render
   endpoint serves JPEG (the icon endpoint still serves PNG). The extension is kept so `icons.js`'s
@@ -94,6 +94,38 @@ Two traps here:
 - **Icons are keyed by iconID; the image server is keyed by typeID.** 16,829 types share 2,419
   icons, so fetching per type would be ~97 MB of near-identical art. `fetch-art.mjs` fetches one
   representative type per iconID (falling through to siblings if it 400s) and saves `<iconID>.png`.
+- **WHICH representative matters — the image server bakes the META-GROUP BADGE into the picture.**
+  Ask it for a Storyline type and the PNG arrives with the green corner marker burned in. One file
+  serves every type on that iconID, so taking whichever member came first badged 73 icons: iconID
+  26547's first member is the *'Basic'* Reactor Control Unit, so every RCU in the app — T1 included —
+  wore a Storyline marker. `metaRank` in `fetch-art.mjs` now prefers Tech I, which is never badged.
+  pyfa's art carried no badges at all, which is why this only appeared when the source changed.
+- **The image server serves the WRONG picture for the 32 classic combat boosters.** Each is built
+  from a *"Pure"* material of the same name, and the SDE gives the two different iconIDs (Standard
+  Exile Booster 26613, Pure Standard Exile Booster 26426). The image server ignores that and returns
+  one shared image for the pair, picking arbitrarily which rendition — Synth/Standard/Improved Exile
+  come back as the material's **ore pile**, Strong Exile as the booster canister. The client shows
+  the canister for all four, so pyfa's SDE art is correct; `src/assets/icons/` carries a hand-restored
+  copy of it (32px, not 64) and `IMAGE_SERVER_WRONG` in `fetch-art.mjs` keeps `--force` off them.
+
+  **The sweep that found it is worth re-running after any CCP art drop:** hash every file in
+  `src/assets/icons/` and look for byte-identical files under *different* iconIDs. Distinct iconIDs
+  mean distinct SDE art, so a collision is proof one of them is wrong. It turned "the Effects tab
+  icon looks odd" into an exact list of 32. Three collisions remain and are **fine** — Advanced
+  Planetology, the Medium/Large Asteroid Ore Compressors and Clone Vat Bay I are identical in pyfa's
+  art too, i.e. CCP reusing one picture on purpose.
+- **`type-icons/` is fetched from the RENDER endpoint, not the icon endpoint** — drones, fighters and
+  deployables are 3D models, and for those the two endpoints serve the same picture except that the
+  icon has the meta badge composited on. `metaRank` cannot help here (one type, one file), and CCP's
+  badging of this set is simply wrong: Berserker I, Hornet I, Warrior I and Acolyte I are Tech I and
+  came back wearing the green **Faction** corner. The render is badge-free at the same 128px, and all
+  280 files were colour type 2 anyway, so the switch to JPEG cost nothing and halved the folder
+  (2.42 MB → 1.1 MB).
+
+  Related: CCP gave the three Acolytes iconID **1084** and gave every other drone none at all, so they
+  were the only drones resolving through the shared-icon path — one badged picture for all three.
+  `DRONE_ICON_IDS` (derived: every member in category 18/87) keeps such iconIDs out of `icons/`, so
+  `eveIcon()` falls through to `type-icons/` and each Acolyte gets its own art.
 
 ### Branch, don't push to main
 

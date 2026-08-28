@@ -326,11 +326,16 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
   </div>);
 }
 
-// Standard Exile Booster (15479) — was 3211, an IMPLANT (Cyber Gunnery 'Lancer' ME-804) whose icon
-// happens to be booster-shaped, which is exactly the kind of thing that looks right until someone
-// checks the type. The Effects tab covers boosters, not implants (that's its own tab) — using a
-// real booster's icon here is what makes the tab bar honest.
-const BOOSTER_ICON=eveIcon(15479,32);
+// Strong Veilguard Booster (59633). This must be a real BOOSTER: the Effects tab covers boosters,
+// not implants (that's its own tab), and it once pointed at typeID 3211 — an implant whose art
+// merely looked the part.
+//
+// Veilguard rather than a better-known drug because the image server answers Exile/Drop/Crash/Blue
+// Pill with the art of the "Pure" MANUFACTURING MATERIAL that builds them — a heap of loose ore, not
+// the canister the client actually shows. Those 32 iconIDs are listed as IMAGE_SERVER_WRONG in
+// fetch-art.mjs and bundled from pyfa instead, so Exile would render correctly today too; Veilguard
+// is kept because it never depended on that workaround.
+const BOOSTER_ICON=eveIcon(59633,64);
 
 export function BottomNav({active,onChange}){
   const tabs=[

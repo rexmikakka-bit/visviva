@@ -38,7 +38,13 @@
  *                      glob for no gain. Nothing is lost to JPEG here: the renders pyfa shipped are
  *                      colour type 2 (RGB, NO alpha), so there was never any transparency to keep.
  *   type-icons 128px   Drones, fighters and deployables — types CCP gives no iconID, so they are
- *                      keyed by typeID. Only 280 files, so the step up costs ~0.3 MB.
+ *                      keyed by typeID. Only 283 files, so the step up costs ~0.3 MB.
+ *                      ⚠ Fetched from the RENDER endpoint, not the icon endpoint. Everything in this
+ *                      set is a 3D model, and for those two endpoints serve the SAME picture — except
+ *                      the icon has the meta-group badge composited on and the render does not. CCP's
+ *                      badging here is also wrong: Berserker I, Hornet I, Warrior I and Acolyte I are
+ *                      Tech I and come back wearing the green FACTION corner. Renders are JPEG (see
+ *                      the note above); these are colour type 2 with no alpha, so nothing is lost.
  *
  * The 256px hero renders stay with fetch-hero-renders.mjs: different worklist, different purpose
  * (the info sheet's full-width picture, not a label), and it already has its own size reasoning.
@@ -50,6 +56,9 @@
  * what src/lib/icons.js already looks up. Verified before relying on it: three iconIDs shared by
  * 540/533/413 types each return byte-identical PNGs across their members. If a representative type
  * has no art, the next type sharing that iconID is tried before giving up.
+ *
+ * WHICH representative is not arbitrary — the image server burns the meta-group badge into the
+ * picture, so the members are NOT interchangeable. See the metaRank note by the worklist.
  */
 
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync, statSync,
@@ -119,6 +128,72 @@ for (const [tid, iid] of Object.entries(typeIcons)) {
   typesByIcon.get(k).push(tid);
 }
 
+// ⚠ THE REPRESENTATIVE MUST BE THE LOWEST META GROUP, or every type sharing the icon inherits its
+// BADGE. CCP's image server bakes the meta-group corner marker into the icon it serves: ask for a
+// Storyline type and the PNG comes back with the green marker burned into its top-left corner, a
+// Tech II type with the T2 one. One file serves every type on that iconID, so taking whichever
+// member happened to come first badged 143 of them. iconID 26547's first member is the 'Basic'
+// Reactor Control Unit (Storyline), so every Reactor Control Unit in the app — Tech I included —
+// wore a Storyline marker. pyfa's art carried no badges at all, which is why this only appeared
+// when the art source changed.
+//
+// Tech I is never badged, so it is the preferred representative. A type with no metaGroupID (a
+// booster, or anything not fittable and so absent from the bundle) is almost certainly unbadged
+// too, but we cannot confirm that from here — it ranks behind a confirmed Tech I and ahead of
+// anything known to be badged.
+const TYPES = JSON.parse(readFileSync(join(ROOT, 'src/data/dogma-types.json'), 'utf8'));
+const metaRank = (tid) => {
+  const mg = TYPES[tid]?.mg;
+  return mg === undefined ? 1 : mg === 1 ? 0 : 2 + mg;
+};
+// Stable, so members of equal rank keep their original order and a re-run is deterministic.
+for (const list of typesByIcon.values()) list.sort((a, b) => metaRank(a) - metaRank(b));
+
+// ⚠ THE IMAGE SERVER SERVES THE WRONG PICTURE FOR THESE — do not fetch them, ever.
+//
+// Every classic combat booster is manufactured from a "Pure" material of the same name, and the SDE
+// gives the two DIFFERENT iconIDs (Standard Exile Booster 26613, Pure Standard Exile Booster 26426).
+// The image server does not honour that: ask it for either typeID and you get one shared image, and
+// which of the two renditions you get is arbitrary per pair. Synth/Standard/Improved Exile come back
+// as the material — an ore pile — while Strong Exile happens to come back as the booster canister.
+// The game client shows the canister for all four, so the SDE art pyfa ships is the correct one and
+// what is bundled here is a hand-restored copy of it, at pyfa's 32px rather than 64.
+//
+// Found by sweeping the bundle for byte-identical files under DIFFERENT iconIDs — distinct iconIDs
+// mean distinct SDE art, so a collision is proof one of them is wrong. That sweep is worth re-running
+// after any CCP art drop; it is what turned "the Effects tab icon looks odd" into a precise list.
+// The three collisions it still reports (Advanced Planetology, the Medium/Large Asteroid Ore
+// Compressors, Clone Vat Bay I) are identical in pyfa's art too, so those are CCP reusing one
+// picture on purpose, not this bug.
+const IMAGE_SERVER_WRONG = new Set([
+  26548, 26549, 26550, 26551, // Blue Pill
+  26552, 26553, 26554, 26555, // Frentix
+  26556, 26557, 26558, 26559, // Mindflood
+  26604, 26605, 26606, 26607, // Crash
+  26608, 26609, 26610, 26611, // Drop
+  26612, 26613, 26614, 26615, // Exile
+  26616, 26617, 26618, 26619, // Sooth Sayer
+  26620, 26621, 26622, 26623, // X-Instinct
+].map(String));
+
+// iconIDs whose members are ALL drones or fighters, and which therefore belong to the render-fetched
+// type-icons set rather than here. There is exactly one: CCP gave the three Acolytes (Acolyte I,
+// 'Integrated', Imperial Navy) iconID 1084 and gave every other drone none at all, so those three
+// were the only drones resolving through the shared-icon path — and so the only ones stuck with the
+// badge the icon endpoint composites on. Skipping the iconID lets eveIcon() fall through to
+// type-icons/, which also gives each Acolyte its own picture instead of one shared between them.
+// Derived rather than listed so a future CCP data drop cannot quietly reintroduce the problem.
+const DRONE_ICON_IDS = (() => {
+  const cats = new Map();  // iconID -> Set of category IDs
+  for (const [tid, iid] of Object.entries(typeIcons)) {
+    const c = TYPES[tid]?.c;
+    if (c == null) continue;
+    if (!cats.has(String(iid))) cats.set(String(iid), new Set());
+    cats.get(String(iid)).add(c);
+  }
+  return new Set([...cats].filter(([, s]) => [...s].every((c) => c === 18 || c === 87)).map(([i]) => i));
+})();
+
 function iconJobs() {
   const dir = join(ASSETS, 'icons');
   mkdirSync(dir, { recursive: true });
@@ -128,7 +203,7 @@ function iconJobs() {
   // them, because that is ~717 more files and a materially bigger download.
   const want = fillGaps ? [...typesByIcon.keys()] : [...have];
   return want
-    .filter((iid) => typesByIcon.has(iid))
+    .filter((iid) => typesByIcon.has(iid) && !IMAGE_SERVER_WRONG.has(iid) && !DRONE_ICON_IDS.has(iid))
     .map((iid) => ({ dir, name: `${iid}.png`, candidates: typesByIcon.get(iid), kind: 'icon' }));
 }
 
@@ -148,8 +223,15 @@ function typeIconJobs() {
   mkdirSync(dir, { recursive: true });
   // No recorded worklist for these — they were downloaded once and committed. The folder's own
   // filenames are therefore the list, which is also exactly the set we want to upgrade.
-  return readdirSync(dir).filter((f) => f.endsWith('.png'))
-    .map((f) => ({ dir, name: f, candidates: [f.slice(0, -4)], kind: 'icon' }));
+  const want = new Set(readdirSync(dir).filter((f) => f.endsWith('.png')).map((f) => f.slice(0, -4)));
+  // ...plus DRONE_ICON_IDS' members, which the folder is missing because a shared icons/<iconID>.png
+  // used to answer for them. Each gets its own file so the three Acolytes stop sharing one picture.
+  // TYPES-presence filter: type-icons.json also maps blueprints and unpublished variants onto 1084,
+  // and the app can never show those.
+  for (const tid of Object.keys(typeIcons)) {
+    if (TYPES[tid] && DRONE_ICON_IDS.has(String(typeIcons[tid]))) want.add(tid);
+  }
+  return [...want].map((tid) => ({ dir, name: `${tid}.png`, candidates: [tid], kind: 'render' }));
 }
 
 const TARGETS = [
@@ -197,10 +279,12 @@ for (const t of TARGETS) {
     while (next < todo.length) {
       const job = todo[next++];
       let saved = false, lastErr = 'no candidate types';
-      // Up to three siblings sharing this iconID before conceding. A single type missing art on
-      // CCP's server says nothing about the icon; a third one failing means the icon is genuinely
-      // absent and the app keeps its network fallback for it.
-      for (const tid of job.candidates.slice(0, 3)) {
+      // Siblings sharing this iconID are tried in preference order before conceding. A single type
+      // missing art on CCP's server says nothing about the icon. This was 3 while the order was
+      // arbitrary; once metaRank started sorting them, an icon whose only drawn member is Officer
+      // or Deadspace has that member pushed to the back, and a depth of 3 lost 11 icons that used
+      // to resolve. The extra requests are only ever spent on a job already failing.
+      for (const tid of job.candidates.slice(0, 8)) {
         try {
           const buf = await fetchOne(job.kind, tid, t.size);
           writeFileSync(join(job.dir, job.name), buf);
