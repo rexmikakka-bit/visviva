@@ -872,6 +872,10 @@ MT_GROUP_ICON['10']=2961;
 // the SAME art its own child "Scanning Upgrades" (1709) carries; the two are never on screen at once
 // and matching art down the branch reads as confirmation rather than confusion.
 MT_GROUP_ICON['1708']=33176;
+// CCP nominates Clone Vat Bay I for "Fleet Assistance Modules" (779), the narrowest of its five
+// children — capital-only, two items, and art that says "medical bay" rather than anything fleet.
+// A Cynosural Field Generator is the one thing under here everyone recognises on sight.
+MT_GROUP_ICON['779']=21096;
 
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
