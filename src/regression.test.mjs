@@ -24,7 +24,7 @@ import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
-import { fmtResource } from './lib/fmt.js';
+import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
@@ -3311,6 +3311,30 @@ Republic Fleet Command Mindlink`;
   const prec = (state) => M('Missile Guidance Computer II', state, 'Missile Precision Script');
   check('mgc', 'precision script leaves velocity at the bare value',
         missile([prec('overheated'), prec('overheated')], []).velocity, 5625, TOL);
+
+  // ── the range chip's tooltip ────────────────────────────────────────────────────────────────
+  // The chip shows the EXPECTED distance, which is a distance the missile never actually flies:
+  // flight time is fractional, travel is in whole-second ticks, so the last tick is a coin flip.
+  // pyfa's maxRange column names the two real outcomes and this reproduces its wording and its
+  // rounding — the two strings sit side by side on the user's screen, so a formatting difference
+  // reads as a calculation difference. `sig3` was diffed against pyfa's own formatAmount(prec=3)
+  // over the spread below; every value agreed.
+  check('mgc', 'sig3 keeps 3 digits but never rounds past the point', sig3(117.988), '118');
+  check('mgc', 'sig3 does not round a 4-digit value to 1420', sig3(1417.5), '1418');
+  check('mgc', 'sig3 drops a trailing zero like pyfa does', sig3(28.013), '28');
+  check('mgc', 'sig3 below ten keeps two decimals', sig3(9.874), '9.87');
+  check('mgc', 'bare Jackdaw range tooltip',
+        missileRangeTip(bare), 'Missile flight range\n35.5% chance to fly 28km\n64.5% chance to fly 33.6km');
+  // The percentages come off one rounded figure, so they cannot fail to sum to 100.
+  check('mgc', 'tooltip percentages sum to 100',
+        missileRangeTip({ isMissile: true, lowerRange: 1e5, higherRange: 1.1e5, higherChance: 1 / 3 })
+          .split('\n').slice(1).reduce((s, l) => s + parseFloat(l), 0), 100, 0);
+  // A whole flight time has one outcome; naming it "100% chance" is the chip repeating itself.
+  check('mgc', 'an exact flight time drops the split',
+        missileRangeTip({ isMissile: true, lowerRange: 1e5, higherRange: 1e5, higherChance: 0 }), 'Missile flight range');
+  // Null, not a string: a turret keeps its own optimal/falloff wording.
+  check('mgc', 'a turret gets no missile tooltip',
+        missileRangeTip({ optimal: 30, falloff: 10 }) === null ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

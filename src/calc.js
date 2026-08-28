@@ -2953,6 +2953,10 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
           isMissile: true,
           optimal:  Math.round(missileRange / 1000 * 10) / 10,
           falloff:  0,
+          // Unrounded, in metres, so the range chip's tooltip can name the two zones the way pyfa's
+          // does. `optimal` above is their expected value and hides that a missile's last second of
+          // flight is a coin flip — which is the whole reason pyfa spells it out.
+          lowerRange, higherRange, higherChance,
           velocity: Math.round(finalVel),
           flightTime: Math.round(finalFlight),
           explosionVelocity: Math.round(aoeVel),

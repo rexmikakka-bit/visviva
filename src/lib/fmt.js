@@ -30,3 +30,38 @@ export function fmtResource(v, sig = 4) {
   if (s.includes('.')) s = s.replace(/\.?0+$/, '');
   return s + UNITS[i][0];
 }
+
+/**
+ * pyfa's `roundToPrec(v, 3)`: three significant digits, but never rounded past the decimal point —
+ * 117.988 is 118, not 120. Reproduced rather than approximated because these strings sit next to
+ * pyfa's on the user's screen and a disagreement here reads as a calculation disagreement.
+ *
+ * Distinct from `fmtResource` above, which carries four digits and adds a k/M suffix itself.
+ */
+export function sig3(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n === 0) return '0';
+  return String(+n.toFixed(Math.max(0, 2 - Math.floor(Math.log10(Math.abs(n))))));
+}
+
+/**
+ * The range chip's tooltip for a missile launcher.
+ *
+ * A missile's flight time is fractional but it travels in whole-second ticks, so the final tick
+ * either happens or it does not: the chip's single figure is the EXPECTED distance, which is a
+ * distance the missile never actually flies. pyfa spells the two real outcomes out
+ * (`gui/builtinViewColumns/maxRange.py`) and so do we — same wording, same rounding.
+ *
+ * Both percentages are derived from the SAME rounded figure so they always sum to 100. A whole
+ * flight time has only one outcome and drops the split entirely, rather than printing "100% chance
+ * to fly 116km", which is just the chip repeating itself.
+ *
+ * Null for anything that is not a missile, so the caller keeps its own optimal/falloff wording.
+ */
+export function missileRangeTip(e) {
+  if (!e?.isMissile || e.higherChance == null) return null;
+  const p = +(e.higherChance * 100).toFixed(1);
+  if (!(p > 0)) return 'Missile flight range';
+  return `Missile flight range\n${sig3(100 - p)}% chance to fly ${sig3(e.lowerRange / 1000)}km`
+       + `\n${sig3(p)}% chance to fly ${sig3(e.higherRange / 1000)}km`;
+}

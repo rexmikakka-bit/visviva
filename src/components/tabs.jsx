@@ -7,6 +7,7 @@ import modulesData from "../data/modules.json";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
+import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
 import { useRowSwipe } from "../lib/use-row-swipe.js";
@@ -819,7 +820,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                             fal=Math.round(((a.falloff??a.falloffEffectiveness??0))*(ca.fallofMultiplier??1)/1000*10)/10;
                           }
                           if(!(opt>0||fal>0)) return;
-                          const tip=(fal>0?"Optimal + falloff — km":"Optimal range — km")
+                          const tip=(missileRangeTip(e)??(fal>0?"Optimal + falloff — km":"Optimal range — km"))
                             +(heated!=null?", OH: overheated optimal":"");
                           push('rng',tip,<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km
                             {heated!=null&&<span style={{color:C.overheat,marginLeft:6}}>OH: {heated} km</span>}</span>);

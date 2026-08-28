@@ -85,6 +85,7 @@ export function Hint({ text, children, style }) {
       <div style={{ position: "fixed", left, width: w, ...place, zIndex: 400, pointerEvents: "none",
                     background: C.surfaceAlt, border: `1px solid ${C.borderStrong}`, borderRadius: 8,
                     padding: "7px 9px", fontSize: 11, lineHeight: 1.35, color: C.text,
+                    whiteSpace: "pre-line",
                     boxShadow: "0 6px 20px rgba(0,0,0,.55)" }}>{text}</div>,
       document.body);
   }
