@@ -13,8 +13,17 @@ import { getCachedPrices, fetchPrices } from "../prices.js";
 // turrets. Projected Links/Incoming list each source fit + hull with accurate values.
 //
 // Rasterised with html2canvas, which is BUNDLED (not a CDN) so this works offline — the
-// shipped app runs from a webview with no network. Do not swap it for a CDN script, and
-// do not add a Google-Fonts <link>: the card uses the system font stack on purpose.
+// shipped app runs from a webview with no network. Do not swap it for a CDN script, and do
+// not add a Google-Fonts <link>: the card draws in the app's own bundled face (--sans).
+//
+// ⚠️ That rasteriser constrains what the card may use, because it does NOT lay text out the
+// way the browser does. `letter-spacing` is inherited here from :root, and any non-zero value
+// puts html2canvas on a per-CHARACTER path (`renderTextWithLetterSpacing`): it splits the run
+// into graphemes, takes each one's x from a DOM Range, and then draws it with `ctx.fillText`.
+// A canvas 2D context has no way to express `font-variant-numeric` — html2canvas's
+// `createFontStyle` filters the variant list down to `normal`/`small-caps` — so any figure is
+// PLACED at its DOM position but DRAWN with its proportional glyph. See the card root for what
+// that cost us. Anything typographic that canvas cannot reproduce belongs off this element.
 
 const T = {
   outer: "#080b10", card: "#0d121a", panel: "#141a24",
@@ -455,6 +464,14 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
       width: CARD_W, minHeight: 720, display: "flex", alignItems: "stretch", overflow: "hidden",
       background: T.card, color: T.text, borderRadius: 14, border: "1px solid rgba(255,255,255,.08)",
       fontFamily: "var(--sans)", boxSizing: "border-box",
+      // Tabular figures are inherited from :root and must be switched OFF for the raster — see the
+      // header note. The app wants them (right-aligned stat columns shuffle without them), but this
+      // element is drawn by canvas, which cannot do them, so keeping them only desynchronises the
+      // measured position from the painted glyph. Saira makes that gap enormous: its proportional
+      // `1` is 389/1000em against a ~666 tabular slot, so every `1` was painted flush-left in a slot
+      // 1.7x its width and left a hole after it — "519" read as "51 9". Nothing here needs them,
+      // because the resist grid aligns its columns with grid tracks rather than with digit widths.
+      fontVariantNumeric: "normal",
     }}>
       {/* ── LEFT: loadout ── */}
       <div style={{ width: 500, flexShrink: 0, padding: "24px 22px 18px", display: "flex", flexDirection: "column", borderRight: `1px solid ${T.line}` }}>
