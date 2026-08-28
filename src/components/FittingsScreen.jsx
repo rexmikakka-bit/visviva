@@ -15,7 +15,7 @@ import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
-import { IconPencil, IconCopy, IconClose, IconSearch } from "./glyphs.jsx";
+import { IconPencil, IconCopy, IconClose, IconSearch, IconTag } from "./glyphs.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
@@ -1010,6 +1010,12 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     </div>);
   }
 
+  // The saved record behind the fit that's open, matched the same way every list marks its active
+  // row. A fit that isn't in the DB yet has no id to hang a tag on, so the header's tag control is
+  // simply absent for it rather than opening a sheet that could not save anything.
+  const activeFitRecord=activeFit?(fitsDB[activeFit.ship]||[]).find(f=>f.name===activeFit.fitName):null;
+  const activeFitTags=activeFitRecord?tagsOf(activeFitRecord):[];
+
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",padding:"6px 12px 0",gap:8}}>
@@ -1030,7 +1036,25 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
             </button>
           }
         </div>
-        <div style={{width:70,flexShrink:0}}/>
+        {/* This 70px was a bare spacer balancing the "‹ Fits" button so the name sits centred. It
+            keeps that width — the name must not shift depending on whether a fit is tagged — but the
+            space now carries the one verb that had no home on this screen: tagging was reachable only
+            from the fit BROWSER, so filing the fit you were actually working on meant leaving it.
+            Opens the same TagSheet the browser rows do, against the same fit record. */}
+        <div style={{width:70,flexShrink:0,display:"flex",justifyContent:"flex-end",alignItems:"center"}}>
+          {activeFitRecord&&(()=>{
+            const tint=activeFitTags.length?colorForTag(activeFitTags[0],tagColors):null;
+            return(<button onClick={()=>{haptic("light");setTagSheet({ship:activeFit.ship,fitId:activeFitRecord.id});}}
+              className="press" title={activeFitTags.length?`Tags: ${activeFitTags.join(", ")}`:"Tag this fit"}
+              aria-label={activeFitTags.length?`Edit tags (${activeFitTags.length})`:"Tag this fit"}
+              style={{display:"flex",alignItems:"center",gap:3,padding:"4px 7px",lineHeight:1,cursor:"pointer",
+                      borderRadius:7,background:tint?`${tint}1f`:C.surfaceAlt,
+                      border:`1px solid ${tint?`${tint}66`:C.border}`,color:tint??C.textMid}}>
+              <IconTag size={14}/>
+              {activeFitTags.length>1&&<span style={{fontSize:10,fontWeight:800}}>{activeFitTags.length}</span>}
+            </button>);
+          })()}
+        </div>
       </div>
       <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===t?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{_SUBTAB_LABEL[t]}</button>)}</div>
     </div>
@@ -1049,5 +1073,6 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs}/>}
       </div>
     </div>
+    {tagSheetEl}
   </div>);
 }

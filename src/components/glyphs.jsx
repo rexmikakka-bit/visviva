@@ -99,6 +99,15 @@ export const IconClose = (p) => (
   <Glyph {...p}><path d="M6.5 6.5l11 11"/><path d="M17.5 6.5l-11 11"/></Glyph>
 );
 
+// The eyelet is a stroked circle, not the filled dot the usual luggage-tag glyph uses — same reason
+// nothing else here is filled (see the header): a fill needs to match whatever surface it lands on.
+export const IconTag = (p) => (
+  <Glyph {...p}>
+    <path d="M3.5 11.6V5A1.5 1.5 0 0 1 5 3.5h6.6a1.5 1.5 0 0 1 1.06.44l7.9 7.9a1.5 1.5 0 0 1 0 2.12l-6.6 6.6a1.5 1.5 0 0 1-2.12 0l-7.9-7.9A1.5 1.5 0 0 1 3.5 11.6Z"/>
+    <circle cx="7.9" cy="7.9" r="1.35"/>
+  </Glyph>
+);
+
 // The menu rows set no colour of their own, so the glyph would otherwise inherit the document
 // default rather than sitting a step below the label the way the emoji visually did.
 export function MenuGlyph({icon: Icon}) {
