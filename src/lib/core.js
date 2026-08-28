@@ -857,6 +857,11 @@ const SLOT_ROOT={high:9,mid:9,low:9,rigs:1111};
 // walks, so buildNode falls back to the first item it can find beneath the node.
 const MT_GROUP_ICON={};
 for(const [gid,g] of Object.entries(marketTreeData.g)) if(g.i!=null) MT_GROUP_ICON[gid]=g.i;
+// CCP nominates Bomb Launcher I for "Turrets & Launchers" (10), and at 28px that art is close enough
+// to a Core Probe Launcher to be read as one — which sends people to the wrong branch, since probe
+// launchers live under Scanning, not here. A 1400mm Howitzer is unmistakably a gun and is the widest
+// thing the group covers. market-tree.json is generated, so the override belongs here, not there.
+MT_GROUP_ICON['10']=2961;
 
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
