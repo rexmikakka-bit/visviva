@@ -735,6 +735,15 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       should be offering a delete during a reorder anyway. */}
                   {swipeable&&!dragUI&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
                     aria-label="Remove"
+                    // This button is a SIBLING of the row, not a child, so useTabSwipe's standDownFor
+                    // walks up from it and never meets the row's own data-rowswipe — it read the tap as
+                    // a candidate tab swipe. A thumb coming off the reveal gesture is still drifting,
+                    // and 8px of that locks the axis to "x" and transforms the whole panel, which moves
+                    // the button out from under the finger and makes Android drop the click. That is
+                    // the "first tap on Remove does nothing, the second works" the testers hit.
+                    // "open" (not "closed") because this is only ever reachable once the row IS open,
+                    // and a touch here belongs to the row machinery in BOTH directions.
+                    data-rowswipe="open"
                     style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
                             alignItems:"center",justifyContent:"center",
                             background:C.danger,color:"#fff",cursor:"pointer"}}>
