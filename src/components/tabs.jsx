@@ -1092,13 +1092,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const ehpExact=exactCells.has("ehp");
   const ehpCol=ehpExact?"62px":"44px";
   const layers=[
-    {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
+    {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),hpRaw:cs.shieldHP??0,ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
      em:r.shield?.em??0,th:r.shield?.th??0,kin:r.shield?.kin??0,exp:r.shield?.exp??0,
      regen:`${fmtF(cs.passiveShieldRegen??0)} HP/s`, repLabel:cs.shieldRepPS>0?`Boost: ${fmtF(cs.shieldRepPS)} HP/s`:""},
-    {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
+    {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), hpRaw:cs.armorHP??0, ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
      em:r.armor?.em??0, th:r.armor?.th??0, kin:r.armor?.kin??0, exp:r.armor?.exp??0,
      regen:cs.armorRepPS>0?`Rep: ${fmtF(cs.armorRepPS)} HP/s`:"", repLabel:""},
-    {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
+    {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  hpRaw:cs.hullHP??0,  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
      em:r.hull?.em??0,  th:r.hull?.th??0,  kin:r.hull?.kin??0,  exp:r.hull?.exp??0,
      regen:cs.hullRepPS>0?`Rep: ${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
   ];
@@ -1204,7 +1204,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         <div style={{display:"grid",gridTemplateColumns:`52px 1fr 1fr 1fr 1fr ${ehpCol}`,padding:"5px 12px 4px",borderBottom:`1px solid ${C.border}`}}>
           <span/>{Object.values(DMG).map(d=><span key={d.label} style={{fontSize:10,fontWeight:700,color:d.color,textAlign:"center"}}>{d.label}</span>)}<span style={{fontSize:10,fontWeight:700,color:C.textMute,textAlign:"right"}}>EHP</span>
         </div>
-        {layers.map((layer,li)=>(<div key={layer.key}>
+        {layers.map((layer,li)=>{
+        const layerMult=ehpForProfile(1,{em:layer.em,th:layer.th,kin:layer.kin,exp:layer.exp});
+        return (<div key={layer.key}>
           <div style={{display:"grid",gridTemplateColumns:`52px 1fr 1fr 1fr 1fr ${ehpCol}`,padding:"5px 12px",alignItems:"center",borderBottom:`1px solid ${C.border}`}}>
             <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{layer.label}</span>
             {[{v:layer.em,d:DMG.em},{v:layer.th,d:DMG.th},{v:layer.kin,d:DMG.kin},{v:layer.exp,d:DMG.exp}].map(({v,d})=>(
@@ -1221,12 +1223,21 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               {ehpExact?fmtExact(layer.ehpRaw):layer.ehp}
             </span>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"52px 1fr auto",padding:"3px 12px",borderBottom:(layers.length-1>li)?`1px solid ${C.border}`:"none",background:`${C.surfaceAlt}88`}}>
-            <span style={{fontSize:9,color:C.textMute}}>HP: {layer.hp}</span>
+          {/* Raw HP rides the same exact-value toggle as the EHP beside it: the two are the same
+              number before and after resists, so seeing one rounded and the other exact invites
+              arithmetic that does not come out. The column goes content-sized while expanded — a
+              capital's "1,234,567" does not fit the 52px that "1.2M" does. */}
+          <div style={{display:"grid",gridTemplateColumns:`${ehpExact?"auto":"52px"} 1fr auto`,padding:"3px 12px",borderBottom:(layers.length-1>li)?`1px solid ${C.border}`:"none",background:`${C.surfaceAlt}88`}}>
+            <span onClick={()=>toggleExact("ehp")} title={fmtExact(layer.hpRaw)}
+                  style={{fontSize:9,color:C.textMute,cursor:"pointer",whiteSpace:"nowrap",fontVariantNumeric:"tabular-nums"}}>
+              HP: {ehpExact?fmtExact(layer.hpRaw):layer.hp}
+            </span>
             <span style={{fontSize:9,color:C.textMute,textAlign:"center"}}>{layer.regen||layer.repLabel||""}</span>
-            <span style={{fontSize:9,fontWeight:700,color:C.rig,textAlign:"right"}}>{ehpForProfile(1,{em:layer.em,th:layer.th,kin:layer.kin,exp:layer.exp}).toFixed(2)}x</span>
+            <Hint text={`Resist multiplier — HP × this = EHP against ${dmgProfile.name}`} style={{justifyContent:"flex-end"}}>
+              <span style={{fontSize:9,fontWeight:700,color:C.rig}}>{layerMult.toFixed(2)}x</span>
+            </Hint>
           </div>
-        </div>))}
+        </div>);})}
         </>}
       </div>
 
