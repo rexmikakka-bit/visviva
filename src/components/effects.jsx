@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, ItemDetailSheet, mutaLabel } from "./ui.jsx";
+import { BottomSheet, ItemDetailSheet, InfoButton, mutaLabel } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { byRecentlyModified } from "../lib/fit-order.js";
@@ -172,6 +172,7 @@ function BoosterPickerSheet({onAdd,onClose}){
   const[slotDrill,setSlotDrill]=useState(null);
   const[catDrill,setCatDrill]=useState(null);
   const[search,setSearch]=useState("");
+  const[infoItem,setInfoItem]=useState(null);   // {typeID,name} for the shared Info/Variations sheet
   const slotData=slotDrill?BOOSTER_DATA[slotDrill]??{}:{};
   const catNames=Object.keys(slotData);
   const drugs=catDrill?(slotData[catDrill]??[]):[];
@@ -189,7 +190,15 @@ function BoosterPickerSheet({onAdd,onClose}){
     onClose();
   };
 
-  return(<BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh">
+  // The trailing "+" these rows used to carry said nothing the row itself wasn't already saying —
+  // tapping anywhere adds the booster. An info button in its place makes the description and the
+  // grade family (Synth / Standard / Improved / Strong) readable BEFORE you commit, which is the one
+  // thing the sheet could not do. Same swap, same reasoning, as the implant browser's rows.
+  const InfoBtn=({name})=>{const t=tidByName(name);return t?<InfoButton title={`About ${name}`}
+    onClick={e=>{e.stopPropagation();haptic();setInfoItem({typeID:t,name});}}/>:null;};
+
+  return(<>
+  <BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh">
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
         <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
@@ -210,7 +219,8 @@ function BoosterPickerSheet({onAdd,onClose}){
         <div key={n} onClick={()=>addDrug(n)}
           style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
           <BoosterIcon name={n}/>
-          <div style={{fontSize:13,fontWeight:600,color:C.text}}>{n}</div>
+          <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,color:C.text}}>{n}</div>
+          <InfoBtn name={n}/>
         </div>
       ))}
     </div>}
@@ -251,10 +261,17 @@ function BoosterPickerSheet({onAdd,onClose}){
             return<div style={{fontSize:10,color:C.warning,marginTop:2}}>{se.length} side effect{se.length>1?"s":""} &middot; {Math.round(chance*100)}% chance</div>;
           })()}
         </div>
-        <span style={{color:C.textMute}}>+</span>
+        <InfoBtn name={drugName}/>
       </div>
     ))}
-  </BottomSheet>);
+  </BottomSheet>
+  {/* A SIBLING of the picker, not a child — nesting it would put a second sheet inside the one
+      being scrolled, and the picker stays mounted underneath so closing the card returns you to
+      the same place in the list. Same shape as the implant and module browsers. */}
+  {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name}
+    actions={[{label:"Add booster",primary:true,onClick:()=>addDrug(infoItem.name)}]}
+    onSwap={v=>addDrug(v.name)} onClose={()=>setInfoItem(null)}/>}
+  </>);
 }
 
 // `pinned` is an optional shortcut list — [{ship,fit}] — shown above the search box under its own
