@@ -3457,7 +3457,15 @@ Republic Fleet Command Mindlink`;
   // A module that is fitted but not currently running still shows what it would do; gating the
   // readout on 'active' (as the rest of section 8b does) blanks it the moment you turn it off.
   check('str', 'an idle module still reads', txt('seboIdle'), '30/48%');
-  check('str', 'an OFFLINE module reads nothing', txt('seboOff'), 'undefined');
+  // OFFLINE reads the same, and this check used to assert the opposite. The old rule was "offline
+  // does nothing, so it says nothing", which sounds right and is not: withholding the readout does
+  // not leave the row blank, it drops the row back to RAW TYPE ATTRIBUTES — so the module went on
+  // making a claim, just an unskilled, unrigged, unlinked one. An offlined Skirmish Command Burst
+  // advertised its bare 30 km rather than the 49.4 km it actually has fitted. Asserted as EQUAL to
+  // the idle row rather than against a literal, because the invariant is that toggling a module off
+  // never restates its range or strength; a drifting fixture can then not pass on one side only.
+  check('str', 'an OFFLINE module reads the same as an idle one', txt('seboOff'), txt('seboIdle'));
+  check('str', 'and that reading is the fitted figure, not raw type data', txt('seboOff'), '30/48%');
   // Only effects that land on ANOTHER ship get a readout. A local tracking computer, tracking
   // enhancer, missile guidance computer or signal amplifier is already fully visible in this fit's
   // own turret/missile/targeting figures, so restating it on the row is noise. Their REMOTE

@@ -3053,13 +3053,21 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   };
 
   for (const { slot, fitItem } of modItems) {
-    if (!fitItem || !isOnline(slot.state)) continue;
+    if (!fitItem) continue;
     if (slotEngineStats.has(slot)) continue;
 
-    // Gated on ONLINE, not active. A Tracking Enhancer, Signal Amplifier, Missile Guidance Enhancer
+    // NOT gated on state at all. A Tracking Enhancer, Signal Amplifier, Missile Guidance Enhancer
     // and Warp Core Stabilizer are passive lows that never enter the 'active' state, and they are
     // exactly the modules whose strength you want to read off the row. Everything below this point
     // still requires 'active', as it always did.
+    //
+    // OFFLINE reaches here too, and must: optimal, falloff and tracking are what the module WOULD
+    // project, and turning it off does not renegotiate its skills, rigs or links. Excluding it did
+    // not blank the readout, which would at least have looked deliberate — it dropped the row back
+    // to raw type attributes, so an offlined Skirmish burst advertised its bare 30 km instead of the
+    // 49.4 km it has fitted. The engine already computes these correctly for an offline module (it
+    // stops such a module being an effect SOURCE, but still applies everything aimed AT it), so this
+    // is only about which rows are allowed to read the answer.
     const strength = moduleStrengthStats(fitItem);
     if (!isActive(slot.state)) {
       // Range/tracking too, not just strength — see rangeDisplayStats. Everything BELOW this point
