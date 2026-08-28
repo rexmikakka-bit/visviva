@@ -862,6 +862,12 @@ for(const [gid,g] of Object.entries(marketTreeData.g)) if(g.i!=null) MT_GROUP_IC
 // launchers live under Scanning, not here. A 1400mm Howitzer is unmistakably a gun and is the widest
 // thing the group covers. market-tree.json is generated, so the override belongs here, not there.
 MT_GROUP_ICON['10']=2961;
+// Same problem one branch over: CCP nominates Data Analyzer I for "Scanning Equipment" (1708), whose
+// art says "hacking", not "scanning" — and hacking modules are one small child of this group
+// (Analyzers), not what it is for. A Scan Acquisition Array is the readable stand-in. Note this is
+// the SAME art its own child "Scanning Upgrades" (1709) carries; the two are never on screen at once
+// and matching art down the branch reads as confirmation rather than confusion.
+MT_GROUP_ICON['1708']=33176;
 
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
