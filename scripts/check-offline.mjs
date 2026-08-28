@@ -102,7 +102,7 @@ const pngs = walk(DIST).length ? readdirSync(join(DIST, 'assets')).filter((f) =>
 console.log(`\nbundled images in dist/: ${pngs}`);
 if (pngs < 100) {
   console.log('\nFEWER THAN 100 BUNDLED IMAGES — the art is NOT in the build.');
-  console.log('Run `node scripts/bundle-icons.mjs` and commit src/assets/.');
+  console.log('Run `node scripts/fetch-art.mjs` and commit src/assets/.');
   process.exit(1);
 }
 

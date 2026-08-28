@@ -2,8 +2,18 @@ import TYPE_ICONS from "../data/type-icons.json";
 
 // ── Icons & renders ─────────────────────────────────────────────────────────────
 // These are BUNDLED from src/assets/, not fetched. The shipped app has to work offline, so the art
-// must be part of the build. Populate the folders with `node scripts/bundle-icons.mjs` (reads a pyfa
-// checkout) and commit them; the app then needs no network for images.
+// must be part of the build. Populate the folders with `node scripts/fetch-art.mjs` (downloads from
+// CCP's image server) and commit them; the app then needs no network for images.
+//
+// `scripts/bundle-icons.mjs` copies the same folders out of a pyfa checkout and is what they were
+// FIRST built from, but pyfa's art is its ceiling — 32px icons, 64px renders — which testers read as
+// blurry on a 3x phone panel. fetch-art.mjs supersedes it for icons and renders; bundle-icons.mjs is
+// kept because it is the only thing that maps pyfa's graphicID-named renders to typeIDs, and it
+// needs no network.
+//
+// ⚠ The files under renders/ and hero-renders/ are JPEG bytes with a .png NAME. CCP's render
+// endpoint serves JPEG; the extension is kept so these globs stay single-format, and the browser
+// dispatches on content sniffing, not on the name. Nothing is lost — the renders never had alpha.
 //
 // Two things that were previously broken — don't re-break them:
 //
@@ -22,11 +32,11 @@ import TYPE_ICONS from "../data/type-icons.json";
 const _ICON_FILES      = import.meta.glob("../assets/icons/*.png",      { eager: true, query: "?url", import: "default" });
 const _RENDER_FILES    = import.meta.glob("../assets/renders/*.png",    { eager: true, query: "?url", import: "default" });
 // Per-typeID icons downloaded from images.evetech.net for types that carry no iconID in CCP's data
-// (drones, fighters, deployables). Keyed by typeID rather than iconID — see bundle-icons.mjs.
+// (drones, fighters, deployables). Keyed by typeID rather than iconID — see fetch-art.mjs.
 const _TYPE_ICON_FILES = import.meta.glob("../assets/type-icons/*.png", { eager: true, query: "?url", import: "default" });
-// 256px renders for the one place a hull's art is shown at the width of the screen. pyfa has nothing
-// bigger than 64 to copy, so these were downloaded once — see scripts/fetch-hero-renders.mjs, which
-// also records why 256 and not 512.
+// 256px renders for the one place a hull's art is shown at the width of the screen — twice the 128px
+// of renders/ above, because this one is a picture rather than a label. See
+// scripts/fetch-hero-renders.mjs, which also records why 256 and not 512.
 const _HERO_FILES      = import.meta.glob("../assets/hero-renders/*.png", { eager: true, query: "?url", import: "default" });
 
 const _iconByID = {};      // iconID -> bundled url

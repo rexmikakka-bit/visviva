@@ -7,7 +7,15 @@
  *     node scripts/bundle-icons.mjs --pyfa <path>   # explicit path to a pyfa checkout
  *     node scripts/bundle-icons.mjs --dry-run
  *
- * Run this ONCE, commit src/assets/, and it never needs running again unless CCP adds new art.
+ * ⚠ SUPERSEDED FOR RESOLUTION — use scripts/fetch-art.mjs instead, unless you specifically need this
+ * one's offline/graphicID behaviour. pyfa's art is its ceiling (32px icons, 64px renders) and running
+ * this over the current assets DOWNGRADES them: the bundle is now 64px icons and 128px renders,
+ * fetched from CCP's image server because there is nothing bigger in pyfa to copy. Testers reported
+ * the pyfa-sized art as blurry, which is what prompted the change.
+ *
+ * Still worth keeping for two reasons: it needs no network, and it is the only thing that knows how
+ * to map pyfa's graphicID-named render files onto typeIDs (see below) — fetch-art.mjs sidesteps that
+ * entirely because the image server is keyed by typeID already.
  *
  * ────────────────────────────────────────────────────────────────────────────────
  * WHY

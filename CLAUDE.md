@@ -55,10 +55,10 @@ neither is needed to run, develop or test the app.
 | `node scripts/check-effect-coverage.mjs` | fails if a data regen adds a new silent no-op effect |
 | `npm run verify` | all of the above — the gate CI runs |
 
-**A pyfa SOURCE checkout** is needed only to regenerate the bundled art, and only if CCP adds new
-art. Take the source ZIP from <https://github.com/pyfa-org/Pyfa>, extract to `Pyfa-master/`, then
-`node scripts/bundle-icons.mjs` (which also wants `eve.db`). This is the same clone the oracle needs,
-and its version is enforced — see "Driving pyfa's eos engine directly".
+**A pyfa SOURCE checkout** is needed only by the oracle and by `bundle-icons.mjs` (see "Art is
+bundled" below — it is no longer the art path). Take the source ZIP from
+<https://github.com/pyfa-org/Pyfa>, extract to `Pyfa-master/`. Its version is enforced — see
+"Driving pyfa's eos engine directly".
 
 **`eve.db`** is needed only to regenerate the dogma bundles. It ships inside pyfa's **Windows release**
 ZIP (a *different* download from the source above) at `app/eve.db`, from
@@ -69,9 +69,31 @@ pyfa's `eve.db` is a different, much more compact schema — see the note under 
 
 ### Art is bundled, not fetched
 
-Item and ship art is committed (~6.5 MB) so the app works fully offline and does not hammer anyone's
+Item and ship art is committed (~19.5 MB) so the app works fully offline and does not hammer anyone's
 image CDN. Roughly 1,000 types have no art and fall back to a generic glyph; that is expected, not a
-missing file. `node scripts/bundle-icons.mjs` regenerates it and needs both optional downloads above.
+missing file.
+
+`node scripts/fetch-art.mjs` regenerates icons/renders/type-icons from CCP's image server and needs
+**no** local downloads — just a network. It is idempotent (it reads each file's real pixel width and
+skips anything already at target), so a re-run after a CCP art drop costs only the new files.
+`fetch-hero-renders.mjs` does the 256px info-sheet renders separately.
+
+**`bundle-icons.mjs` is the OLD path and is superseded for resolution.** It copies from a pyfa
+checkout, and pyfa's art is its ceiling: 32px icons and 64px renders, which testers reported as
+blurry at the 26-30 CSS px the module rows draw them at (2x is already upscaling, 3x visibly soft).
+The bundled art is now 64px icons / 128px renders / 128px type-icons, all from CCP. Keep the script:
+it is the only thing that maps pyfa's graphicID-named render files onto typeIDs, and it works offline.
+
+Two traps here:
+
+- **Files under `renders/` and `hero-renders/` are JPEG bytes with a `.png` name.** CCP's render
+  endpoint serves JPEG (the icon endpoint still serves PNG). The extension is kept so `icons.js`'s
+  globs stay single-format, and browsers dispatch on content sniffing rather than the name.
+  `hero-renders/` has been like this since it was created. Nothing is lost: pyfa's renders were
+  colour type 2 (RGB, **no alpha**), so there was never transparency to preserve.
+- **Icons are keyed by iconID; the image server is keyed by typeID.** 16,829 types share 2,419
+  icons, so fetching per type would be ~97 MB of near-identical art. `fetch-art.mjs` fetches one
+  representative type per iconID (falling through to siblings if it 400s) and saves `<iconID>.png`.
 
 ### Branch, don't push to main
 
