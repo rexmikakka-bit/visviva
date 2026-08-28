@@ -40,7 +40,65 @@ const PRESETS=[
   {id:"none", label:"Clear All", col:C.danger,map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,0]))},
 ];
 
-function SkillsPanel({skills,setSkills}){
+// A named copy of the skill sheet. The sheet in this panel is app-wide and singular, so aligning it
+// to one character is destructive to whatever was there before — this is the "keep that one too"
+// escape hatch, and it is what makes the per-fit Pilot selector able to offer anything beyond All V,
+// Alpha and a linked ESI character.
+//
+// Saved as a SNAPSHOT, not a live link: loading a profile copies it into the sheet, and editing the
+// sheet afterwards does not write back. That is the same contract as the implant loadouts next door,
+// and it is the one that makes "load, tweak, compare" safe.
+function SkillProfilesPanel({skills,setSkills,profiles,setProfiles}){
+  const[naming,setNaming]=useState(false);
+  const[newName,setNewName]=useState('');
+  const[editing,setEditing]=useState(null);
+  const[editName,setEditName]=useState('');
+  const save=()=>{
+    const n=newName.trim(); if(!n)return;
+    setProfiles(prev=>[...prev,{id:String(Date.now()),name:n,skills:{...skills}}]);
+    setNewName('');setNaming(false);
+  };
+  const rename=id=>{
+    const n=editName.trim();
+    if(n)setProfiles(prev=>prev.map(p=>p.id===id?{...p,name:n}:p));
+    setEditing(null);setEditName('');
+  };
+  const inp={padding:'6px 10px',background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:7,color:C.text,fontSize:12,outline:'none'};
+  return(
+    <div style={{marginBottom:14}}>
+      {naming
+        ?<div style={{display:'flex',gap:6}}>
+           <input autoFocus value={newName} onChange={e=>setNewName(e.target.value)}
+             onKeyDown={e=>{if(e.key==='Enter')save();if(e.key==='Escape')setNaming(false);}}
+             placeholder="Profile name..." style={{...inp,flex:1,minWidth:0}}/>
+           <button onClick={save} style={{padding:'6px 12px',background:C.accent,border:'none',borderRadius:7,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button>
+           <button onClick={()=>setNaming(false)} style={{padding:'6px 10px',background:'none',border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:12,cursor:'pointer'}}>Cancel</button>
+         </div>
+        :<button onClick={()=>setNaming(true)} style={{width:'100%',padding:'9px 0',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:'pointer'}}>
+           Save As Skill Profile…
+         </button>}
+      {profiles.map(p=>(
+        <div key={p.id} style={{display:'flex',alignItems:'center',gap:8,padding:'9px 12px',background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,marginTop:6}}>
+          {editing===p.id
+            ?<input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
+               onKeyDown={e=>{if(e.key==='Enter')rename(p.id);if(e.key==='Escape')setEditing(null);}}
+               onBlur={()=>rename(p.id)} style={{...inp,flex:1,minWidth:0}}/>
+            :<div style={{flex:1,minWidth:0}}>
+               <div style={{fontSize:13,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</div>
+               <div style={{fontSize:10,color:C.textMute,marginTop:1}}>
+                 {SKILL_CATALOG.filter(e=>(p.skills?.[e.key]??5)>0).length} trained skills
+               </div>
+             </div>}
+          <button onClick={()=>setSkills({...p.skills})} style={{padding:'5px 11px',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}}>Load</button>
+          <button onClick={()=>{setEditing(p.id);setEditName(p.name);}} aria-label={`Rename ${p.name}`} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.textMute,flexShrink:0}}>&#9998;</button>
+          <button onClick={()=>setProfiles(prev=>prev.filter(x=>x.id!==p.id))} aria-label={`Delete ${p.name}`} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.danger,flexShrink:0}}>&#10005;</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SkillsPanel({skills,setSkills,profiles,setProfiles}){
   // Closed by default — 388 skills across 18 groups is far too much to scroll past otherwise.
   const[open,setOpen]=useState({});
   const toggle=g=>setOpen(o=>({...o,[g]:!o[g]}));
@@ -50,6 +108,7 @@ function SkillsPanel({skills,setSkills}){
   return(
     <div>
       <EsiSkillAlignPanel setSkills={setSkills}/>
+      <SkillProfilesPanel skills={skills} setSkills={setSkills} profiles={profiles} setProfiles={setProfiles}/>
       <div style={{display:"flex",gap:8,marginBottom:14}}>
         {/* Highlight reflects the ACTUAL state, not the last click: a preset is lit only while every
             skill still matches it, so it goes dark again the moment you adjust one. "All V"
@@ -127,7 +186,7 @@ function ToggleRow({label,note,on,onChange}){
   </div>);
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
+export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
@@ -138,7 +197,7 @@ export function SettingsOverlay({onClose,skills,setSkills,factorInReload,setFact
         {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"interface",label:"Interface"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
       </div>
       <div style={{flex:1,overflowY:"auto",padding:16}}>
-        {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills}/>}
+        {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills} profiles={skillProfiles} setProfiles={setSkillProfiles}/>}
         {section==="backup"&&<BackupPanel/>}
         {section==="esi"&&<EsiSettingsPanel setSkills={setSkills}/>}
         {section==="market"&&<div>

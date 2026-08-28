@@ -28,7 +28,7 @@ import { fmtResource } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
-import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
+import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
@@ -2402,6 +2402,43 @@ Republic Fleet Command Mindlink`;
   check('pilot', 'an uncached character cannot be named', D(rexSheet, {}), 'Custom');
   check('pilot', 'the alpha ceiling is named', D(ALPHA_SKILLS), 'Alpha');
   check('pilot', 'a hand-edited sheet is Custom', D({ ...SKILLS_ALL_V, gunnery: 3 }), 'Custom');
+
+  // SAVED SKILL PROFILES — `profile:<id>`, a sheet the user named in Settings → Skills. Resolved from
+  // a list the caller passes in, exactly like the ESI cache, so this file stays free of localStorage.
+  const profs = [{ id: '1700000000000', name: 'Alt Miner', skills: { gunnery: 3 } }];
+  const P = (p, fb = other) => resolvePilotSkills(p, { appSkills: me, esiSkills: cached, profiles: profs, fallback: fb });
+  check('pilot', 'profile:<id> resolves to that saved sheet', P(profilePilot('1700000000000'))?.gunnery, 3, 0);
+  // A fit outliving the profile it named is normal (the user deleted it), and the right answer is the
+  // one an unset pilot already gets — NOT an empty map, which calcFitStats would train back to all V
+  // and quietly present as the profile's own numbers.
+  check('pilot', 'a deleted profile falls back', P(profilePilot('nope')) === other ? 1 : 0, 1, 0);
+  check('pilot', 'no profile list at all falls back',
+        resolvePilotSkills(profilePilot('1'), { fallback: other }) === other ? 1 : 0, 1, 0);
+  // Ids are stringified Date.now() in the UI but arrive from JSON, so the match must not be ===.
+  check('pilot', 'a numeric saved id still matches its string pilot',
+        resolvePilotSkills(profilePilot('7'), { profiles: [{ id: 7, name: 'n', skills: { gunnery: 2 } }], fallback: other })?.gunnery, 2, 0);
+  check('pilot', 'profilePilotId round-trips', profilePilotId(profilePilot('42')) === '42' ? 1 : 0, 1, 0);
+  check('pilot', 'profilePilotId is null for an esi pilot', profilePilotId(esiPilot('42')) === null ? 1 : 0, 1, 0);
+  check('pilot', 'esiPilotId is null for a profile', esiPilotId(profilePilot('42')) === null ? 1 : 0, 1, 0);
+  // Teeth through the engine, not just the resolver: the alpha ceiling saved under a name must fly
+  // the same Caracal as PILOT_ALPHA does.
+  check('pilot', 'a profile pilot reaches the engine',
+        calcFitStats(carPilot, hml, [], resolvePilotSkills(profilePilot('a'),
+          { profiles: [{ id: 'a', name: 'Alpha copy', skills: ALPHA_SKILLS }], fallback: SKILLS_ALL_V }), {}).weaponDps?.total,
+        37.263845234257474, 1e-5);
+
+  // The sheet's NAME. A profile is named after the ESI characters (a synced character's own name is
+  // more informative than a copy of it) but before Alpha and Custom.
+  const DP = (s, ps) => describeSkillSheet(s, { esiSkills: { '95465499': rexSheet }, characters: charList, profiles: ps });
+  const myBuild = { ...SKILLS_ALL_V, gunnery: 3 };
+  check('pilot', 'a saved profile names an otherwise-Custom sheet',
+        DP(myBuild, [{ id: '1', name: 'Alt Miner', skills: myBuild }]), 'Alt Miner');
+  check('pilot', 'a character outranks a profile holding the same sheet',
+        DP(rexSheet, [{ id: '1', name: 'Copy of Rex', skills: rexSheet }]), 'Rex Mikakka');
+  check('pilot', 'a profile outranks the Alpha label',
+        DP(ALPHA_SKILLS, [{ id: '1', name: 'My Alpha', skills: ALPHA_SKILLS }]), 'My Alpha');
+  check('pilot', 'a profile that does not match is not named',
+        DP(myBuild, [{ id: '1', name: 'Alt Miner', skills: SKILLS_ALL_V }]), 'Custom');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

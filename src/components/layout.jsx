@@ -3,7 +3,8 @@ import { C, DISPLAY } from "../theme.js";
 import { eveIcon, eveRender } from "../lib/icons.js";
 import { haptic, lookupShip, navIcons } from "../lib/core.js";
 import { fitToEFT } from "../lib/eft-export.js";
-import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, describeSkillSheet } from "../lib/pilot.js";
+import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, profilePilot, describeSkillSheet } from "../lib/pilot.js";
+import { SKILL_CATALOG } from "../calc.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
@@ -175,7 +176,7 @@ function SkillBook({ok,count,onClick,custom}){
 // One control, two questions: WHO flies this fit, and what can't they use. They belong together —
 // the gap list is only meaningful relative to a pilot, and picking a different one rewrites it.
 // `pilot` is a string on the fit (lib/pilot.js): absent means "your skills", the app-wide sheet.
-export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
+export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],onClose}){
   const sheet=useSheetDrag(onClose);
   const chars=(()=>{ try{ return esi.listCharacters(); }catch{ return []; } })();
   const cached=(()=>{ try{ return esi.getAllCharacterSkills(); }catch{ return {}; } })();
@@ -183,7 +184,7 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
     // "Your Skills" is the only option that doesn't say what you'd be flying with — the other rows
     // name a character or a ceiling. Naming the sheet here saves a trip to Settings to find out
     // whether it is still all V, still aligned to a pilot, or something you edited by hand.
-    {id:null,label:`Your Skills (${describeSkillSheet(appSkills,{esiSkills:cached,characters:chars})})`,
+    {id:null,label:`Your Skills (${describeSkillSheet(appSkills,{esiSkills:cached,characters:chars,profiles:skillProfiles})})`,
      sub:"The sheet in Settings → Skills"},
     {id:PILOT_ALL_V,label:"All V",sub:"Every skill trained to V"},
     {id:PILOT_ALPHA,label:"Alpha",sub:"CCP's alpha clone ceiling"},
@@ -196,6 +197,13 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,onClose}){
         ? `${Object.values(cached[String(c.characterId)]).filter(v=>v>0).length} trained skills`
         : "Not synced — sync in Settings → ESI",
       stale:!cached[String(c.characterId)],
+    })),
+    // Saved sheets last: the rows above are ceilings and real characters, which are the answers most
+    // fits want. A profile is a sheet the user built, so it is only meaningful once they have made one.
+    ...skillProfiles.map(p=>({
+      id:profilePilot(p.id),
+      label:p.name,
+      sub:`Saved profile — ${SKILL_CATALOG.filter(e=>(p.skills?.[e.key]??5)>0).length} trained skills`,
     })),
   ];
   const cur=pilot??null;

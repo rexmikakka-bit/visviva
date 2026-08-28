@@ -27,6 +27,7 @@ const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
 const OPEN_TABS_KEY = 'axis_open_tabs';
 const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
 const RECENT_FITS_KEY = 'axis_recent_fits';
+const SKILL_PROFILES_KEY = 'pyfa-skill-profiles';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -142,6 +143,12 @@ export default function App(){
   const[projFits,setProjFits]=useState(initialFit?.projFits??[]);
   const[cmdFits,setCmdFits]=useState(initialFit?.cmdFits??[]);
   const[skills,setSkills]=useState(()=>{try{const s=localStorage.getItem("pyfa-skills");if(s)return{...SKILL_DEFAULTS,...JSON.parse(s)};}catch{}return SKILL_DEFAULTS;});
+  // Named copies of that sheet, saved from Settings → Skills and offered in the per-fit Pilot picker.
+  // Keyed `pyfa-*` rather than `axis_*` — unlike the implant loadouts, a fit REFERENCES one of these
+  // by id (`profile:<id>`), so a key outside backup-io's `pyfa[-_]` net would restore a fit whose
+  // named pilot no longer exists and silently drop it back to the app-wide sheet.
+  const[skillProfiles,setSkillProfiles]=useState(()=>{try{const s=JSON.parse(localStorage.getItem(SKILL_PROFILES_KEY)??'[]');return Array.isArray(s)?s:[];}catch{return [];}});
+  useEffect(()=>{try{localStorage.setItem(SKILL_PROFILES_KEY,JSON.stringify(skillProfiles));}catch{}},[skillProfiles]);
   // Every linked character's synced sheet, keyed by character id — written by the ESI sync, read
   // here so a fit that names a pilot resolves without a network call. Re-read on the same change
   // event the ESI panels use, so syncing a character updates an open fit immediately.
@@ -149,20 +156,20 @@ export default function App(){
   useEffect(()=>esi.onCharactersChanged(()=>setEsiSkills(esi.getAllCharacterSkills())),[]);
   // The sheet THIS fit is flown with. A fit can name its pilot (`slots.pilot`); with none named it
   // falls back to the app-wide sheet, which is what every fit did before pilots existed.
-  const fitSkills=useMemo(()=>resolvePilotSkills(slots?.pilot,{appSkills:skills,esiSkills,fallback:skills}),
-                          [slots?.pilot,skills,esiSkills]);
+  const fitSkills=useMemo(()=>resolvePilotSkills(slots?.pilot,{appSkills:skills,esiSkills,profiles:skillProfiles,fallback:skills}),
+                          [slots?.pilot,skills,esiSkills,skillProfiles]);
   // The sheet a SOURCE fit (projected / command) is flown with. Resolved exactly like `fitSkills`,
   // so a saved fit reads the same whether you are editing it or projecting it — the skills it was
   // last edited under are the skills it keeps. Shared with the Effects tab, which renders a card for
   // each of these: the card and the applied value have to resolve identically or they disagree, and
   // that has happened before (see the burst comment below).
-  const sourceSkills=useMemo(()=>(fit)=>resolvePilotSkills(fit?.slots?.pilot,{appSkills:skills,esiSkills,fallback:skills}),
-                             [skills,esiSkills]);
+  const sourceSkills=useMemo(()=>(fit)=>resolvePilotSkills(fit?.slots?.pilot,{appSkills:skills,esiSkills,profiles:skillProfiles,fallback:skills}),
+                             [skills,esiSkills,skillProfiles]);
   // What the RESOLVED sheet is, in words, for the snapshot card's footer. Derived from the sheet
   // rather than from `slots.pilot`, so a fit with no pilot named still says whether the app-wide
   // sheet it fell back to is all V or someone's actual character.
-  const fitSkillLabel=useMemo(()=>describeSkillSheet(fitSkills,{esiSkills,characters:esi.listCharacters()}),
-                              [fitSkills,esiSkills]);
+  const fitSkillLabel=useMemo(()=>describeSkillSheet(fitSkills,{esiSkills,characters:esi.listCharacters(),profiles:skillProfiles}),
+                              [fitSkills,esiSkills,skillProfiles]);
   // Can this character actually fly the fit? Checked against every fitted item's own
   // requiredSkillN/requiredSkillNLevel, not just the skills the dogma engine reads.
   const skillCheck=useMemo(()=>activeFit?.ship
@@ -681,10 +688,10 @@ export default function App(){
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} cs={snapshotStats} onClose={()=>setShowShipInfo(false)}/>}
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
-                            missing={skillCheck.missing} appSkills={skills} onClose={()=>setShowPilot(false)}/>}
+                            missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}
