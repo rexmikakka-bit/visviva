@@ -1341,6 +1341,22 @@ function check(group, label, actual, expected, tol = 0.005) {
   check('inert', 'Cerberus DPS, no implant', cerbDps([]), 620.0127, 0.005);
   check('inert', 'Rapid Launch implant ACTIVE', cerbDps([{ name: RL }]), 652.6449, 0.005);
   check('inert', 'Rapid Launch implant DISABLED', cerbDps([{ name: RL, active: false }]), 620.0127, 0.005);
+
+  // A rig can be offlined here even though the game does not allow it, because pyfa allows it and it
+  // is the only way to ask what a rig is worth without pulling it off the fit. Offline has to mean
+  // for a rig what it means for a module — no bonus, and its calibration handed back, which is what
+  // eos does too (calibrationUsed sums upgradeCost over ONLINE modules only). Asserted as a DELTA
+  // against the unrigged fit rather than a fixed HP number, so a shield rebalance cannot mute it.
+  const rifter = { typeID: tid('Rifter'), name: 'Rifter' };
+  const rigged = (state) => calcFitStats(rifter,
+    { high: [], mid: [], low: [],
+      rigs: state ? [{ ...M('Small Core Defense Field Extender I', state), type: 'rig' }] : [] },
+    [], null, {});
+  const noRig = rigged(null), onRig = rigged('online'), offRig = rigged('offline');
+  check('inert', 'an online rig adds shield HP', onRig.shieldHP - noRig.shieldHP > 1 ? 1 : 0, 1, 0);
+  check('inert', 'an OFFLINE rig adds none', offRig.shieldHP - noRig.shieldHP, 0, 0);
+  check('inert', 'an online rig costs calibration', onRig.calUsed > 0 ? 1 : 0, 1, 0);
+  check('inert', 'an OFFLINE rig hands it back', offRig.calUsed, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4221,7 +4237,7 @@ Republic Fleet Command Mindlink`;
 
   // Four modules chosen for their SHAPES, not their stats: a heat-capable active module (all four
   // states), an activatable one that cannot overheat, a passive one (offline/online only), and a rig
-  // (online only — no gesture does anything).
+  // — passive-shaped too, because pyfa lets you offline a rig even though the game will not.
   // Damage Control II is the passive one, which is worth stating because it reads like an active
   // module: it carries no duration, no cycle and no cap cost, so it has never had an active state in
   // the module menu either.
@@ -4229,7 +4245,7 @@ Republic Fleet Command Mindlink`;
     ['Heavy Neutron Blaster II', 'weapon', 4],
     ['Capital Gas Compressor I', 'module', 3],
     ['Damage Control II', 'module', 2],
-    ['Small Core Defense Field Extender I', 'rig', 1],
+    ['Small Core Defense Field Extender I', 'rig', 2],
   ];
   for (const [name, type, want] of shapes)
     check('gesture', `${name}: ${want} legal state(s)`, validStatesFor(modOf(name, type)).length, want, 0);
@@ -4302,11 +4318,14 @@ Republic Fleet Command Mindlink`;
     gestureTarget(passive, 'online', 'tap') === null ? 1 : 0, 1, 0);
   check('gesture', 'a passive module refuses overheat', gestureTarget(passive, 'online', 'double') === null ? 1 : 0, 1, 0);
 
-  // A rig has exactly one state, so all three gestures must refuse. Silently doing nothing here is
-  // what makes a control feel broken, so the caller needs the null to buzz instead.
+  // A rig is offlineable — you cannot do that in game, but pyfa can, and it is the only way to ask
+  // what a rig is worth without pulling it off the fit. It gets exactly the passive shape: hold
+  // toggles, tap and double refuse. Refusing has to buzz, or a dead gesture reads as a missed tap.
   const rig = validStatesFor(modOf('Small Core Defense Field Extender I', 'rig'));
-  check('gesture', 'a rig refuses every gesture',
-    GESTURES.filter((g) => gestureTarget(rig, 'online', g) === null).length, 3, 0);
+  check('gesture', 'hold offlines a rig', gestureTarget(rig, 'online', 'hold'), 'offline', 0);
+  check('gesture', 'hold brings a rig back', gestureTarget(rig, 'offline', 'hold'), 'online', 0);
+  check('gesture', 'a rig refuses tap and double',
+    ['tap', 'double'].filter((g) => gestureTarget(rig, 'online', g) === null).length, 2, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -347,7 +347,11 @@ const MODULE_STATES=["offline","online","active","overheated"];
 // picker doesn't and the engine ignores.
 function validStatesFor(mod){
   if(!mod||mod.type==="empty")return [];
-  if(mod.type==="rig")return ["online"];
+  // A rig cannot be offlined in game — you either fit it or you destroy it taking it out. pyfa allows
+  // it anyway because it is the only way to ask "what does this rig actually buy me?" without
+  // rebuilding the fit, and that is what the state is for here too. Offline frees its calibration,
+  // matching pyfa (eos sums upgradeCost over ONLINE modules only).
+  if(mod.type==="rig")return ["offline","online"];
   const td=TYPES[mod.typeID]??TYPES[String(mod.typeID)];
   const a=td?.attrs??td?.a??{};
   // A cloak has neither a duration nor a cap cost, so it fails the generic test and has to be named.
@@ -363,8 +367,8 @@ function validStatesFor(mod){
 // leave. Hold offlines; holding again brings it back.
 //
 // What a gesture means depends on what the module can legally do, so the mapping is computed from
-// `states` rather than hardcoded. A module with no second state at all (a rig) has no gesture, and
-// says so by returning null — the caller reports that rather than silently doing nothing.
+// `states` rather than hardcoded. A gesture a module cannot honour returns null — the caller reports
+// that rather than silently doing nothing.
 function gestureTarget(states,cur,gesture){
   const has=(s)=>states.includes(s);
   if(gesture==="hold")   return has("offline")?(cur==="offline"?"online":"offline"):null;
