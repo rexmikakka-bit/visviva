@@ -2,11 +2,21 @@ import { useState, useRef } from "react";
 import { C } from "../theme.js";
 import { isBackupApp, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
 import { mergeTagColors } from "../lib/fit-tags.js";
+import { FITS_KEY, exportFitsBlob, getLoadedFitsDB, replaceFitsDB } from "../lib/fits-store.js";
+import { parsePyfaXml, convertFitting } from "../lib/pyfa-xml.js";
+
+// How many fittings to convert between yields to the event loop. A full pyfa library is ~1,700 fits
+// and converts in well under a second, but on a phone that is still long enough to drop the progress
+// bar if it is done in one go.
+const XML_CHUNK = 100;
 
 // ── Backup & restore ────────────────────────────────────────────────────────────
-// Fits live in localStorage and NOWHERE else. No git commit protects them; clearing browser data,
-// switching browsers, or loading the app from a different port (localStorage is scoped per origin —
+// Fits live in this browser's storage and NOWHERE else. No git commit protects them; clearing site
+// data, switching browsers, or loading the app from a different port (storage is scoped per origin —
 // :5173 and :4173 are different drawers) all lose everything. This makes them a file you can keep.
+//
+// Settings are localStorage; the fit library is IndexedDB (fits-store.js). Both go into one file
+// under the same keys as before, so the format did not change when the fits moved.
 //
 // Everything under the `pyfa-*` / `pyfa_*` keys is included, so it survives new settings being added
 // later without anyone remembering to update this list.
@@ -16,8 +26,11 @@ function BackupPanel() {
   const [pending, setPending] = useState(null);     // parsed backup awaiting merge/replace choice
   const [pasted, setPasted] = useState("");
   const fileRef = useRef(null);
+  const [xmlPending, setXmlPending] = useState(null);   // converted pyfa library awaiting confirmation
+  const [xmlBusy, setXmlBusy] = useState(null);         // {done, total} while converting
+  const xmlRef = useRef(null);
 
-  const mine = countFits(localStorage.getItem("pyfa-fitsdb"));
+  const mine = countFits(getLoadedFitsDB());
 
   // iOS is the case this has to get right. A WKWebView ignores <a download>, so `a.click()` on a
   // blob: URL silently does nothing — and this used to report ok:true straight afterwards, so the
@@ -28,7 +41,7 @@ function BackupPanel() {
   // (navigator.share with a File), so it needs no extra Capacitor plugin and no native rebuild.
   // Order: share sheet -> anchor download (desktop web) -> tell the truth and point at Copy.
   const download = async () => {
-    const json = buildBackup();
+    const json = buildBackup(await exportFitsBlob());
     const name = `axis-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const okMsg = `Exported ${mine.fits} fit${mine.fits === 1 ? "" : "s"}.`;
 
@@ -67,7 +80,7 @@ function BackupPanel() {
   // Blob downloads are unreliable inside a native webview, so always offer the clipboard too.
   const copyJson = async () => {
     try {
-      await navigator.clipboard.writeText(buildBackup());
+      await navigator.clipboard.writeText(buildBackup(await exportFitsBlob()));
       setStatus({ ok: true, msg: "Backup JSON copied to clipboard." });
     } catch {
       setStatus({ ok: false, msg: "Couldn't copy — use Download instead." });
@@ -97,7 +110,10 @@ function BackupPanel() {
     e.target.value = "";
   };
 
-  const apply = (mode) => {
+  // The fit library is written through the store, never as a localStorage key — writing the backup's
+  // `pyfa-fitsdb` string straight back would leave a stale blob that nothing reads and that the next
+  // export would not agree with.
+  const apply = async (mode) => {
     const { obj } = pending;
     try {
       if (mode === "replace") {
@@ -105,10 +121,13 @@ function BackupPanel() {
           const k = localStorage.key(i);
           if (KEY_RE.test(k)) localStorage.removeItem(k);
         }
-        for (const [k, v] of Object.entries(obj.data)) localStorage.setItem(k, v);
+        for (const [k, v] of Object.entries(obj.data)) if (k !== FITS_KEY) localStorage.setItem(k, v);
+        let db = {};
+        try { db = JSON.parse(obj.data[FITS_KEY] || "{}") || {}; } catch {}
+        await replaceFitsDB(db);
       } else {
-        const merged = mergeFitsDB(localStorage.getItem("pyfa-fitsdb"), obj.data["pyfa-fitsdb"]);
-        localStorage.setItem("pyfa-fitsdb", merged);
+        const merged = mergeFitsDB(await exportFitsBlob(), obj.data[FITS_KEY]);
+        await replaceFitsDB(JSON.parse(merged));
         // Tag colours merge per-tag rather than all-or-nothing. The blanket rule below would drop the
         // whole incoming registry the moment you had a single tag of your own, and the imported fits
         // would arrive carrying tag names with no colours.
@@ -119,7 +138,7 @@ function BackupPanel() {
         } catch {}
         // Only fill in settings that don't exist yet — a merge shouldn't overwrite your skills.
         for (const [k, v] of Object.entries(obj.data)) {
-          if (k !== "pyfa-fitsdb" && k !== "pyfa-tagcolors" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
+          if (k !== FITS_KEY && k !== "pyfa-tagcolors" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
         }
       }
       // Reloading is the honest way to re-init every piece of state from storage at once.
@@ -127,6 +146,62 @@ function BackupPanel() {
     } catch (e) {
       setStatus({ ok: false, msg: `Import failed: ${e.message}` });
       setPending(null);
+    }
+  };
+
+  // ── pyfa XML ────────────────────────────────────────────────────────────────────────────────
+  // A different file from an Axis backup and a different job: a one-way import of someone's whole
+  // pyfa library. It shares this panel because "the place my fits come in and out of" is one idea,
+  // and a second screen for it would be a second place to look.
+  const onXmlFile = (e) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const r = new FileReader();
+    r.onerror = () => setStatus({ ok: false, msg: "Couldn't read that file." });
+    r.onload = () => convertXml(String(r.result));
+    r.readAsText(f);
+  };
+
+  const convertXml = async (text) => {
+    setStatus(null); setXmlPending(null);
+    const { fittings, error } = parsePyfaXml(text);
+    if (error) { setStatus({ ok: false, msg: error }); return; }
+
+    const db = {};
+    const unresolved = new Set();
+    let reloaded = 0, skipped = 0;
+    setXmlBusy({ done: 0, total: fittings.length });
+    for (let i = 0; i < fittings.length; i += XML_CHUNK) {
+      for (const raw of fittings.slice(i, i + XML_CHUNK)) {
+        const c = convertFitting(raw);
+        if (c.error) { skipped++; continue; }
+        (db[c.ship] ??= []).push(c.entry);
+        reloaded += c.chargesReloaded;
+        for (const n of c.unresolved) unresolved.add(n);
+      }
+      setXmlBusy({ done: Math.min(i + XML_CHUNK, fittings.length), total: fittings.length });
+      await new Promise((r) => setTimeout(r, 0));   // let the progress bar actually paint
+    }
+    setXmlBusy(null);
+
+    const fits = Object.values(db).reduce((n, a) => n + a.length, 0);
+    if (!fits) { setStatus({ ok: false, msg: "Nothing importable in that file." }); return; }
+    setXmlPending({ db, fits, ships: Object.keys(db).length, reloaded, skipped,
+                    unresolved: [...unresolved].sort() });
+  };
+
+  // Merge only, never replace. mergeFitsDB already suffixes a same-name fit and reallocates every id
+  // DB-wide — and it builds its name set AS IT GOES, so the duplicate (ship, name) pairs that exist
+  // inside a single pyfa export are separated too rather than collapsing onto one another.
+  const applyXml = async () => {
+    try {
+      const merged = mergeFitsDB(await exportFitsBlob(), JSON.stringify(xmlPending.db));
+      await replaceFitsDB(JSON.parse(merged));
+      window.location.reload();
+    } catch (e) {
+      setStatus({ ok: false, msg: `Import failed: ${e.message}` });
+      setXmlPending(null);
     }
   };
 
@@ -215,6 +290,63 @@ function BackupPanel() {
             and settings are untouched). <b>Replace</b> wipes everything here first.
           </div>
         </div>
+      )}
+
+      {!pending && (
+        <>
+          <div style={{ height: 1, background: C.border, margin: "16px 0" }} />
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>Import from pyfa</div>
+          <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
+            In pyfa, use <b>File &rarr; Backup All Fittings</b> to write an XML file, then choose it
+            here. Your existing fits are kept — imported ones are added alongside them.
+          </div>
+
+          <input ref={xmlRef} type="file" accept=".xml,text/xml,application/xml" onChange={onXmlFile}
+                 style={{ display: "none" }} />
+          {!xmlPending && !xmlBusy && (
+            <button onClick={() => xmlRef.current?.click()} style={btn(C.surface, C.border, C.textMid)}>
+              Choose pyfa XML file…
+            </button>
+          )}
+
+          {xmlBusy && (
+            <div>
+              <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6 }}>
+                Converting {xmlBusy.done.toLocaleString()} / {xmlBusy.total.toLocaleString()} fits…
+              </div>
+              <div style={{ height: 4, borderRadius: 2, background: C.surfaceAlt, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: C.accent,
+                              width: `${xmlBusy.total ? (xmlBusy.done / xmlBusy.total) * 100 : 0}%` }} />
+              </div>
+            </div>
+          )}
+
+          {xmlPending && (
+            <div style={{ padding: "12px 14px", background: C.surfaceAlt,
+                          border: `1px solid ${C.accentBorder ?? C.border}`, borderRadius: 10 }}>
+              <div style={{ fontSize: 12, color: C.text, marginBottom: 8 }}>
+                Ready to import <b>{xmlPending.fits.toLocaleString()}</b> fit{xmlPending.fits === 1 ? "" : "s"} across{" "}
+                <b>{xmlPending.ships.toLocaleString()}</b> ship{xmlPending.ships === 1 ? "" : "s"}.
+              </div>
+              <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.6 }}>
+                A pyfa XML backup doesn't record implants, boosters, or which module each charge was
+                loaded into — it lists all ammo together in the cargo hold. Ammo was put back into{" "}
+                <b>{xmlPending.reloaded.toLocaleString()}</b> module{xmlPending.reloaded === 1 ? "" : "s"};
+                anything left over stays in cargo.
+                {xmlPending.skipped > 0 && <> {xmlPending.skipped} fitting{xmlPending.skipped === 1 ? "" : "s"} couldn't be read and {xmlPending.skipped === 1 ? "was" : "were"} skipped.</>}
+                {xmlPending.unresolved.length > 0 && <> {xmlPending.unresolved.length} item name{xmlPending.unresolved.length === 1 ? "" : "s"} weren't recognised (e.g. {xmlPending.unresolved.slice(0, 3).join(", ")}) and were left out.</>}
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={applyXml} style={btn(C.accent, C.accent, "#0e0e10")}>
+                  Add {xmlPending.fits.toLocaleString()} fit{xmlPending.fits === 1 ? "" : "s"}
+                </button>
+                <button onClick={() => setXmlPending(null)} style={btn(C.surface, C.border, C.textMute)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {status && (

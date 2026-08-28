@@ -19,6 +19,8 @@ import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
 import { IconClipboard, IconCharacter } from "./components/glyphs.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
+import { getLoadedFitsDB, persistFitsDB } from "./lib/fits-store.js";
+import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
 import * as esi from "./lib/esi.js";
@@ -79,10 +81,12 @@ export default function App(){
   const[bottomTab,setBottomTab]=useState("fittings");
   const[showHamburger,setShowHamburger]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
-  const[fitsDB,setFitsDB]=useState(()=>{try{const s=localStorage.getItem("pyfa-fitsdb");if(s)return JSON.parse(s);}catch{}return SAVED_FITS_SEED;});
+  // Fits come from IndexedDB, which main.jsx has already loaded into memory before this renders —
+  // getLoadedFitsDB() is a synchronous read of that snapshot, not a fetch. An empty object is a real
+  // answer (a user who deleted everything), so only a null/absent store falls back to the seed.
+  const[fitsDB,setFitsDB]=useState(()=>getLoadedFitsDB()??SAVED_FITS_SEED);
   const[activeFit,setActiveFit]=useState(()=>{try{const s=localStorage.getItem("pyfa-activefit");if(s)return JSON.parse(s);}catch{}return null;});
-  const initialFit=(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af)return db[af.ship]?.find(f=>f.name===af.fitName)||null;}catch{}return null;})();
-  const emptyImplants=()=>Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null}));
+  const initialFit=(()=>{try{const db=getLoadedFitsDB();const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af)return db[af.ship]?.find(f=>f.name===af.fitName)||null;}catch{}return null;})();
   const[slots,setSlots]=useState(initialFit?.slots??generateEmptySlots(lookupShip("Hyperion")));
   const[drones,setDrones]=useState(initialFit?.drones??[]);
   const[fighters,setFighters]=useState(initialFit?.fighters??[]);
@@ -300,7 +304,7 @@ export default function App(){
     }catch{ return []; }
   },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,fighters,dmgProfile]);
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
-  const[fittingsView,setFittingsView]=useState(()=>{try{const db=JSON.parse(localStorage.getItem("pyfa-fitsdb")||"null");const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
+  const[fittingsView,setFittingsView]=useState(()=>{try{const db=getLoadedFitsDB();const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   // Set while the browser was opened by the menu's "New Fit", which tells the ship rows the user
   // has already committed to starting something — so picking a hull builds the fit instead of
   // listing what's already on it. Any other route into the browser leaves it false.
@@ -426,42 +430,12 @@ export default function App(){
     if(!keepPage){setFittingsView("active");setBottomTab("fittings");}
   };
   const importFit=(parsed)=>{
-    const{shipName,fitName,ship,mods,drones:pDrones,fighters:pFighters,cargo:pCargo,implantNames,boosterNames,subsystems:pSubs}=parsed;
-    const modified=new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
-    const subSlots=isT3Cruiser(shipName)?(()=>{
-      const order=["Core","Defensive","Offensive","Propulsion"];
-      const byGroup={};
-      for(const s of (pSubs??[])){
-        const gn=TYPES[s.typeID]?.gn??TYPES[s.typeID]?.groupName??"";
-        const key=Object.entries(T3C_SUBSYSTEM_GROUPS).find(([,g])=>g===gn)?.[0];
-        if(key)byGroup[key]={id:`sub${order.indexOf(key)}`,name:s.name,typeID:s.typeID,type:"subsystem",subGroup:key};
-      }
-      return order.map((k,i)=>byGroup[k]??{id:`sub${i}`,name:`[Empty ${k} Subsystem Slot]`,icon:null,type:"empty",subGroup:k});
-    })():undefined;
-    const newSlots=buildSlotsFromEFT(ship,mods,subSlots);
-    const newDrones=pDrones.map((d,i)=>{
-      const dta=(typeof DRONE_TYPES!=='undefined'&&d.drone.typeID)?DRONE_TYPES?.[String(d.drone.typeID)]?.a:null;
-      const bw=dta?.droneBandwidthUsed ?? d.drone.bandwidth ?? 5;
-      return {id:Date.now()+i,name:d.name,size:d.drone.size,qty:d.qty,active:false,
-        range:d.drone.range??0,tracking:d.drone.tracking??0,velocity:d.drone.velocity??0,hp:d.drone.hp??0,
-        dps:d.drone.dps??0,bandwidth:bw,volume:dta?.volume??d.drone.volume,typeID:d.drone.typeID,
-        mutaplasmid:d.mutaplasmid??undefined,mutations:d.mutations??undefined};
-    });
-    const newFighters=(pFighters??[]).map((f,i)=>{
-      const t=f.typeID??tidByName(f.name); const gn=TYPES[t]?.gn??TYPES[t]?.groupName??"";
-      const role=/Support/i.test(gn)?"Support":null;
-      return{id:Date.now()+1000+i,name:f.name,qty:f.qty,tier:/ II$/.test(f.name)?"T2":"T1",dps:0,role,hp:0,active:true,typeID:t};
-    });
-    const newCargo=pCargo.map((c,i)=>{const tid=c.typeID??tidByName(c.name);return{id:Date.now()+i,name:c.name,qty:c.qty,vol:tid!=null?(TYPES[tid]?.attrs?.volume??TYPES[String(tid)]?.attrs?.volume??1):1,typeID:tid??undefined};});
-    const newImplants=emptyImplants();
-    for(const ip of implantNames){const idx=newImplants.findIndex(i=>i.slot===ip.slot);if(idx>=0)newImplants[idx]={slot:ip.slot,name:ip.name,bonus:null};}
-    const newBoosters=boosterNames.map(buildBoosterFromName);
+    const{shipName,fitName}=parsed;
     // Built OUTSIDE the updater so it can be handed straight to loadFit — the setFitsDB below is
     // still pending when loadFit runs, so a lookup by name would miss it.
     const existing=fitsDB[shipName]||[];
     const exIdx=existing.findIndex(f=>f.name===fitName);
-    const entry={id:exIdx>=0?existing[exIdx].id:Date.now(),name:fitName,modified,slots:newSlots,
-      drones:newDrones,fighters:newFighters,cargo:newCargo,implants:newImplants,boosters:newBoosters};
+    const entry=buildFitEntry(parsed,{id:exIdx>=0?existing[exIdx].id:Date.now(),buildBooster:buildBoosterFromName});
     setFitsDB(db=>{
       const ex=db[shipName]||[];
       const idx=ex.findIndex(f=>f.name===fitName);
@@ -476,7 +450,10 @@ export default function App(){
     loadFit(shipName,fitName,entry);
   };
   useEffect(()=>{if(!activeFit?.ship||!activeFit?.fitName)return;setFitsDB(db=>{const sf=db[activeFit.ship];if(!sf)return db;const idx=sf.findIndex(f=>f.name===activeFit.fitName);if(idx<0)return db;const u=[...sf];u[idx]={...u[idx],slots,drones,fighters,cargo:cargoItems,implants,boosters,projFits,cmdFits};return{...db,[activeFit.ship]:u};});},[slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits,activeFit]);
-  useEffect(()=>{try{localStorage.setItem("pyfa-fitsdb",JSON.stringify(fitsDB));}catch{}},[fitsDB]);
+  // Writes only the hulls whose array identity changed, in one IndexedDB transaction — the effect
+  // above rebuilds exactly one hull's array per edit, so a keystroke costs one small record rather
+  // than re-serialising the whole library the way the old localStorage blob did.
+  useEffect(()=>{persistFitsDB(fitsDB);},[fitsDB]);
   useEffect(()=>{try{localStorage.setItem("pyfa-activefit",JSON.stringify(activeFit));}catch{}},[activeFit]);
   useEffect(()=>{try{localStorage.setItem("pyfa-skills",JSON.stringify(skills));}catch{}},[skills]);
   useEffect(()=>{try{localStorage.setItem("pyfa-factor-reload",factorInReload?"1":"0");}catch{}},[factorInReload]);

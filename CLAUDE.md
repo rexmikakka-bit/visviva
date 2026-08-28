@@ -144,7 +144,8 @@ files most likely to conflict — keep changes to them focused.
 | `src/calc.js` | Turns a fit + engine output into displayed stats (DPS, tank, cap, resists, graph data). |
 | `src/App.jsx` | State, effects and composition only (~620 lines). The views live in `src/components/`. |
 | `src/ErrorBoundary.jsx` | React class boundary wrapping `<App>`. Catches render crashes and shows a recovery card (download-your-fits / reload / copy error report) instead of a blank page. Dependency-light on purpose so it survives whatever crashed. |
-| `src/lib/storage-migrate.js` | Versioned localStorage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
+| `src/lib/storage-migrate.js` | Versioned storage migrations, run on boot **before** React reads state. Bump `SCHEMA_VERSION` + append a migration whenever the saved-fit shape changes — see note below. |
+| `src/lib/fits-store.js` | The saved-fit library, in **IndexedDB** (one record per hull). Settings stayed in localStorage; only fits moved. Loaded into memory by `main.jsx` before React mounts. |
 | `src/lib/ship-taxonomy.js` | The nested ship-browser menu (Battleships > Faction Battleships > Pirate Faction). Pure + derived — see "ship browser taxonomy" below. |
 | `src/data/dogma-*.json` | The dogma bundle: types, effects, attributes. **Generated + hand-patched.** |
 | `src/data/ship-traits.json` | Trait bonuses for Ships + Structures (with flavour description) and **T3 subsystems** (bonuses only — their description lives in `type-descriptions.json`, one source per string). **Generated** by `build-bundle.py` from eve.db's `invtraits`/`invtypes`; overrides `data-bundle.js`'s stale `shipTraits`. A T3 cruiser's real bonuses live on the SUBSYSTEM, not the hull, so `TRAIT_ONLY_CATS` matters. |
@@ -164,16 +165,47 @@ Stacking factor is `exp(-(rank²)/7.1289)`, strongest first.
 Effects whose `modifierInfo` is empty in the bundle (`{"c":0,"m":[]}`) are CCP-applied effects that
 were trimmed. They do nothing until someone populates the modifier or writes a custom handler.
 
-### Changing the saved-fit shape → add a storage migration
+### Where saved fits live, and the storage migration
 
-Saved fits and settings live **only** in `pyfa-*` localStorage keys (see `backup-io.js`), with no
-server. The day you change that shape, an old saved fit deserializes into new code and crashes on
-render — which the user reads as "the app ate my fits". `src/lib/storage-migrate.js` prevents this:
-it stamps a `SCHEMA_VERSION` and runs ordered migrations on boot, from `main.jsx`, **before** React
-reads any state. When you change the shape: bump `SCHEMA_VERSION` and **append** (never reorder/renumber)
-a migration that rewrites old fits into the new shape. Keep each migration total and defensive — a throw
-there is the exact blank-page failure it exists to prevent (wrap `JSON.parse` in try/catch). The pure
-core `runMigrations` is DOM-free and covered by the regression suite.
+**Settings are localStorage (`pyfa-*`); the FIT LIBRARY is IndexedDB** (`src/lib/fits-store.js`,
+database `axis`, store `fits`), with no server either way. Fits moved out of the
+`localStorage["pyfa-fitsdb"]` blob to make importing a pyfa collection possible: localStorage caps
+around 5–10 MB and a real 1,744-fit pyfa backup is 3.78 MB in our slot shape, and the old write was
+a synchronous re-stringify of the *entire* library on every keystroke that touched a fit.
+
+Three things about that store are load-bearing:
+
+- **One record per HULL, not per fit.** The value at key `"Rifter"` is exactly the array
+  `fitsDB["Rifter"]` already held, so nothing above `fits-store.js` changed shape. Keying per fit
+  would mean keying on `fit.id`, which is only unique *by construction* — `mergeFitsDB` has already
+  shipped a bug where ids collided — and a duplicate key silently drops a fit on write.
+- **Writes are diffed by REFERENCE identity** (`diffFitsDB`). React state updates rebuild only the
+  changed hull's array, so `prev[ship] !== next[ship]` names the changed hulls with no deep compare.
+  If some future edit path mutates a hull array in place instead of replacing it, the write is
+  silently skipped — that is the failure mode to watch, and section 9b2 of the suite pins the
+  contract.
+- **`main.jsx` loads the library before mounting React.** App.jsx reads fits synchronously inside
+  `useState` initialisers and IndexedDB cannot serve that, so `initFitsStore()` fills an in-memory
+  snapshot that `getLoadedFitsDB()` returns synchronously. If IndexedDB is unavailable (private
+  mode, blocked upgrade) the store falls back to the old localStorage blob rather than failing.
+
+The **backup file format is unchanged** — fits still travel under the `pyfa-fitsdb` key — so a file
+written now restores on a build that kept fits in localStorage, and vice versa. `backup-io.js` stays
+DOM- and IndexedDB-free: the fits blob is *injected* into `collect()`/`buildBackup()` by the caller.
+
+**Changing the saved-fit shape still means appending a migration.** `src/lib/storage-migrate.js`
+stamps a `SCHEMA_VERSION` and runs ordered migrations on boot, from `main.jsx`, **before** React
+reads any state — otherwise an old saved fit deserializes into new code and crashes on render, which
+the user reads as "the app ate my fits". Bump `SCHEMA_VERSION` and **append** (never
+reorder/renumber). Keep each migration total and defensive — a throw there is the exact blank-page
+failure it exists to prevent (wrap `JSON.parse` in try/catch). The pure core `runMigrations` is
+DOM-free and covered by the regression suite.
+
+⚠️ **A migration reaches the fits through `external`, not through localStorage.** `migrateLocalStorage`
+takes `{external: {"pyfa-fitsdb": <blob>}}`, merges it into the snapshot so migrations can keep being
+written exactly as before, and hands the migrated blob back for `main.jsx` to persist to IndexedDB.
+Drop that and a fit-shape migration runs against a store with no fits in it and silently does
+nothing — pinned by the `external:` checks in section 9b.
 
 ---
 

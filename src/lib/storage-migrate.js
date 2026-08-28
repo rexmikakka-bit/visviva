@@ -78,7 +78,8 @@ export function runMigrations(store, { from, to = SCHEMA_VERSION } = {}) {
   return store;
 }
 
-function hasDataKey(ls) {
+function hasDataKey(ls, external) {
+  if (external && Object.keys(external).length) return true;
   for (let i = 0; i < ls.length; i++) {
     const k = ls.key(i);
     if (k !== SCHEMA_KEY && DATA_KEY_RE.test(k)) return true;
@@ -87,8 +88,15 @@ function hasDataKey(ls) {
 }
 
 // Boot-time entry point. Safe to call before React renders; safe if localStorage is unavailable.
-export function migrateLocalStorage(ls = (typeof localStorage !== "undefined" ? localStorage : null)) {
-  if (!ls) return;
+//
+// `external` is store data that no longer lives in localStorage — today that is `pyfa-fitsdb`, which
+// moved to IndexedDB (see fits-store.js). It is merged into the snapshot so a migration still sees
+// the WHOLE store and can keep being written the same way, and is handed back migrated for the
+// caller to persist rather than being written to localStorage. Without this, the next fit-shape
+// migration would run against a store with no fits in it and silently do nothing.
+export function migrateLocalStorage(ls = (typeof localStorage !== "undefined" ? localStorage : null), { external = null } = {}) {
+  const ext = external ?? {};
+  if (!ls) return { external: { ...ext } };
   let from;
   try {
     const raw = ls.getItem(SCHEMA_KEY);
@@ -99,13 +107,13 @@ export function migrateLocalStorage(ls = (typeof localStorage !== "undefined" ? 
       // v1 shape and must run the chain from there — NOT be stamped current, which would skip every
       // migration it actually needs. (Both branches used to read SCHEMA_VERSION, which was harmless
       // only while SCHEMA_VERSION was 1.) A truly fresh install has nothing to migrate.
-      from = hasDataKey(ls) ? PRE_VERSIONING_SCHEMA : SCHEMA_VERSION;
+      from = hasDataKey(ls, ext) ? PRE_VERSIONING_SCHEMA : SCHEMA_VERSION;
     }
-  } catch { return; } // storage blocked (private mode / disabled) — nothing we can do
+  } catch { return { external: { ...ext } }; } // storage blocked (private mode / disabled)
 
   if (from >= SCHEMA_VERSION) {
     try { ls.setItem(SCHEMA_KEY, String(SCHEMA_VERSION)); } catch {}
-    return;
+    return { external: { ...ext } };
   }
 
   // Snapshot the data keys, migrate the map, write it back (honouring deletions).
@@ -114,13 +122,16 @@ export function migrateLocalStorage(ls = (typeof localStorage !== "undefined" ? 
     const k = ls.key(i);
     if (DATA_KEY_RE.test(k)) before[k] = ls.getItem(k);
   }
-  const after = runMigrations({ ...before }, { from });
+  const after = runMigrations({ ...before, ...ext }, { from });
+  const migratedExternal = {};
+  for (const k of Object.keys(ext)) migratedExternal[k] = k in after ? after[k] : null;  // null = deleted
   try {
     for (const k of Object.keys(before)) {
       if (!(k in after)) ls.removeItem(k);
     }
-    for (const [k, v] of Object.entries(after)) ls.setItem(k, v);
+    for (const [k, v] of Object.entries(after)) if (!(k in ext)) ls.setItem(k, v);
   } catch (e) {
     console.error("storage migration write-back failed:", e);
   }
+  return { external: migratedExternal };
 }

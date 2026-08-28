@@ -34,6 +34,7 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
+import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
@@ -480,7 +481,7 @@ function check(group, label, actual, expected, tol = 0.005) {
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nSTORAGE MIGRATION (schema upgrade must be safe + idempotent)');
-  const { runMigrations, SCHEMA_VERSION, SCHEMA_KEY, MIGRATIONS } = await import('./lib/storage-migrate.js');
+  const { runMigrations, migrateLocalStorage, SCHEMA_VERSION, SCHEMA_KEY, MIGRATIONS } = await import('./lib/storage-migrate.js');
 
   const s1 = runMigrations({ 'pyfa-fitsdb': '{"Astarte":[]}' }, { from: 0 });
   check('migrate', 'stamps current version', Number(s1[SCHEMA_KEY]), SCHEMA_VERSION, 0);
@@ -532,6 +533,84 @@ function check(group, label, actual, expected, tol = 0.005) {
   // A null fit in the array and a `tags` that isn't an array must both be survivable.
   const s8 = runMigrations({ 'pyfa-fitsdb': '{"Rifter":[{"id":1,"tags":"nope"},null]}' }, { from: 2 });
   check('migrate', 'v3: non-array tags normalized', Array.isArray(JSON.parse(s8['pyfa-fitsdb']).Rifter[0].tags) ? 1 : 0, 1, 0);
+
+  // ── The fit library no longer lives in localStorage ─────────────────────────
+  // It moved to IndexedDB, so a migration that rewrites saved fits would see a store with no fits
+  // in it and silently do nothing — the exact silent-no-op failure this framework exists to stop.
+  // `external` injects it back into the snapshot and hands the migrated value out for the caller to
+  // persist. Proven with the REAL v2->v3 migration rather than a fake one: if the injection were
+  // dropped, `tags` would not appear and this check fails.
+  const fakeLS = (init = {}) => {
+    const m = new Map(Object.entries(init));
+    return {
+      get length() { return m.size; },
+      key: (i) => [...m.keys()][i],
+      getItem: (k) => (m.has(k) ? m.get(k) : null),
+      setItem: (k, v) => m.set(k, String(v)),
+      removeItem: (k) => m.delete(k),
+      _map: m,
+    };
+  };
+  // Defensive read: dropping the injection leaves this undefined, and a thrown TypeError would abort
+  // the whole suite instead of reporting one red line.
+  const tagged = (r) => { try { return Array.isArray(JSON.parse(r.external['pyfa-fitsdb']).Rifter[0].tags) ? 1 : 0; } catch { return 0; } };
+  const ls1 = fakeLS({ 'pyfa-schema-version': '2', 'pyfa-tagcolors': '{}' });
+  const r1 = migrateLocalStorage(ls1, { external: { 'pyfa-fitsdb': '{"Rifter":[{"id":1,"name":"Solo"}]}' } });
+  check('migrate', 'external: fits reached by the migration', tagged(r1), 1, 0);
+  // ...and must NOT be written back to localStorage, or the stale blob outlives the real store.
+  check('migrate', 'external: not mirrored into localStorage', ls1.getItem('pyfa-fitsdb') == null ? 1 : 0, 1, 0);
+  check('migrate', 'external: version still stamped', ls1.getItem('pyfa-schema-version'), String(SCHEMA_VERSION), 0);
+
+  // An install holding ONLY fits (all of them external) is unstamped and pre-versioning. Reading
+  // "no localStorage data keys" as "fresh install" would stamp it current and skip the whole chain.
+  const ls2 = fakeLS({});
+  const r2 = migrateLocalStorage(ls2, { external: { 'pyfa-fitsdb': '{"Rifter":[{"id":1,"name":"Solo"}]}' } });
+  check('migrate', 'external: unstamped store with only fits still migrates', tagged(r2), 1, 0);
+
+  // Already current: nothing to do, but the caller still needs its blob back untouched.
+  const ls3 = fakeLS({ 'pyfa-schema-version': String(SCHEMA_VERSION) });
+  const r3 = migrateLocalStorage(ls3, { external: { 'pyfa-fitsdb': '{"Rifter":[]}' } });
+  check('migrate', 'external: returned unchanged when already current', r3.external['pyfa-fitsdb'], '{"Rifter":[]}', 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9b2. FITS STORE — saved fits moved from a single localStorage blob to IndexedDB, one record per
+//      hull. The write path diffs by REFERENCE identity, which is only sound because React state
+//      updates rebuild exactly the arrays that changed. If that ever stops holding, edits stop
+//      being persisted silently — so pin the diff's contract here.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nFITS STORE (IndexedDB write diffing)');
+  const { diffFitsDB } = await import('./lib/fits-store.js');
+
+  const rifter = [{ id: 1, name: 'Solo' }];
+  const punisher = [{ id: 2, name: 'Brick' }];
+  const base = { Rifter: rifter, Punisher: punisher };
+
+  const d0 = diffFitsDB(base, base);
+  check('fitsdb', 'identical snapshot writes nothing', d0.puts.length + d0.deletes.length, 0, 0);
+
+  // The shape App.jsx actually produces: spread the DB, replace one hull's array.
+  const edited = { ...base, Rifter: [{ id: 1, name: 'Solo', tags: ['x'] }] };
+  const d1 = diffFitsDB(base, edited);
+  check('fitsdb', 'one edit writes one hull', d1.puts.join(), 'Rifter', 0);
+  check('fitsdb', 'untouched hull not rewritten', d1.puts.includes('Punisher') ? 1 : 0, 0, 0);
+  check('fitsdb', 'no spurious delete on edit', d1.deletes.length, 0, 0);
+
+  const added = { ...base, Vexor: [] };
+  check('fitsdb', 'new hull is a put', diffFitsDB(base, added).puts.join(), 'Vexor', 0);
+
+  const removed = { Rifter: rifter };
+  const d2 = diffFitsDB(base, removed);
+  check('fitsdb', 'removed hull is a delete', d2.deletes.join(), 'Punisher', 0);
+  check('fitsdb', 'removed hull is not also a put', d2.puts.length, 0, 0);
+
+  // First boot (no previous snapshot) must write everything, not nothing.
+  check('fitsdb', 'null previous writes every hull', diffFitsDB(null, base).puts.length, 2, 0);
+  check('fitsdb', 'null next deletes every hull', diffFitsDB(base, null).deletes.length, 2, 0);
+
+  // An empty object is a real state (user deleted their last fit) and must not read as "no change".
+  check('fitsdb', 'emptying the library deletes both', diffFitsDB(base, {}).deletes.length, 2, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4847,6 +4926,121 @@ Agency 'Overclocker' SB7 Dose III
   const trace = simulateCapTrace(cs.capModules, cs.capCapacity, cs.capRechargeMs, { tMaxSec: 300, sampleDt: 0.5 });
   check('oni-cap', 'graph ends exactly when the cap does', trace[trace.length - 1][0], cs.capTime, 0);
   check('oni-cap', 'graph ends at zero cap', trace[trace.length - 1][1], 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 22. PYFA XML IMPORT — a whole-library import from File > Backup All Fittings
+//     The DOMParser step is browser-only (Node has no DOMParser), so everything with real logic
+//     lives in pure functions below it and is pinned here. Raw fittings are built in exactly the
+//     shape parsePyfaXml emits, transcribed from a real one-fit export.
+//
+//     Three properties of the format drive the design, and each has a check:
+//       - SLOT STRINGS are `FittingSlot(n).name.lower()` with ONE special case: HIGH renders as
+//         "hi". A slot string we do not recognise must resolve to null and be SKIPPED — never
+//         treated as cargo, or a module quietly ends up in the hold instead of failing loudly.
+//       - CHARGES lose their module. exportXml sums every module's ammo fit-wide into the cargo
+//         hold, so 93% of a real library would import with empty guns and read 0 DPS. We put one
+//         clip back into each empty charge-taking module and leave genuine spares in the hold.
+//         Clip size is floor(bay / (chargeVolume x chargeRate)) — `numShots` is not a stored
+//         attribute (gotcha 1), so reading it would silently give every module the whole stack.
+//       - IMPLANTS AND BOOSTERS ARE NOT IN THE FILE AT ALL. exportXml takes no options parameter;
+//         it walks modules, drones, fighters and cargo and nothing else. An import that invented
+//         them would be inventing stats.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPYFA XML IMPORT');
+
+  check('pyfaxml', 'hi slot -> high section', parseSlotAttr('hi slot 3')?.section, 'high');
+  check('pyfaxml', 'med slot -> mid section', parseSlotAttr('med slot 0')?.section, 'mid');
+  check('pyfaxml', 'slot index parsed', parseSlotAttr('low slot 2')?.index, 2, 0);
+  check('pyfaxml', 'subsystem is its own kind', parseSlotAttr('subsystem slot 2')?.kind, 'subsystem');
+  check('pyfaxml', 'drone bay', parseSlotAttr('drone bay')?.kind, 'drone');
+  check('pyfaxml', 'fighter bay', parseSlotAttr('fighter bay')?.kind, 'fighter');
+  // The one that matters: unknown must NOT fall through to cargo.
+  check('pyfaxml', 'unknown slot is null, not cargo', parseSlotAttr('banana slot 0') === null ? 1 : 0, 1, 0);
+
+  // A localized client wraps every name as escaped markup inside the attribute; the hint is the
+  // official English name, and taking the element text instead resolves nothing.
+  check('pyfaxml', 'localized hint wins',
+        officialName('<localized hint="Maelstrom">Sturmwind*</localized>'), 'Maelstrom');
+  check('pyfaxml', 'plain name passes through', officialName('Jaguar'), 'Jaguar');
+  // Same text as an EFT mutation block's third line, so the same parse serves both.
+  check('pyfaxml', 'mutated attrs parsed', parseMutatedAttrs('cpu 22.9, power 1440').power, 1440, 0);
+
+  const jaguar = {
+    name: 'Jaguar fit', shipType: 'Jaguar',
+    hardware: [
+      { slot: 'low slot 0', type: 'Nanofiber Internal Structure II' },
+      { slot: 'low slot 1', type: 'Nanofiber Internal Structure II' },
+      { slot: 'low slot 2', type: 'Nanofiber Internal Structure II' },
+      { slot: 'med slot 0', type: 'Medium Ancillary Shield Booster' },
+      { slot: 'med slot 1', type: '5MN Microwarpdrive II' },
+      { slot: 'med slot 2', type: 'Target Painter II' },
+      { slot: 'med slot 3', type: 'Target Painter II' },
+      { slot: 'med slot 4', type: 'Warp Disruptor II' },
+      { slot: 'hi slot 0', type: 'Light Missile Launcher II' },
+      { slot: 'hi slot 1', type: 'Light Missile Launcher II' },
+      { slot: 'hi slot 2', type: 'Light Missile Launcher II' },
+      { slot: 'hi slot 3', type: 'Small Energy Neutralizer II' },
+      { slot: 'rig slot 0', type: 'Small Ancillary Current Router II' },
+      { slot: 'rig slot 1', type: 'Small Auxiliary Thrusters II' },
+      { qty: '2', slot: 'drone bay', type: 'Hobgoblin II' },
+      { qty: '4', slot: 'cargo', type: 'Navy Cap Booster 100' },
+      { qty: '159', slot: 'cargo', type: 'Inferno Fury Light Missile' },
+    ],
+  };
+
+  const shape = xmlFittingToImportShape(jaguar);
+  check('pyfaxml', 'ship resolved', shape.shipName, 'Jaguar');
+  check('pyfaxml', 'nothing unresolved', shape.unresolved.length, 0, 0);
+  check('pyfaxml', 'all 14 modules placed', shape.mods.length, 14, 0);
+  check('pyfaxml', 'drone qty carried across', shape.drones[0]?.qty, 2, 0);
+  check('pyfaxml', 'no implants invented', shape.implantNames.length, 0, 0);
+  check('pyfaxml', 'no boosters invented', shape.boosterNames.length, 0, 0);
+
+  const launchers = shape.mods.filter((m) => m.name === 'Light Missile Launcher II');
+  check('pyfaxml', 'every launcher reloaded',
+        launchers.filter((m) => m.charge === 'Inferno Fury Light Missile').length, 3, 0);
+  check('pyfaxml', 'ASB took the cap boosters',
+        shape.mods.find((m) => m.name === 'Medium Ancillary Shield Booster')?.charge, 'Navy Cap Booster 100');
+  // A neut takes no charge at all, so it must not consume one.
+  check('pyfaxml', 'neut left empty',
+        shape.mods.find((m) => /Neutralizer/.test(m.name))?.charge === undefined ? 1 : 0, 1, 0);
+  check('pyfaxml', 'reload count surfaced to the user', shape.chargesReloaded, 4, 0);
+
+  // LML II bay 0.795 / Fury 0.015 = a 53-shot clip. The export carried exactly 3 x 53, so the hold
+  // empties; a stack bigger than the rack leaves the remainder behind. Both halves matter — a clip
+  // size of "the whole stack" passes the first and fails the second.
+  check('pyfaxml', 'exactly three clips empties the hold', shape.cargo.length, 0, 0);
+  const spare = xmlFittingToImportShape({ ...jaguar,
+    hardware: jaguar.hardware.map((h) => h.type === 'Inferno Fury Light Missile' ? { ...h, qty: '200' } : h) });
+  check('pyfaxml', 'genuine spares stay in cargo', spare.cargo[0]?.qty, 200 - 3 * 53, 0);
+
+  const conv = convertFitting(jaguar);
+  check('pyfaxml', 'filed under the hull', conv.ship, 'Jaguar');
+  check('pyfaxml', 'high rack filled', conv.entry.slots.high.filter((s) => s.typeID).length, 4, 0);
+  check('pyfaxml', 'mid rack filled', conv.entry.slots.mid.filter((s) => s.typeID).length, 5, 0);
+  check('pyfaxml', 'low rack filled', conv.entry.slots.low.filter((s) => s.typeID).length, 3, 0);
+  check('pyfaxml', 'rigs filled', conv.entry.slots.rigs.filter((s) => s.typeID).length, 2, 0);
+
+  // The point of the whole exercise: an imported record must actually calculate. Loose bounds — the
+  // exact numbers belong to the fits pinned against pyfa above; this only catches a record that
+  // arrives structurally intact but computationally dead.
+  const cs = calcFitStats({ typeID: tid('Jaguar'), name: 'Jaguar' }, conv.entry.slots, conv.entry.drones,
+                          SKILLS_ALL_V, { cargo: conv.entry.cargo, implants: conv.entry.implants });
+  check('pyfaxml', 'imported fit does damage', cs.weaponDps.total > 50 ? 1 : 0, 1, 0);
+  check('pyfaxml', 'imported fit has a tank', cs.totalEHP > 1000 ? 1 : 0, 1, 0);
+
+  // A module that takes no ammo must be left alone even when a compatible-looking stack is present.
+  const bare = reloadCargoCharges([{ name: 'Damage Control II', typeID: tid('Damage Control II') }],
+                                  [{ name: 'Nanite Repair Paste', qty: 50 }]);
+  check('pyfaxml', 'chargeless module loads nothing', bare.loaded, 0, 0);
+  check('pyfaxml', 'and its cargo is untouched', bare.cargo[0]?.qty, 50, 0);
+
+  // An unknown ship is REPORTED, not thrown — one bad fitting in a 1,700-fit library must not take
+  // the whole import down with it.
+  const bad = xmlFittingToImportShape({ name: 'x', shipType: 'Nonesuch', hardware: [] });
+  check('pyfaxml', 'unknown ship reported not thrown', bad.error, 'Unknown ship: "Nonesuch"');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -14,12 +14,18 @@ function isBackupApp(app) {
   return BACKUP_APP_ACCEPTED.includes(String(app ?? "").toLowerCase());
 }
 
-function collect() {
+// `fitsBlob` is the fit library, which lives in IndexedDB rather than localStorage (fits-store.js).
+// It is injected rather than imported so this file stays React-, DOM- and IndexedDB-free and the
+// regression suite can keep driving it with a plain object. The backup FILE FORMAT is unchanged:
+// fits still travel under the `pyfa-fitsdb` key, so a file written here restores on a build that
+// keeps them in localStorage and vice versa.
+function collect(fitsBlob = null) {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
     if (KEY_RE.test(k)) data[k] = localStorage.getItem(k);
   }
+  if (typeof fitsBlob === "string") data["pyfa-fitsdb"] = fitsBlob;
   return data;
 }
 
@@ -32,12 +38,12 @@ function countFits(db) {
   } catch { return { fits: 0, ships: 0 }; }
 }
 
-function buildBackup() {
+function buildBackup(fitsBlob = null) {
   return JSON.stringify({
     app: BACKUP_APP,
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
-    data: collect(),
+    data: collect(fitsBlob),
   }, null, 2);
 }
 

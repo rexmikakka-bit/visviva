@@ -36,6 +36,10 @@ pyfa-master/
 scripts/oracle/_*
 scripts/oracle/*.err
 scripts/oracle/__pycache__/
+# Same rule, second doorway: a pyfa "Backup All Fittings" XML dropped in docs/ to be used as an
+# import fixture is the same personal fit collection in a folder nobody thinks of as scratch.
+docs/pyfa-fits*.xml
+*.pyfa.xml
 
 # ── Generated native iOS project ─────────────────────────────────────────────
 # Unlike android/, ios/ is NOT committed. The TestFlight workflow regenerates it with
