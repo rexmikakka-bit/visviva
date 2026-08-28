@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -4778,6 +4778,75 @@ Agency 'Overclocker' SB7 Dose III
   check('alligator', 'drone volley', st.droneVolley.total, 2064.5003066972104, 1e-5);
   check('alligator', 'maxVelocityAB (MWD)', st.maxVelocityAB, 5622, 0);
   check('alligator', 'align time', st.alignTime, 36.69, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 21. CAPACITOR SIMULATION WITH A CAP BOOSTER — the injector reserve
+//     Reported: Axis said an Omen Navy Issue's cap lasted 1m48s where pyfa said 2m0s. Every INPUT
+//     matched eos exactly (capacity 1546.875, rechargeRate 390000, and all nine drains — four
+//     lasers at 9.9975/2890ms, warp disruptor 22.5/5s, neut 33.75/6s, AAR 160/9s, MWD 97.5/10s,
+//     injector -800/12s clip 1 reload 10s), so the divergence was purely algorithmic.
+//
+//     Axis treated the cap booster as a periodic drain with a negative cost and clamped the
+//     overflow off. eos does not: it will not fire an injector whose charge would overshoot max
+//     cap, and instead lifts it into a RESERVE where it neither fires, spends a charge, nor counts
+//     down its clip, until the capacitor has dropped far enough to swallow it whole. The first
+//     injection therefore lands at t=12s, not t=0 — and a charge is never part-wasted.
+//
+//     Nothing pinned cap LIFETIME before this section (only capDelta averages and one capStable
+//     boolean), which is how it drifted unnoticed. Baselines are eos's, to full float precision,
+//     from scripts/oracle against pyfa v2.68.0.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCAP BOOSTER SIMULATION (Omen Navy Issue)');
+  const oni = { typeID: tid('Omen Navy Issue'), name: 'Omen Navy Issue' };
+  const slots = {
+    high: [M('Heavy Pulse Laser II', 'active', 'Scorch M'), M('Heavy Pulse Laser II', 'active', 'Scorch M'),
+           M('Small Energy Neutralizer II', 'active'),
+           M('Heavy Pulse Laser II', 'active', 'Scorch M'), M('Heavy Pulse Laser II', 'active', 'Scorch M')],
+    mid: [M('50MN Cold-Gas Enduring Microwarpdrive', 'active'),
+          M('Medium Capacitor Booster II', 'active', 'Navy Cap Booster 800'), M('Warp Disruptor II', 'active')],
+    low: [M('Damage Control II', 'active'), M('Heat Sink II', 'online'), M('Heat Sink II', 'online'),
+          M('Heat Sink II', 'online'), M('Nanofiber Internal Structure II', 'online'),
+          M('Multispectrum Energized Membrane II', 'online'),
+          M('Medium Ancillary Armor Repairer', 'active', 'Nanite Repair Paste')],
+    rigs: [M('Medium Ancillary Current Router I', 'online'), M('Medium Energy Locus Coordinator II', 'online'),
+           M('Medium Energy Locus Coordinator II', 'online')],
+  };
+  const drones = [{ typeID: tid('Warrior II'), name: 'Warrior II', qty: 5, active: true },
+                  { typeID: tid('Hornet EC-300'), name: 'Hornet EC-300', qty: 5, active: false }];
+  const cs = calcFitStats(oni, slots, drones, SKILLS_ALL_V, {
+    boosters: ["Standard Exile Booster", "Standard Drop Booster", "Agency 'Overclocker' SB5 Dose II"]
+      .map((name) => ({ name, active: true })),
+  });
+
+  // The inputs both engines agree on — pinned so a failure here says "the drains changed", not
+  // "the simulator changed", and the two causes never get confused again.
+  check('oni-cap', 'capacitorCapacity', cs.capCapacity, 1546.875, 1e-9);
+  check('oni-cap', 'rechargeRate ms', cs.capRechargeMs, 390000, 0);
+  check('oni-cap', 'injector is one -800 GJ charge per clip',
+        (cs.capModules ?? []).filter((m) => m.isInjector && m.capNeedGJ === -800 && m.clipSize === 1).length, 1, 0);
+
+  // THE HEADLINE. eos capState = 120.0s; Axis used to say 108.
+  check('oni-cap', 'not cap stable (precondition)', cs.capStable ? 1 : 0, 0, 0);
+  check('oni-cap', 'cap lasts 120s (pyfa 2m0s)', cs.capTime, 120, 0);
+
+  const r = runCapSim(cs.capModules, cs.capCapacity, cs.capRechargeMs);
+  // Every event where cap ROSE is an injection. Fired on its raw 12s cycle with a 1-round clip and
+  // a 10s reload, the injector gets 6 shots into 120s (t=0,22,44,…); holding the overshooting first
+  // one in reserve buys a 7th. That count is the cheapest single discriminator between the two
+  // models, and t=12 is eos's own first injection to the last decimal.
+  const injections = r.events.filter(([, c], i) => i > 0 && c > r.events[i - 1][1]);
+  check('oni-cap', 'first injection deferred to t=12s', injections[0]?.[0], 12, 0);
+  check('oni-cap', 'cap after that injection', injections[0]?.[1], 1529.0044961882006, 1e-9);
+  check('oni-cap', 'seven injections in the run', injections.length, 7, 0);
+  check('oni-cap', 'run ends with the capacitor empty', r.died ? 1 : 0, 1, 0);
+
+  // The graph and the readout must come off ONE simulation — a second, differently-shaped simulator
+  // behind the graph is how they came to disagree by 12s in the first place.
+  const trace = simulateCapTrace(cs.capModules, cs.capCapacity, cs.capRechargeMs, { tMaxSec: 300, sampleDt: 0.5 });
+  check('oni-cap', 'graph ends exactly when the cap does', trace[trace.length - 1][0], cs.capTime, 0);
+  check('oni-cap', 'graph ends at zero cap', trace[trace.length - 1][1], 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

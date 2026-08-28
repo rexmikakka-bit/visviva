@@ -270,105 +270,132 @@ export function layerEHP(hp, resists) {
   return hp / Math.max(0.0001, 1 - avg);
 }
 
-export function simulateCap(modules, capCapacity, capRechargeMs, tMaxSec = 21600) {
-  if (!modules.length || !capCapacity) return { stable: true, level: 1, time: null };
-  // EVE cap regen formula: dCap/dt = capacity × (√f - f) × 10 / rechargeTime
-  const regenPerSec = (lvl) => capCapacity * ((Math.sqrt(lvl) - lvl) * 10) / (capRechargeMs / 1000);
-  let cap = capCapacity, t = 0;
-  // Track oscillation band (matching Pyfa's cap_stable_low / cap_stable_high)
-  let capLowest = capCapacity;     // minimum cap seen after any activation
-  let capLowestPre = capCapacity;  // minimum cap seen just BEFORE an activation
-  const WARMUP_MS = 120000;        // 2 min warmup before tracking
-  const heap = modules.map(m => ({ ...m, next: 0, _shots: 0 }));
-  heap.sort((a, b) => a.next - b.next);
-  for (let iter = 0; iter < 200000; iter++) {
-    const m = heap[0];
-    const dt = Math.max(0, m.next - t);
-    // dt is in MILLISECONDS; regenPerSec is GJ per SECOND — convert.
-    cap = Math.min(capCapacity, cap + regenPerSec(cap / capCapacity) * dt / 1000);
-    t = m.next;
-    if (t > tMaxSec * 1000) break;
-    // Track pre-activation cap (local min before module fires)
-    if (t > WARMUP_MS) capLowestPre = Math.min(capLowestPre, cap);
-    if (m.isInjector) {
-      if (m.clipSize > 0 && m._shots >= m.clipSize) {
-        m._shots = 0;
-        m.next = t + m.reloadMs;
-      } else {
-        cap = Math.min(capCapacity, cap - m.capNeedGJ);
-        m._shots++;
-        m.next = t + m.cycleMs;
-      }
-    } else {
-      // capNeedGJ is positive (cost in GJ) — cap must have enough to activate
-      if (cap < m.capNeedGJ) return { stable: false, level: cap / capCapacity, time: t / 1000 };
-      cap -= m.capNeedGJ;
-      // Handle clip/reload for limited-ammo modules (e.g. Ancillary Armor Repairer with paste)
-      if (m.clipSize > 0) {
-        m._shots++;
-        if (m._shots >= m.clipSize) {
-          m._shots = 0;
-          m.next = t + m.cycleMs + (m.reloadMs || 0);
-        } else {
-          m.next = t + m.cycleMs;
-        }
-      } else {
-        m.next = t + m.cycleMs;
-      }
-    }
-    // Track post-activation cap
-    if (t > WARMUP_MS) capLowest = Math.min(capLowest, cap);
-    heap.sort((a, b) => a.next - b.next);
-  }
-  // Stable level = midpoint of oscillation band (matches Pyfa's (low + high) / 2 / capMax)
-  const stableLevel = Math.min(1, (capLowest + capLowestPre) / 2 / capCapacity);
+// ── Capacitor simulation ─────────────────────────────────────────────────────
+// runCapSim is a port of eos's capSim.CapSimulator (Pyfa-master/eos/capSim.py). The "cap lasts N"
+// readout AND the capacitor graph are both derived from this ONE run, exactly as pyfa derives both
+// from a single `saved_changes` table. A second, differently-shaped simulator behind the graph is
+// how the two came to disagree in the first place — the graph outlived the readout by 12 s on the
+// fit that surfaced this.
+//
+// ⚠ THE INJECTOR IS NOT A PERIODIC DRAIN WITH THE OVERFLOW CLAMPED OFF. That is the whole bug this
+// function exists to fix, and it is the one thing to preserve if this is ever rewritten. eos will
+// not fire a cap booster whose charge would overshoot max cap: it lifts it out of the schedule
+// entirely into a RESERVE and holds it there — not firing, not consuming a charge, not counting
+// down its clip — until the capacitor has dropped far enough to swallow the charge whole. It is
+// then spent on demand, either to fund an activation the fit cannot otherwise afford (taking the
+// reserve injector that overshoots least) or to top up straight after one (taking the largest that
+// still fits). So a charge is never part-wasted and a clip stretches exactly as far as the fit
+// needs it to.
+//
+// Firing on the raw cycle instead dumps most of the first charge into an already-full capacitor —
+// with a Navy Cap Booster 800 that is 800 GJ and a whole charge gone at t=0 — and cost an Omen Navy
+// Issue 12 s of cap life: 108 s against pyfa's 120 s. Pinned in section 19.
+export function runCapSim(modules, capCapacity, capRechargeMs, { tMaxMs = 6 * 60 * 60 * 1000, startingCap = null } = {}) {
+  const changes = new Map();  // tMs → cap AFTER every change at that instant (last write wins, as pyfa)
+  const empty = { events: [], tEndMs: 0, capLowest: capCapacity, capLowestPre: capCapacity, died: false };
+  if (!modules?.length || !capCapacity) return empty;
+  const tau = capRechargeMs / 5;
+  let cap = startingCap ?? capCapacity;
+  let capLowest = cap, capLowestPre = cap, tLast = 0, died = false;
+  // Scheduled activations, and injectors pulled out of the schedule awaiting a use for their charge.
+  const state = modules.map(m => ({ ...m, next: 0, shots: 0 }));
+  const awaiting = [];
+  const amountOf = (inj) => -inj.capNeedGJ;  // injectors carry a NEGATIVE capNeedGJ
 
-  // NOTE: an analytical "drain > fill && equilibrium > 80% → unstable" check used to live here.
-  // It existed only to compensate for a regen-unit bug (regen applied 1000× too fast, so the
-  // simulation could never drain). With regen corrected, the discrete simulation is physically
-  // accurate: unstable fits die naturally with a true simulated lifetime, and fits that
-  // genuinely stabilize at a high equilibrium are correctly reported stable.
-  return { stable: true, level: stableLevel, time: null };
+  const fire = (inj, tNow) => {
+    cap = Math.min(capCapacity, cap - inj.capNeedGJ);
+    changes.set(tNow, cap);
+    inj.shots++;
+    inj.next = tNow + inj.cycleMs;
+    if (inj.clipSize > 0 && inj.shots % inj.clipSize === 0) { inj.shots = 0; inj.next += inj.reloadMs || 0; }
+    state.push(inj);
+  };
+  const take = (inj, tNow) => { awaiting.splice(awaiting.indexOf(inj), 1); fire(inj, tNow); };
+
+  for (let iter = 0; iter < 400000 && state.length; iter++) {
+    state.sort((a, b) => a.next - b.next);
+    const m = state[0];
+    const tNow = m.next;
+    if (tNow >= tMaxMs) break;
+    // Analytical regen between events — the closed form pyfa uses, not a Euler step, so the curve
+    // is exact regardless of how far apart two activations fall.
+    if (tNow > tLast) cap = capCapacity * (1 + (Math.sqrt(cap / capCapacity) - 1) * Math.exp((tLast - tNow) / tau)) ** 2;
+    if (tNow !== tLast && cap < capLowestPre) capLowestPre = cap;
+    tLast = tNow;
+
+    if (m.isInjector && cap - m.capNeedGJ > capCapacity) {
+      // Would overshoot — hold it in reserve. It leaves the schedule and is not rescheduled.
+      state.shift();
+      awaiting.push(m);
+      continue;
+    }
+    state.shift();
+    // Cannot afford this activation: buy it with reserve charges, preferring the smallest that
+    // covers the shortfall. (pyfa's fallback branch here reaches for max() of an empty list, which
+    // would raise in Python; its evident intent is the largest reserve injector, so use that.)
+    while (awaiting.length && m.capNeedGJ > cap && cap < capCapacity) {
+      const needed = Math.min(m.capNeedGJ - cap, capCapacity - cap);
+      const good = awaiting.filter((i) => amountOf(i) >= needed);
+      take(good.length ? good.reduce((a, b) => (amountOf(b) < amountOf(a) ? b : a))
+                       : awaiting.reduce((a, b) => (amountOf(b) > amountOf(a) ? b : a)), tNow);
+    }
+    cap = Math.min(capCapacity, cap - m.capNeedGJ);
+    changes.set(tNow, cap);
+    if (cap < capLowest) {
+      if (cap < 0) { died = true; break; }  // cap went negative: this is the moment the fit dies
+      capLowest = cap;
+    }
+    // Top up after spending, with the largest reserve charge that still fits without overshooting.
+    while (awaiting.length && cap < capCapacity) {
+      const good = awaiting.filter((i) => amountOf(i) <= capCapacity - cap);
+      if (!good.length) break;
+      take(good.reduce((a, b) => (amountOf(b) > amountOf(a) ? b : a)), tNow);
+    }
+    m.shots++;
+    m.next = tNow + m.cycleMs;
+    if (m.clipSize > 0 && m.shots % m.clipSize === 0) { m.shots = 0; m.next += m.reloadMs || 0; }
+    state.push(m);
+  }
+  const events = [...changes.keys()].sort((a, b) => a - b).map((t) => [t / 1000, Math.max(0, changes.get(t))]);
+  return { events, tEndMs: tLast, capLowest, capLowestPre, died };
 }
 
-// simulateCapTrace — capacitor-over-time trajectory for the cap graph, using the SAME discrete
-// event model as simulateCap (so the graph agrees with the stability/lifetime readout). Modules
-// that can't afford their activation cost skip that cycle (realistic cap-out: expensive modules
-// stop firing, cheap ones keep going, the injector keeps pulsing), which yields the true drain
-// curve and low-end oscillation instead of a smooth average.
+export function simulateCap(modules, capCapacity, capRechargeMs, tMaxSec = 21600) {
+  if (!modules.length || !capCapacity) return { stable: true, level: 1, time: null };
+  const r = runCapSim(modules, capCapacity, capRechargeMs, { tMaxMs: tMaxSec * 1000 });
+  // pyfa: capState = (cap_stable_low + cap_stable_high) / (2 × capacity), and BOTH marks are forced
+  // to 0 when the run ended with the capacitor empty — so "died" and "unstable" are the same thing.
+  if (r.died) return { stable: false, level: 0, time: r.tEndMs / 1000 };
+  return { stable: true, level: Math.min(1, (r.capLowest + r.capLowestPre) / 2 / capCapacity), time: null };
+}
+
+// simulateCapTrace — capacitor-over-time trajectory for the cap graph. It is a rendering of
+// runCapSim's event list, NOT a second simulation: pyfa's graph getter does exactly this, reading
+// getCapSimData() and filling the gaps between events with the closed-form regen curve. Each event
+// contributes two points at the same x — the regenerated value just before it, then the value after
+// it — which is what draws the vertical step.
+//
+// The trace stops at the last event, as pyfa's getter does (it clamps maxTime to the final cap-sim
+// point and returns nothing past it). When a fit caps out, runCapSim halts there, so the line ends
+// at the moment the fit dies rather than continuing into an invented recovery.
 export function simulateCapTrace(modules, capCapacity, capRechargeMs, { tMaxSec = 300, sampleDt = 0.5 } = {}) {
   const pts = [];
   if (!capCapacity) return pts;
-  const regenPerSec = (lvl) => capCapacity * ((Math.sqrt(Math.max(0, lvl)) - Math.max(0, lvl)) * 10) / (capRechargeMs / 1000);
-  let cap = capCapacity;
-  const evs = (modules || []).map(m => ({ ...m, next: 0, _shots: 0 }));
-  const dtMs = Math.max(50, sampleDt * 1000);
-  const tMaxMs = tMaxSec * 1000;
-  for (let tm = 0; tm <= tMaxMs + 1e-6; tm += dtMs) {
-    // Continuous recharge over this step (uses cap at the start of the step).
-    cap = Math.min(capCapacity, cap + regenPerSec(cap / capCapacity) * (dtMs / 1000));
-    // Fire every module/injector event scheduled up to now.
-    for (const m of evs) {
-      let guard = 0;
-      while (m.next <= tm && guard++ < 10000) {
-        if (m.isInjector) {
-          if (m.clipSize > 0 && m._shots >= m.clipSize) { m._shots = 0; m.next += m.reloadMs; }
-          else { cap = Math.min(capCapacity, cap - m.capNeedGJ); m._shots++; m.next += m.cycleMs; }
-        } else if (cap >= m.capNeedGJ) {
-          cap -= m.capNeedGJ;
-          if (m.clipSize > 0) {
-            m._shots++;
-            if (m._shots >= m.clipSize) { m._shots = 0; m.next += m.cycleMs + (m.reloadMs || 0); }
-            else m.next += m.cycleMs;
-          } else m.next += m.cycleMs;
-        } else {
-          // Not enough cap to activate — skip this cycle (module fails to fire), try again next cycle.
-          m.next += m.cycleMs;
-        }
-      }
+  const tau = capRechargeMs / 1000 / 5;
+  const regen = (cap0, dt) => capCapacity * (1 + (Math.sqrt(Math.max(0, cap0) / capCapacity) - 1) * Math.exp(-dt / tau)) ** 2;
+  const { events } = runCapSim(modules, capCapacity, capRechargeMs, { tMaxMs: tMaxSec * 1000 });
+  const dt = Math.max(0.05, sampleDt);
+  let t = 0, cap = capCapacity;
+  pts.push([0, cap]);
+  for (const [et, ecap] of events) {
+    if (et > t) {
+      for (let s = t + dt; s < et - 1e-9; s += dt) pts.push([s, regen(cap, s - t)]);
+      pts.push([et, regen(cap, et - t)]);
     }
-    pts.push([tm / 1000, cap]);
+    pts.push([et, ecap]);
+    t = et; cap = ecap;
   }
+  if (!events.length) for (let s = dt; s <= tMaxSec + 1e-9; s += dt) pts.push([s, cap]);
   return pts;
 }
 

@@ -408,13 +408,14 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const cr=c=>(10*maxC/tau)*(Math.sqrt(Math.max(0,c)/maxC)-Math.max(0,c)/maxC);  // gross regen GJ/s
     if(xKey==="capPct"){const pEnd=dom(100,100),pStep=pEnd/100;for(let p=0;p<=pEnd+1e-9;p+=pStep){const c=maxC*p/100;pts.push([p,yKey==="capAmt"?c:cr(c)]);}xMax=pEnd;yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;}
     else{
-      // Drive the curve from the same discrete event simulation as the cap-stability readout, so the
-      // graph agrees with it: modules drain, the booster pulses (clip + reload), and on an unstable
-      // fit cap drains down and oscillates instead of pegging high. Window scales to the lifetime.
+      // The curve IS the cap-stability readout's simulation, rendered — same runCapSim, so the line
+      // and the "cap lasts N" figure cannot disagree. On an unstable fit it ends at cap-out, and the
+      // axis ends with it (pyfa clamps its x range to the last cap-sim point the same way); leaving
+      // the axis at tMaxSec would strand the line in the left 40% of an otherwise empty chart.
       const capTime=cs?.capTime; // seconds to cap-out, or null when stable
       const tMaxSec=dom(capTime?Math.min(Math.max(capTime*2.5,60),600):180);
       const trace=simulateCapTrace(cs?.capModules??[],maxC,(cs?.capRechargeMs??250000),{tMaxSec,sampleDt:0.5});
-      if(trace.length){for(const [t,c] of trace)pts.push([t,yKey==="capAmt"?c:cr(c)]);xMax=tMaxSec;}
+      if(trace.length){for(const [t,c] of trace)pts.push([t,yKey==="capAmt"?c:cr(c)]);xMax=Math.max(1,trace[trace.length-1][0]);}
       else{const tE=dom(180);pts=[[0,maxC],[tE,maxC]];xMax=tE;}
       yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;
     }
