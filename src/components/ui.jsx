@@ -182,6 +182,19 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
   // constant FOUR significant digits rather than a fixed decimal count, so a value gains precision
   // exactly as it gains room — see src/lib/fmt.js.
   const fmtShort=v=>fmtResource(v);
+  // Remaining headroom as a SIGNED percentage of the total: negative is a deficit to make up,
+  // positive is room to spare. Precision tapers because the strip is three columns wide on a phone
+  // and each step only buys detail where it is actionable — "62%" of calibration left never needs a
+  // decimal, while a hair over powergrid does, since that is the difference between a 3% and a 5%
+  // implant. Two guards, both from real values: an exact 0 must not print "0.00%", and anything
+  // non-zero must not round down to a flat "-0.00%", which shows a minus sign against a magnitude of
+  // nothing and reads as broken. Summing float module costs against an equal total lands a hair
+  // either side of zero, so a fit that is exactly full genuinely can register as over by 1e-13.
+  const fmtMarginPct=(rem,total)=>{
+    const p=(rem/total)*100, a=Math.abs(p);
+    const s=a===0?"0":a<1?Math.max(a,0.01).toFixed(2):a<10?a.toFixed(1):Math.round(a);
+    return `${p<0?"-":""}${s}%`;
+  };
 
   return(
     // STICKY, and full-bleed rather than a floating rounded card. The three meters were stacked
@@ -226,6 +239,18 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
                 ? <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
                     <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(Math.abs(rem))}</span>
                     <span style={{fontSize:10,color:over?overColor:C.textMid}}> {over?"over":"left"}</span>
+                    {/* The margin as a PROPORTION, which is the form the fix comes in: fitting
+                        implants and rigs are sold as percentages, so "10.03k over" does not tell you
+                        whether a 3% or a 5% powergrid implant closes the gap, and "-4.7%" does. Same
+                        quantity as the figure to its left, over the total.
+                        SIGNED, so the number stands alone: negative is a deficit to make up, positive
+                        is headroom. That is what lets it show under the limit as well as over without
+                        reading ambiguously — the sign, not the neighbouring word, is what says which.
+                        Kept out of the default used/total view, which is unchanged.
+                        textMid, NOT textMute, matching the "left"/"over" word beside it: textMute is
+                        3.66:1 on this strip, under the 4.5:1 floor for text this size, and it was
+                        reported as hard to read against exactly that neighbour. */}
+                    {res.total>0&&<span style={{fontSize:10,color:C.textMid}}> {fmtMarginPct(rem,res.total)}</span>}
                   </span>
                 : <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
                     <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(res.used)}</span>
