@@ -336,19 +336,32 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
 //
 // The PROJECTED picker is deliberately UNFILTERED: anything can be projected, and hiding fits there
 // would take choices away rather than remove noise.
+// `<FitPickerSheet>` mounts fresh every time the sheet opens (`{showCmdPicker && <...>}`), so its own
+// useMemo cache dies with it — a large imported library (thousands of fits) re-paid the full dogma
+// pass on EVERY click of "+ Add Command Fit", not just the first. Cached here instead, keyed on the
+// fit object's own identity: per the fits-store's reference-identity diffing (see CLAUDE.md), a fit
+// that hasn't been edited keeps the same object reference forever, so a WeakMap needs no manual
+// invalidation — an edited fit gets a new reference and simply misses the cache once.
+const _cmdBurstCache=new WeakMap();
 function hasCommandBursts(ship,fit){
+  if(_cmdBurstCache.has(fit))return _cmdBurstCache.get(fit);
   // Cheap necessary condition first: computeCommandBursts builds a whole Fit and runs the dogma
-  // engine (~11 ms on a desktop), and this filter runs over the entire library every time the picker
-  // opens. A fit carrying no Command Burst module cannot produce a burst, and that is most fits.
-  // Deliberately tests ONLY the module group — not its state or its loaded charge, both of which
-  // computeCommandBursts also requires — so this stays a strict SUPERSET of what that function
-  // accepts and the expensive call remains the only thing that decides the answer.
+  // engine (~11 ms on a desktop). A fit carrying no Command Burst module cannot produce a burst, and
+  // that is most fits. Deliberately tests ONLY the module group — not its state or its loaded charge,
+  // both of which computeCommandBursts also requires — so this stays a strict SUPERSET of what that
+  // function accepts and the expensive call remains the only thing that decides the answer.
   const all=[...(fit.slots?.high??[]),...(fit.slots?.mid??[]),...(fit.slots?.low??[]),...(fit.slots?.rigs??[]),...(fit.slots?.services??[])];
-  if(!all.some(s=>s?.typeID&&(TYPES[s.typeID]??TYPES[String(s.typeID)])?.gn==="Command Burst"))return false;
-  try{
-    return computeCommandBursts({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
-      {implants:fit.implants,boosters:fit.boosters}).length>0;
-  }catch{ return true; }   // never hide a fit because its calc threw
+  let result;
+  if(!all.some(s=>s?.typeID&&(TYPES[s.typeID]??TYPES[String(s.typeID)])?.gn==="Command Burst")){
+    result=false;
+  }else{
+    try{
+      result=computeCommandBursts({name:ship,typeID:tidByName(ship)},fit.slots,SKILL_DEFAULTS,
+        {implants:fit.implants,boosters:fit.boosters}).length>0;
+    }catch{ result=true; }   // never hide a fit because its calc threw
+  }
+  _cmdBurstCache.set(fit,result);
+  return result;
 }
 
 // Item art for the booster rows, matching the module browser. 301 of 311 boosters and 837 of 838
@@ -432,11 +445,26 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
   // the sheet being open, because hasCommandBursts runs a dogma pass per fit.
   const cmdTabFits=useMemo(()=>showCmdPicker?openTabFits.filter(({ship,fit})=>hasCommandBursts(ship,fit)):[],[showCmdPicker,openTabFits]);
 
+  // Same "active, not just present" semantics as the bottom-nav badges: a toggled-off booster or an
+  // ignored projected/command fit does not count, matching pyfa's Additions panel. System has no
+  // on/off concept — 1 whenever an environment is set, 0 for normal space — same as the nav's combined
+  // Effects badge already treats it.
+  const _sectionBadges={
+    boosters:(boosters??[]).filter(b=>b.active).length,
+    projected:(projFits??[]).filter(f=>f.active!==false).length,
+    command:(cmdFits??[]).filter(f=>f.active!==false).length,
+    environment:environment?1:0,
+  };
+
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       {/* Tapping a tab animates in the same direction a swipe to it would, so the two ways of
           moving between sections never disagree about which way the content lives. */}
-      {_SECTIONS.map(t=>(<button key={t.tabId} onClick={()=>{const to=_SECTION_IDS.indexOf(t.tabId),from=_SECTION_IDS.indexOf(section);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent"}}>{t.label}</button>))}
+      {_SECTIONS.map(t=>{const count=_sectionBadges[t.tabId];return(
+        <button key={t.tabId} onClick={()=>{const to=_SECTION_IDS.indexOf(t.tabId),from=_SECTION_IDS.indexOf(section);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+          {t.label}
+          {count>0&&<span style={{minWidth:15,height:15,padding:"0 4px",borderRadius:99,background:C.textMute,color:C.surface,fontSize:9,fontWeight:800,lineHeight:"15px",textAlign:"center",boxSizing:"border-box"}}>{count>99?"99+":count}</span>}
+        </button>);})}
     </div>
     {/* Panel wrapper for the swipe. Keyed on the section so the incoming panel remounts and replays
         the slide-in — these panels already unmounted on every tab change, so it costs nothing. */}
