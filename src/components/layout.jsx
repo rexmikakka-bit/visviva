@@ -261,26 +261,19 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
   );
 }
 
-// a at collapse=0, b at collapse=1 — no CSS transition on any of these: `collapse` already arrives
-// one scroll frame at a time (see App.jsx), and easing a value that is already smooth just adds lag
-// behind the finger. Same reasoning as ShipInfoSheet's hero collapse.
-const lerp=(a,b,t)=>a+(b-a)*t;
-
-export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,pilot,collapse=0}){
+export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,pilot,collapsed}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
   const shipName=activeFit?.ship??"Axis";
   const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
   // Restored to its original proportions -- the condensed version saved pixels but read as cramped
-  // next to comparable apps. The space is reclaimed by COLLAPSING instead: `collapse` is driven by
+  // next to comparable apps. The space is reclaimed by COLLAPSING instead: `collapsed` is driven by
   // scrolling in App.jsx, and shrinks the header to a single compact line rather than shortening it
   // permanently. The background still runs to the physical top of the screen while the content is
   // inset by env(safe-area-inset-top), so the status bar sits on the header's own surface colour.
-  const portrait=Math.round(lerp(52,34,collapse));
-  const portraitRadius=lerp(11,8,collapse);
-  const burger=Math.round(lerp(40,32,collapse));
   return(<div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,
-                      padding:`${lerp(14,0,collapse)}px 14px ${lerp(12,6,collapse)}px`,
-                      paddingTop:`calc(${lerp(14,6,collapse)}px + env(safe-area-inset-top, 0px))`}}>
+                      padding:collapsed?"0 14px 6px":"14px 14px 12px",
+                      paddingTop:`calc(${collapsed?"6px":"14px"} + env(safe-area-inset-top, 0px))`,
+                      transition:"padding .2s cubic-bezier(.22,.61,.36,1)"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
       <div style={{textAlign:"left",minWidth:0}}>
         {/* Uppercase by design -- it reads as a wordmark above the hull name. Hidden when collapsed:
@@ -290,25 +283,27 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
             nothing to label, just the name printed twice. */}
         {activeFit?.ship&&
         <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",
-                     maxHeight:lerp(20,0,collapse),opacity:lerp(1,0,collapse),lineHeight:1.6,overflow:"hidden",marginBottom:lerp(2,0,collapse)}}>Axis</div>}
+                     maxHeight:collapsed?0:20,opacity:collapsed?0:1,lineHeight:1.6,overflow:"hidden",marginBottom:collapsed?0:2,
+                     transition:"max-height .2s ease, opacity .15s ease, margin-bottom .2s ease"}}>Axis</div>}
         {/* lineHeight 1.2 left the line box 1px shorter than the glyphs need, and `overflow:hidden`
             (there for the ellipsis) then shaved the descenders off names like Apocalypse. */}
-        <div style={{...DISPLAY,fontSize:lerp(19,15,collapse),fontWeight:600,letterSpacing:"-.1px",color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
-                     overflow:"hidden",textOverflow:"ellipsis"}}>{shipName}</div>
-        {/* `maxHeight` here is the COLLAPSE animation (20 -> 0), not a layout size — but with no
+        <div style={{...DISPLAY,fontSize:collapsed?15:19,fontWeight:600,letterSpacing:"-.1px",color:C.text,lineHeight:1.3,whiteSpace:"nowrap",
+                     overflow:"hidden",textOverflow:"ellipsis",transition:"font-size .2s ease"}}>{shipName}</div>
+        {/* `maxHeight` here is the COLLAPSE animation (18 -> 0), not a layout size — but with no
             explicit lineHeight this line inherited the body's 1.93, making its natural box 23.2px.
             Clamping that to 18 cut the bottom off every descender: "Caldari Battleship" lost the
             tail of its p. Pin the line height so the clamp is comfortably above it instead of
             slicing through the text. */}
         <div style={{fontSize:12,color:C.textMid,marginTop:1,lineHeight:1.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
-                     maxHeight:lerp(20,0,collapse),opacity:lerp(1,0,collapse)}}>{subLabel}</div>
+                     maxHeight:collapsed?0:20,opacity:collapsed?0:1,
+                     transition:"max-height .2s ease, opacity .15s ease"}}>{subLabel}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {activeFit?.ship&&skillCheck&&
           <SkillBook ok={skillCheck.ok} count={skillCheck.missing.length} onClick={onSkillGaps} custom={!!pilot}/>}
-        <button onClick={onShipInfo} style={{width:portrait,height:portrait,borderRadius:portraitRadius,background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
+        <button onClick={onShipInfo} style={{width:collapsed?34:52,height:collapsed?34:52,borderRadius:collapsed?8:11,transition:"width .2s ease, height .2s ease",background:C.surfaceAlt,border:`1px solid ${C.border}`,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",cursor:onShipInfo?'pointer':'default',padding:0}}>
           {ship.typeID
-            ?<img src={eveRender(ship.typeID,64)} width={portrait} height={portrait} alt="" style={{borderRadius:portraitRadius}} onError={e=>{e.target.style.display="none";}}/>
+            ?<img src={eveRender(ship.typeID,64)} width={collapsed?34:52} height={collapsed?34:52} alt="" style={{borderRadius:collapsed?8:11}} onError={e=>{e.target.style.display="none";}}/>
             /* The app's own mark, standing in for a hull render that has not loaded (or a fit with
                no ship yet) — and it is THE SHIPPED ICON FILE, not a redrawing of it. A hand-drawn
                inline copy lived here once and silently fell out of step with the real icon; nothing
@@ -317,15 +312,15 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
                Sized to the BUTTON, not to an arbitrary 26px: a hull render fills the whole square,
                so a half-size glyph beside it read as a placeholder that had failed to load. The
                artwork is full-bleed, so the button's border-radius is what rounds it. */
-            :<img src={appMark} width={portrait} height={portrait} alt=""
-                  style={{borderRadius:portraitRadius,display:"block"}}/>
+            :<img src={appMark} width={collapsed?34:52} height={collapsed?34:52} alt=""
+                  style={{borderRadius:collapsed?8:11,display:"block"}}/>
           }
         </button>
         {/* No surface or border: the button beside it is a hull PORTRAIT, and giving both the same
             square chrome made the menu read as a second image slot. The glyph carries itself at this
             size. The box keeps its dimensions even though nothing draws it — that is the tap target,
             and shrinking it to the glyph's ink would put a 24px control at the edge of the screen. */}
-        <button onClick={onHamburger} style={{width:burger,height:burger,background:"none",border:"none",padding:0,color:C.text,fontSize:lerp(30,26,collapse),cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
+        <button onClick={onHamburger} style={{width:collapsed?32:40,height:collapsed?32:40,transition:"width .2s ease, height .2s ease, font-size .2s ease",background:"none",border:"none",padding:0,color:C.text,fontSize:collapsed?26:30,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>&#9776;</button>
       </div>
     </div>
   </div>);
