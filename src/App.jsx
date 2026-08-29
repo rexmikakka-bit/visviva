@@ -491,6 +491,19 @@ export default function App(){
   const[undoDepth,setUndoDepth]=useState(0);
   const _fitSnapshot=useMemo(()=>({slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits}),
     [slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits]);
+  // Bottom-nav badges, pyfa-style: a count only appears for things currently switched ON, not
+  // everything carried in the bay/cargo hold. Implants have no on/off state (they're active the
+  // moment they're slotted), so that one is just a fill count.
+  const navBadges=useMemo(()=>({
+    cargo:(cargoItems??[]).length,
+    drones:(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??1),0)
+      +(fighters??[]).filter(f=>f.active!==false).reduce((s,f)=>s+(f.qty??1),0),
+    implants:(implants??[]).filter(i=>i.name!=="[Empty]").length,
+    effects:(boosters??[]).filter(b=>b.active).length
+      +(projFits??[]).filter(f=>f.active!==false).length
+      +(cmdFits??[]).filter(f=>f.active!==false).length
+      +(slots?.environment?1:0),
+  }),[cargoItems,drones,fighters,implants,boosters,projFits,cmdFits,slots?.environment]);
   useEffect(()=>{
     const key=activeFit?`${activeFit.ship}\0${activeFit.fitName}`:null;
     const prev=_undoPrev.current;
@@ -658,7 +671,7 @@ export default function App(){
       {/* Every tab except Fittings operates ON a fit — Cargo, Drones, Implants and Effects all have
           nothing to act on with no ship selected, so the bar is five dead buttons taking a row of
           screen on the one page (the ship library) that most wants the space. */}
-      {!!activeFit?.ship&&<BottomNav active={bottomTab} onChange={setBottomTab}/>}
+      {!!activeFit?.ship&&<BottomNav active={bottomTab} onChange={setBottomTab} badges={navBadges}/>}
     </div>
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}

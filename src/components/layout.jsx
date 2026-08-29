@@ -337,7 +337,7 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
 // is kept because it never depended on that workaround.
 const BOOSTER_ICON=eveIcon(59633,64);
 
-export function BottomNav({active,onChange}){
+export function BottomNav({active,onChange,badges}){
   const tabs=[
     // `key` stays "fittings" — App.jsx switches on it and it is persisted as the last bottom tab.
     {key:"fittings",label:"Fitting",navKey:"fit"},
@@ -348,8 +348,16 @@ export function BottomNav({active,onChange}){
   ];
   const NAV_ICON_TYPEIDS={fit:1353,cargo:1317,drones:24395,implants:10216};
   return(<div style={{display:"flex",background:C.surface,borderTop:`1px solid ${C.border}`,paddingBottom:"env(safe-area-inset-bottom, 0px)"}}>
-    {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"7px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-      <img src={t.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
+    {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;
+      const count=badges?.[t.key];
+      return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"7px 0 8px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+      <div style={{position:"relative"}}>
+        <img src={t.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
+        {/* Pyfa-style: a count only shows for things currently switched ON (or, for cargo/implants,
+            simply present — neither has an on/off state to filter by). Zero hides the badge rather
+            than showing "0", so an idle tab stays visually quiet. */}
+        {count>0&&<span style={{position:"absolute",top:-4,right:-8,minWidth:14,height:14,padding:"0 3px",borderRadius:99,background:C.textMute,border:"none",color:C.surface,fontSize:9,fontWeight:800,lineHeight:"14px",textAlign:"center",boxSizing:"border-box"}}>{count>99?"99+":count}</span>}
+      </div>
       <span style={{fontSize:9,fontWeight:700,color:active===t.key?C.accent:C.textMute,letterSpacing:.3}}>{t.label}</span>
       {active===t.key&&<div style={{width:20,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}
     </button>);})}
