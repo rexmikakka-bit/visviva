@@ -126,7 +126,7 @@ function AccordionSection({title,color,children,defaultOpen,indent}){
     </div>
   );
 }
-function NumpadModal({label,initial,onConfirm,onClose}){
+function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
   const[val,setVal]=useState(String(initial));
   const press=d=>{if(d==="<")setVal(v=>v.length>1?v.slice(0,-1):"0");else if(d==="0"&&val==="0")return;else setVal(v=>v==="0"?d:v.length<9?v+d:v);};
   return(
@@ -138,6 +138,7 @@ function NumpadModal({label,initial,onConfirm,onClose}){
             <button key={d} onClick={()=>press(d)} style={{padding:"16px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,color:C.text,fontSize:20,fontWeight:700,cursor:"pointer"}}>{d}</button>
           ))}
         </div>
+        {fillMax>0&&<button onClick={()=>setVal(String(fillMax))} style={{width:"100%",padding:"10px 0",marginBottom:8,background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:10,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Fill Cargo ({fillMax.toLocaleString()})</button>}
         <button onClick={()=>{onConfirm(Number(val)||0);onClose();}} style={{width:"100%",padding:"12px 0",background:C.accent,border:"none",borderRadius:10,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Confirm</button>
       </div>
     </BottomSheet>

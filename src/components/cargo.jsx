@@ -144,7 +144,12 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
           style={{width:28,height:28,flexShrink:0,borderRadius:7,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:C.danger,fontSize:16,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
       </div>))}
     </div>
-    {numpad&&<NumpadModal label={numpad.name} initial={numpad.qty} onConfirm={qty=>setItems(items.map(i=>i.id===numpad.id?{...i,qty}:i))} onClose={()=>setNumpad(null)}/>}
+    {numpad&&(()=>{
+      const unitVol=volOf(numpad);
+      const otherVol=items.filter(i=>i.id!==numpad.id).reduce((s,i)=>s+i.qty*volOf(i),0);
+      const fillMax=unitVol>0?Math.max(0,Math.floor((cap-otherVol)/unitVol)):null;
+      return <NumpadModal label={numpad.name} initial={numpad.qty} fillMax={fillMax} onConfirm={qty=>setItems(items.map(i=>i.id===numpad.id?{...i,qty}:i))} onClose={()=>setNumpad(null)}/>;
+    })()}
     {showCargoPicker&&<CargoBrowserSheet slots={slots} onAdd={addItem} onClose={()=>setShowCargoPicker(false)}/>}
   </div>);
 }

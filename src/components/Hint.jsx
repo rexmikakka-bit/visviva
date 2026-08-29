@@ -22,7 +22,7 @@ const HOLD_MS  = 400;
 const MOVE_TOL = 10;   // px of finger travel that reclassifies the press as a scroll
 const MAX_W    = 250;
 
-export function Hint({ text, children, style }) {
+export function Hint({ text, children, style, highlight }) {
   const [rect, setRect] = useState(null);
   const anchor = useRef(null);
   const timer  = useRef(null);
@@ -94,7 +94,10 @@ export function Hint({ text, children, style }) {
     <span ref={anchor} title={text}
           onPointerDown={onDown} onPointerMove={onMove} onPointerUp={cancel}
           onPointerLeave={cancel} onPointerCancel={cancel} onClick={onClick}
-          style={{ display: "inline-flex", alignItems: "center", cursor: "help", ...style }}>{children}</span>
+          style={{ display: "inline-flex", alignItems: "center", cursor: "help",
+                   ...(highlight && rect ? { background: C.accentLight, boxShadow: `0 0 0 1px ${C.accentBorder}`,
+                                             borderRadius: 4 } : null),
+                   ...style }}>{children}</span>
     {bubble}
   </>);
 }

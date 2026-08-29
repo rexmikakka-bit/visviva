@@ -1105,10 +1105,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
      regen:`${fmtF(cs.passiveShieldRegen??0)} HP/s`, repLabel:cs.shieldRepPS>0?`Boost: ${fmtF(cs.shieldRepPS)} HP/s`:""},
     {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), hpRaw:cs.armorHP??0, ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
      em:r.armor?.em??0, th:r.armor?.th??0, kin:r.armor?.kin??0, exp:r.armor?.exp??0,
-     regen:cs.armorRepPS>0?`Rep: ${fmtF(cs.armorRepPS)} HP/s`:"", repLabel:""},
+     regen:cs.armorRepPS>0?`${fmtF(cs.armorRepPS)} HP/s`:"", repLabel:""},
     {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  hpRaw:cs.hullHP??0,  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
      em:r.hull?.em??0,  th:r.hull?.th??0,  kin:r.hull?.kin??0,  exp:r.hull?.exp??0,
-     regen:cs.hullRepPS>0?`Rep: ${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
+     regen:cs.hullRepPS>0?`${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
   ];
 
   // With a target resist profile selected, every firepower figure shown is the RESIST-WEIGHTED one
@@ -1220,7 +1220,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             {[{v:layer.em,d:DMG.em},{v:layer.th,d:DMG.th},{v:layer.kin,d:DMG.kin},{v:layer.exp,d:DMG.exp}].map(({v,d})=>(
               <div key={d.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                 <div style={{width:"80%",height:3,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${v}%`,height:"100%",background:d.color,borderRadius:99}}/></div>
-                <span style={{fontSize:10,fontWeight:600,color:d.color}}>{typeof v === "number" ? v.toFixed(1) : v}%</span>
+                <Hint text={`${d.label} resistance: ${typeof v === "number" ? v.toFixed(2) : v}%`} highlight>
+                  <span style={{fontSize:10,fontWeight:600,color:d.color}}>{typeof v === "number" ? v.toFixed(1) : v}%</span>
+                </Hint>
               </div>
             ))}
             {/* Colour stays put through the toggle. It used to go accent-coloured while expanded,
