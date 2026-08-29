@@ -28,8 +28,10 @@ const _SUBTAB_LABEL={Fit:"Modules",Stats:"Stats",Graph:"Graph"};
 
 // Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
 // player) because the shapes read as "back" and "back to the start" without a label to explain them.
-const _navBtn={width:36,height:36,borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,
-  color:C.accent,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0};
+// Function, not a module-level const object: reads C.surface/C.border/C.accent, which must be
+// resolved at each call (render time), not once at import time, to follow a live theme switch.
+const _navBtn=()=>({width:36,height:36,borderRadius:8,background:C.surface,border:`1px solid ${C.border}`,
+  color:C.accent,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0});
 const BackArrow=()=>(<svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
   <path d="M15.5 4.5 8 12l7.5 7.5" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/>
 </svg>);
@@ -817,9 +819,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {/* pyfa's order, back-to-start first. One level down it would do exactly what Back does,
             so it only earns its space deeper in. */}
         {browsePath.length>1&&(
-          <button onClick={resetNode} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
+          <button onClick={resetNode} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
         )}
-        <button onClick={leaveNode} className="press" aria-label="Back one level" title="Back one level" style={_navBtn}><BackArrow/></button>
+        <button onClick={leaveNode} className="press" aria-label="Back one level" title="Back one level" style={_navBtn()}><BackArrow/></button>
         <img src={(raceIcons??{})[String(browseNode?.raceID)]??shipSmallIcon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{browsePath[browsePath.length-1]}</div>
@@ -929,7 +931,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* A tag cuts across the hull tree rather than sitting in it, so there is no "one level up"
             to offer — only the way out. */}
-        <button onClick={()=>{setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
+        <button onClick={()=>{setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
         <span style={{width:9,height:9,borderRadius:99,background:color,flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedTag}</div>
@@ -984,9 +986,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {/* The ship's fit list is one more level of the browse hierarchy, so it gets the same two
             arrows. Back keeps browsePath, landing you among this hull's siblings. */}
         {browsePath.length>0&&(
-          <button onClick={()=>{setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn}><BackToStartArrow/></button>
+          <button onClick={()=>{setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
         )}
-        <button onClick={()=>{setView("browse");haptic("light");}} className="press" aria-label="Back one level" title="Back one level" style={_navBtn}><BackArrow/></button>
+        <button onClick={()=>{setView("browse");haptic("light");}} className="press" aria-label="Back one level" title="Back one level" style={_navBtn()}><BackArrow/></button>
         <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedShip}</span>
         <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
       </div>

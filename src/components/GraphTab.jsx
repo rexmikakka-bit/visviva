@@ -64,17 +64,20 @@ const profileTarget=(key,mwd)=>{
   return (mwd&&p.mwdSig!=null) ? {sig:p.mwdSig,vel:p.mwdVel} : {sig:p.sig,vel:p.vel};
 };
 
+// `color` is a KEY into theme.js's C, not a resolved hex string — GRAPH_CONFIG is built once at
+// import time, so baking in a real color there would freeze it at whatever palette was loaded
+// first and never follow a theme switch. Every read site does `C[cfg.color]` instead.
 const GRAPH_CONFIG=[
-  {key:"damage",label:"Damage",icon:"sword",color:C.danger,showTargetControls:true,
+  {key:"damage",label:"Damage",icon:"sword",color:"danger",showTargetControls:true,
    yAxes:[{key:"dps",label:"DPS"},{key:"volley",label:"Volley"},{key:"inflicted",label:"Damage inflicted"}],
    xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"},{key:"tgtSpeedMs",label:"Target speed, m/s"},{key:"tgtSpeedPct",label:"Target speed, %"},{key:"tgtSigM",label:"Target sig. radius, m"},{key:"tgtSigPct",label:"Target sig. radius, %"}]},
-  {key:"ewar",label:"Ewar",icon:"radar",color:C.high,yAxes:[{key:"neutsCap",label:"Neuts: cap/s"},{key:"webSpeed",label:"Webs: speed red., %"},{key:"ecmStr",label:"ECM: combined strength"},{key:"dampLock",label:"Damps: lock range red., %"},{key:"tdRange",label:"Tracking disr: range red., %"},{key:"gdRange",label:"Guidance disr: range red., %"},{key:"tpSig",label:"Target paint: sig incr., %"}],xAxes:[{key:"dist",label:"Distance, km"}]},
-  {key:"reps",label:"Reps",icon:"heart",color:C.rig,yAxes:[{key:"repSpeed",label:"Repair speed, HP/s"},{key:"repTotal",label:"Total repaired, HP"}],xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"}]},
-  {key:"shieldRegen",label:"Shield",icon:"shield",color:C.mid,yAxes:[{key:"shieldAmt",label:"Shield, EHP"},{key:"shieldRegen",label:"Shield regen, EHP/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"shieldPct",label:"Shield, %"}]},
-  {key:"cap",label:"Capacitor",icon:"bolt",color:C.warning,yAxes:[{key:"capAmt",label:"Cap, GJ"},{key:"capRegen",label:"Cap regen, GJ/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"capPct",label:"Cap, %"}]},
-  {key:"mobility",label:"Mobility",icon:"rocket",color:C.low,yAxes:[{key:"speed",label:"Speed, m/s"},{key:"distance",label:"Distance, km"}],xAxes:[{key:"time",label:"Time, s"}]},
-  {key:"warp",label:"Warp",icon:"warp",color:C.high,yAxes:[{key:"warpTime",label:"Warp time, s"}],xAxes:[{key:"distAU",label:"Distance, AU"},{key:"distKm",label:"Distance, km"}]},
-  {key:"lock",label:"Lock",icon:"target",color:C.danger,yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
+  {key:"ewar",label:"Ewar",icon:"radar",color:"high",yAxes:[{key:"neutsCap",label:"Neuts: cap/s"},{key:"webSpeed",label:"Webs: speed red., %"},{key:"ecmStr",label:"ECM: combined strength"},{key:"dampLock",label:"Damps: lock range red., %"},{key:"tdRange",label:"Tracking disr: range red., %"},{key:"gdRange",label:"Guidance disr: range red., %"},{key:"tpSig",label:"Target paint: sig incr., %"}],xAxes:[{key:"dist",label:"Distance, km"}]},
+  {key:"reps",label:"Reps",icon:"heart",color:"rig",yAxes:[{key:"repSpeed",label:"Repair speed, HP/s"},{key:"repTotal",label:"Total repaired, HP"}],xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"}]},
+  {key:"shieldRegen",label:"Shield",icon:"shield",color:"mid",yAxes:[{key:"shieldAmt",label:"Shield, EHP"},{key:"shieldRegen",label:"Shield regen, EHP/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"shieldPct",label:"Shield, %"}]},
+  {key:"cap",label:"Capacitor",icon:"bolt",color:"warning",yAxes:[{key:"capAmt",label:"Cap, GJ"},{key:"capRegen",label:"Cap regen, GJ/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"capPct",label:"Cap, %"}]},
+  {key:"mobility",label:"Mobility",icon:"rocket",color:"low",yAxes:[{key:"speed",label:"Speed, m/s"},{key:"distance",label:"Distance, km"}],xAxes:[{key:"time",label:"Time, s"}]},
+  {key:"warp",label:"Warp",icon:"warp",color:"high",yAxes:[{key:"warpTime",label:"Warp time, s"}],xAxes:[{key:"distAU",label:"Distance, AU"},{key:"distKm",label:"Distance, km"}]},
+  {key:"lock",label:"Lock",icon:"target",color:"danger",yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
 ];
 
 // The one distance to evaluate at when the X axis is sweeping something other than range: the reach of
@@ -1053,6 +1056,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // so the auto-fit anchor is still reachable by sliding rather than only by tapping reset.
   const isAutoZoom=v=>Math.abs(v-1)<1e-9;
   const cat=GRAPH_CONFIG.find(c=>c.key===catKey);
+  const catColor=C[cat.color];
   // Axis choice is remembered PER CATEGORY. This used to reset both axes to the category's first
   // entry on every switch, so Damage/Time silently became Damage/Distance the moment you looked at
   // Reps and came back — the top-level xKey persisted fine across navigation, but a category round
@@ -1171,7 +1175,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   return(<div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:5,paddingBottom:2}}>
-        {GRAPH_CONFIG.map(c=><button key={c.key} onClick={()=>handleCatChange(c.key)} style={{flexShrink:0,padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:catKey===c.key?`${c.color}22`:C.surface,border:`1px solid ${catKey===c.key?c.color:C.border}`,color:catKey===c.key?c.color:C.textMid}}>{c.label}</button>)}
+        {GRAPH_CONFIG.map(c=><button key={c.key} onClick={()=>handleCatChange(c.key)} style={{flexShrink:0,padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:catKey===c.key?`${C[c.color]}22`:C.surface,border:`1px solid ${catKey===c.key?C[c.color]:C.border}`,color:catKey===c.key?C[c.color]:C.textMid}}>{c.label}</button>)}
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
@@ -1237,8 +1241,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
             onClick={()=>{ if(zoomSuppressClick.current[z.ax]){zoomSuppressClick.current[z.ax]=false;return;} z.setZoom(1); }}
             title="Drag to scrub, tap to reset to auto-fit"
             style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"ew-resize",touchAction:"pan-y",
-              background:isAuto?C.surface:`${cat.color}22`,
-              border:`1px solid ${scrubbing?C.accent:(isAuto?C.border:cat.color)}`,color:scrubbing?C.accent:(isAuto?C.textMute:cat.color),whiteSpace:"nowrap",overflow:"hidden"}}>
+              background:isAuto?C.surface:`${catColor}22`,
+              border:`1px solid ${scrubbing?C.accent:(isAuto?C.border:catColor)}`,color:scrubbing?C.accent:(isAuto?C.textMute:catColor),whiteSpace:"nowrap",overflow:"hidden"}}>
             {z.ax} {fmt(z.max)}{isAuto?"":` · ${fmtZoom(z.zoom)}×`}
           </button>
           <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>+</button>
@@ -1247,7 +1251,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
       <div>
-        <span style={{fontSize:22,fontWeight:800,color:cat.color}}>{fmt(displayVal)}</span>
+        <span style={{fontSize:22,fontWeight:800,color:catColor}}>{fmt(displayVal)}</span>
         <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span>
         {hasIdeal&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct!=null?`${appliedPct}%`:"--"}</div>}
       </div>
@@ -1269,7 +1273,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     </div>}
     {/* Only the `dist` axis, which is km of separation from a target you have to be holding: damage,
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
-    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={cat.color} cursorX={cursorX} onCursorXChange={setCursorX}
+    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={catColor} cursorX={cursorX} onCursorXChange={setCursorX}
       marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
     {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} angularSpeed={angularSpeed} angularDistM={angularDistM} showTransversal={showTransversal} setShowTransversal={setShowTransversal} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}}/></div>}
     {showFitPicker&&<FitPickerSheet title="Target Fit" fitsDB={fitsDB??{}} pinned={openTabFits}

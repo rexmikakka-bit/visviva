@@ -240,7 +240,10 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
   _bundleListeners.forEach(fn => fn());
 }).catch(() => { _bundleReady = true; _bundleListeners.forEach(fn => fn()); });
 
-const GLOBAL_CSS=`
+// Function, not a module-level const: the template interpolates C.border/C.text, which must be
+// read at CALL time (App.jsx calls this every render) so a live theme switch is picked up, rather
+// than frozen at whatever the palette was when this module first loaded.
+function getGlobalCss(){ return `
 /* WKWebView defaults to text-size-adjust:auto, which inflates text in blocks much wider than the
    viewport — and it does so per cluster, so a layout laid out at a fixed width on a phone gets
    different sizes in different racks. The snapshot card (1140px inside a ~390px viewport) showed it
@@ -330,18 +333,28 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 .vv-muta::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;
   margin-top:-5px;border-radius:50%;border:none;background:${C.text}}
 .vv-muta::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:none;background:${C.text}}
-`;
-import { C } from "../theme.js";
+`; }
+import { C, getTheme } from "../theme.js";
 import { metaOf, META_COLORS, META_ORDER, browserMetaRank } from "./meta.js";
 import { nameMatchesQuery, searchScore } from "./jargon.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";
-const DMG={
-  em: {label:"EM",  color:"#60a5fa"},
-  th: {label:"Th",  color:"#ef4444"},
-  kin:{label:"Kin", color:"#cbd5e1"},
-  exp:{label:"Exp", color:"#f97316"},
+// #cbd5e1 (kin) and #60a5fa (em) read fine glowing on near-black but drop to ~1.5:1 and ~2.5:1
+// against white — the light-mode "Kin" column and its percentages were barely visible. Colors
+// are getters (not a plain object) so a theme switch is picked up live, same reasoning as
+// STATE_COLORS above.
+const DMG_COLORS={
+  dark: {em:"#60a5fa",th:"#ef4444",kin:"#cbd5e1",exp:"#f97316"},
+  light:{em:"#2f6fe0",th:"#dc2626",kin:"#475569",exp:"#c2410c"},
 };
-const STATE_COLORS={offline:C.offline,online:C.online,active:C.active,overheated:C.overheat};
+const DMG={
+  em: {label:"EM",  get color(){ return DMG_COLORS[getTheme()].em; }},
+  th: {label:"Th",  get color(){ return DMG_COLORS[getTheme()].th; }},
+  kin:{label:"Kin", get color(){ return DMG_COLORS[getTheme()].kin; }},
+  exp:{label:"Exp", get color(){ return DMG_COLORS[getTheme()].exp; }},
+};
+// Proxy, not a plain object: values must be read live off C (itself a live Proxy) so a theme
+// switch is picked up instead of freezing at whatever C.offline/etc. resolved to on first import.
+const STATE_COLORS=new Proxy({},{ get(_,s){ return {offline:C.offline,online:C.online,active:C.active,overheated:C.overheat}[s]; } });
 // The state dot has to answer "is this module RUNNING?" from a 6px circle, in a list of eight rows,
 // without being read. Hue alone could not: active green and online grey sat at almost the same
 // brightness, so they blurred together at a glance (and to a red/green-colourblind eye they are the
@@ -816,7 +829,9 @@ const MODULE_VARS={
   "Caldari Navy X-Large Shield Booster":[{name:"X-Large Shield Booster I",meta:"T1"},{name:"X-Large Shield Booster II",meta:"T2"},{name:"Caldari Navy X-Large Shield Booster",meta:"Faction"},{name:"Pith A-Type X-Large Shield Booster",meta:"Officer"}],
   "Magnetic Field Stabilizer II":[{name:"Magnetic Field Stabilizer I",meta:"T1"},{name:"Magnetic Field Stabilizer II",meta:"T2"},{name:"Federation Navy Magnetic Field Stabilizer",meta:"Faction"}],
 };
-const DMG_COLOR={EM:DMG.em.color,Thermal:DMG.th.color,Kinetic:DMG.kin.color,Explosive:DMG.exp.color};
+// Proxy, not a plain object, for the same reason as STATE_COLORS above — DMG.*.color is itself
+// live, but a plain object here would still snapshot it once at import time.
+const DMG_COLOR=new Proxy({},{ get(_,k){ return {EM:DMG.em.color,Thermal:DMG.th.color,Kinetic:DMG.kin.color,Explosive:DMG.exp.color}[k]; } });
 
 // ── Implant data ───────────────────────────────────────────────────
 
@@ -1518,4 +1533,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, GLOBAL_CSS, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

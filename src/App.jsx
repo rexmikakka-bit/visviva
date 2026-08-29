@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, GLOBAL_CSS, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
+import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
-import { C } from "./theme.js";
+import { C, setTheme } from "./theme.js";
 import { ImportFitSheet } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
 import { ActiveFitBar, FittingsScreen, ShipInfoSheet } from "./components/FittingsScreen.jsx";
@@ -30,6 +30,7 @@ const OPEN_TABS_KEY = 'axis_open_tabs';
 const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
 const RECENT_FITS_KEY = 'axis_recent_fits';
 const SKILL_PROFILES_KEY = 'pyfa-skill-profiles';
+const THEME_PREF_KEY = 'axis_theme_pref';
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -37,6 +38,23 @@ export default function App(){
     if(_bundleReady){_setTick(1);return;}
     _bundleListeners.push(()=>_setTick(t=>t+1));
   },[]);
+  // Theme: defaults to 'dark' with no stored pref, or a manual 'light'/'dark'/'system' pin.
+  // systemTheme tracks the OS live via a matchMedia listener, so flipping it in iOS Settings
+  // while the app is open updates immediately under 'system' without a restart.
+  const[themePref,setThemePref]=useState(()=>{try{const v=localStorage.getItem(THEME_PREF_KEY);return(v==="light"||v==="dark"||v==="system")?v:"dark";}catch{return"dark";}});
+  useEffect(()=>{try{localStorage.setItem(THEME_PREF_KEY,themePref);}catch{}},[themePref]);
+  const[systemTheme,setSystemTheme]=useState(()=>{try{return window.matchMedia('(prefers-color-scheme: light)').matches?"light":"dark";}catch{return"dark";}});
+  useEffect(()=>{
+    let mq;try{mq=window.matchMedia('(prefers-color-scheme: light)');}catch{return;}
+    const onChange=()=>setSystemTheme(mq.matches?"light":"dark");
+    mq.addEventListener?.('change',onChange);
+    return()=>mq.removeEventListener?.('change',onChange);
+  },[]);
+  const resolvedTheme=themePref==="system"?systemTheme:themePref;
+  // Mutating theme.js's module-level palette selector synchronously, in the same render pass that
+  // reads it below (via C.xxx in the JSX), same precedent as _tick above: a plain useEffect would
+  // apply the switch one render late, showing a frame of the old palette.
+  setTheme(resolvedTheme);
   // Native shell setup (no-op on web). Uses the Capacitor runtime bridge so there is no build-time
   // dependency on the plugins: light status-bar content over the dark theme, the webview running
   // UNDER the status bar, and dismiss the splash once React has mounted.
@@ -52,10 +70,13 @@ export default function App(){
     if(!Cap?.isNativePlatform?.())return;
     try{
       const SB=Cap.Plugins?.StatusBar;
-      if(SB){SB.setStyle?.({style:"DARK"});SB.setOverlaysWebView?.({overlay:true});}
+      // Capacitor's style names the CONTENT colour, not the background: "DARK" content reads on a
+      // light bar, so it's what our dark theme (light content on the OS bar) needs called "LIGHT",
+      // and vice versa for the light theme's dark-on-light bar. Confirmed empirically on-device.
+      if(SB){SB.setStyle?.({style:resolvedTheme==="dark"?"DARK":"LIGHT"});SB.setOverlaysWebView?.({overlay:true});}
       Cap.Plugins?.SplashScreen?.hide?.();
     }catch(e){}
-  },[]);
+  },[resolvedTheme]);
   // ESI login callback (native only — the web build's redirect-based login is completed inline by
   // EsiSettingsPanel via esi.handleWebRedirectOnLoad() on mount instead). SSO opens the system
   // browser via @capacitor/browser; CCP redirects to our eveauth-visviva://auth-callback custom
@@ -609,7 +630,7 @@ export default function App(){
   // bottom nav off the bottom of the screen.
   return(<SkillsProvider value={fitSkills}>
   <div className="app-shell" style={{background:C.bg,display:"flex",justifyContent:"center"}}>
-    <style>{GLOBAL_CSS}</style>
+    <style>{getGlobalCss()}</style>
     <div className="app-col" style={{height:"100%",display:"flex",flexDirection:"column",background:C.bg}}>
       {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
           sheet rendered on `showShipInfo && activeFit?.ship`, so tapping the header thumbnail with
@@ -668,7 +689,7 @@ export default function App(){
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}

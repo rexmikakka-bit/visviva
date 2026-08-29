@@ -911,7 +911,9 @@ const CalGlyph = ({size=10,color="currentColor"}) => (
 // (that means "tappable" everywhere else in the app) and NOT raw C.warning (an amber bolt on every
 // single row would read as a per-module alert); calibration takes rig green because rigs are already
 // green throughout the UI, so it is a real association rather than decoration.
-const RES_INK = { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig };
+// Proxy, not a plain object: `cal` reads C.rig (itself a live Proxy), so it must be resolved on
+// each access rather than frozen at whatever palette was loaded when this module first imported.
+const RES_INK = new Proxy({},{ get(_,key){ return { pg:"#e0a44a", cpu:"#5fb8d8", cal:C.rig }[key]; } });
 
 // `headroom` (optional): {pg:{used,total}, cpu:{used,total}, cal:{used,total}, ratios} for the fit the
 // module would be added to. Given it, a figure the fit cannot afford turns red — the same mark the

@@ -12,12 +12,15 @@ import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../li
 // Deriving it means the list can never drift from the engine again.
 // Grouping uses CCP's own skill group (`TYPES[tid].gn` for category 16), so the sections match the
 // in-game character sheet instead of an invented taxonomy.
-const GROUP_COLORS={
+// Proxy, not a plain object: read live off C (itself a live Proxy) at each access so a theme
+// switch is picked up. SKILL_GROUPS below is a module-level (import-time) structure and must NOT
+// bake a resolved color into it — group color is looked up from here at render time instead.
+const GROUP_COLORS=new Proxy({},{ get(_,label){ return {
   Gunnery:C.danger, Missiles:C.high, Drones:C.rig, Shields:C.mid, Armor:C.warning,
   Engineering:C.warning, Navigation:C.rig, Targeting:C.accent, "Spaceship Command":C.high,
   Subsystems:C.low, Rigging:C.rig, "Fleet Support":C.accent, "Electronic Systems":C.accent,
   "Neural Enhancement":C.success, "Structure Management":C.low,
-};
+}[label]; } });
 const SKILL_GROUPS=(()=>{
   const byGroup=new Map();
   for(const e of SKILL_CATALOG){
@@ -25,7 +28,7 @@ const SKILL_GROUPS=(()=>{
     byGroup.get(e.group).push({key:e.key,label:e.name});
   }
   return[...byGroup.entries()]
-    .map(([label,skills])=>({label,color:GROUP_COLORS[label]??C.textMid,
+    .map(([label,skills])=>({label,
                              skills:skills.sort((a,b)=>a.label.localeCompare(b.label))}))
     .sort((a,b)=>a.label.localeCompare(b.label));
 })();
@@ -34,10 +37,12 @@ const SKILL_GROUPS=(()=>{
 // "lit" test is the same for all three. CCP's own ceiling: mostly III/IV, a few at V, and everything
 // it does not train explicitly at 0.
 const PRESETS=[
-  {id:"omega",label:"All V (Max)",col:C.accent,map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,5]))},
-  {id:"alpha",label:"Alpha",col:C.warning,map:ALPHA_SKILLS},
-  {id:"none", label:"Clear All", col:C.danger,map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,0]))},
+  {id:"omega",label:"All V (Max)",map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,5]))},
+  {id:"alpha",label:"Alpha",map:ALPHA_SKILLS},
+  {id:"none", label:"Clear All", map:Object.fromEntries(SKILL_CATALOG.map(e=>[e.key,0]))},
 ];
+// Same live-lookup reasoning as GROUP_COLORS above.
+const PRESET_COLORS=new Proxy({},{ get(_,id){ return {omega:C.accent,alpha:C.warning,none:C.danger}[id]; } });
 
 // A named copy of the skill sheet. The sheet in this panel is app-wide and singular, so aligning it
 // to one character is destructive to whatever was there before — this is the "keep that one too"
@@ -117,25 +122,27 @@ function SkillsPanel({skills,setSkills,profiles,setProfiles}){
             character, and the only one you can describe without logging in. */}
         {PRESETS.map(p=>{
           const active=matches(p.map);
+          const col=PRESET_COLORS[p.id];
           return(<button key={p.id} onClick={()=>setSkills({...p.map})} aria-pressed={active}
             style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
-                    background:active?`${p.col}22`:C.surfaceAlt,
-                    border:`1px solid ${active?p.col:C.border}`,
-                    color:active?p.col:C.textMid,
-                    boxShadow:active?`inset 0 0 0 1px ${p.col}55`:"none"}}>{p.label}</button>);
+                    background:active?`${col}22`:C.surfaceAlt,
+                    border:`1px solid ${active?col:C.border}`,
+                    color:active?col:C.textMid,
+                    boxShadow:active?`inset 0 0 0 1px ${col}55`:"none"}}>{p.label}</button>);
         })}
       </div>
       {SKILL_GROUPS.map(grp=>{
         const isOpen=!!open[grp.label];
         const trained=grp.skills.filter(s=>lvlOf(s.key)>0).length;
         const atMax=grp.skills.every(s=>lvlOf(s.key)>=5);
+        const color=GROUP_COLORS[grp.label]??C.textMid;
         return(
         <div key={grp.label} style={{marginBottom:8,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
           <div onClick={()=>toggle(grp.label)}
             style={{display:"flex",alignItems:"center",gap:6,padding:"9px 10px",background:C.surfaceAlt,cursor:"pointer"}}>
             <span style={{fontSize:9,color:C.textMute,width:9,display:"inline-block",
                           transform:isOpen?"rotate(90deg)":"none",transition:"transform 0.15s"}}>▶</span>
-            <div style={{width:8,height:8,borderRadius:99,background:grp.color,flexShrink:0}}/>
+            <div style={{width:8,height:8,borderRadius:99,background:color,flexShrink:0}}/>
             <span style={{fontSize:11,fontWeight:700,color:C.text,textTransform:"uppercase",letterSpacing:.5,flex:1}}>{grp.label}</span>
             <span style={{fontSize:10,color:atMax?C.success:C.textMute,fontWeight:600}}>{trained}/{grp.skills.length}</span>
           </div>
@@ -154,7 +161,7 @@ function SkillsPanel({skills,setSkills,profiles,setProfiles}){
                     <button key={lv} onClick={()=>setSkills(prev=>({...prev,[sk.key]:lvlOf(sk.key)===lv?0:lv}))}
                       title={lvlOf(sk.key)===lv?"Click again to untrain":`Set to level ${lv}`}
                       style={{width:24,height:24,borderRadius:5,border:"none",cursor:"pointer",fontWeight:700,fontSize:11,
-                        background:lvlOf(sk.key)>=lv?grp.color:C.surfaceAlt,
+                        background:lvlOf(sk.key)>=lv?color:C.surfaceAlt,
                         color:lvlOf(sk.key)>=lv?"#fff":C.textMute}}>
                       {lv}
                     </button>
@@ -185,7 +192,7 @@ function ToggleRow({label,note,on,onChange}){
   </div>);
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource}){
+export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
@@ -225,13 +232,22 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
           </div>
         </div>}
         {section==="interface"&&<div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Theme</div>
+          <div style={{display:"flex",gap:6,marginBottom:4}}>
+            {[{key:"system",label:"System"},{key:"light",label:"Light"},{key:"dark",label:"Dark"}].map(t=>{
+              const active=(themePref??"system")===t.key;
+              return(<button key={t.key} onClick={()=>setThemePref?.(t.key)} aria-pressed={active}
+                style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
+                        background:active?C.accentLight:C.surfaceAlt,
+                        border:`1px solid ${active?C.accentBorder:C.border}`,
+                        color:active?C.accent:C.textMid}}>{t.label}</button>);
+            })}
+          </div>
+          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>System follows your device's light/dark setting; Light and Dark pin the app regardless.</div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Fit Tabs</div>
           <ToggleRow label="Always open fits in a new tab" on={!!openInNewTab} onChange={setOpenInNewTab}
             note="Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa."/>
           <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4}}>The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.</div>
-          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",margin:"18px 0 8px"}}>Damage</div>
-          <ToggleRow label="Factor in reload time" on={!!factorInReload} onChange={setFactorInReload}
-            note="Averages reload downtime into DPS for weapons that use charges. Same switch as the Reload button on the Stats tab."/>
         </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
