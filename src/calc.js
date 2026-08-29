@@ -1386,10 +1386,16 @@ function applyModuleBursts(burstByType, modItems) {
     const def = WARFARE_BUFFS[buffID];
     if (!def || !eff) continue;
     // Group-targeted buffs (e.g. Electronic Superiority): apply by numeric attr ID to modules of the group.
+    // NOT gated on module state. This lands on the module's own stat block (max range, falloff,
+    // tracking, EWAR strength...) exactly like a skill or rig bonus would, and the engine's own
+    // LocationGroupModifier/LocationRequiredSkillModifier (dogma-engine.js) apply to every fitted
+    // module unconditionally — including offline ones, which is why an offline module's tooltip
+    // still shows its skill-boosted stats in game. Gating this on isActive (or even isOnline) meant
+    // a burst-boosted weapon or EWAR module read its unboosted stat until the pilot activated it.
     if (def.groupMods) {
       for (const { a, g } of def.groupMods) {
-        for (const { slot: s2, fitItem: m } of modItems) {
-          if (!m || !isActive(s2.state)) continue;
+        for (const { fitItem: m } of modItems) {
+          if (!m) continue;
           if (TYPES[m.typeID]?.g === g) m.attrs.applyMod(a, 6, eff, false);
         }
       }
@@ -1400,8 +1406,8 @@ function applyModuleBursts(burstByType, modItems) {
     for (const { attr, skill } of def.skill) {
       const aid = AID[attr];
       if (aid == null) continue;
-      for (const { slot: s2, fitItem: m } of modItems) {
-        if (!m || !isActive(s2.state)) continue;
+      for (const { fitItem: m } of modItems) {
+        if (!m) continue;
         const rsArr = TYPES[m.typeID]?.rs ?? [];
         if (rsArr.includes(skill)) m.attrs.applyMod(aid, 6, eff, false);
       }

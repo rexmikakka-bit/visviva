@@ -278,7 +278,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
         <button className="press" onClick={()=>setShowLoadouts(true)} disabled={!loadouts.length}
           style={{flex:1,padding:"7px 0",borderRadius:7,fontSize:11,fontWeight:700,cursor:loadouts.length?"pointer":"default",
                   background:loadouts.length?C.surface:"transparent",border:`1px solid ${C.border}`,color:loadouts.length?C.textMid:C.textMute}}>
-          {loadouts.length?`Load a loadout (${loadouts.length})`:"No saved loadouts"}
+          {loadouts.length?`Implant Loadouts (${loadouts.length})`:"No saved loadouts"}
         </button>
         {filled>0&&<button onClick={()=>setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})))}
           title="Clear every implant from this fit"
@@ -363,63 +363,4 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     {showLoadouts&&<ImplantLoadoutSheet loadouts={loadouts} onLoad={loadLoadout}
       onRename={renameLoadout} onDelete={deleteLoadout} onClose={()=>setShowLoadouts(false)}/>}
   </div>);
-}
-
-export function ImplantLoadoutsManager({implants,setImplants,loadouts,setLoadouts}){
-  const[savingName,setSavingName]=useState(false);
-  const[newName,setNewName]=useState('');
-  const[editing,setEditing]=useState(null);
-  const[editName,setEditName]=useState('');
-  function save(){
-    if(!newName.trim())return;
-    setLoadouts(prev=>[...prev,{id:Date.now(),name:newName.trim(),implants:implants.map(i=>({...i}))}]);
-    setNewName('');setSavingName(false);
-  }
-  function load(lo){
-    if(!lo.implants?.length){alert(`"${lo.name}" has no implants saved.`);return;}
-    setImplants(lo.implants.map(i=>({...i})));
-  }
-  function rename(id){
-    if(!editName.trim()){setEditing(null);return;}
-    setLoadouts(prev=>prev.map(l=>l.id===id?{...l,name:editName.trim()}:l));
-    setEditing(null);setEditName('');
-  }
-  function del(id){setLoadouts(prev=>prev.filter(l=>l.id!==id));}
-  const inp={padding:'6px 10px',background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:7,color:C.text,fontSize:12,outline:'none'};
-  return(
-    <div>
-      {savingName
-        ?<div style={{display:'flex',gap:6,marginBottom:12}}>
-           <input autoFocus value={newName} onChange={e=>setNewName(e.target.value)}
-             onKeyDown={e=>{if(e.key==='Enter')save();if(e.key==='Escape')setSavingName(false);}}
-             placeholder="Loadout name..." style={{...inp,flex:1}}/>
-           <button onClick={save} style={{padding:'6px 12px',background:C.accent,border:'none',borderRadius:7,color:'#fff',fontSize:12,fontWeight:700,cursor:'pointer'}}>Save</button>
-           <button onClick={()=>setSavingName(false)} style={{padding:'6px 10px',background:'none',border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:12,cursor:'pointer'}}>Cancel</button>
-         </div>
-        :<button onClick={()=>setSavingName(true)} style={{width:'100%',padding:'9px 0',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:'pointer',marginBottom:12}}>
-           + Save Current Implants as Loadout
-         </button>
-      }
-      {loadouts.length===0
-        ?<div style={{padding:'14px',background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,fontSize:12,color:C.textMute,textAlign:'center'}}>No loadouts saved yet.</div>
-        :loadouts.map(l=>(
-          <div key={l.id} style={{display:'flex',alignItems:'center',gap:8,padding:'10px 12px',background:C.surface,border:`1px solid ${C.border}`,borderRadius:9,marginBottom:6}}>
-            {editing===l.id
-              ?<input autoFocus value={editName} onChange={e=>setEditName(e.target.value)}
-                 onKeyDown={e=>{if(e.key==='Enter')rename(l.id);if(e.key==='Escape')setEditing(null);}}
-                 onBlur={()=>rename(l.id)}
-                 style={{...inp,flex:1}}/>
-              :<div style={{flex:1,minWidth:0}}>
-                 <div style={{fontSize:13,fontWeight:600,color:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{l.name}</div>
-                 <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{l.implants?.filter(i=>i.name!=='[Empty]').length??0} implants fitted</div>
-               </div>
-            }
-            <button onClick={()=>load(l)} style={{padding:'5px 11px',background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.accent,fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0}}>Load</button>
-            <button onClick={()=>{setEditing(l.id);setEditName(l.name);}} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:14,color:C.textMute,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>&#9998;</button>
-            <button onClick={()=>del(l.id)} style={{width:26,height:26,background:'none',border:'none',cursor:'pointer',fontSize:16,color:C.danger,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center'}}>&#10005;</button>
-          </div>
-        ))
-      }
-    </div>
-  );
 }

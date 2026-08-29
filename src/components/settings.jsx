@@ -2,7 +2,6 @@ import { useState } from "react";
 import { C } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
 import { SKILL_CATALOG, ALPHA_SKILLS } from "../calc.js";
-import { ImplantLoadoutsManager } from "./implants.jsx";
 import { EsiSettingsPanel, EsiSkillAlignPanel } from "./esi-ui.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 
@@ -186,7 +185,7 @@ function ToggleRow({label,note,on,onChange}){
   </div>);
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,implants,setImplants,loadouts,setLoadouts,priceHub,setPriceHub,priceSource,setPriceSource}){
+export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,factorInReload,setFactorInReload,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
@@ -194,7 +193,7 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
       <SheetGrabber grabHandlers={sheet.grabHandlers} style={{padding:"10px 0 0"}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px 12px",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:16,fontWeight:700,color:C.text}}>Settings</span><button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button></div>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:0,borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
-        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"implants",label:"Loadouts"},{key:"interface",label:"Interface"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
+        {[{key:"skills",label:"Skills"},{key:"backup",label:"Backup"},{key:"esi",label:"ESI"},{key:"market",label:"Market"},{key:"interface",label:"Interface"}].map(n=><button key={n.key} onClick={()=>setSection(n.key)} style={{flexShrink:0,padding:"9px 14px",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===n.key?C.accent:C.textMute,borderBottom:section===n.key?`2px solid ${C.accent}`:"2px solid transparent"}}>{n.label}</button>)}
       </div>
       <div style={{flex:1,overflowY:"auto",padding:16}}>
         {section==="skills"&&<SkillsPanel skills={skills} setSkills={setSkills} profiles={skillProfiles} setProfiles={setSkillProfiles}/>}
@@ -225,7 +224,6 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
             <div style={{marginTop:6}}>All sources cache for 1 hour per hub.</div>
           </div>
         </div>}
-        {section==="implants"&&<ImplantLoadoutsManager implants={implants} setImplants={setImplants} loadouts={loadouts} setLoadouts={setLoadouts}/>}
         {section==="interface"&&<div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Fit Tabs</div>
           <ToggleRow label="Always open fits in a new tab" on={!!openInNewTab} onChange={setOpenInNewTab}

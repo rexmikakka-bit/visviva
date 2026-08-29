@@ -30,6 +30,8 @@ const OPEN_TABS_KEY = 'axis_open_tabs';
 const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
 const RECENT_FITS_KEY = 'axis_recent_fits';
 const SKILL_PROFILES_KEY = 'pyfa-skill-profiles';
+// Scroll distance (px) over which the header goes from fully open to fully collapsed.
+const HEADER_COLLAPSE_RANGE = 56;
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -567,9 +569,11 @@ export default function App(){
   // scrollTop -- read the scrolling element instead.
   const[tabsOpen,setTabsOpen]=useState(false);
   // The header shrinks to a single line once you are scrolled into a screen, and comes back at
-  // the top. Driven off ABSOLUTE position rather than scroll direction: direction-based toggling
-  // flickers on the small bounces a finger makes mid-scroll.
-  const[headerCollapsed,setHeaderCollapsed]=useState(false);
+  // the top. Driven off ABSOLUTE position, continuously (0..1) rather than a boolean threshold —
+  // a boolean snap meant nothing moved for the first 56px of scroll and then jumped all at once,
+  // which is the "clunky" feel. Tracking the same 0-56px range as a fraction ties the header's
+  // shrink to the finger 1:1, same reasoning as ShipInfoSheet's hero collapse.
+  const[headerCollapse,setHeaderCollapse]=useState(0);
   const lastScrollTop=useRef(0);
   useEffect(()=>{
     const onScroll=(e)=>{
@@ -580,15 +584,14 @@ export default function App(){
       // put the tab list back in front of someone who never asked for it, which is the whole
       // reason the strip is opt-in. The thin rail stays either way.
       if(y-prev>6)setTabsOpen(false);
-      if(y>56)setHeaderCollapsed(true);
-      else if(y<=8)setHeaderCollapsed(false);
+      setHeaderCollapse(Math.min(1,Math.max(0,y)/HEADER_COLLAPSE_RANGE));
     };
     window.addEventListener('scroll',onScroll,true);
     return()=>window.removeEventListener('scroll',onScroll,true);
   },[]);
   // Changing screen resets the scroll bookkeeping, and closes the strip so it never follows you
   // onto a screen you did not open it from.
-  useEffect(()=>{setTabsOpen(false);setHeaderCollapsed(false);lastScrollTop.current=0;},[bottomTab,fittingsView]);
+  useEffect(()=>{setTabsOpen(false);setHeaderCollapse(0);lastScrollTop.current=0;},[bottomTab,fittingsView]);
   // The + sends you to the Fits list with "next open goes in a new tab" armed. Backing out without
   // picking anything must disarm it, or a fit opened much later inherits the request -- but the
   // request has to survive DRILLING IN, which is the normal way to reach a fit: the list moves
@@ -614,7 +617,7 @@ export default function App(){
       {/* onShipInfo only when there IS a ship: the setter used to fire unconditionally while the
           sheet rendered on `showShipInfo && activeFit?.ship`, so tapping the header thumbnail with
           no fit open armed the flag invisibly and the next fit you created opened the sheet. */}
-      <AppHeader collapsed={headerCollapsed} onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowPilot(true)} pilot={slots?.pilot??null}/>
+      <AppHeader collapse={headerCollapse} onHamburger={()=>setShowHamburger(true)} activeFit={activeFit} onShipInfo={activeFit?.ship?()=>setShowShipInfo(true):undefined} skillCheck={skillCheck} onSkillGaps={()=>setShowPilot(true)} pilot={slots?.pilot??null}/>
       {(bottomTab!=="fittings"||(fittingsView&&fittingsView!=="active"))&&<ActiveFitBar activeFit={activeFit} onReturn={returnToFit}/>}
       {/* Tab strip. Hidden on the Fits LIST, where the list itself is the navigation and a second
           row of fit names would just be noise. */}
@@ -668,7 +671,7 @@ export default function App(){
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} priceSource={priceSource} setPriceSource={setPriceSource}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} factorInReload={factorInReload} setFactorInReload={setFactorInReload} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}

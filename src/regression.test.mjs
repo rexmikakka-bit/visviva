@@ -167,6 +167,28 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1b. COMMAND BURST BUFFS REACH ONLINE (NOT JUST ACTIVE) MODULES
+//    A module-targeted warfare buff (Electronic Superiority, the weapon-disruption bursts, the
+//    shield/armor rep skill bursts) lands on the RECEIVING module's own attrs, exactly like a skill
+//    or rig bonus would — and per the engine's own LocationGroupModifier/LocationRequiredSkillModifier
+//    convention (dogma-engine.js), that class of bonus applies to a module in ANY state, offline
+//    included. Gating it on the module being 'active' meant a turret or EWAR module sitting merely
+//    'online' (fitted, not yet switched on) displayed its unboosted stat until the pilot activated
+//    it. A Rifter autocannon set to 'online' under an externalBurst Weapon Disruption (buff 28,
+//    +20% turret optimal) must show the boosted 0.7 km, not the base 0.6 km.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCOMMAND BURST BUFFS REACH ONLINE MODULES');
+  const slot = M('125mm Gatling AutoCannon II', 'online', 'EMP S');
+  const fit = { high: [slot], mid: [], low: [], rigs: [] };
+  const ship = { typeID: tid('Rifter'), name: 'Rifter' };
+  const noBurst   = calcFitStats(ship, fit, [], null, {});
+  const withBurst = calcFitStats(ship, fit, [], null, { externalBursts: [{ buffID: 28, value: 20 }] });
+  check('burstonline', 'online turret unboosted optimal', noBurst.slotEngineStats.get(slot).optimal, 0.6, 0);
+  check('burstonline', 'online turret sees the burst', withBurst.slotEngineStats.get(slot).optimal, 0.7, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2. BANE — Lancer dreadnought doomsday (multi-tick beam weapon)
 //    The lance deals damage PER TICK (doomsdayDamageDuration / doomsdayDamageCycleTime = 15 ticks),
 //    spread across its 300s cycle. Volley is ONE tick. Getting this wrong costs ~1190 DPS.

@@ -248,8 +248,8 @@ function BackupPanel() {
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             placeholder='{"app":"axis",...}'
-            style={{ width: "100%", minHeight: 70, padding: 8, borderRadius: 8, fontSize: 11,
-                     fontFamily: "monospace", background: C.surface, border: `1px solid ${C.border}`,
+            style={{ width: "100%", boxSizing: "border-box", minHeight: 70, padding: 8, borderRadius: 8,
+                     fontSize: 11, fontFamily: "monospace", background: C.surface, border: `1px solid ${C.border}`,
                      color: C.text, resize: "vertical" }}
           />
           <button onClick={() => parseBackup(pasted)} disabled={!pasted.trim()}

@@ -119,6 +119,7 @@ function fileWidth(file) {
 
 // ── worklists ───────────────────────────────────────────────────────────────
 const typeIcons = JSON.parse(readFileSync(join(ROOT, 'src/data/type-icons.json'), 'utf8'));
+const graphicIds = JSON.parse(readFileSync(join(ROOT, 'src/data/graphic-ids.json'), 'utf8'));
 
 // iconID -> every typeID that uses it, so a failed representative can fall through to a sibling.
 const typesByIcon = new Map();
@@ -214,9 +215,22 @@ function renderJobs() {
   // the three stay in step rather than each keeping its own list. Its keys are typeIDs, which is
   // what the image server wants — the graphicID mapping bundle-icons.mjs needed to rename pyfa's
   // files does not arise here at all.
-  const gid = JSON.parse(readFileSync(join(ROOT, 'src/data/graphic-ids.json'), 'utf8'));
-  return Object.keys(gid).map((tid) => ({ dir, name: `${tid}.png`, candidates: [tid], kind: 'render' }));
+  return Object.keys(graphicIds).map((tid) => ({ dir, name: `${tid}.png`, candidates: [tid], kind: 'render' }));
 }
+
+// Fittable types with NEITHER an iconID nor a graphicID — CCP gives them no art reference at all in
+// the data, even though the image server does have a real, distinct picture per type (verified by
+// hand: images.evetech.net/types/<id>/icon returns a proper icon, not a placeholder). All ten are
+// newer event boosters (Clash/Volatile) that postdate this bundle's eve.db snapshot. Scoped to
+// `gn === 'Booster'` deliberately narrow — the same "no iconID, no graphicID" shape also matches
+// ~220 Effect Beacons and unpublished T3 tactical-mode items, neither of which is ever drawn with an
+// icon anywhere in the app, so sweeping those in would fetch art nothing displays.
+const NO_ART_BOOSTERS = (() => {
+  const s = new Set();
+  for (const [tid, t] of Object.entries(TYPES))
+    if (t.gn === 'Booster' && typeIcons[tid] == null && graphicIds[tid] == null) s.add(tid);
+  return s;
+})();
 
 function typeIconJobs() {
   const dir = join(ASSETS, 'type-icons');
@@ -231,7 +245,14 @@ function typeIconJobs() {
   for (const tid of Object.keys(typeIcons)) {
     if (TYPES[tid] && DRONE_ICON_IDS.has(String(typeIcons[tid]))) want.add(tid);
   }
-  return [...want].map((tid) => ({ dir, name: `${tid}.png`, candidates: [tid], kind: 'render' }));
+  // ...plus NO_ART_BOOSTERS, which have no render either (confirmed: the render endpoint 400s for a
+  // booster — there is no 3D model) and so must be fetched from the ICON endpoint instead. `kind` is
+  // decided per-typeID rather than per-job-list, purely on graphicID presence: a type with a model
+  // gets its render, a type without gets its icon. That rule needs no boosters-specific branch below.
+  for (const tid of NO_ART_BOOSTERS) want.add(tid);
+  return [...want].map((tid) => ({
+    dir, name: `${tid}.png`, candidates: [tid], kind: graphicIds[tid] != null ? 'render' : 'icon',
+  }));
 }
 
 const TARGETS = [
