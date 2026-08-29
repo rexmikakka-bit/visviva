@@ -30,8 +30,11 @@ const OPEN_TABS_KEY = 'axis_open_tabs';
 const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
 const RECENT_FITS_KEY = 'axis_recent_fits';
 const SKILL_PROFILES_KEY = 'pyfa-skill-profiles';
-// Scroll distance (px) over which the header goes from fully open to fully collapsed.
-const HEADER_COLLAPSE_RANGE = 56;
+// Scroll distance (px) over which the header goes from fully open to fully collapsed. 56 made the
+// whole animation resolve inside a single small flick, so it read as a snap instead of a blend —
+// widened to spread it over a distance closer to the header's own height, matching the scale
+// ShipInfoSheet's hero collapse uses for the same "behind the finger" effect.
+const HEADER_COLLAPSE_RANGE = 160;
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
