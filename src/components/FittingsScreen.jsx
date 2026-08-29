@@ -902,24 +902,16 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       })}
       {!searchResults&&browseShips&&browseShips.map(s=>{
         const sfits=(fitsDB[s.name]||[]);
-        return(<div key={s.typeID} style={{marginBottom:4}}>
-          <div onClick={()=>{if(newFitIntent){setNewFitIntent?.(false);createNewFit(s.name);return;}setSelectedShip(s.name);setView('fits');}} className="press no-select" style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`}}>
-            <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:'flex',alignItems:'center',gap:5}}>
-                {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
-                <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
-              </div>
-              <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
+        return(<div key={s.typeID} onClick={()=>{if(newFitIntent){setNewFitIntent?.(false);createNewFit(s.name);return;}setSelectedShip(s.name);setView('fits');}} className="press no-select" style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",borderRadius:8,cursor:"pointer",background:selectedShip===s.name?C.accentLight:C.surface,border:`1px solid ${selectedShip===s.name?C.accentBorder:C.border}`,marginBottom:4}}>
+          <img src={eveIcon(s.typeID,64)} style={{width:40,height:40,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.display='none';}} alt=""/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:5}}>
+              {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
+              <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
             </div>
-            <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
+            <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
           </div>
-          {selectedShip===s.name&&sfits.length>0&&<div style={{paddingLeft:16,marginTop:2}}>
-            {sfits.map(fit=>(<div key={fit.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderRadius:6,cursor:"pointer",background:C.surfaceAlt,marginBottom:2,border:`1px solid ${activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accentBorder:C.border}`}} onClick={()=>loadFit(s.name,fit.name)}>
-              <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:activeFit?.fitName===fit.name&&activeFit?.ship===s.name?C.accent:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>Modified {fit.modified}</div></div>
-              <span style={{color:C.textMute,fontSize:13}}>{">"}</span>
-            </div>))}
-          </div>}
+          <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
         </div>);
       })}
     </div>
