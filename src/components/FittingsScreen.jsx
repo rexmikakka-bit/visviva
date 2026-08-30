@@ -12,7 +12,7 @@ import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleT
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
 import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton, TraitsPanel, useVisualViewport } from "./ui.jsx";
+import { InfoButton, ItemPrice, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { IconPencil, IconCopy, IconClose, IconSearch, IconTag } from "./glyphs.jsx";
@@ -526,6 +526,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
           )}
           {tab==='attributes' && (
             <div>
+              <ItemPrice typeID={ship?.typeID}/>
               {twoCol && (
                 <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,paddingBottom:6}}>
                   <span/>
