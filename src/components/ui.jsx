@@ -1265,6 +1265,10 @@ const mutaUnit=(name)=>{
   if(/Range|maxRange|falloff/i.test(name)) return {scale:1000,unit:"km",dp:2};
   if(/duration|reloadTime|explosionDelay/i.test(name)) return {scale:1000,unit:"s",dp:2};
   if(/mass/i.test(name)) return {scale:1,unit:"kg",dp:0};
+  // The generic 2dp bucket below rounds a BCS/gyro/heat sink roll (e.g. 1.137069) down to 1.14,
+  // which is too coarse to tell two rolls apart — this is the one stat abyssal traders actually
+  // compare rolls by. One more digit than the default.
+  if(name==="damageMultiplier") return {scale:1,unit:"",dp:3};
   return {scale:1,unit:"",dp:null};   // dp null → magnitude-dependent precision
 };
 
