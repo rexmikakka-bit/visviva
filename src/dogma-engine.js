@@ -1352,22 +1352,17 @@ export class Fit {
       if (fal && fal !== 1) m.attrs.applyMod(AID.falloff,        4, fal, true);
       if (trk && trk !== 1) m.attrs.applyMod(AID.trackingSpeed,  4, trk, true);
     }
-    // ── 5a. Cloak velocity Black-Ops ordering correction ────────────────────────
-    // The cloak's maxVelocity penalty (Effect607) is applied during the module pass using the
-    // UN-bonused maxVelocityModifier (e.g. 0.1). Black Ops' shipBonusRole1 boost to that modifier
-    // (Effect8151, ×shipBonusRole1) runs later in the ship pass, so the penalty misses it. Multiply
-    // ship maxVelocity by shipBonusRole1 to reflect the bonused modifier (Panther ×0.1 → ×0.75).
-    if ((this.ship._td?.gn ?? this.ship.groupName) === 'Black Ops') {
-      const rb = this.ship.get('shipBonusRole1');
-      if (rb && rb !== 1) {
-        for (const m of mods) {
-          if (m.state !== 'active' && m.state !== 'overheated') continue;
-          if ((m._td?.gn ?? m.groupName) !== 'Cloaking Device') continue;
-          if ((m.get('maxVelocityModifier') ?? 1) >= 1) continue;  // covert cloak: no penalty
-          this.ship.attrs.applyMod(AID.maxVelocity, 4, rb, true);  // direct _mul correction
-        }
-      }
-    }
+    // ── 5a. (removed) Cloak velocity Black-Ops ordering correction ──────────────
+    // This used to re-multiply ship maxVelocity by shipBonusRole1 (Effect8151) here, on the theory
+    // that the cloak's own Effect607 (module pass, step 3) ran before the ship's role bonus could
+    // reach it. That theory stopped being true when step 2c ("pre-module hull location modifiers")
+    // was added: Effect8151 is a LocationRequiredSkillModifier with domain=shipID, so it now runs
+    // BEFORE the module pass, bumping the cloak's OWN maxVelocityModifier attribute (Panther: 0.1 ->
+    // 0.75) in time for Effect607 to read the corrected value on its first and only application, and
+    // step 4 explicitly skips re-applying it (`_preAppliedHullEIDs`). This block ran afterward anyway
+    // and reapplied ×shipBonusRole1 a second time — a Panther + Syndicate Cloaking Device (high slot)
+    // read 5.6x its bare speed while cloaked (should be 0.75x, a 25% penalty): 228 -> 1280 m/s instead
+    // of 171. See regression suite 'blackops' section for the pinned value.
     // ── 5b. Generic implant set bonuses — moved EARLY, see _amplifyImplantSets ─
 
     // ── 5c. Hydra implant set ────────────────────────────────────────────────────

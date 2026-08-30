@@ -5066,6 +5066,37 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12f. BLACK OPS: the cloak-velocity role bonus, applied exactly once.
+//
+// Black Ops battleships get a role bonus (shipBonusRole1, Effect8151) that multiplies the velocity
+// penalty (maxVelocityModifier) of ANY fitted, active cloak requiring the Cloaking skill. It is a
+// LocationRequiredSkillModifier with domain=shipID, so step 2c pre-applies it to the cloak's own
+// maxVelocityModifier attribute BEFORE the module pass, and the cloak's own Effect607 (step 3) reads
+// the already-bonused value when it multiplies ship maxVelocity. A leftover hand-written correction
+// ("5a", since removed) assumed the role bonus ran AFTER the module pass and re-multiplied ship
+// maxVelocity by shipBonusRole1 itself — double-applying it. A Panther + Syndicate Cloaking Device
+// (0.1 base modifier, a 90% velocity penalty) read 1280 m/s cloaked (ratio 5.6x bare speed) instead
+// of the correct 171 (ratio 0.75x, a 25% penalty). Reported against the user's full DUSKBLADE fit as
+// Axis showing 1676 m/s where pyfa showed 223.
+//
+// A Covert Ops Cloaking Device II has NO velocity penalty (maxVelocityModifier = 1), so the role
+// bonus multiplies it up past 1 — turning a Black Ops ship into something dramatically FASTER while
+// cloaked, a well-known in-game quirk. Pinned alongside the fix so a future "correction" cannot
+// re-break the case it exists to enable.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nBLACK OPS (cloak-velocity role bonus applied once, not twice)');
+  const panther = { typeID: tid('Panther'), name: 'Panther' };
+  const cloakedVel = (mod) => calcFitStats(panther,
+    { high: [M(mod, 'active')], mid: [], low: [], rigs: [] }, [], null, {}).maxVelocity;
+  check('blackops', 'Panther bare maxVelocity', calcFitStats(panther, EMPTY, [], null, {}).maxVelocity, 228, 0.005);
+  check('blackops', 'Syndicate Cloaking Device: 25% penalty, not 5.6x boost',
+        cloakedVel('Syndicate Cloaking Device'), 171, 0.005);
+  check('blackops', 'Covert Ops Cloaking Device II: no penalty -> role-bonus speed boost',
+        cloakedVel('Covert Ops Cloaking Device II'), 1706, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
