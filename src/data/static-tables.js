@@ -378,31 +378,47 @@ const BOOSTER_DATA={
     "Antipharmakon":["Antipharmakon Toxot"],
     "Crash":["Improved Crash Booster", "Standard Crash Booster", "Strong Crash Booster", "Synth Crash Booster"],
   },
+  // "Agency Lodestar" used to sit here — no such item exists anywhere in the bundle, fabricated like
+  // slots 14-17 below. Dropped; the AIR tier-II variants and Wisdom of Gheinok were also missing.
   11:{
-    "Agency Pyrolancea":["Agency 'Pyrolancea' DB3 Dose I","Agency 'Pyrolancea' DB5 Dose II","Agency 'Pyrolancea' DB7 Dose III","Agency 'Pyrolancea' DB9 Dose IV"],
-    "Agency Overclocker":["Agency 'Overclocker' SB3 Dose I","Agency 'Overclocker' SB5 Dose II","Agency 'Overclocker' SB7 Dose III","Agency 'Overclocker' SB9 Dose IV"],
-    "Agency Hardshell":["Agency 'Hardshell' TB3 Dose I","Agency 'Hardshell' TB5 Dose II","Agency 'Hardshell' TB7 Dose III","Agency 'Hardshell' TB9 Dose IV"],
-    "Agency Lodestar":["Agency 'Lodestar' ALP3 Dose I","Agency 'Lodestar' ALP5 Dose II","Agency 'Lodestar' ALP7 Dose III","Agency 'Lodestar' ALP9 Dose IV"],
+    "Agency Pyrolancea":["Agency 'Pyrolancea' DB3 Dose I","Agency 'Pyrolancea' DB5 Dose II","Agency 'Pyrolancea' DB7 Dose III","Agency 'Pyrolancea' DB9 Dose IV","AIR Pyrolancea Booster II"],
+    "Agency Overclocker":["Agency 'Overclocker' SB3 Dose I","Agency 'Overclocker' SB5 Dose II","Agency 'Overclocker' SB7 Dose III","Agency 'Overclocker' SB9 Dose IV","AIR Overclocker Booster II"],
+    "Agency Hardshell":["Agency 'Hardshell' TB3 Dose I","Agency 'Hardshell' TB5 Dose II","Agency 'Hardshell' TB7 Dose III","Agency 'Hardshell' TB9 Dose IV","AIR Hardshell Booster II"],
+    "Other":["Wisdom of Gheinok"],
   },
+  // Slots 14-17 are the four-faction Electronics/Defense/Mobility/Hardpoint boosters plus a handful
+  // of one-off AIR/Clash/Volatile boosters that don't belong to a I-IV family. Every name below was
+  // pulled from the bundle by boosterness (attr 1087), not guessed — the previous contents of these
+  // four slots (AIR Repairer/Capacitor/Damage/Shield, Guristas/Blood Raiders/Angel Cartel/Triglavian/
+  // Deathless boosters, "Event Booster Alpha/Beta/Gamma") did not resolve to any real item, so the
+  // picker's Slot 14-17 categories were entirely unselectable.
   14:{
-    "AIR Repairer":["AIR Repairer Booster I","AIR Repairer Booster II","AIR Repairer Booster III","AIR Repairer Booster IV"],
-    "AIR Capacitor":["AIR Capacitor Booster I","AIR Capacitor Booster II","AIR Capacitor Booster III","AIR Capacitor Booster IV"],
-    "AIR Damage":["AIR Damage Booster I","AIR Damage Booster II","AIR Damage Booster III","AIR Damage Booster IV"],
-    "AIR Shield":["AIR Shield Booster I","AIR Shield Booster II","AIR Shield Booster III","AIR Shield Booster IV"],
+    "Federation Electronics":["Federation Electronics Booster I","Federation Electronics Booster II","Federation Electronics Booster III"],
+    "Imperial Electronics":["Imperial Electronics Booster I","Imperial Electronics Booster II","Imperial Electronics Booster III"],
+    "Republic Electronics":["Republic Electronics Booster I","Republic Electronics Booster II","Republic Electronics Booster III"],
+    "State Electronics":["State Electronics Booster I","State Electronics Booster II","State Electronics Booster III"],
+    "Other":["AIR Astro-Acquisition II Booster","Astrograph Clash Booster","Strong Veilguard Booster"],
   },
   15:{
-    "Imperial":["Imperial Mobility Booster I","Imperial Mobility Booster II","Imperial Mobility Booster III","Imperial Mobility Booster IV"],
-    "Guristas":["Guristas Damage Booster I","Guristas Damage Booster II","Guristas Damage Booster III","Guristas Damage Booster IV"],
-    "Blood Raiders":["Blood Raiders Armor Booster I","Blood Raiders Armor Booster II","Blood Raiders Armor Booster III","Blood Raiders Armor Booster IV"],
-    "Angel Cartel":["Angel Cartel Speed Booster I","Angel Cartel Speed Booster II","Angel Cartel Speed Booster III","Angel Cartel Speed Booster IV"],
+    "Federation Defense":["Federation Defense Booster I","Federation Defense Booster II","Federation Defense Booster III"],
+    "Imperial Defense":["Imperial Defense Booster I","Imperial Defense Booster II","Imperial Defense Booster III"],
+    "Republic Defense":["Republic Defense Booster I","Republic Defense Booster II","Republic Defense Booster III"],
+    "State Defense":["State Defense Booster I","State Defense Booster II","State Defense Booster III"],
+    "Other":["AIR Agility Booster II","AIR Astro-Pinpointing II Booster","AIR Nirvana Booster II","AIR Rapture Booster II","Hallowed Volatile Booster","SITREP Clash Booster","Tenacious Volatile Booster"],
   },
   16:{
-    "Triglavian":["Triglavian Combat Booster I","Triglavian Combat Booster II","Triglavian Combat Booster III","Triglavian Combat Booster IV"],
-    "Deathless":["Deathless Support Booster I","Deathless Support Booster II","Deathless Support Booster III","Deathless Support Booster IV"],
+    "Federation Mobility":["Federation Mobility Booster I","Federation Mobility Booster II","Federation Mobility Booster III"],
+    "Imperial Mobility":["Imperial Mobility Booster I","Imperial Mobility Booster II","Imperial Mobility Booster III"],
+    "Republic Mobility":["Republic Mobility Booster I","Republic Mobility Booster II","Republic Mobility Booster III"],
+    "State Mobility":["State Mobility Booster I","State Mobility Booster II","State Mobility Booster III"],
+    "Other":["AIR Astro-Rangefinding II Booster","AIR Repairer Booster III","Cavalry Clash Booster","Coherence Volatile Booster","Upcycle Volatile Booster"],
   },
   17:{
-    "Event":["Event Booster Alpha","Event Booster Beta","Event Booster Gamma"],
-    "Seasonal":["Seasonal Booster I","Seasonal Booster II","Seasonal Booster III"],
+    "Federation Hardpoint":["Federation Hardpoint Booster I","Federation Hardpoint Booster II","Federation Hardpoint Booster III"],
+    "Imperial Hardpoint":["Imperial Hardpoint Booster I","Imperial Hardpoint Booster II","Imperial Hardpoint Booster III"],
+    "Republic Hardpoint":["Republic Hardpoint Booster I","Republic Hardpoint Booster II","Republic Hardpoint Booster III"],
+    "State Hardpoint":["State Hardpoint Booster I","State Hardpoint Booster II","State Hardpoint Booster III"],
+    "Other":["Requisition Volatile Booster","Soaring Volatile Booster","Zero-In Volatile Booster"],
   },
 };
 
