@@ -317,6 +317,12 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 .vv-from-left {animation:vv-from-left  .2s cubic-bezier(.22,.61,.36,1)}
 @media (prefers-reduced-motion:reduce){.vv-from-right,.vv-from-left{animation:none}}
 
+/* Loading spinner (FitPickerSheet's deferred filterFn pass). Reduced-motion users still get the
+   static ring — it reads as "not ready yet" even without the spin. */
+@keyframes vv-spin{to{transform:rotate(360deg)}}
+.vv-spin{animation:vv-spin .7s linear infinite}
+@media (prefers-reduced-motion:reduce){.vv-spin{animation:none}}
+
 /* Mutaplasmid sliders. The bar runs from the BASE value to the current one and is coloured by
    whether the roll is an improvement, so its length reads as the size of the roll and its colour as
    the sign — which a left-anchored accent fill cannot say at all. That needs the native track

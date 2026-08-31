@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -279,25 +279,46 @@ function BoosterPickerSheet({onAdd,onClose}){
 // almost always one tap away instead of a name you have to remember and type. Hidden the moment you
 // start searching: a shortcut list that stays put while the results below it change reads as a result
 // that refuses to be filtered.
+// Sorted most-recently-modified first. `fitsDB` is a plain object keyed by hull, so its natural
+// order here is whichever hull happened to get a fit saved to it first — meaningless once the list
+// is flattened. See byRecentlyModified for what `modified` can and cannot tell us.
+function buildAllFits(fitsDB,filterFn){
+  const out=[];
+  Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))out.push({ship,fit:f});}));
+  return out.sort(byRecentlyModified);
+}
+
 export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pinnedLabel="Open fits"}){
   const[search,setSearch]=useState("");
-  // MEMOISED because `filterFn` is expensive: the command picker passes hasCommandBursts, which runs
-  // a full computeCommandBursts dogma pass PER FIT (~11 ms on a desktop, several times that on a
-  // phone). Built in the render body it re-ran for every fit in the library on every keystroke —
-  // ~450 ms a character against a 40-fit library — which is what made this search feel broken. The
-  // result cannot change while typing, so it is keyed on the inputs that actually decide it.
-  // `filterFn` is module-scope (hasCommandBursts) or undefined, never an inline arrow, so its
-  // identity is stable and this does not silently re-run anyway.
-  // Sorted most-recently-modified first. `fitsDB` is a plain object keyed by hull, so its natural
-  // order here is whichever hull happened to get a fit saved to it first — meaningless once the list
-  // is flattened. See byRecentlyModified for what `modified` can and cannot tell us.
-  const allFits=useMemo(()=>{
-    const out=[];
-    Object.entries(fitsDB).forEach(([ship,fits])=>fits.forEach(f=>{if(!filterFn||filterFn(ship,f))out.push({ship,fit:f});}));
-    return out.sort(byRecentlyModified);
+  // `filterFn` is expensive: the command picker passes hasCommandBursts, which runs a full
+  // computeCommandBursts dogma pass PER FIT (~11 ms on a desktop, several times that on a phone) for
+  // every fit not already in its WeakMap cache. Run inline in the render body — or even in a plain
+  // useMemo — this blocks the FIRST paint of the sheet: React can't commit anything, including the
+  // "sheet opened" frame itself, until the render finishes, so a large uncached library reads as a
+  // frozen tap rather than a picker that's loading. Deferring it into an effect lets the sheet shell
+  // (and the "Loading fits…" row below) actually reach the screen first — but a SINGLE rAF is not
+  // enough of a guarantee: it fires before ITS OWN frame's paint, and if that frame is the same one
+  // the "loading" commit was headed for, the heavy synchronous work starts before the compositor has
+  // actually presented anything, so the frame can be coalesced away and never reach the screen at
+  // all (seen on mobile Safari — the freeze was still there but the spinner never appeared). A
+  // second, nested rAF forces a full frame boundary to pass first, so a paint is guaranteed to have
+  // already landed before the expensive pass starts.
+  // `null` means "not computed yet" — distinct from an empty array, which is a legitimate "no fits
+  // matched" result once computation finishes.
+  const[allFits,setAllFits]=useState(()=>filterFn?null:buildAllFits(fitsDB,filterFn));
+  useEffect(()=>{
+    if(!filterFn){ setAllFits(buildAllFits(fitsDB,filterFn)); return; }
+    setAllFits(null);
+    let cancelled=false;
+    let cleanupInner=()=>{};
+    const raf1=requestAnimationFrame(()=>{
+      const raf2=requestAnimationFrame(()=>{ if(!cancelled) setAllFits(buildAllFits(fitsDB,filterFn)); });
+      cleanupInner=()=>cancelAnimationFrame(raf2);
+    });
+    return ()=>{cancelled=true;cancelAnimationFrame(raf1);cleanupInner();};
   },[fitsDB,filterFn]);
   const q=search.trim().toLowerCase();
-  const filtered=q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
+  const filtered=allFits&&q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
   return(<BottomSheet title={title} onClose={onClose} height="75vh">
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
@@ -315,13 +336,17 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
       ))}
       <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"12px 14px 6px"}}>All fits</div>
     </>}
-    {filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
+    {allFits===null&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"32px 0",fontSize:13,color:C.textMute}}>
+      <span className="vv-spin" style={{display:"inline-block",width:14,height:14,border:`2px solid ${C.border}`,borderTopColor:C.accent,borderRadius:"50%"}}/>
+      Loading fits…
+    </div>}
+    {allFits!==null&&filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
     {/* Keyed by POSITION, not by fit.id. This list is the one place in the app that flattens every
         ship's fits into a single list, and fit ids are only unique within a ship — a restored backup
         gives the first fit of every ship the id 1. Duplicate React keys meant the rows were not
         reconciled when the filter changed, so typing in the search box left the old list on screen.
         It only ever showed up on a device restored from a backup, never on a hand-built library. */}
-    {filtered.map(({ship,fit},i)=>(
+    {allFits!==null&&filtered.map(({ship,fit},i)=>(
       <div key={`${ship}::${fit.name}::${i}`} onClick={()=>{onSelect(ship,fit);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
         <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{ship} / Modified {fit.modified}</div></div>
         <span style={{fontSize:14,color:C.textMute,flexShrink:0}}>{">"}</span>
