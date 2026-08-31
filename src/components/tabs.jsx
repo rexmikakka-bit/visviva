@@ -1400,7 +1400,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             eff: effOf(cs.remoteShieldGJPerHP)},
           {key:"armor", label:"Armor",  unit:"HP/s", val:cs.remoteArmorPS??0,  color:C.warning,
             disp: spoolRep ? `${fmtF(cs.remoteArmorPS??0)}-${fmtF(armorMax)} HP/s` : null,
-            eff: effOf(cs.remoteArmorGJPerHP)},
+            eff: effOf(cs.remoteArmorGJPerHP),
+            // Same cap cost, more HP delivered once spooled — the ratio moves too, so it gets the
+            // same min-max treatment as the rate cell above rather than freezing at the pre-spool figure.
+            effDisp: (spoolRep && cs.remoteArmorGJPerHPMax!=null)
+              ? `${fmtF(effOf(cs.remoteArmorGJPerHP))}-${fmtF(effOf(cs.remoteArmorGJPerHPMax))} HP/GJ` : null},
           {key:"hull",  label:"Hull",   unit:"HP/s", val:cs.remoteHullPS??0,   color:C.danger,
             eff: effOf(cs.remoteHullGJPerHP)},
         ];
@@ -1413,7 +1417,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 // Tap a Shield/Armor/Hull cell to swap its rate for GJ efficiency, same gesture as
                 // the Capacitor card's Capacity/In-Out/Peak-regen cells.
                 const can=col.eff!=null, on=can&&exactCells.has(`remoteEff_${col.key}`);
-                const content=on?(col.eff===Infinity?"Free":`${fmtF(col.eff)} HP/GJ`):(col.disp??`${fmtF(col.val)} ${col.unit}`);
+                const content=on?(col.eff===Infinity?"Free":(col.effDisp??`${fmtF(col.eff)} HP/GJ`)):(col.disp??`${fmtF(col.val)} ${col.unit}`);
                 return(<div key={col.key} onClick={can?()=>toggleExact(`remoteEff_${col.key}`):undefined}
                             style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none",cursor:can?"pointer":"default"}}>
                   {/* lineHeight pinned to match Recharge Rates — see the note there. */}
