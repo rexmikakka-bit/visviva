@@ -12,7 +12,7 @@ import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleT
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
 import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton, ItemPrice, TraitsPanel, useVisualViewport } from "./ui.jsx";
+import { InfoButton, ItemPrice, ResistBars, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { IconPencil, IconCopy, IconClose, IconSearch, IconTag } from "./glyphs.jsx";
@@ -365,6 +365,12 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
   const tabs = ['traits','description','attributes'];
 
+  // lookupShip already computes these (ships.json for a listed hull, shipFromDogma's `rz` for one
+  // that isn't) — BASE resonances, matching ItemInfoPanel's ResistBars and the ask to show the hull's
+  // own numbers rather than whatever cs's skills/rigs currently do to them.
+  const resistLayers = ship?.resists ? ['shield','armor','hull']
+    .map(k => ({label:k[0].toUpperCase()+k.slice(1), ...ship.resists[k]})) : [];
+
   const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
   // Two value columns when opened from a fit: what the hull actually IS right now, beside the bare
   // hull it started as. Same shape and same reading order as ItemInfoPanel's module columns, so the
@@ -420,7 +426,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       // CCP has four separate strength attributes, one per sensor type, so the key is the hull's own
       // sensor rather than a fixed one. They all flag the same way, but a Radar hull asking about
       // scanGravimetricStrength is the kind of thing that silently starts returning null later.
-      R(`${ship?.sensorType||'Sensor'} Strength`, ship?.sensorStrength, cs?.sensorStrength, F.pt,
+      R(`${ship?.sensorType||'Sensor'} Sensor Strength`, ship?.sensorStrength, cs?.sensorStrength, F.pt,
         ship?.sensorType ? `scan${ship.sensorType}Strength` : null),
     ],
     navigation: [
@@ -527,6 +533,13 @@ export function ShipInfoSheet({ship, cs, onClose}) {
           {tab==='attributes' && (
             <div>
               <ItemPrice typeID={ship?.typeID}/>
+              {resistLayers.length>0 && (
+                <div style={{marginBottom:16}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',
+                    letterSpacing:.5,marginBottom:8}}>Base Resistances</div>
+                  <ResistBars layers={resistLayers}/>
+                </div>
+              )}
               {twoCol && (
                 <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,paddingBottom:6}}>
                   <span/>

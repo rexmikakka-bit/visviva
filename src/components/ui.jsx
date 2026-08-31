@@ -529,9 +529,21 @@ const ATTR_LABEL = {
   maxTargetRange:'Target Range', warpScrambleRange:'Warp Disrupt Range',
   stasisWebifierRange:'Web Range', signatureRadius:'Signature Radius',
   requiredThermoDynamicsSkill:'Required Thermodynamics Skill',
+  // "Scan X Strength" is what the generic camelCase splitter would produce (and what pyfa itself
+  // calls it) — "X Sensor Strength" reads clearer next to a ship's own sensor TYPE and matches the
+  // label the ship attributes tab builds for the same attribute.
+  scanRadarStrength:'Radar Sensor Strength', scanLadarStrength:'Ladar Sensor Strength',
+  scanMagnetometricStrength:'Magnetometric Sensor Strength', scanGravimetricStrength:'Gravimetric Sensor Strength',
 };
 const RESIST_ATTRS = new Set(['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance','hullEmDamageResonance','hullThermalDamageResonance','hullKineticDamageResonance','hullExplosiveDamageResonance',
   'emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']);
+// Grouped for the ResistBars widget — Hull has no `hull` prefix on its own resonance keys (CCP
+// reuses the bare em/thermal/kinetic/explosiveDamageResonance names for it).
+const RESIST_LAYER_DEFS = [
+  {label:'Shield', keys:['shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
+  {label:'Armor',  keys:['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
+  {label:'Hull',   keys:['emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
+];
 const HIDDEN_ATTRS = new Set(['skillPoints','skillTimeConstant','typeColorScheme','canBeJettisoned']);
 // Attrs hidden in the detailed info panel (shown in dedicated sections or irrelevant for display)
 const INFO_HIDDEN = new Set([...HIDDEN_ATTRS,
@@ -634,6 +646,45 @@ function ItemPrice({typeID}) {
   );
 }
 
+// Compact color-coded resist grid — same visual language as the fit Stats tab's Resistances card
+// (colored bar + percentage per damage type) but condensed to fit an info panel: no EHP column, no
+// incoming-profile picker, just the four resonances per layer. Shared between ItemInfoPanel (a
+// drone/module/ship's BASE resists) and ShipInfoSheet (a hull's base resists), so a bar means the
+// same thing wherever it's tapped into.
+//
+// `layers` is [{label, em, th, kin, exp}], each value a 0-100 resist percentage or null/undefined
+// for "this layer doesn't carry that type" (kept null-safe for a future item that only has three).
+function ResistBars({layers}) {
+  const present = (layers||[]).filter(l => [l.em,l.th,l.kin,l.exp].some(v => v != null));
+  if (!present.length) return null;
+  const COLS = '40px repeat(4,1fr)';
+  return (
+    <div>
+      <div style={{display:'grid',gridTemplateColumns:COLS,gap:4,padding:'0 0 4px'}}>
+        <span/>
+        {Object.values(DMG).map(d => (
+          <span key={d.label} style={{fontSize:9,fontWeight:700,color:d.color,textAlign:'center'}}>{d.label}</span>
+        ))}
+      </div>
+      {present.map(l => (
+        <div key={l.label} style={{display:'grid',gridTemplateColumns:COLS,gap:4,alignItems:'center',padding:'3px 0'}}>
+          <span style={{fontSize:10,fontWeight:600,color:C.textMid}}>{l.label}</span>
+          {[['em',l.em],['th',l.th],['kin',l.kin],['exp',l.exp]].map(([k,v]) => (
+            <div key={k} style={{display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+              {v!=null ? (<>
+                <div style={{width:'80%',height:3,background:C.border,borderRadius:99,overflow:'hidden'}}>
+                  <div style={{width:`${v}%`,height:'100%',background:DMG[k].color,borderRadius:99}}/>
+                </div>
+                <span style={{fontSize:9,fontWeight:600,color:DMG[k].color}}>{v.toFixed(0)}%</span>
+              </>) : <span style={{fontSize:9,color:C.textMute}}>—</span>}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab.
 //
 // `item` (optional) is this item's ENGINE object for the fit it is actually sitting in — a DogmaItem
@@ -673,13 +724,28 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
   const ov = eng ? overrides : null;
   const grade = mutaplasmid ? abyssalGrade(mutaplasmid) : null;
 
+  // Base resonances (Shield/Armor/Hull), only when a layer carries its full set of four — a
+  // resistance module bonusing a single resonance stays a plain row below rather than a bar chart
+  // for one value. BASE only (raw type attrs), per the ask: this reads the item's own numbers, not
+  // whatever the current fit's skills/rigs have done to it.
+  const resistKeys = new Set();
+  const resistLayers = [];
+  for (const def of RESIST_LAYER_DEFS) {
+    if (def.keys.every(k => attrs[k] != null)) {
+      const [em,th,kin,exp] = def.keys.map(k => Math.round((1-attrs[k])*1000)/10);
+      resistLayers.push({label:def.label, em, th, kin, exp});
+      def.keys.forEach(k => resistKeys.add(k));
+    }
+  }
+
   // Build section rows
   const shownKeys = new Set();
   const sections = [];
   for (const sec of INFO_SECTIONS) {
-    const rows = sec.keys.filter(k => attrs[k] != null && !INFO_HIDDEN.has(k));
+    const rows = sec.keys.filter(k => attrs[k] != null && !INFO_HIDDEN.has(k) && !resistKeys.has(k));
     if (rows.length) { sections.push({label:sec.label, rows}); rows.forEach(k=>shownKeys.add(k)); }
   }
+  resistKeys.forEach(k => shownKeys.add(k));
   // Remaining attrs not in any section
   const other = Object.keys(attrs).filter(k => !shownKeys.has(k) && !INFO_HIDDEN.has(k) && typeof attrs[k] === 'number').sort((a,b)=>a.localeCompare(b));
   if (other.length) sections.push({label:'Other', rows:other});
@@ -766,6 +832,14 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
               </span>
             ))}
           </div>
+        </div>
+      )}
+      {/* Base resistances — right under Required Skills, same slot on every item that has them,
+          rather than wherever Shield happened to fall in the attribute section order. */}
+      {resistLayers.length > 0 && (
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Resistances</div>
+          <ResistBars layers={resistLayers}/>
         </div>
       )}
       {/* Attribute sections. The column header appears once, above all of them, rather than
@@ -1966,4 +2040,4 @@ function DamageProfileSheet({current,onSelect,onClose}){
 }
 
 
-export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, DroneMenu, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, ItemPrice, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResourceStrip, SubsystemPickerSheet, TraitsPanel, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
+export { ATTR_UNIT, AccordionSection, BottomSheet, DamageProfileSheet, TargetProfileSheet, DroneMenu, HIDDEN_ATTRS, ImportFitSheet, InfoButton, ItemInfoSheet, ItemPrice, MUTA_ATTR_LABELS, ModuleBrowserSheet, ModuleInfoTab, ModuleMenu, ModuleVariationsTab, MutaplasmidEditor, NumpadModal, RESIST_ATTRS, ResistBars, ResourceStrip, SubsystemPickerSheet, TraitsPanel, abyssalToText, fmtAttrName, fmtAttrVal, fmtMutaVal, mutaLabel, parseAbyssal };
