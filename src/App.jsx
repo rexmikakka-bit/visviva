@@ -17,7 +17,7 @@ import { FeedbackModal } from "./components/feedback.jsx";
 import { EsiImportModal, EsiExportModal } from "./components/esi-ui.jsx";
 import { FitTabs } from "./components/FitTabs.jsx";
 import { SkillsProvider } from "./components/skill-mark.jsx";
-import { IconClipboard, IconCharacter } from "./components/glyphs.jsx";
+import { IconClipboard, IconCharacter, IconClose } from "./components/glyphs.jsx";
 import { resolveTabs, MAX_OPEN_TABS, sameTab } from "./lib/fit-tabs.js";
 import { getLoadedFitsDB, persistFitsDB } from "./lib/fits-store.js";
 import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
@@ -470,6 +470,35 @@ export default function App(){
     if((openTabs?.length??0)>=2) wantNewTab.current=true;
     loadFit(shipName,fitName,entry);
   };
+  // Clipboard fit auto-detect: checked once on launch and again whenever the app returns to the
+  // foreground — not on every render — so a fit copied elsewhere (the EVE client, or pasted out of
+  // Discord/SMS and copied back) surfaces as a tap-able prompt without opening the Import Fit menu
+  // by hand. Reading the OS clipboard triggers its own native indicator (iOS's "Pasted from
+  // Clipboard" pill, Android's paste toast) every time this runs — expected platform behaviour.
+  const[clipboardFitPrompt,setClipboardFitPrompt]=useState(null);
+  // Last clipboard text already offered (or already ruled out as not a fit) — so leaving the same
+  // text sitting on the clipboard doesn't re-prompt on every foreground; only a CHANGE does.
+  const clipboardChecked=useRef(null);
+  useEffect(()=>{
+    const check=async()=>{
+      const{text}=await readClipboardText();
+      const trimmed=text?.trim();
+      if(!trimmed||trimmed===clipboardChecked.current)return;
+      clipboardChecked.current=trimmed;
+      const parsed=parseEFT(trimmed);
+      if(!parsed.error)setClipboardFitPrompt(parsed);
+    };
+    check();
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    let sub,onVis;
+    if(Cap?.isNativePlatform?.()){
+      (async()=>{try{const{App:CapApp}=await import('@capacitor/app');sub=await CapApp.addListener('appStateChange',({isActive})=>{if(isActive)check();});}catch(e){}})();
+    }else if(typeof document!=="undefined"){
+      onVis=()=>{if(document.visibilityState==="visible")check();};
+      document.addEventListener('visibilitychange',onVis);
+    }
+    return()=>{try{sub?.remove?.();}catch(e){}if(onVis)document.removeEventListener('visibilitychange',onVis);};
+  },[]);
   useEffect(()=>{if(!activeFit?.ship||!activeFit?.fitName)return;setFitsDB(db=>{const sf=db[activeFit.ship];if(!sf)return db;const idx=sf.findIndex(f=>f.name===activeFit.fitName);if(idx<0)return db;const u=[...sf];u[idx]={...u[idx],slots,drones,fighters,cargo:cargoItems,implants,boosters,projFits,cmdFits};return{...db,[activeFit.ship]:u};});},[slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits,activeFit]);
   // Writes only the hulls whose array identity changed, in one IndexedDB transaction — the effect
   // above rebuilds exactly one hull's array per edit, so a keystroke costs one small record rather
@@ -674,6 +703,17 @@ export default function App(){
       {!!activeFit?.ship&&<BottomNav active={bottomTab} onChange={setBottomTab} badges={navBadges}/>}
     </div>
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
+    {clipboardFitPrompt&&<div onClick={()=>{
+        haptic();
+        const parsed=clipboardFitPrompt;
+        setClipboardFitPrompt(null);
+        importFit(parsed);
+        setPriceBanner({kind:"success",msg:`Imported "${parsed.fitName}"`});setTimeout(()=>setPriceBanner(null),3000);
+      }} style={{position:"fixed",top:`calc(${priceBanner?64:12}px + env(safe-area-inset-top, 0px))`,left:"50%",transform:"translateX(-50%)",zIndex:300,display:"flex",alignItems:"center",gap:10,background:C.surfaceAlt,color:C.text,border:`1px solid ${C.accent}`,borderRadius:10,padding:"10px 10px 10px 14px",fontSize:13,fontWeight:600,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",cursor:"pointer"}}>
+      <span style={{display:"flex",color:C.accent,flexShrink:0}}><IconClipboard size={17}/></span>
+      <span>Paste "{clipboardFitPrompt.fitName}" from clipboard?</span>
+      <button onClick={e=>{e.stopPropagation();setClipboardFitPrompt(null);}} style={{display:"flex",flexShrink:0,background:"none",border:"none",padding:2,color:C.textMute,cursor:"pointer"}}><IconClose size={14}/></button>
+    </div>}
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
     {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
       {icon:IconClipboard,label:"From EFT",sub:"Paste from clipboard",onSelect:async()=>{
