@@ -580,7 +580,13 @@ function computeDisplayRows(mods,secKey,grouped){
     // `orphan` is part of the key: a module stranded by a subsystem swap must never merge into
     // a group with a live one of the same name, or the red 'no longer have this slot' marking
     // would apply to both — or to neither, depending which landed first.
-    const key=m.mutaplasmid?`__abyssal_${m.id}`:`${m.orphan?'__orphan_':''}${m.ammo?`${m.name}||${m.ammo}`:m.name}`;
+    //
+    // `state` is part of the key too: state carries the DPS-affecting difference between
+    // "active" and "overheated" (and the row's dot/heat display comes from one representative
+    // member), so grouping across states used to let 2 overheated launchers merge into a 5x row
+    // with 3 merely-active ones and show whichever state the first-seen module happened to be in
+    // for all five — the DMG figure was real for some of the row and wrong for the rest of it.
+    const key=m.mutaplasmid?`__abyssal_${m.id}`:`${m.orphan?'__orphan_':''}${m.state}||${m.ammo?`${m.name}||${m.ammo}`:m.name}`;
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
     else seen.set(key,{...m,count:1,groupIds:[m.id]});
   });
@@ -1050,13 +1056,14 @@ function getCompatibleCharges(mod){
 
 // Ancillary modules are useless empty — an Ancillary Shield Booster with no cap booster loaded is
 // just a worse shield booster, and an Ancillary Armor Repairer with no paste reps at a third rate.
-// Fitting one and forgetting the charge is a silent, easy mistake, so they arrive loaded.
+// A plain Capacitor Booster is the same story: no charge, no GJ. Fitting one and forgetting the
+// charge is a silent, easy mistake, so all three arrive loaded.
 //
 // Returns {name, qty} or null.
 //
-// Smallest volume wins among the compatible charges — which is also what picks Navy over the plain
-// variant, as navy charges are physically smaller for the same capacitor. Every ASB size lands on 9
-// charges, which is the number the module is known for.
+// ASB/AAR: smallest volume wins among the compatible charges — which is also what picks Navy over
+// the plain variant, as navy charges are physically smaller for the same capacitor. Every ASB size
+// lands on 9 charges, which is the number the module is known for.
 //
 // This used to need a size rule of its own, preferring an exact chargeSize match and falling back to
 // sizeless charges, because `getCompatibleCharges` let the sizeless Cap Booster 25s into every list
@@ -1068,7 +1075,8 @@ function defaultChargeFor(typeID){
   const gn=td.gn??td.groupName??"";
   const isASB=gn==="Ancillary Shield Booster"||gn==="Ancillary Remote Shield Booster";
   const isAAR=gn==="Ancillary Armor Repairer"||gn==="Ancillary Remote Armor Repairer";
-  if(!isASB&&!isAAR)return null;
+  const isCapBooster=gn==="Capacitor Booster";
+  if(!isASB&&!isAAR&&!isCapBooster)return null;
   const a=td.attrs??td.a??{};
   const capacity=a["38"]??a.capacity??0;
   if(!(capacity>0))return null;
@@ -1083,6 +1091,23 @@ function defaultChargeFor(typeID){
 
   const compatible=getCompatibleCharges({typeID,name:td.n??td.name});
   if(!compatible.length)return null;
+
+  if(isCapBooster){
+    // Unlike an ASB/AAR (more clips of a small charge beats fewer of a big one), a plain Capacitor
+    // Booster wants the LARGEST charge that fits — one big GJ hit per cycle beats reloading sooner.
+    // Preferring the Navy line specifically (over the plain charge of the same nominal size) matches
+    // what a pilot would actually load: identical capacitorBonus, smaller volume, and cheap enough
+    // that there's essentially no reason to fly the plain version once Navy is available.
+    const navy=compatible.filter(c=>c.name.startsWith("Navy "));
+    const pool=(navy.length?navy:compatible)
+      .map(c=>({...c,vol:c.volume??((TYPES[c.typeID]?.attrs??TYPES[c.typeID]?.a??{})["161"])}))
+      .filter(c=>c.vol>0)
+      .sort((x,y)=>(y.capBonus??0)-(x.capBonus??0)||x.name.localeCompare(y.name));
+    const best=pool[0];
+    if(!best)return null;
+    return {name:best.name,qty:Math.floor(capacity/best.vol)};
+  }
+
   const pool=compatible
     .map(c=>({...c,vol:c.volume??((TYPES[c.typeID]?.attrs??TYPES[c.typeID]?.a??{})["161"])}))
     .filter(c=>c.vol>0)
@@ -1186,7 +1211,11 @@ function groupChargesForBrowser(charges){
   const order=new Map();     // family -> explicit sort index, for damage-type groups
   for(const c of charges){
     const dmg=missileDamageWord(c.name);
-    const key=dmg?(MISSILE_DMG_LABEL[dmg]??dmg):chargeFamilyOf(c.name,names);
+    // Cap booster charges never merge with a sibling of a different brand: unlike turret/missile
+    // ammo, plain and Navy of the same size have no reason to sit behind a second tap to choose
+    // between — Navy is a strict upgrade (identical capacitorBonus, smaller volume) — so each stays
+    // its own single-item family and equips straight from the top-level list.
+    const key=dmg?(MISSILE_DMG_LABEL[dmg]??dmg):(c.groupID===87?c.name:chargeFamilyOf(c.name,names));
     if(dmg)order.set(key,MISSILE_DMG_ORDER.indexOf(dmg));
     if(!fam.has(key))fam.set(key,[]);
     fam.get(key).push(c);
@@ -1195,8 +1224,7 @@ function groupChargesForBrowser(charges){
   // Booster 25 are different magnitudes of the same thing, and which ones even fit is decided by
   // the module's capacity (handled by getCompatibleCharges). Falling through to localeCompare
   // sorted them as STRINGS, so the list read 100, 150, 200, 3200, 25, 400, 50, 75, 800. Largest
-  // first, because the biggest charge that fits is almost always the one you want; equal sizes
-  // still fall through to tier, so a Navy 400 outranks a plain 400.
+  // first, because the biggest charge that fits is almost always the one you want.
   const capBonusOf=c=>{const a=TYPES[c.typeID]?.a??TYPES[String(c.typeID)]?.a??{};return Number(a['67']??a.capacitorBonus??0);};
   const groups=[...fam.entries()].map(([family,items])=>{
     items.sort((a,b)=>{
@@ -1205,10 +1233,11 @@ function groupChargesForBrowser(charges){
       return chargeTierRank(a)-chargeTierRank(b)||a.name.localeCompare(b.name);
     });
     const ranges=items.map(chargeRangeMult).filter(v=>v!=null);
-    // The size sort above only ever ordered charges WITHIN a family, and each cap booster size is
-    // its own family ("Cap Booster 400" holds the plain and the Navy one) — so the families
-    // themselves still fell through to localeCompare and the picker read 100, 150, 200, 3200, 25,
-    // 400, 50, 75, 800. Carried up to the group so the sizes line up numerically.
+    // The size sort above only ever ordered charges WITHIN a family, and cap booster sizes are now
+    // one family per BRAND ("Cap Booster 400", "Navy Cap Booster 400" — see the ungrouping above),
+    // so the families themselves still fell through to localeCompare and the picker read 100, 150,
+    // 200, 3200, 25, 400, 50, 75, 800, each doubled by brand. Carried up to the group so the sizes
+    // line up numerically.
     const caps=items.map(capBonusOf).filter(v=>v>0);
     // T2 turret ammo leads its list. Two per weapon family (Hail/Barrage, Void/Null,
     // Conflagration/Scorch), and they are the two you are actually choosing between most of the
@@ -1232,6 +1261,12 @@ function groupChargesForBrowser(charges){
     // Cap boosters: biggest first, matching the within-family rule — the largest charge that fits
     // is almost always the one you want, and what fits is already decided by getCompatibleCharges.
     if(a.capSize!=null&&b.capSize!=null&&a.capSize!==b.capSize)return b.capSize-a.capSize;
+    // Same size, different brand (plain vs Navy, now separate one-item families) — Navy leads, for
+    // the same reason defaultChargeFor prefers it: identical capacitorBonus, smaller volume.
+    if(a.capSize!=null&&b.capSize!=null&&a.capSize===b.capSize){
+      const an=a.family.startsWith("Navy "),bn=b.family.startsWith("Navy ");
+      if(an!==bn)return an?-1:1;
+    }
     if(a.range==null&&b.range==null)return a.family.localeCompare(b.family);
     if(a.range==null)return 1;
     if(b.range==null)return -1;

@@ -2703,13 +2703,20 @@ Republic Fleet Command Mindlink`;
         familiesFor('Heavy Missile Launcher II').join(',') === 'Mjolnir (EM),Inferno (Thermal),Scourge (Kinetic),Nova (Explosive)' ? 1 : 0, 1, 0);
 
   // Cap booster sizes are a number in the NAME, so the families sorted as strings: 100, 150, 200,
-  // 3200, 25, 400, 50, 75, 800.
+  // 3200, 25, 400, 50, 75, 800. Plain and Navy of the same size no longer share a family (each
+  // equips in one tap from the top-level list), so sizes now repeat once per brand.
   const caps = groupChargesForBrowser(chargesFor('Heavy Capacitor Booster II'));
-  check('chg', 'cap boosters run largest first', caps[0].family === 'Cap Booster 3200' ? 1 : 0, 1, 0);
+  check('chg', 'cap boosters run largest first', caps[0].family === 'Navy Cap Booster 3200' ? 1 : 0, 1, 0);
   check('chg', 'cap boosters run smallest last', caps[caps.length - 1].family === 'Cap Booster 25' ? 1 : 0, 1, 0);
   const capSizes = caps.map(g => g.capSize);
-  check('chg', 'cap booster sizes strictly descending',
-        capSizes.every((v, i) => i === 0 || v < capSizes[i - 1]) ? 1 : 0, 1, 0);
+  check('chg', 'cap booster sizes non-increasing',
+        capSizes.every((v, i) => i === 0 || v <= capSizes[i - 1]) ? 1 : 0, 1, 0);
+  // Same size, different brand: Navy leads — identical capacitorBonus, smaller volume, so it's
+  // the one you almost always want, and now that plain/Navy are separate one-tap families the
+  // FIRST of a same-size pair has to be the Navy one, not just alphabetically-first "Cap Booster".
+  check('chg', 'Navy cap booster leads its plain twin',
+        caps.every((g, i) => i === 0 || g.capSize !== caps[i - 1].capSize ||
+          (caps[i - 1].family.startsWith('Navy ') && !g.family.startsWith('Navy '))) ? 1 : 0, 1, 0);
 
   // A module that names a chargeSize takes THAT size and nothing else — eos's rule, and a charge
   // carrying no size of its own fails it rather than being treated as universal. Cap Booster 25 and
@@ -2735,6 +2742,19 @@ Republic Fleet Command Mindlink`;
     check('chg', `${sz} ASB auto-loads 9 charges`,
           defaultChargeFor(tid(`${sz} Ancillary Shield Booster`))?.qty ?? 0, 9, 0);
   }
+  // A plain Capacitor Booster arrives loaded too, but with the OPPOSITE size preference from an
+  // ASB: the largest Navy charge that fits, one per module capacity, rather than the smallest for
+  // a big clip.
+  const capBoosterDefaults = {
+    'Small Capacitor Booster II': 'Navy Cap Booster 400',
+    'Medium Capacitor Booster II': 'Navy Cap Booster 800',
+    'Heavy Capacitor Booster II': 'Navy Cap Booster 3200',
+  };
+  for (const [mod, expected] of Object.entries(capBoosterDefaults)) {
+    check('chg', `${mod} auto-loads ${expected}`, defaultChargeFor(tid(mod))?.name ?? '', expected, 0);
+  }
+  check('chg', 'Heavy Capacitor Booster II auto-loads a single 3200',
+        defaultChargeFor(tid('Heavy Capacitor Booster II'))?.qty ?? 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

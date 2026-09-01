@@ -1702,9 +1702,15 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
   // Navy Multifrequency S") rather than one long list of every tier/faction line at once — mirrors
   // the module browser's own category drill-down. Opens straight to the loaded ammo's family, so
   // swapping T2 for a navy/pirate line of the SAME family (the common case) is still one tap.
+  //
+  // Only when that family actually HAS more than one variant to choose between — a lone-item family
+  // (Civilian charges, and now every cap booster size/brand — see groupChargesForBrowser) equips on
+  // a single tap from the main list already, so drilling in would land on a "variant list" holding
+  // the one thing already loaded, with nothing to do but tap Back to see anything else.
   const[chargeFamily,setChargeFamily]=useState(()=>{
     if(!mod.ammo)return null;
-    return groupChargesForBrowser(getCompatibleCharges(mod)).find(g=>g.items.some(i=>i.name===mod.ammo))?.family??null;
+    const g=groupChargesForBrowser(getCompatibleCharges(mod)).find(g=>g.items.some(i=>i.name===mod.ammo));
+    return(g&&g.items.length>1)?g.family:null;
   });
   const[rahQuery,setRahQuery]=useState("");
   const[rahOpen,setRahOpen]=useState(false);
@@ -1799,6 +1805,9 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           const activeGroup=chargeFamily!=null?groups.find(g=>g.family===chargeFamily):null;
           if(!activeGroup)return(<div>
             <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Select charge - applies to all grouped turrets</div>
+            {/* Second way to clear a charge, alongside the row's own ✕ on the fit list — some users
+                only ever look for it here, inside the menu they already opened to manage the charge. */}
+            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Unload Charge</button>}
             {/* Families ordered shortest-range first (see groupChargesForBrowser); a lone-item
                 family (Civilian charges, most cap boosters) equips straight away instead of
                 drilling into a submenu with only one thing in it. */}
@@ -1833,6 +1842,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
               <span style={{color:C.accent,fontSize:14,fontWeight:700}}>&#8249; Back</span>
               <span style={{fontSize:11,color:C.textMute}}>{activeGroup.family}</span>
             </div>
+            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Unload Charge</button>}
             {activeGroup.items.map(a=>{
               const on=mod.ammo===a.name;
               const aMeta=metaOf(a.typeID,null);

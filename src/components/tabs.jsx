@@ -455,15 +455,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       // Bursts always ended up with the same charge and running two different scripts was
       // impossible. Bursts (and anything else non-groupable) are one row each already.
       // ...and it must fan out to exactly the modules SHARING THAT DISPLAY ROW, which means
-      // matching on the same key computeDisplayRows groups by: name AND current ammo. Matching on
-      // name alone made the mutation disagree with the display — a Phoenix carrying three Rapid
-      // Torpedo Launchers deliberately loaded with three different Javelin types shows three
-      // separate rows, but changing the charge on any one of them silently rewrote all three,
-      // destroying the split. `origAmmo` is the OLD charge, which is what the row's members still
-      // carry at this point.
+      // matching on the same key computeDisplayRows groups by: name, current ammo AND state.
+      // Matching on name alone made the mutation disagree with the display — a Phoenix carrying
+      // three Rapid Torpedo Launchers deliberately loaded with three different Javelin types shows
+      // three separate rows, but changing the charge on any one of them silently rewrote all three,
+      // destroying the split. State matters for the same reason: 3 active + 2 overheated launchers
+      // of the same ammo now show as two rows (see computeDisplayRows), and a charge change made
+      // from one of them must not silently reach into the other. `origAmmo`/`origState` are the OLD
+      // values, which is what the row's members still carry at this point.
       if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){
-        const origName=sec[idx].name, origAmmo=sec[idx].ammo;
-        return{...prev,[secKey]:sec.map(m=>m.name===origName&&m.ammo===origAmmo&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};
+        const origName=sec[idx].name, origAmmo=sec[idx].ammo, origState=sec[idx].state;
+        return{...prev,[secKey]:sec.map(m=>m.name===origName&&m.ammo===origAmmo&&m.state===origState&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};
       }
       sec[idx]={...sec[idx],...updated};
 
@@ -471,10 +473,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return{...prev,[secKey]:sec};
     });if(!keepOpen)setModuleMenu(null);
   };
-  // A grouped row stands for every slot in row.groupIds, and state is NOT part of the grouping key —
-  // so the row shows its first member's state and the gesture has to set all of them, or the row
-  // would render as active while four of the five turrets behind it stayed online. Same reasoning
-  // (and same groupIds) as the unload-charge button.
+  // A grouped row stands for every slot in row.groupIds. state IS part of the grouping key now
+  // (mixed-overheat racks must not merge into one misleading row), so every member already shares
+  // the row's state — the gesture still has to set all of them together, or the tap would split
+  // the row into two states instead of moving the whole rack. Same reasoning (and same groupIds)
+  // as the unload-charge button.
   const setRowState=(secKey,row,state)=>{
     const ids=new Set(row.groupIds??[row.id]);
     setSlots(prev=>{
@@ -505,7 +508,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   const duplicateMod=(secKey,mod)=>{
     const empty=slots[secKey].find(m=>m.type==="empty");
     if(!empty)return;
-    addMod(secKey,empty.id,{name:mod.name,typeID:mod.typeID,mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined});
+    // preserveCharge: see addMod — carries this module's actual state and loaded charge into the
+    // copy, rather than re-deriving fresh defaults for it.
+    addMod(secKey,empty.id,{name:mod.name,typeID:mod.typeID,mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined,
+      preserveCharge:true,state:mod.state,ammo:mod.ammo,charges:mod.charges,maxCharges:mod.maxCharges});
     setModuleMenu(null);
   };
   // How many more of THIS weapon the hull can still take: the smallest of its free hardpoints of the
@@ -571,10 +577,16 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     const hasCycle=!!(modInfo?.duration&&modInfo.duration>0)||(modInfo?.capUse!=null&&modInfo.capUse>0);
     const defaultState=isRigMod?"online":(isMicroJumpDrive(modData.typeID)||isAssaultDamageControl(modData.typeID))?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
     // Ancillary boosters/repairers arrive pre-loaded — see defaultChargeFor. Anything else
-    // starts empty, as before.
-    const preload=defaultChargeFor(modData.typeID);
+    // starts empty, as before. duplicateMod sets preserveCharge to carry the SOURCE module's own
+    // state/charge forward instead — matching Fill Hardpoints, which clones the slot wholesale — so
+    // a duplicated overheated, loaded cap booster arrives identical to the one it was copied from.
+    const preload=modData.preserveCharge?null:defaultChargeFor(modData.typeID);
+    const state=modData.preserveCharge?modData.state:defaultState;
+    const ammo=modData.preserveCharge?modData.ammo:preload?.name;
+    const charges=modData.preserveCharge?modData.charges:preload?.qty;
+    const maxCharges=modData.preserveCharge?modData.maxCharges:preload?.qty;
     setSlots(prev=>{
-      const next={...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state:defaultState,ammo:preload?.name,charges:preload?.qty,maxCharges:preload?.qty,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)};
+      const next={...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)};
       // The new module isn't in `_cs` yet, but the limit is a property of the GROUP and the fit, not
       // of the individual module — so the ceiling read from a same-group module already fitted is the
       // one that applies. With none fitted the count is zero and nothing can be over the limit.
