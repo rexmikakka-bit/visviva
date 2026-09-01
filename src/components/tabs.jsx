@@ -285,7 +285,7 @@ function DeleteX({on}){
   );
 }
 
-function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile}){
+function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -585,13 +585,39 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     const ammo=modData.preserveCharge?modData.ammo:preload?.name;
     const charges=modData.preserveCharge?modData.charges:preload?.qty;
     const maxCharges=modData.preserveCharge?modData.maxCharges:preload?.qty;
+    // Auto-fill the rest of the rack: picking ONE turret/launcher from the browser is almost always
+    // "I want these on every hardpoint", and the explicit Fill Hardpoints button already exists for
+    // the case where it isn't (turn the setting off, or just remove the extras). Skipped for
+    // preserveCharge — that path is Duplicate/Fill themselves, which already do their own explicit
+    // fill and would otherwise double up.
+    //
+    // Targets are decided HERE, off `slots` (this render's snapshot), rather than recomputed inside
+    // the second setSlots off `prev` — so the count hardpointRoom-style logic returns to the caller
+    // (for the browser's "+ Module (x5)" toast) is provably the same set of ids actually filled,
+    // not two independent calculations that could drift apart.
+    let fillIds=[];
+    if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
+      const match=isTurretWeapon(modData.typeID)?isTurretWeapon:isMissileLauncher;
+      const total=(isTurretWeapon(modData.typeID)?ship.turrets:ship.launchers)??0;
+      const high=slots.high??[];
+      // Pre-add counts: the primary slot is still "empty" and unc­ounted in all three of these, so
+      // each already includes room for it — same as hardpointRoom's own "no exceptId" reasoning,
+      // just measured one step earlier (before vs. after the primary itself lands).
+      const usedBefore=high.filter(s=>s.typeID&&match(s.typeID)).length;
+      const roomTotal=Math.max(1,Math.min(total-usedBefore,high.filter(s=>s.type==="empty").length,
+        groupFittedRoom(slots,_cs.groupLimits,modData.typeID)));
+      fillIds=high.filter(s=>s.type==="empty"&&s.id!==id).slice(0,roomTotal-1).map(s=>s.id);
+    }
+    const clone={name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined};
     setSlots(prev=>{
-      const next={...prev,[secKey]:prev[secKey].map(m=>m.id===id?{...m,name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined}:m)};
+      const targets=new Set([id,...fillIds]);
+      const next={...prev,[secKey]:prev[secKey].map(m=>targets.has(m.id)?{...m,...clone}:m)};
       // The new module isn't in `_cs` yet, but the limit is a property of the GROUP and the fit, not
       // of the individual module — so the ceiling read from a same-group module already fitted is the
       // one that applies. With none fitted the count is zero and nothing can be over the limit.
       return enforceGroupLimit(next,_cs.groupLimits,id);
     });
+    return {count:1+fillIds.length,filledIds:[id,...fillIds]};
   };
 
   const getDisplayRows=(secKey)=>computeDisplayRows(slots[secKey]??[],secKey,grouped);
@@ -944,7 +970,20 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           onSelect={sub=>{swapSubsystem(emptySlot.id,sub);setEmptySlot(null);}}
           onClose={()=>setEmptySlot(null)}/>
       )}
-      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null} onSelect={m=>addMod(emptySlot.secKey,emptySlot.id,m)} onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom}/>}
+      {emptySlot&&emptySlot.secKey!=="subsystems"&&<ModuleBrowserSheet slotType={emptySlot.secKey} isStructure={_isStructure} hullRigSize={TYPES[ship?.typeID]?.a?.rigSize??null}
+        onSelect={m=>{
+          const{count,filledIds}=addMod(emptySlot.secKey,emptySlot.id,m);
+          // Stay open and retarget the next empty slot in the same group, so filling a whole rack
+          // is a run of taps instead of a close/reopen per slot. `slots` here is still the PRE-add
+          // snapshot, but that's fine: every OTHER slot in the section is unaffected by this add, so
+          // its "empty" status is already correct — exclude every id addMod just filled (auto-fill
+          // may have taken more than just emptySlot.id).
+          const next=(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
+          setEmptySlot(next?{secKey:emptySlot.secKey,id:next.id}:null);
+          return count;
+        }}
+        onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom}
+        ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>}
     </div>
   );
 }

@@ -326,13 +326,33 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
-function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom}){
+function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload}){
   const[search,setSearch]=useState("");
   const[pasteOpen,setPasteOpen]=useState(false);
   const[pasteText,setPasteText]=useState("");
   const[pasteErr,setPasteErr]=useState(null);
   const[infoItem,setInfoItem]=useState(null);
   const doPaste=()=>{const parsed=parseAbyssal(pasteText);if(!parsed){setPasteErr("Could not parse. Expected: module name, then mutaplasmid name, then attr value pairs.");return;}onSelect(parsed);onClose();};
+  // The strip's own height varies by hull (the hardpoint-dot row only appears when the ship has
+  // turrets/launchers), so the breadcrumb bar below it is offset by a MEASURED height rather than a
+  // guessed constant — otherwise the two sticky headers would overlap on hulls with no hardpoints
+  // and leave a gap on hulls with them.
+  const stripRef=useRef(null);
+  const[stripH,setStripH]=useState(0);
+  useEffect(()=>{
+    const el=stripRef.current; if(!el) return;
+    const ro=new ResizeObserver(([entry])=>setStripH(entry.contentRect.height));
+    ro.observe(el);
+    return ()=>ro.disconnect();
+  },[]);
+  // Tap-to-fill confirmation: the sheet stays open (see ModRow below), so without this the only
+  // sign a tap landed is the resource strip's numbers moving, which is easy to miss mid-scroll.
+  const[justAdded,setJustAdded]=useState(null);
+  useEffect(()=>{
+    if(!justAdded)return;
+    const t=setTimeout(()=>setJustAdded(null),1100);
+    return ()=>clearTimeout(t);
+  },[justAdded]);
   const[navPath,setNavPath]=useState([]);
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
@@ -420,7 +440,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     const rowMeta=metaOf(mod.typeID,mod.meta);
     return(
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-        <div onClick={()=>{onSelect(mod);onClose();}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+        <div onClick={()=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
           {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
               left and rows stopped lining up with each other. */}
           <div style={{width:28,height:28,flexShrink:0}}>
@@ -440,9 +460,22 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     );
   }
 
+  // Filled/total for the rack being browsed, so a rapid-tap fill run doesn't need a peek at the
+  // resource strip's hardpoint dots (or a tab-out to the fit) to know when to stop. +1 counts the
+  // slot this sheet is open FOR as already spoken for — 4 filled and browsing for the 5th reads
+  // "5/6", not "4/6" (which would look like the tap that opened the sheet hadn't landed yet).
+  const slotCount=slots[slotType]?.length??0;
+  const filledCount=(slots[slotType]??[]).filter(s=>s.type!=="empty").length;
+  const ordinal=Math.min(filledCount+1,slotCount);
   return(
     <>
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot`} onClose={onClose} height="88vh">
+    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh">
+      {/* Pinned so PG/CPU/Cal stay visible while rapid-filling a whole slot-group — the number you
+          need most (is there room for the next one) was previously scrolled away immediately. */}
+      <div ref={stripRef} style={{position:"relative"}}>
+        <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>
+        {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
+      </div>
       <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
           <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
@@ -459,7 +492,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
           moment you started looking through a long category. */}
       {!searchResults&&navPath.length>0&&(
-        <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <div style={{position:"sticky",top:stripH,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
           <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{breadcrumb.join(" / ")}</span>
         </div>

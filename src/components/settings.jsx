@@ -192,7 +192,7 @@ function ToggleRow({label,note,on,onChange}){
   </div>);
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref}){
+export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref,autoFillHardpoints,setAutoFillHardpoints}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
   return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
@@ -247,7 +247,10 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Fit Tabs</div>
           <ToggleRow label="Always open fits in a new tab" on={!!openInNewTab} onChange={setOpenInNewTab}
             note="Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa."/>
-          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4}}>The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.</div>
+          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Module Browser</div>
+          <ToggleRow label="Auto-fill hardpoints" on={autoFillHardpoints??true} onChange={setAutoFillHardpoints}
+            note="On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand."/>
         </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>

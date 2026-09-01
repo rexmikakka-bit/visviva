@@ -103,7 +103,18 @@ export function useTabSwipe(tabs, current, onChange) {
     const t = e.changedTouches[0];
     const wasX = swipe.current.axis === "x" && !swipe.current.skip;
     swipe.current.axis = null; swipe.current.skip = false; swipe.current.claimed = null;
-    if (!t || !wasX) { setX(0, true); return; }
+    // wasX false means onTouchMove never once wrote to the panel this gesture — a plain tap, a
+    // vertical scroll, or a touch standDownFor claimed for a row/scroller/slider — so the transform
+    // is already at rest ("", the only value any branch below ever leaves it at) and there is nothing
+    // to spring back. Touching panelRef's style anyway wrote a same-value transition to an ancestor
+    // of the tap target during the touchend phase of EVERY tap in a swiped panel, including one on a
+    // just-revealed Remove button — data-rowswipe="open" on that button (see tabs.jsx) fixed
+    // standDownFor's claim so onTouchMove correctly stood down, but this handler still mutated the
+    // panel regardless of that claim, and that mutation is what was costing the tap: Android silently
+    // drops the pending click when the DOM changes under it between touchstart and touchend. That is
+    // the "first tap does nothing, the second works" testers hit on Remove.
+    if (!wasX) return;
+    if (!t) { setX(0, true); return; }
     const dx = t.clientX - swipe.current.x;
     const i = tabs.indexOf(current);
     if (dx < -COMMIT_PX && i < tabs.length - 1) { setX(0, false); goTo(i + 1, 1); }
