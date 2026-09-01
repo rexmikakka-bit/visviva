@@ -30,13 +30,24 @@ const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs ver
 export function useRowSwipe(isBlocked) {
   const drag = useRef({ key: null, x: 0, y: 0, axis: null });
   const [openKey, setOpenKey] = useState(null);
+  // The currently-revealed row's own DOM node, so a touch starting on a DIFFERENT row can actually
+  // spring it shut rather than just forgetting about it — see close() below.
+  const openEl = useRef(null);
 
   const setX = (el, px, animate) => {
     if (!el) return;
     el.style.transition = animate ? "transform .18s cubic-bezier(.22,.61,.36,1)" : "none";
     el.style.transform = px ? `translateX(${px}px)` : "";
   };
-  const close = (el) => { setX(el, 0, true); setOpenKey(null); };
+  // setOpenKey(null) alone leaves stale visual state behind: openKey drives the Remove button's
+  // render (DeleteX's `on` prop, and the button itself in tabs.jsx), but the row's REVEALED position
+  // is a direct style.transform write (for 60fps drag, see file header) that nothing else ever
+  // touches. Forgetting the key without also resetting the transform left a row sitting shifted
+  // 72px open with no button behind it and no way to swipe it shut — a closed row (per
+  // data-rowswipe below) only accepts a RIGHTWARD reveal gesture, so the leftward "close" swipe a
+  // user would try next was rejected outright. Always route through here instead of setOpenKey
+  // directly whenever a row that MIGHT be visually open needs to stop being open.
+  const close = (el) => { setX(el, 0, true); setOpenKey(null); openEl.current = null; };
 
   const swipeHandlers = (key) => ({
     // Tells useTabSwipe which DIRECTION this row claims, so it can stand down for that one and keep
@@ -49,9 +60,10 @@ export function useRowSwipe(isBlocked) {
     "data-rowswipe": openKey === key ? "open" : "closed",
     onTouchStart: e => {
       if (isBlocked?.()) return;
-      // Starting a gesture on a different row closes whatever was already revealed, so at most
-      // one Remove button is ever showing.
-      if (openKey && openKey !== key) setOpenKey(null);
+      // Starting a gesture on a different row closes whatever was already revealed — visually, not
+      // just in state — so at most one Remove button is ever showing and the row it was behind
+      // isn't left stranded open with no way to swipe it back.
+      if (openKey && openKey !== key) close(openEl.current);
       const t = e.touches[0];
       if (t) drag.current = { key, x: t.clientX, y: t.clientY, axis: null, owns: false };
     },
@@ -85,7 +97,7 @@ export function useRowSwipe(isBlocked) {
       // case, so there's exactly one source of truth for "how far did this row actually move."
       const m = /translateX\((-?[\d.]+)px\)/.exec(e.currentTarget.style.transform || "");
       const cur = m ? parseFloat(m[1]) : 0;
-      if (cur > COMMIT_PX) { setX(e.currentTarget, REVEAL_PX, true); setOpenKey(key); haptic(); }
+      if (cur > COMMIT_PX) { setX(e.currentTarget, REVEAL_PX, true); setOpenKey(key); openEl.current = e.currentTarget; haptic(); }
       else close(e.currentTarget);
     },
   });
@@ -98,5 +110,7 @@ export function useRowSwipe(isBlocked) {
     onClick(e);
   };
 
-  return { openKey, swipeHandlers, guardClick, closeRowSwipe: () => setOpenKey(null) };
+  // Called after Remove actually deletes the row (tabs.jsx), so the row is leaving the DOM anyway —
+  // nothing to spring shut, just drop the stale reference to it.
+  return { openKey, swipeHandlers, guardClick, closeRowSwipe: () => { setOpenKey(null); openEl.current = null; } };
 }
