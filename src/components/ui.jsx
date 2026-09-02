@@ -140,7 +140,14 @@ function BottomSheet({title,onClose,children,height="70vh"}){
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
-        <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto"}}>{children}</div>
+        {/* minHeight:0 overrides a flex item's default min-height:auto, which otherwise refuses to
+            shrink below its OWN content size — a flex sibling sized purely by max-height (this one
+            has no explicit height) never gets a definite box for the browser to compute "leftover
+            space" from, so this scroller can render at full content height and let the sheet's own
+            overflow:hidden silently clip the rest, with nothing to actually scroll. Only visible
+            when content is forced taller than the visible sheet, e.g. a short module-browser search
+            padded out to stay scrollable past the keyboard. */}
+        <div onScroll={dismissKeyboardOnScroll} style={{flex:1,minHeight:0,overflowY:"auto"}}>{children}</div>
       </div>
     </div>,
     document.body
