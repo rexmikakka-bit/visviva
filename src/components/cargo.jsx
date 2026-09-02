@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -39,7 +39,7 @@ function GroupRow({gid,onOpen}){
   </div>);
 }
 
-export function CargoBrowserSheet({onAdd,onClose,slots}){
+export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   const[search,setSearch]=useState("");
   const[path,setPath]=useState([]);
   const[fitCharges,setFitCharges]=useState(false);
@@ -80,6 +80,14 @@ export function CargoBrowserSheet({onAdd,onClose,slots}){
   // with a peek gap below the status bar and then snaps its TOP upward the instant the keyboard
   // pushes the frame under 86vh. 100vh makes min() always resolve to the frame itself.
   return(<BottomSheet title="Add Cargo" onClose={onClose} height="100vh" fillHeight
+    headerExtra={
+      // height:0 so this overlays the top of the list instead of reserving a strip that is empty
+      // almost all the time. Header rather than inside the scroller for the same reason the module
+      // browser's toast is: content here needs no scroll-relative positioning.
+      <div style={{position:"relative",height:0}}>
+        {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name} (x{justAdded.count.toLocaleString()})</div>}
+      </div>
+    }
     footerExtra={
       // Footer, not top-of-sheet: cargo is a multi-add browser — you stay in it stacking ammo and
       // spares — so the keyboard is up while you are reading results, and a top search box wastes
@@ -121,6 +129,20 @@ export function CargoBrowserSheet({onAdd,onClose,slots}){
 export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   const[numpad,setNumpad]=useState(null);
   const[showCargoPicker,setShowCargoPicker]=useState(false);
+  // Confirmation for adds made from the browser, which stays open behind the numpad — so the toast
+  // fires when the numpad goes away rather than when the item lands, or it would be covered by it.
+  // Only for browser adds: "tap to edit" on a cargo row opens the same numpad, but that is editing
+  // rather than adding, and the browser is closed then so there is nothing to show it on.
+  const[justAdded,setJustAdded]=useState(null);
+  useEffect(()=>{
+    if(!justAdded)return;
+    const t=setTimeout(()=>setJustAdded(null),1100);
+    return ()=>clearTimeout(t);
+  },[justAdded]);
+  // NumpadModal's Confirm calls onConfirm and then onClose in the same handler, so onClose cannot
+  // read the new quantity out of `items` yet — this carries it across those two calls. Null when
+  // the numpad was dismissed without confirming, in which case the quantity addItem set still stands.
+  const confirmedQty=useRef(null);
   const volOf=it=>{
     const t=it.typeID??tidByName(it.name);
     const typeVol=t?(TYPES[t]?.attrs?.volume??TYPES[t]?.a?.['161']):undefined;
@@ -130,10 +152,15 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   const cap=Math.round(shipCapacity||0);
   const addItem=item=>{
     const ex=items.find(e=>e.name===item.name);
-    if(ex){setItems(items.map(e=>e.name===item.name?{...e,qty:e.qty+1}:e));setNumpad({...ex,qty:ex.qty+1});return;}
+    if(ex){setItems(items.map(e=>e.name===item.name?{...e,qty:e.qty+1}:e));setNumpad({...ex,qty:ex.qty+1,fromAdd:true});return;}
     const ni={id:Date.now(),name:item.name,qty:1,vol:item.vol??volOf(item),icon:item.icon,typeID:item.typeID};
     setItems(prev=>[...prev,ni]);
-    setNumpad(ni);
+    setNumpad({...ni,fromAdd:true});
+  };
+  const closeNumpad=()=>{
+    if(numpad?.fromAdd)setJustAdded({name:numpad.name,count:confirmedQty.current??numpad.qty,key:Date.now()});
+    confirmedQty.current=null;
+    setNumpad(null);
   };
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
@@ -169,8 +196,10 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
       const unitVol=volOf(numpad);
       const otherVol=items.filter(i=>i.id!==numpad.id).reduce((s,i)=>s+i.qty*volOf(i),0);
       const fillMax=unitVol>0?Math.max(0,Math.floor((cap-otherVol)/unitVol)):null;
-      return <NumpadModal label={numpad.name} initial={numpad.qty} fillMax={fillMax} onConfirm={qty=>setItems(items.map(i=>i.id===numpad.id?{...i,qty}:i))} onClose={()=>setNumpad(null)}/>;
+      return <NumpadModal label={numpad.name} initial={numpad.qty} fillMax={fillMax}
+        onConfirm={qty=>{confirmedQty.current=qty;setItems(items.map(i=>i.id===numpad.id?{...i,qty}:i));}}
+        onClose={closeNumpad}/>;
     })()}
-    {showCargoPicker&&<CargoBrowserSheet slots={slots} onAdd={addItem} onClose={()=>setShowCargoPicker(false)}/>}
+    {showCargoPicker&&<CargoBrowserSheet slots={slots} onAdd={addItem} justAdded={justAdded} onClose={()=>setShowCargoPicker(false)}/>}
   </div>);
 }
