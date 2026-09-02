@@ -10,9 +10,23 @@ release path itself is not gated.
 
 ## Version numbering
 
-`android/version.properties` is the source of truth for Android and is **auto-managed** — never
-hand-edit `versionCode`. iOS takes its marketing version from a workflow input and its build number
-from the run number, so the two platforms share a marketing version but NOT a build number.
+`android/version.properties` is the source of truth **for Android only**, and is **auto-managed** —
+never hand-edit `versionCode`.
+
+⚠️ **It is not the source of truth for iOS, and it lies about it.** iOS takes its marketing version
+from a workflow *input*, which is written down nowhere in this repo — so every iOS-only release
+leaves `version.properties` stranded at whatever Android last shipped. The two platforms share a
+marketing version only when a release actually ships both, and that has already drifted eight
+patch versions (Android 1.19.10 / TestFlight 1.19.18) and cost a burned build number, because
+trusting `version.properties` cut an iOS build labelled *lower* than the one already out.
+
+Read the last iOS marketing version from the workflow history instead:
+
+```bash
+gh run list --workflow=ios-testflight.yml -L 5 --json databaseId,number \
+  -q '.[] | "\(.number) \(.databaseId)"'          # run number IS the iOS build number
+gh run view <databaseId> --log | grep -o "MARKETING_VERSION: [0-9.]*" | head -1
+```
 
 Feature work gets a minor bump (1.2.0 -> 1.3.0); fix-only gets a patch (1.3.0 -> 1.3.1).
 
