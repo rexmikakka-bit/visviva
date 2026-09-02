@@ -188,7 +188,12 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
                    paddingBottom:vv?.keyboardOpen?0:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
+        {/* paddingTop, not the fixed 4px other sheets get: a sheet with height="100vh" (only the
+            module browser today) always sits with its top pinned at the physical top of the screen
+            — see the min(height,100%) note above — so its title row needs the same status-bar clearance
+            AppHeader/the drawer give theirs. Inert for every shorter sheet, whose title never reaches
+            that high to begin with. */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",paddingTop:"calc(4px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
@@ -591,7 +596,14 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   },[]);
   return(
     <>
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
+    {/* height="100vh", not 88vh: with fillHeight, the sheet's box is min(height,100%) where 100% is
+        the keyboard-shrunk frame — so at 88vh it sits with a resting "peek gap" below the status bar
+        while frame.height>88vh, but the instant the keyboard's frame drops under 88vh (any real
+        keyboard does), it snaps to filling frame exactly, and frame is bottom-anchored, so the
+        sheet's TOP jumps upward by however much peek gap it had. 100vh makes min() always resolve to
+        100% (frame can never exceed 100vh), so the sheet always exactly fills frame — top pinned at
+        frame's own top with no keyboard-dependent snap, at rest or with the keyboard up alike. */}
+    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="100vh" fillHeight dismissRequested={dismissRequested}
       headerExtra={
         // Header content, not scroller content: position:sticky here used to fight WebKit's handling
         // of sticky across a transformed ancestor (the sheet itself is always under a transform, for
