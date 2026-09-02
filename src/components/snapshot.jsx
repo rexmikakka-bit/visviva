@@ -143,6 +143,9 @@ function fmtBuff(buffID, value) {
 function buildProjected(cmdFits, projFits, fitsDB, skills) {
   const links = [];
   for (const cf of (cmdFits ?? [])) {
+    // `active` is opt-OUT — undefined counts as on, so fits saved before the toggle existed keep
+    // applying. Must match App.jsx's `===false` test exactly, or the card and the fit disagree.
+    if (cf.active === false) continue;
     const fit = fitsDB?.[cf.ship]?.find((f) => f.name === cf.fitName);
     if (!fit) continue;
     let bursts = [];
@@ -161,6 +164,7 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
   const incoming = [];
   const remoteReps = { shield: 0, armor: 0, hull: 0 };
   for (const pf of (projFits ?? [])) {
+    if (pf.active === false) continue;   // see the cmdFits loop above
     const fit = fitsDB?.[pf.ship]?.find((f) => f.name === pf.fitName);
     if (!fit) continue;
     let eff;
