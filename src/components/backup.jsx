@@ -1,8 +1,9 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { C } from "../theme.js";
 import { isBackupApp, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
 import { mergeTagColors } from "../lib/fit-tags.js";
-import { FITS_KEY, exportFitsBlob, getLoadedFitsDB, replaceFitsDB } from "../lib/fits-store.js";
+import { FITS_KEY, exportFitsBlob, getLoadedFitsDB, replaceFitsDB, isFallbackMode,
+         saveUndoSnapshot, readUndoMeta, restoreUndoSnapshot } from "../lib/fits-store.js";
 import { parsePyfaXml, convertFitting } from "../lib/pyfa-xml.js";
 
 // How many fittings to convert between yields to the event loop. A full pyfa library is ~1,700 fits
@@ -29,8 +30,11 @@ function BackupPanel() {
   const [xmlPending, setXmlPending] = useState(null);   // converted pyfa library awaiting confirmation
   const [xmlBusy, setXmlBusy] = useState(null);         // {done, total} while converting
   const xmlRef = useRef(null);
+  const [undo, setUndo] = useState(null);   // meta for the pre-import copy, or null if there isn't one
 
   const mine = countFits(getLoadedFitsDB());
+
+  useEffect(() => { readUndoMeta().then(setUndo).catch(() => {}); }, []);
 
   // iOS is the case this has to get right. A WKWebView ignores <a download>, so `a.click()` on a
   // blob: URL silently does nothing — and this used to report ok:true straight afterwards, so the
@@ -116,6 +120,7 @@ function BackupPanel() {
   const apply = async (mode) => {
     const { obj } = pending;
     try {
+      await saveUndoSnapshot(mode === "replace" ? "backup restore" : "backup merge");
       if (mode === "replace") {
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const k = localStorage.key(i);
@@ -196,6 +201,7 @@ function BackupPanel() {
   // inside a single pyfa export are separated too rather than collapsing onto one another.
   const applyXml = async () => {
     try {
+      await saveUndoSnapshot("pyfa import");
       const merged = mergeFitsDB(await exportFitsBlob(), JSON.stringify(xmlPending.db));
       await replaceFitsDB(JSON.parse(merged));
       window.location.reload();
@@ -203,6 +209,31 @@ function BackupPanel() {
       setStatus({ ok: false, msg: `Import failed: ${e.message}` });
       setXmlPending(null);
     }
+  };
+
+  // ── Clear / undo ────────────────────────────────────────────────────────────────────────────
+  // The snapshot is taken before the wipe like any other bulk write, so "clear everything" is itself
+  // reversible — which is what makes offering it at all reasonable.
+  const clearLibrary = async () => {
+    const undoable = !isFallbackMode();
+    const warn = `Delete all ${mine.fits.toLocaleString()} fit${mine.fits === 1 ? "" : "s"}?\n\n`
+      + `Your skills, settings and tag colours are kept.\n`
+      + (undoable ? `You can undo this from here until the next import or reset.`
+                  : `This device can't store an undo copy, so this CANNOT be undone. Export a backup first.`);
+    if (!window.confirm(warn)) return;
+    try {
+      await saveUndoSnapshot("clear library");
+      await replaceFitsDB({});
+      window.location.reload();
+    } catch (e) { setStatus({ ok: false, msg: `Couldn't clear: ${e.message}` }); }
+  };
+
+  const doUndo = async () => {
+    try {
+      const r = await restoreUndoSnapshot();
+      if (!r) { setStatus({ ok: false, msg: "That undo copy is no longer available." }); setUndo(null); return; }
+      window.location.reload();
+    } catch (e) { setStatus({ ok: false, msg: `Undo failed: ${e.message}` }); }
   };
 
   const btn = (bg, border, color) => ({
@@ -346,6 +377,41 @@ function BackupPanel() {
               </div>
             </div>
           )}
+
+          <div style={{ height: 1, background: C.border, margin: "16px 0" }} />
+
+          {/* Undo sits above the destructive button on purpose: after a 1,700-fit import the first
+              thing someone looks for is the way back, and finding it next to "Clear" makes the
+              relationship between the two obvious. */}
+          {undo && (
+            <div style={{ padding: "12px 14px", background: C.surfaceAlt, border: `1px solid ${C.border}`,
+                          borderRadius: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>
+                Undo available — restores the <b>{undo.fits.toLocaleString()}</b> fit{undo.fits === 1 ? "" : "s"}{" "}
+                you had before the {undo.label ?? "last change"}.
+              </div>
+              {/* The copy holds fits and nothing else, so undoing a "Replace everything" restore puts
+                  the fits back but leaves the settings that restore overwrote. Said plainly here
+                  rather than letting the button imply it reverses the whole operation. */}
+              <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
+                Taken {undo.at ? new Date(undo.at).toLocaleString() : "earlier"}. Saved fits only —
+                skills and settings aren't part of the copy. Replaced by the next import or reset.
+              </div>
+              <button onClick={doUndo} style={btn(C.surface, C.accent, C.accent)}>
+                Undo {undo.label ?? "last change"}
+              </button>
+            </div>
+          )}
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>Clear fit library</div>
+          <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
+            Deletes every saved fit on this device. Skills, settings and tag colours are kept.
+            {!isFallbackMode() && " A copy is kept so you can undo it."}
+          </div>
+          <button onClick={clearLibrary} disabled={mine.fits === 0}
+                  style={{ ...btn(C.surface, C.danger, C.danger), opacity: mine.fits === 0 ? 0.4 : 1 }}>
+            Delete all {mine.fits.toLocaleString()} fit{mine.fits === 1 ? "" : "s"}
+          </button>
         </>
       )}
 

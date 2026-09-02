@@ -21,8 +21,11 @@
 // Node, same split as storage-migrate.js.
 
 const DB_NAME = "axis";
-const DB_VERSION = 1;
+const DB_VERSION = 2;                    // v2 added the `undo` store; `fits` is untouched by the upgrade
 const STORE = "fits";
+const UNDO_STORE = "undo";
+const UNDO_DB_KEY = "last";
+const UNDO_META_KEY = "last-meta";
 export const FITS_KEY = "pyfa-fitsdb";   // the localStorage key it came from, and the backup-file key
 
 // ── Pure core ────────────────────────────────────────────────────────────────
@@ -50,6 +53,7 @@ function openDB() {
     req.onupgradeneeded = () => {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if (!db.objectStoreNames.contains(UNDO_STORE)) db.createObjectStore(UNDO_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -59,9 +63,9 @@ function openDB() {
   });
 }
 
-function tx(mode) {
-  const t = _db.transaction(STORE, mode);
-  return { store: t.objectStore(STORE), done: new Promise((res, rej) => { t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }) };
+function tx(mode, storeName = STORE) {
+  const t = _db.transaction(storeName, mode);
+  return { store: t.objectStore(storeName), done: new Promise((res, rej) => { t.oncomplete = res; t.onerror = () => rej(t.error); t.onabort = () => rej(t.error); }) };
 }
 
 function readAll() {
@@ -160,6 +164,75 @@ export async function replaceFitsDB(db) {
   await writeRecords(next, Object.keys(next), gone);
   _cache = next;
   return next;
+}
+
+// ── Undo for bulk operations ─────────────────────────────────────────────────
+//
+// A pyfa import MERGES and reallocates every id as it goes, so restoring a pre-import backup
+// afterwards merges too and leaves you with duplicates rather than the state you started from.
+// The only way back is a copy taken BEFORE the write, which is what this is.
+//
+// Its own object store, not a sentinel key in `fits`: that store is keyed by hull name and readAll()
+// turns every key it finds into a hull, so a record parked in there would come back as a ship called
+// "undo" and land in the library.
+//
+// ONE SLOT, overwritten by each bulk operation — an undo of the last thing you did, not a history.
+// Unavailable on the localStorage fallback, where a second full copy of a 3.8 MB library would not
+// fit; callers check the return value rather than assuming it worked.
+
+const countOf = (db) => ({
+  fits: Object.values(db ?? {}).reduce((n, a) => n + (a?.length ?? 0), 0),
+  ships: Object.keys(db ?? {}).length,
+});
+
+// Copy the CURRENT library into the undo slot. Call immediately before a bulk write.
+// Returns false when there is nowhere to put it, so the UI can say so instead of promising an undo.
+export async function saveUndoSnapshot(label) {
+  if (_fallback || !_db) return false;
+  const db = _cache ?? {};
+  try {
+    const { store, done } = tx("readwrite", UNDO_STORE);
+    store.put(db, UNDO_DB_KEY);
+    store.put({ label, at: new Date().toISOString(), ...countOf(db) }, UNDO_META_KEY);
+    await done;
+    return true;
+  } catch (e) { console.error("fits store: undo snapshot failed", e); return false; }
+}
+
+function getOne(key) {
+  return new Promise((resolve, reject) => {
+    const { store } = tx("readonly", UNDO_STORE);
+    const r = store.get(key);
+    r.onsuccess = () => resolve(r.result ?? null);
+    r.onerror = () => reject(r.error);
+  });
+}
+
+// Just the label/date/counts — the UI renders these on every visit to the Backup panel and has no
+// use for the library itself, which is the part that can run to several megabytes.
+export async function readUndoMeta() {
+  if (_fallback || !_db) return null;
+  try { return await getOne(UNDO_META_KEY); } catch { return null; }
+}
+
+// Put the snapshot back and consume it. Returns its meta, or null if there was nothing to restore.
+export async function restoreUndoSnapshot() {
+  if (_fallback || !_db) return null;
+  let db, meta;
+  try { db = await getOne(UNDO_DB_KEY); meta = await getOne(UNDO_META_KEY); } catch { return null; }
+  if (!db || typeof db !== "object") return null;
+  await replaceFitsDB(db);
+  await clearUndoSnapshot();
+  return meta ?? countOf(db);
+}
+
+export async function clearUndoSnapshot() {
+  if (_fallback || !_db) return;
+  try {
+    const { store, done } = tx("readwrite", UNDO_STORE);
+    store.delete(UNDO_DB_KEY); store.delete(UNDO_META_KEY);
+    await done;
+  } catch (e) { console.error("fits store: undo clear failed", e); }
 }
 
 // The library as the string a backup file carries, so the on-disk backup FORMAT is unchanged by the
