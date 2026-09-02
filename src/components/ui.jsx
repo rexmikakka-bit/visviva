@@ -123,7 +123,13 @@ export function useVisualViewport(){
       const KB=Cap.Plugins.Keyboard;
       const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
       const onHide=()=>{kbHeight.current=0;sync();};
-      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardDidHide",onHide)])
+      // willHide as well as didHide, to match willShow: didHide alone only fires once the keyboard has
+      // finished animating away, so for that whole ~250ms the sheet was still sized to a screen the
+      // keyboard no longer covered and the strip it vacated showed the dimmed page behind. Both are
+      // wired because willHide is not guaranteed to arrive (an interactive dismiss can skip it) and
+      // the second call is idempotent — sync()'s height filter drops it as the same keyboard state.
+      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardWillHide",onHide),
+                   KB.addListener("keyboardDidHide",onHide)])
         .then(h=>{subs=h;}).catch(()=>{});
     }
     return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
@@ -170,6 +176,13 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
          style={{position:"fixed",inset:0,zIndex:200}}>
       <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
            opacity:closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
+      {/* The strip the keyboard occupies, filled with the sheet's own surface colour. `frame` follows
+          the keyboard across the Capacitor bridge, so it always trails the real keyboard animation by
+          a few frames in both directions — and the sheet's bottom edge sits at frame's bottom, so
+          those frames showed backdrop (a 65% dim of the fit page) where the sheet was about to be, or
+          had just been. Painting the gap the same colour as the sheet above it makes the lag read as
+          the sheet simply being taller for a moment, rather than the page flashing through. */}
+      {vv?.keyboardOpen&&<div style={{position:"absolute",left:0,right:0,top:vv.height,bottom:0,background:C.surface}}/>}
       <div style={{position:"absolute",...frame,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen.
@@ -267,7 +280,12 @@ function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
 const RESOURCE_COLORS={pg:"#e84f45",cpu:"#50cdf7",cal:"#9898a6"};
 
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
+  // Memoised because this strip is the module browser's header: without it, every keystroke in the
+  // search box and every appearance of the "+ module" toast re-ran the entire dogma engine over the
+  // whole fit, which is by far the most expensive thing on that screen.
+  const cs=useMemo(
+    ()=>calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{},
+    [ship,slots,drones,skills,implants,boosters,factorInReload]);
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
   const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();
@@ -438,6 +456,35 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
+// Module scope, NOT nested inside ModuleBrowserSheet. A component declared inside another component
+// is a fresh function identity on every render, so React tears down and rebuilds every row's DOM
+// whenever the browser re-renders. Tapping a row with the keyboard up blurs the search input, which
+// re-renders the sheet BETWEEN touchstart and click — the row's node was replaced mid-tap, so the
+// click had no surviving target and the first tap on a module only collapsed the keyboard.
+function ModRow({mod,onAdd,onInfo,headroom}){
+  const rowMeta=metaOf(mod.typeID,mod.meta);
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+      <div onClick={()=>onAdd(mod)} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+        {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
+            left and rows stopped lining up with each other. */}
+        <div style={{width:28,height:28,flexShrink:0}}>
+          {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
+          <FitCost item={mod} headroom={headroom}/>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+        <SkillMark typeID={mod.typeID}/>
+        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
+        {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();onInfo(mod);}}/>}
+      </div>
+    </div>
+  );
+}
+
 function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload,dismissRequested}){
   const[search,setSearch]=useState("");
   const[infoItem,setInfoItem]=useState(null);
@@ -484,7 +531,6 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     if(!t||axis!=="x")return;
     if(t.clientX-_nav.current.x>70)goBack();
   };
-  const metaColor={T1:C.textMid,T2:C.accent,Storyline:C.warning,Faction:C.danger,Deadspace:"#f0abfc",Officer:"#f0abfc",Abyssal:C.high};
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
   // enforces it), so the other sizes are dead weight to scroll past. Prune them here rather than
@@ -529,7 +575,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // The SEARCH corpus is the tree plus the modules CCP does not sell. Those have no market group and
   // so no node to browse to, but they are ordinary fittable items and search is the only way to reach
   // them — a Civilian Light Missile Launcher was unreachable except by pasting EFT.
-  const allMods=(()=>{
+  const allMods=useMemo(()=>{
     const out=[];
     function collect(n){n.mods.forEach(m=>out.push(m));n.children.forEach(collect);}
     tree.forEach(collect);
@@ -538,8 +584,13 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         if(slotType!=="rigs"||hullRigSize==null||(TYPES[String(m.typeID)]?.a?.rigSize??hullRigSize)===hullRigSize)
           out.push(m);
     return out;
-  })();
-  const searchResults=search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null;
+  },[tree,isStructure,slotType,hullRigSize]);
+  // Memoised on the query alone: this sheet re-renders for reasons unrelated to the search — focusing
+  // or blurring the box, and the "+ module" toast appearing and expiring — and a full corpus scan on
+  // each of those made every tap on a result cost three extra searches.
+  const searchResults=useMemo(
+    ()=>search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null,
+    [search,allMods]);
 
   const breadcrumb=(()=>{
     let nodes=tree,parts=[];
@@ -547,29 +598,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     return parts;
   })();
 
-  function ModRow({mod}){
-    const rowMeta=metaOf(mod.typeID,mod.meta);
-    return(
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-        <div onClick={()=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
-          {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
-              left and rows stopped lining up with each other. */}
-          <div style={{width:28,height:28,flexShrink:0}}>
-            {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
-            <FitCost item={mod} headroom={resourceHeadroom}/>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
-          <SkillMark typeID={mod.typeID}/>
-          <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
-          {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setInfoItem(mod);}}/>}
-        </div>
-      </div>
-    );
-  }
+  const addMod=mod=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");};
 
   // Filled/total for the rack being browsed, so a rapid-tap fill run doesn't need a peek at the
   // resource strip's hardpoint dots (or a tab-out to the fit) to know when to stop. +1 counts the
@@ -627,6 +656,9 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
             <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
             <input ref={searchInputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste}
               onFocus={()=>setSearchFocused(true)} onBlur={()=>setSearchFocused(false)}
+              // enterKeyHint="search" promises the return key does something; results are already
+              // live, so the only thing left for it to do is get the keyboard out of the way.
+              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}}}
               placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
             {/* padding+negative margin: grows the tap target well past the glyph itself without
                 pushing the search bar's own height out or nudging the input over — the same trick
@@ -664,12 +696,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         // can end wherever it ends and just show more of what's above it.
         <div>
           {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules found</div>}
-          {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
+          {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
         </div>
       ):(
         <div key={navPath.join(">")} onTouchStart={_navStart} onTouchMove={_navMove} onTouchEnd={_navEnd}
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
-          {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
+          {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
           {currentLevel.nodes.map(node=>(
             <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
               {/* Category icon, same idea as pyfa: a real item from the group reads faster than
