@@ -131,7 +131,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   // of a group the sheet stayed translated off-screen while its full-screen overlay kept eating every
   // tap, which reads as the whole app freezing.
   return(<>
-    <BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh">
+    <BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh" fillHeight>
     {drill&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         <button onClick={()=>{haptic();setDrill(null);}} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
@@ -186,7 +186,7 @@ function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
   const[draft,setDraft]=useState("");
   const term=q.trim().toLowerCase();
   const shown=term?loadouts.filter(l=>l.name.toLowerCase().includes(term)):loadouts;
-  return(<BottomSheet title="Implant Loadouts" onClose={onClose} height="70vh">
+  return(<BottomSheet title="Implant Loadouts" onClose={onClose} height="70vh" fillHeight>
     {loadouts.length>6&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>

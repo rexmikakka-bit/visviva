@@ -104,7 +104,7 @@ export function useVisualViewport(){
   return vv;
 }
 
-function BottomSheet({title,onClose,children,height="70vh"}){
+function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,dismissRequested=false}){
   const vv=useVisualViewport();
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
@@ -121,6 +121,12 @@ function BottomSheet({title,onClose,children,height="70vh"}){
   // shared with every other sheet in the app.
   const sheet=useSheetDrag(onClose);
   const {sheetRef,closing,dragging,dismiss}=sheet;
+  // A caller that auto-advances (e.g. the module browser retargeting itself to the next empty slot,
+  // then finding none left) used to just null out the state that renders this sheet, which unmounts
+  // it mid-frame with no exit transition — a cut, not a close. Routing that through the same dismiss()
+  // the grabber/backdrop/x button use gives it the real slide-out, and dismiss() is already guarded
+  // against firing twice.
+  useEffect(()=>{ if(dismissRequested) dismiss(); },[dismissRequested]);
   return createPortal(
     // stopPropagation on the whole overlay: a sheet is a modal surface, so a drag inside it must
     // never reach the Fit/Stats/Graph swipe handler on an ancestor. React events bubble through the
@@ -131,15 +137,28 @@ function BottomSheet({title,onClose,children,height="70vh"}){
       <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
            opacity:closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
-          keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen. */}
+          keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen.
+          fillHeight additionally sets `height` (not just maxHeight) to that same min(), for a sheet
+          whose content can be too short to naturally reach it — shrink-wrap left that sheet with no
+          definite box for its own scroller to size against (flex distributes leftover space, and a
+          content-sized parent has none to give), which could silently clip the tail of a short list
+          past the keyboard rather than let it scroll. Left off elsewhere on purpose: shrink-wrap is
+          the wanted look for a short utility sheet (e.g. a quantity stepper) — forcing it tall would
+          just add dead space below the control. */}
       <div ref={sheetRef} className={`vv-sheet${closing||dragging?"":" vv-sheet-in"}`}
-           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)",
+           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,...(fillHeight?{height:`min(${height}, 100%)`}:{}),display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
+        {/* Outside the scroller, not sticky inside it: a sticky element's offset is computed against
+            its nearest scrolling ancestor, and this sheet's OWN transform (the drag-to-dismiss
+            animation, active even at rest as translateY(0)) sits between that ancestor and here —
+            WebKit has a history of losing the sticky calculation across a transformed ancestor.
+            Living in the always-rendered header instead needs no scroll-relative math at all. */}
+        {headerExtra}
         {/* minHeight:0 overrides a flex item's default min-height:auto, which otherwise refuses to
             shrink below its OWN content size — a flex sibling sized purely by max-height (this one
             has no explicit height) never gets a definite box for the browser to compute "leftover
@@ -368,25 +387,24 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
-function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload}){
+function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload,dismissRequested}){
   const[search,setSearch]=useState("");
-  const[pasteOpen,setPasteOpen]=useState(false);
-  const[pasteText,setPasteText]=useState("");
-  const[pasteErr,setPasteErr]=useState(null);
   const[infoItem,setInfoItem]=useState(null);
-  const doPaste=()=>{const parsed=parseAbyssal(pasteText);if(!parsed){setPasteErr("Could not parse. Expected: module name, then mutaplasmid name, then attr value pairs.");return;}onSelect(parsed);onClose();};
-  // The strip's own height varies by hull (the hardpoint-dot row only appears when the ship has
-  // turrets/launchers), so the breadcrumb bar below it is offset by a MEASURED height rather than a
-  // guessed constant — otherwise the two sticky headers would overlap on hulls with no hardpoints
-  // and leave a gap on hulls with them.
-  const stripRef=useRef(null);
-  const[stripH,setStripH]=useState(0);
-  useEffect(()=>{
-    const el=stripRef.current; if(!el) return;
-    const ro=new ResizeObserver(([entry])=>setStripH(entry.contentRect.height));
-    ro.observe(el);
-    return ()=>ro.disconnect();
-  },[]);
+  // clipboardData still has the real newlines here; the value that would land in a single-line
+  // <input> after a default paste does not — the browser collapses them, which is exactly why an
+  // abyssal dump used to need its own textarea. Try it as an abyssal module FIRST, before any of
+  // that collapsing happens, and only fall through to a normal (jumbled, single-line) search paste
+  // if it doesn't parse as one.
+  const onSearchPaste=e=>{
+    const text=e.clipboardData?.getData("text");
+    if(!text)return;
+    const parsed=parseAbyssal(text);
+    if(!parsed)return;
+    e.preventDefault();
+    const n=onSelect(parsed);
+    setJustAdded({name:parsed.name,count:n||1,key:Date.now(),abyssal:true});
+    haptic("light");
+  };
   // Tap-to-fill confirmation: the sheet stays open (see ModRow below), so without this the only
   // sign a tap landed is the resource strip's numbers moving, which is easy to miss mid-scroll.
   const[justAdded,setJustAdded]=useState(null);
@@ -511,39 +529,35 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const ordinal=Math.min(filledCount+1,slotCount);
   return(
     <>
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh">
-      {/* Pinned so PG/CPU/Cal stay visible while rapid-filling a whole slot-group — the number you
-          need most (is there room for the next one) was previously scrolled away immediately. */}
-      <div ref={stripRef}>
-        {/* The toast used to be a sibling of ResourceStrip, absolutely positioned against THIS div —
-            but this div is a plain scroll-flow block, not itself sticky, so the moment the module
-            list was scrolled even slightly, its box (and the toast anchored to it) scrolled out of
-            view above the visible area while ResourceStrip stayed pinned via its own position:sticky.
-            The toast read as "vanishing instantly" because it was almost never inside the sticky
-            strip's visible box to begin with. Passing it as ResourceStrip's `children` renders it
-            INSIDE the sticky element itself, so it is anchored to a containing block that actually
-            stays on screen. */}
+    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
+      headerExtra={
+        // Header content, not scroller content: position:sticky here used to fight WebKit's handling
+        // of sticky across a transformed ancestor (the sheet itself is always under a transform, for
+        // the drag-to-dismiss gesture, even at rest) and would silently stop tracking the scroll.
+        // Living in the header instead needs no sticky/scroll math at all — it just never scrolls.
         <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}>
-          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
+          {/* C.danger, not META_COLORS.Abyssal — that constant colors the META TIER badge (T1/T2/
+              Faction/...) and Abyssal's tier color is pink, a different thing from the red used for
+              mutaplasmid/grade badges everywhere else (ui.jsx's own grade badge above, the fit list's
+              ▲ marker, drones.jsx) — this toast should match THAT red, not the tier pink. */}
+          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:justAdded.abyssal?C.danger:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.abyssal?"Abyssal ":""}{justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
         </ResourceStrip>
-      </div>
+      }>
       <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
           <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-          <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search all modules..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-          {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,padding:0}}>x</button>}
+          <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste} placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
+          {/* padding+negative margin: grows the tap target well past the glyph itself without
+              pushing the search bar's own height out or nudging the input over — the same trick
+              SheetGrabber uses for its drag handle. */}
+          {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
         </div>
-        <button onClick={()=>{setPasteOpen(o=>!o);setPasteErr(null);}} style={{marginTop:8,width:"100%",padding:"7px 0",background:pasteOpen?C.high+"22":C.surfaceAlt,border:`1px solid ${pasteOpen?C.high:C.border}`,borderRadius:8,color:pasteOpen?C.high:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>⎘ Paste Abyssal Module</button>
-        {pasteOpen&&<div style={{marginTop:8}}>
-          <textarea value={pasteText} onChange={e=>{setPasteText(e.target.value);setPasteErr(null);}} placeholder={"Corpum B-Type Medium Energy Neutralizer\nUnstable Medium Energy Neutralizer Mutaplasmid\ncapacitorNeed 172.68, cpu 22.93, ..."} rows={4} style={{width:"100%",boxSizing:"border-box",background:C.surface,border:`1px solid ${pasteErr?C.danger:C.border}`,borderRadius:8,color:C.text,fontSize:11,padding:"8px 10px",fontFamily:"monospace",resize:"vertical"}}/>
-          {pasteErr&&<div style={{fontSize:10,color:C.danger,marginTop:4}}>{pasteErr}</div>}
-          <button onClick={doPaste} disabled={!pasteText.trim()} style={{marginTop:6,width:"100%",padding:"8px 0",background:pasteText.trim()?C.accent:C.surfaceAlt,border:"none",borderRadius:8,color:pasteText.trim()?"#fff":C.textMute,fontSize:12,fontWeight:700,cursor:pasteText.trim()?"pointer":"default"}}>Add to Fit</button>
-        </div>}
       </div>
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
-          moment you started looking through a long category. */}
+          moment you started looking through a long category. top:0 since ResourceStrip moved out of
+          the scroller (into headerExtra) — this is now the first sticky element in here. */}
       {!searchResults&&navPath.length>0&&(
-        <div style={{position:"sticky",top:stripH,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+        <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
           <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{breadcrumb.join(" / ")}</span>
         </div>
@@ -2087,7 +2101,7 @@ function TargetProfileSheet({current,onSelect,onClose}){
     {[["em",r[0]],["th",r[1]],["kin",r[2]],["exp",r[3]]].map(([k,v])=>(
       <span key={k} title={`${k} ${Math.round(v*100)}%`} style={{width:11,height:11,borderRadius:2,background:DMG[k].color,opacity:0.15+v*0.85}}/>))}
   </span>);
-  return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh">
+  return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
@@ -2119,7 +2133,7 @@ function DamageProfileSheet({current,onSelect,onClose}){
   const Bar=({p})=>(<span style={{display:"flex",width:54,height:6,borderRadius:99,overflow:"hidden",border:`1px solid ${C.border}`,flexShrink:0}}>
     {[["em",p[0]],["th",p[1]],["kin",p[2]],["exp",p[3]]].map(([k,v])=><span key={k} style={{width:`${v*100}%`,background:DMG[k].color}}/>)}
   </span>);
-  return(<BottomSheet title="Incoming Damage Profile" onClose={onClose} height="80vh">
+  return(<BottomSheet title="Incoming Damage Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>

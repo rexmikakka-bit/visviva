@@ -988,12 +988,16 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
             // anyone could read it. Give the toast its full ui.jsx justAdded lifetime before closing.
             // Guarded on the exact slot (not just the section) so a sheet the user reopened for a
             // different slot in the same group in the meantime isn't yanked shut by this stale timer.
+            // Flips `autoClose` rather than nulling `emptySlot` outright — nulling it unmounts
+            // ModuleBrowserSheet mid-frame with no exit transition. This keeps the sheet mounted and
+            // asks it (via dismissRequested) to run its OWN slide-down close, same as tapping the x,
+            // and onClose (below) nulls emptySlot for real once that animation finishes.
             const closingSlot=emptySlot;
-            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?null:prev),1100);
+            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?{...prev,autoClose:true}:prev),1100);
           }
           return count;
         }}
-        onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom}
+        onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom} dismissRequested={!!emptySlot?.autoClose}
         ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>}
     </div>
   );

@@ -126,7 +126,7 @@ function EnvironmentPickerSheet({current,onSelect,onClose}){
     subs:g.subs.map(b=>({name:b.name,items:b.items.filter(it=>hit(it)||b.name.toLowerCase().includes(q))})).filter(b=>b.items.length),
   })).map(g=>({...g,count:g.items.length+g.subs.reduce((s,b)=>s+b.items.length,0)})).filter(g=>g.count);
   const toggle=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
-  return(<BottomSheet title="System Effects" onClose={onClose} height="80vh">
+  return(<BottomSheet title="System Effects" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
@@ -198,13 +198,13 @@ function BoosterPickerSheet({onAdd,onClose}){
     onClick={e=>{e.stopPropagation();haptic();setInfoItem({typeID:t,name});}}/>:null;};
 
   return(<>
-  <BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh">
+  <BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
         <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
         <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search boosters..."
           style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
-        {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:16}}>x</button>}
+        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
       </div>
     </div>
     {breadcrumb&&(
@@ -319,7 +319,7 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
   },[fitsDB,filterFn]);
   const q=search.trim().toLowerCase();
   const filtered=allFits&&q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
-  return(<BottomSheet title={title} onClose={onClose} height="75vh">
+  return(<BottomSheet title={title} onClose={onClose} height="75vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
         <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>

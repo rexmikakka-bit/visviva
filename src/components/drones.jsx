@@ -49,12 +49,12 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
     });
   }
 
-  return(<BottomSheet title="Add Drone" onClose={onClose} height="88vh">
+  return(<BottomSheet title="Add Drone" onClose={onClose} height="88vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
         <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
         <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search drones..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-        {search&&<button onClick={()=>setSearch("")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,padding:0}}>x</button>}
+        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
       </div>
     </div>
     {!searchResults&&drillSub&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={()=>setDrillSub(null)} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>Back</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
@@ -71,7 +71,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
   const RACE_ORDER=["Amarr","Caldari","Gallente","Minmatar","Faction"];
   const ql=q.trim().toLowerCase();
   const anyMatch=RACE_ORDER.some(r=>races[r]?.some(f=>!ql||f.name.toLowerCase().includes(ql)));
-  return(<BottomSheet title="Add Fighter" onClose={onClose} height="82vh">
+  return(<BottomSheet title="Add Fighter" onClose={onClose} height="82vh" fillHeight>
     <div style={{display:"flex",gap:6,padding:"10px 12px 8px"}}>
       {["Light","Heavy","Support"].map(c=>(
         <button key={c} onClick={()=>setCls(c)} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
