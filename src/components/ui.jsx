@@ -531,7 +531,15 @@ function ModRow({mod,onAdd,onInfo,headroom}){
   const rowMeta=metaOf(mod.typeID,mod.meta);
   return(
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-      <div onClick={()=>onAdd(mod)} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+      {/* preventDefault on mousedown keeps the keyboard up while you fill a rack. Blurring the
+          focused input is the DEFAULT ACTION of pressing another element, so cancelling it holds
+          focus in the search box and the click still fires normally. Without this, adding a module
+          collapsed the keyboard every time and you had to tap back into the box to keep going —
+          which is the whole point of a browser that stays open. The keyboard is still dismissed
+          deliberately: by scrolling the list (BottomSheet's dismissKeyboardOnScroll) or by the
+          chevron in the search bar. Not on the info button beside this — that opens a detail sheet
+          over the whole browser, where the keyboard has nothing left to type into. */}
+      <div onClick={()=>onAdd(mod)} onMouseDown={e=>e.preventDefault()} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
         {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
             left and rows stopped lining up with each other. */}
         <div style={{width:28,height:28,flexShrink:0}}>
