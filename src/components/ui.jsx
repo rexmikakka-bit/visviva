@@ -70,7 +70,20 @@ export function useVisualViewport(){
   useEffect(()=>{
     const v=window.visualViewport;
     if(!v)return;                                  // no support: fall back to the layout viewport
-    const sync=()=>setVv({height:v.height});
+    const sync=()=>{
+      setVv({height:v.height});
+      // index.css's html/body overflow:hidden stops the USER from scrolling the document, but not
+      // WebKit's own "scroll the focused input above the keyboard" routine — that one is native
+      // code, not a wheel/touch gesture, and it can still push document.scrollingElement's scrollTop
+      // off zero. A position:fixed element (this sheet's frame) is supposed to be immune to that,
+      // but WebKit's compositor computes fixed position against the CURRENT scroll offset mid-scroll
+      // and only re-settles on the next paint — so a sheet can render at the wrong place, or not at
+      // all, until something else triggers a repaint. Stomping scroll back to (0,0) on every
+      // visualViewport change (which fires exactly when that native nudge happens) denies it
+      // anywhere to push the document to, the same way overscroll-behavior:none already denies it
+      // rubber-band room.
+      window.scrollTo(0,0);
+    };
     sync();
     v.addEventListener("resize",sync);
     v.addEventListener("scroll",sync);

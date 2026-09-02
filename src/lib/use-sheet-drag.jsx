@@ -89,7 +89,13 @@ export function SheetGrabber({ grabHandlers, onArt, style }) {
 // Scrolling the list is the one gesture a user already makes to browse results, so piggyback the
 // dismiss on it instead of adding a dedicated button. Drop onto any scrollable results container
 // that sits below a text input: `onScroll={dismissKeyboardOnScroll}`.
-export function dismissKeyboardOnScroll(e) {
+//
+// Deliberately does NOT check that the scrolled element contains the focused input. Several search
+// screens (the ship browser, the implants tab) render the input as a SIBLING of the results
+// scroller rather than a child of it, so a containment check silently no-ops there — only one
+// screen is ever visibly interactive at a time on this app, so whatever is focused when a results
+// list scrolls is this screen's own search box.
+export function dismissKeyboardOnScroll() {
   const ae = document.activeElement;
-  if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA") && e.currentTarget.contains(ae)) ae.blur();
+  if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA")) ae.blur();
 }
