@@ -123,7 +123,13 @@ export function useVisualViewport(){
       const KB=Cap.Plugins.Keyboard;
       const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
       const onHide=()=>{kbHeight.current=0;sync();};
-      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardDidHide",onHide)])
+      // willHide as well as didHide, to match willShow: didHide alone only fires once the keyboard has
+      // finished animating away, so for that whole ~250ms the sheet was still sized to a screen the
+      // keyboard no longer covered and the strip it vacated showed the dimmed page behind. Both are
+      // wired because willHide is not guaranteed to arrive (an interactive dismiss can skip it) and
+      // the second call is idempotent — sync()'s height filter drops it as the same keyboard state.
+      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardWillHide",onHide),
+                   KB.addListener("keyboardDidHide",onHide)])
         .then(h=>{subs=h;}).catch(()=>{});
     }
     return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
@@ -134,6 +140,10 @@ export function useVisualViewport(){
 function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false}){
   const vv=useVisualViewport();
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
+  // Derived, not a third prop that could drift out of step with the two it would have to agree with:
+  // `height="100vh"` + fillHeight is already exactly how a caller says "fill the screen", because
+  // min(100vh, 100%) can only ever resolve to the frame itself. The module browser is the only one.
+  const fullScreen=fillHeight&&height==="100vh";
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
   // containing block instead, and the sheet anchors to a mid-page element and slides off the
@@ -170,6 +180,13 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
          style={{position:"fixed",inset:0,zIndex:200}}>
       <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
            opacity:closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
+      {/* The strip the keyboard occupies, filled with the sheet's own surface colour. `frame` follows
+          the keyboard across the Capacitor bridge, so it always trails the real keyboard animation by
+          a few frames in both directions — and the sheet's bottom edge sits at frame's bottom, so
+          those frames showed backdrop (a 65% dim of the fit page) where the sheet was about to be, or
+          had just been. Painting the gap the same colour as the sheet above it makes the lag read as
+          the sheet simply being taller for a moment, rather than the page flashing through. */}
+      {vv?.keyboardOpen&&<div style={{position:"absolute",left:0,right:0,top:vv.height,bottom:0,background:C.surface}}/>}
       <div style={{position:"absolute",...frame,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen.
@@ -188,12 +205,14 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
                    paddingBottom:vv?.keyboardOpen?0:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-        {/* paddingTop, not the fixed 4px other sheets get: a sheet with height="100vh" (only the
-            module browser today) always sits with its top pinned at the physical top of the screen
-            — see the min(height,100%) note above — so its title row needs the same status-bar clearance
-            AppHeader/the drawer give theirs. Inert for every shorter sheet, whose title never reaches
-            that high to begin with. */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",paddingTop:"calc(4px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}>
+        {/* Status-bar clearance, and ONLY for a sheet that actually reaches the status bar. A
+            full-screen sheet sits with its top pinned at the physical top of the screen (see the
+            min(height,100%) note above) so its title needs the same inset AppHeader and the drawer
+            give theirs. Every other sheet stops well short of the top, and adding the inset there
+            just opened ~60px of dead space above the title — this was applied unconditionally once,
+            and it was every bottom sheet in the app that grew the gap, not the one it was written for. */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`,
+                     ...(fullScreen?{paddingTop:"calc(4px + env(safe-area-inset-top, 0px))"}:{})}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
@@ -223,6 +242,66 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
     document.body
   );
 }
+// For sheets whose search box lives in the footer, directly above the keyboard. Cheap alternative
+// to a real native inputAccessoryView (App.jsx's global accessory bar is a WebKit stock toolbar,
+// not custom Capacitor UI — see the setAccessoryBarVisible source note in useVisualViewport): with
+// the search box already sitting on top of the keyboard, leaving the stock bar on just stacks a
+// second ~44px strip for no benefit.
+//
+// Lifetime-scoped, NOT focus-scoped, and that distinction is the whole reason this is a hook.
+// Toggling on the input's own focus/blur is too late — the bar is attached to the keyboard as it
+// appears, before the native side has even received our message across the bridge — so a
+// focus-scoped version shows the stock bar for the first keystroke of every focus. Only use this
+// in a sheet with no OTHER focusable field, which would then be missing its Done/chevron; the
+// unmount cleanup restores the bar for the rest of the app.
+export function useSuppressAccessoryBar(){
+  useEffect(()=>{
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    if(!Cap?.isNativePlatform?.())return;
+    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
+    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
+  },[]);
+}
+
+// ═══ SHEET SEARCH BAR ════════════════════════════════════════════
+// One search row for every browser sheet. Ten hand-rolled copies had drifted: three inner paddings,
+// two glyph sizes, two font sizes, and only four of them had a clear-`x` at all — so whether you
+// could empty the box without backspacing depended on which sheet you were in.
+//
+// `onDismiss` is opt-in, NOT the default. The chevron exists to replace iOS's stock accessory bar,
+// and only the module browser suppresses that bar (see setAccessoryBarVisible there) — drawing our
+// own chevron in a sheet that still has the stock one gives you two of them side by side.
+export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inputRef,inputProps}){
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
+      <span style={{fontSize:15,color:C.textMute,flexShrink:0}}>&#128269;</span>
+      <input ref={inputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+        value={value} onChange={e=>onChange(e.target.value)} onPaste={onPaste}
+        // enterKeyHint="search" promises the return key does something; results are already
+        // live, so the only thing left for it to do is get the keyboard out of the way.
+        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}}}
+        placeholder={placeholder} style={{flex:1,minWidth:0,background:"none",border:"none",color:C.text,fontSize:14,outline:"none"}}
+        {...inputProps}/>
+      {/* padding+negative margin: grows the tap target well past the glyph itself without
+          pushing the search bar's own height out or nudging the input over — the same trick
+          SheetGrabber uses for its drag handle. */}
+      {!!value&&<button onClick={()=>onChange("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+      {/* Same padding/flex recipe as the x button next to it so the two share a baseline, but a
+          POSITIVE left margin instead of the matching -10: the row's gap is 8, so two neighbours
+          both pulling in by 10 left their 20px-wide hit areas overlapping by 12px and a thumb
+          aiming here landed on "clear search" instead. 8 - 10 + 10 puts 8px of clear space
+          between the two targets, and 28px between the glyphs. */}
+      {onDismiss&&
+        <button onClick={onDismiss} aria-label="Dismiss keyboard"
+          style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:"-10px -10px -10px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>}
+    </div>
+  );
+}
+
 function AccordionSection({title,color,children,defaultOpen,indent}){
   const[open,setOpen]=useState(!!defaultOpen);
   return(
@@ -267,7 +346,12 @@ function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
 const RESOURCE_COLORS={pg:"#e84f45",cpu:"#50cdf7",cal:"#9898a6"};
 
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
+  // Memoised because this strip is the module browser's header: without it, every keystroke in the
+  // search box and every appearance of the "+ module" toast re-ran the entire dogma engine over the
+  // whole fit, which is by far the most expensive thing on that screen.
+  const cs=useMemo(
+    ()=>calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{},
+    [ship,slots,drones,skills,implants,boosters,factorInReload]);
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
   const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();
@@ -438,6 +522,43 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   );
 }
 
+// Module scope, NOT nested inside ModuleBrowserSheet. A component declared inside another component
+// is a fresh function identity on every render, so React tears down and rebuilds every row's DOM
+// whenever the browser re-renders. Tapping a row with the keyboard up blurs the search input, which
+// re-renders the sheet BETWEEN touchstart and click — the row's node was replaced mid-tap, so the
+// click had no surviving target and the first tap on a module only collapsed the keyboard.
+function ModRow({mod,onAdd,onInfo,headroom}){
+  const rowMeta=metaOf(mod.typeID,mod.meta);
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+      {/* preventDefault on mousedown keeps the keyboard up while you fill a rack. Blurring the
+          focused input is the DEFAULT ACTION of pressing another element, so cancelling it holds
+          focus in the search box and the click still fires normally. Without this, adding a module
+          collapsed the keyboard every time and you had to tap back into the box to keep going —
+          which is the whole point of a browser that stays open. The keyboard is still dismissed
+          deliberately: by scrolling the list (BottomSheet's dismissKeyboardOnScroll) or by the
+          chevron in the search bar. Not on the info button beside this — that opens a detail sheet
+          over the whole browser, where the keyboard has nothing left to type into. */}
+      <div onClick={()=>onAdd(mod)} onMouseDown={e=>e.preventDefault()} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+        {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
+            left and rows stopped lining up with each other. */}
+        <div style={{width:28,height:28,flexShrink:0}}>
+          {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
+          <FitCost item={mod} headroom={headroom}/>
+        </div>
+      </div>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
+        <SkillMark typeID={mod.typeID}/>
+        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
+        {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();onInfo(mod);}}/>}
+      </div>
+    </div>
+  );
+}
+
 function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload,dismissRequested}){
   const[search,setSearch]=useState("");
   const[infoItem,setInfoItem]=useState(null);
@@ -484,7 +605,6 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     if(!t||axis!=="x")return;
     if(t.clientX-_nav.current.x>70)goBack();
   };
-  const metaColor={T1:C.textMid,T2:C.accent,Storyline:C.warning,Faction:C.danger,Deadspace:"#f0abfc",Officer:"#f0abfc",Abyssal:C.high};
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
   // enforces it), so the other sizes are dead weight to scroll past. Prune them here rather than
@@ -529,7 +649,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // The SEARCH corpus is the tree plus the modules CCP does not sell. Those have no market group and
   // so no node to browse to, but they are ordinary fittable items and search is the only way to reach
   // them — a Civilian Light Missile Launcher was unreachable except by pasting EFT.
-  const allMods=(()=>{
+  const allMods=useMemo(()=>{
     const out=[];
     function collect(n){n.mods.forEach(m=>out.push(m));n.children.forEach(collect);}
     tree.forEach(collect);
@@ -538,8 +658,13 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         if(slotType!=="rigs"||hullRigSize==null||(TYPES[String(m.typeID)]?.a?.rigSize??hullRigSize)===hullRigSize)
           out.push(m);
     return out;
-  })();
-  const searchResults=search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null;
+  },[tree,isStructure,slotType,hullRigSize]);
+  // Memoised on the query alone: this sheet re-renders for reasons unrelated to the search — focusing
+  // or blurring the box, and the "+ module" toast appearing and expiring — and a full corpus scan on
+  // each of those made every tap on a result cost three extra searches.
+  const searchResults=useMemo(
+    ()=>search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null,
+    [search,allMods]);
 
   const breadcrumb=(()=>{
     let nodes=tree,parts=[];
@@ -547,29 +672,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     return parts;
   })();
 
-  function ModRow({mod}){
-    const rowMeta=metaOf(mod.typeID,mod.meta);
-    return(
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
-        <div onClick={()=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");}} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
-          {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
-              left and rows stopped lining up with each other. */}
-          <div style={{width:28,height:28,flexShrink:0}}>
-            {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
-            <FitCost item={mod} headroom={resourceHeadroom}/>
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
-          <SkillMark typeID={mod.typeID}/>
-          <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
-          {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setInfoItem(mod);}}/>}
-        </div>
-      </div>
-    );
-  }
+  const addMod=mod=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");};
 
   // Filled/total for the rack being browsed, so a rapid-tap fill run doesn't need a peek at the
   // resource strip's hardpoint dots (or a tab-out to the fit) to know when to stop. +1 counts the
@@ -578,22 +681,9 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const slotCount=slots[slotType]?.length??0;
   const filledCount=(slots[slotType]??[]).filter(s=>s.type!=="empty").length;
   const ordinal=Math.min(filledCount+1,slotCount);
-  // Cheap alternative to a real native inputAccessoryView (App.jsx's global accessory bar is a
-  // WebKit stock toolbar, not custom Capacitor UI — see the setAccessoryBarVisible source note in
-  // useVisualViewport): the footer search box already sits directly above the keyboard, so leaving
-  // that stock bar on just stacks a second ~44px strip for no benefit. Toggling this on the input's
-  // own focus/blur is too late — the bar is attached to the keyboard as it appears, before the
-  // native side has even received our message across the bridge — so it's set for the sheet's whole
-  // lifetime instead (this sheet has no other focusable field that would miss the stock bar) and
-  // restored on unmount so every other input in the app keeps its normal Done/chevron bar.
   const searchInputRef=useRef(null);
   const[searchFocused,setSearchFocused]=useState(false);
-  useEffect(()=>{
-    const Cap=(typeof window!=="undefined")&&window.Capacitor;
-    if(!Cap?.isNativePlatform?.())return;
-    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
-    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
-  },[]);
+  useSuppressAccessoryBar();
   return(
     <>
     {/* height="100vh", not 88vh: with fillHeight, the sheet's box is min(height,100%) where 100% is
@@ -623,28 +713,13 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         // results — the exact space Tritanium uses well and we didn't. Down here it sits right
         // above the keyboard (see BottomSheet's footerExtra note) and results get the space back.
         <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
-            <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-            <input ref={searchInputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste}
-              onFocus={()=>setSearchFocused(true)} onBlur={()=>setSearchFocused(false)}
-              placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-            {/* padding+negative margin: grows the tap target well past the glyph itself without
-                pushing the search bar's own height out or nudging the input over — the same trick
-                SheetGrabber uses for its drag handle. */}
-            {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
-            {/* Stands in for the stock accessory bar's Done/chevron, which is suppressed while this
-                input is focused (see setAccessoryBar above) — without this, focusing the search box
-                would leave no way to collapse the keyboard short of scrolling a long enough list.
-                Same padding/margin/flex recipe as the x button right next to it, so the two sit on
-                the same baseline — a circular badge here read as a different, misaligned control. */}
-            {searchFocused&&
-              <button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard"
-                style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>}
-          </div>
+          {/* The only sheet that passes onDismiss: it suppresses the stock accessory bar for its
+              whole lifetime (see setAccessoryBarVisible above), so without this chevron there is no
+              way to collapse the keyboard short of scrolling a long enough list. */}
+          <SheetSearchBar value={search} onChange={setSearch} onPaste={onSearchPaste}
+            inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
+            inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
+            placeholder="Search all modules, or paste an abyssal..."/>
         </div>
       }>
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
@@ -664,12 +739,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         // can end wherever it ends and just show more of what's above it.
         <div>
           {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules found</div>}
-          {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
+          {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
         </div>
       ):(
         <div key={navPath.join(">")} onTouchStart={_navStart} onTouchMove={_navMove} onTouchEnd={_navEnd}
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
-          {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
+          {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
           {currentLevel.nodes.map(node=>(
             <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
               {/* Category icon, same idea as pyfa: a real item from the group reads faster than
@@ -2203,10 +2278,7 @@ function TargetProfileSheet({current,onSelect,onClose}){
   return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search targets..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search targets..."/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
@@ -2234,10 +2306,7 @@ function DamageProfileSheet({current,onSelect,onClose}){
   </span>);
   return(<BottomSheet title="Incoming Damage Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search profiles..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search profiles..."/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>

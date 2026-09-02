@@ -985,7 +985,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
             // Nothing left to retarget to — this WAS the last empty slot in the group, most often
             // because auto-fill hardpoints just filled the whole rack in one tap. Closing right away
             // used to unmount the sheet (and the "+ Module (x5)" toast living inside it) before
-            // anyone could read it. Give the toast its full ui.jsx justAdded lifetime before closing.
+            // anyone could read it. Long enough to register the toast, then — NOT the toast's full
+            // 1100ms lifetime, which it used to wait out: the sheet keeps sliding for another 200ms
+            // after this fires, so the toast stays legible through the exit, and the full wait read
+            // as the app having hung rather than as a confirmation.
             // Guarded on the exact slot (not just the section) so a sheet the user reopened for a
             // different slot in the same group in the meantime isn't yanked shut by this stale timer.
             // Flips `autoClose` rather than nulling `emptySlot` outright — nulling it unmounts
@@ -993,7 +996,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
             // asks it (via dismissRequested) to run its OWN slide-down close, same as tapping the x,
             // and onClose (below) nulls emptySlot for real once that animation finishes.
             const closingSlot=emptySlot;
-            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?{...prev,autoClose:true}:prev),1100);
+            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?{...prev,autoClose:true}:prev),450);
           }
           return count;
         }}
