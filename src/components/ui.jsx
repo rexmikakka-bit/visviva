@@ -140,6 +140,10 @@ export function useVisualViewport(){
 function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false}){
   const vv=useVisualViewport();
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
+  // Derived, not a third prop that could drift out of step with the two it would have to agree with:
+  // `height="100vh"` + fillHeight is already exactly how a caller says "fill the screen", because
+  // min(100vh, 100%) can only ever resolve to the frame itself. The module browser is the only one.
+  const fullScreen=fillHeight&&height==="100vh";
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
   // containing block instead, and the sheet anchors to a mid-page element and slides off the
@@ -201,12 +205,14 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
                    paddingBottom:vv?.keyboardOpen?0:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-        {/* paddingTop, not the fixed 4px other sheets get: a sheet with height="100vh" (only the
-            module browser today) always sits with its top pinned at the physical top of the screen
-            — see the min(height,100%) note above — so its title row needs the same status-bar clearance
-            AppHeader/the drawer give theirs. Inert for every shorter sheet, whose title never reaches
-            that high to begin with. */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",paddingTop:"calc(4px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}>
+        {/* Status-bar clearance, and ONLY for a sheet that actually reaches the status bar. A
+            full-screen sheet sits with its top pinned at the physical top of the screen (see the
+            min(height,100%) note above) so its title needs the same inset AppHeader and the drawer
+            give theirs. Every other sheet stops well short of the top, and adding the inset there
+            just opened ~60px of dead space above the title — this was applied unconditionally once,
+            and it was every bottom sheet in the app that grew the gap, not the one it was written for. */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`,
+                     ...(fullScreen?{paddingTop:"calc(4px + env(safe-area-inset-top, 0px))"}:{})}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
@@ -667,11 +673,14 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
             {/* Stands in for the stock accessory bar's Done/chevron, which is suppressed while this
                 input is focused (see setAccessoryBar above) — without this, focusing the search box
                 would leave no way to collapse the keyboard short of scrolling a long enough list.
-                Same padding/margin/flex recipe as the x button right next to it, so the two sit on
-                the same baseline — a circular badge here read as a different, misaligned control. */}
+                Same padding/flex recipe as the x button next to it so the two share a baseline, but
+                a POSITIVE left margin instead of the matching -10: the row's gap is 8, so two
+                neighbours both pulling in by 10 left their 20px-wide hit areas overlapping by 12px
+                and a thumb aiming here landed on "clear search" instead. 8 - 10 + 10 puts 8px of
+                clear space between the two targets, and 28px between the glyphs. */}
             {searchFocused&&
               <button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard"
-                style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:"-10px -10px -10px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
                 <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
                   <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
