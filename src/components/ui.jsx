@@ -284,8 +284,15 @@ export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inp
         {...inputProps}/>
       {/* padding+negative margin: grows the tap target well past the glyph itself without
           pushing the search bar's own height out or nudging the input over — the same trick
-          SheetGrabber uses for its drag handle. */}
-      {!!value&&<button onClick={()=>onChange("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+          SheetGrabber uses for its drag handle.
+
+          preventDefault on mousedown for the same reason ModRow does it, but here it is load-bearing
+          twice over. Blurring the input is the default action of pressing this button, and in a
+          footer-placed search bar that blur drops the keyboard, which moves this button ~300px down
+          the screen before mouseup — so the click landed on whatever now sat under the thumb and the
+          field never actually cleared. Cancelling the blur keeps the keyboard up, keeps the button
+          still, and leaves the caret in the box ready for the next query. */}
+      {!!value&&<button onClick={()=>onChange("")} onMouseDown={e=>e.preventDefault()} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
       {/* Same padding/flex recipe as the x button next to it so the two share a baseline, but a
           POSITIVE left margin instead of the matching -10: the row's gap is 8, so two neighbours
           both pulling in by 10 left their 20px-wide hit areas overlapping by 12px and a thumb
