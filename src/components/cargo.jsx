@@ -2,7 +2,7 @@ import { useState } from "react";
 import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, NumpadModal } from "./ui.jsx";
+import { BottomSheet, NumpadModal, SheetSearchBar } from "./ui.jsx";
 import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 
@@ -65,11 +65,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots}){
 
   return(<BottomSheet title="Add Cargo" onClose={onClose} height="86vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
-        <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search market..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search market..."/>
     </div>
     {!searchResults&&!fitCharges&&path.length===0&&(
       <div style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>

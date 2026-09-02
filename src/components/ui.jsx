@@ -242,6 +242,45 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
     document.body
   );
 }
+// ═══ SHEET SEARCH BAR ════════════════════════════════════════════
+// One search row for every browser sheet. Ten hand-rolled copies had drifted: three inner paddings,
+// two glyph sizes, two font sizes, and only four of them had a clear-`x` at all — so whether you
+// could empty the box without backspacing depended on which sheet you were in.
+//
+// `onDismiss` is opt-in, NOT the default. The chevron exists to replace iOS's stock accessory bar,
+// and only the module browser suppresses that bar (see setAccessoryBarVisible there) — drawing our
+// own chevron in a sheet that still has the stock one gives you two of them side by side.
+export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inputRef,inputProps}){
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
+      <span style={{fontSize:15,color:C.textMute,flexShrink:0}}>&#128269;</span>
+      <input ref={inputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+        value={value} onChange={e=>onChange(e.target.value)} onPaste={onPaste}
+        // enterKeyHint="search" promises the return key does something; results are already
+        // live, so the only thing left for it to do is get the keyboard out of the way.
+        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}}}
+        placeholder={placeholder} style={{flex:1,minWidth:0,background:"none",border:"none",color:C.text,fontSize:14,outline:"none"}}
+        {...inputProps}/>
+      {/* padding+negative margin: grows the tap target well past the glyph itself without
+          pushing the search bar's own height out or nudging the input over — the same trick
+          SheetGrabber uses for its drag handle. */}
+      {!!value&&<button onClick={()=>onChange("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+      {/* Same padding/flex recipe as the x button next to it so the two share a baseline, but a
+          POSITIVE left margin instead of the matching -10: the row's gap is 8, so two neighbours
+          both pulling in by 10 left their 20px-wide hit areas overlapping by 12px and a thumb
+          aiming here landed on "clear search" instead. 8 - 10 + 10 puts 8px of clear space
+          between the two targets, and 28px between the glyphs. */}
+      {onDismiss&&
+        <button onClick={onDismiss} aria-label="Dismiss keyboard"
+          style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:"-10px -10px -10px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>}
+    </div>
+  );
+}
+
 function AccordionSection({title,color,children,defaultOpen,indent}){
   const[open,setOpen]=useState(!!defaultOpen);
   return(
@@ -658,34 +697,13 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         // results — the exact space Tritanium uses well and we didn't. Down here it sits right
         // above the keyboard (see BottomSheet's footerExtra note) and results get the space back.
         <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
-            <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-            <input ref={searchInputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste}
-              onFocus={()=>setSearchFocused(true)} onBlur={()=>setSearchFocused(false)}
-              // enterKeyHint="search" promises the return key does something; results are already
-              // live, so the only thing left for it to do is get the keyboard out of the way.
-              onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();e.currentTarget.blur();}}}
-              placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-            {/* padding+negative margin: grows the tap target well past the glyph itself without
-                pushing the search bar's own height out or nudging the input over — the same trick
-                SheetGrabber uses for its drag handle. */}
-            {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
-            {/* Stands in for the stock accessory bar's Done/chevron, which is suppressed while this
-                input is focused (see setAccessoryBar above) — without this, focusing the search box
-                would leave no way to collapse the keyboard short of scrolling a long enough list.
-                Same padding/flex recipe as the x button next to it so the two share a baseline, but
-                a POSITIVE left margin instead of the matching -10: the row's gap is 8, so two
-                neighbours both pulling in by 10 left their 20px-wide hit areas overlapping by 12px
-                and a thumb aiming here landed on "clear search" instead. 8 - 10 + 10 puts 8px of
-                clear space between the two targets, and 28px between the glyphs. */}
-            {searchFocused&&
-              <button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard"
-                style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:"-10px -10px -10px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                  <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>}
-          </div>
+          {/* The only sheet that passes onDismiss: it suppresses the stock accessory bar for its
+              whole lifetime (see setAccessoryBarVisible above), so without this chevron there is no
+              way to collapse the keyboard short of scrolling a long enough list. */}
+          <SheetSearchBar value={search} onChange={setSearch} onPaste={onSearchPaste}
+            inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
+            inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
+            placeholder="Search all modules, or paste an abyssal..."/>
         </div>
       }>
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
@@ -2244,10 +2262,7 @@ function TargetProfileSheet({current,onSelect,onClose}){
   return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search targets..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search targets..."/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
@@ -2275,10 +2290,7 @@ function DamageProfileSheet({current,onSelect,onClose}){
   </span>);
   return(<BottomSheet title="Incoming Damage Profile" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search profiles..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search profiles..."/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
