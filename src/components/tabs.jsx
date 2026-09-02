@@ -979,7 +979,18 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           // its "empty" status is already correct — exclude every id addMod just filled (auto-fill
           // may have taken more than just emptySlot.id).
           const next=(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
-          setEmptySlot(next?{secKey:emptySlot.secKey,id:next.id}:null);
+          if(next){
+            setEmptySlot({secKey:emptySlot.secKey,id:next.id});
+          }else{
+            // Nothing left to retarget to — this WAS the last empty slot in the group, most often
+            // because auto-fill hardpoints just filled the whole rack in one tap. Closing right away
+            // used to unmount the sheet (and the "+ Module (x5)" toast living inside it) before
+            // anyone could read it. Give the toast its full ui.jsx justAdded lifetime before closing.
+            // Guarded on the exact slot (not just the section) so a sheet the user reopened for a
+            // different slot in the same group in the meantime isn't yanked shut by this stale timer.
+            const closingSlot=emptySlot;
+            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?null:prev),1100);
+          }
           return count;
         }}
         onClose={()=>setEmptySlot(null)} resourceHeadroom={resourceHeadroom}
