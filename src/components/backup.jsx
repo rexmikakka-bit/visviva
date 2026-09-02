@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { C } from "../theme.js";
 import { isBackupApp, KEY_RE, countFits, buildBackup, mergeFitsDB } from "../lib/backup-io.js";
 import { mergeTagColors } from "../lib/fit-tags.js";
@@ -31,10 +32,27 @@ function BackupPanel() {
   const [xmlBusy, setXmlBusy] = useState(null);         // {done, total} while converting
   const xmlRef = useRef(null);
   const [undo, setUndo] = useState(null);   // meta for the pre-import copy, or null if there isn't one
+  const [busy, setBusy] = useState(null);   // label of the bulk write in flight, or null
 
   const mine = countFits(getLoadedFitsDB());
 
   useEffect(() => { readUndoMeta().then(setUndo).catch(() => {}); }, []);
+
+  // Every bulk write below ends in a reload, and the work in front of it — merging ~1,700 fits,
+  // JSON round-tripping several megabytes — is synchronous and blocks the main thread. Unwrapped
+  // that is a frozen panel followed by a blank page, both with no explanation, which on a phone is
+  // long enough to read as a crash. So: paint an overlay, wait for it to actually REACH the screen
+  // before starting (the double rAF — React's commit lands in a microtask, the first frame paints
+  // it, the second callback runs after that paint), then hand over to index.html's boot screen,
+  // which covers the reload itself.
+  const runBulk = async (label, work) => {
+    setBusy(label);
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+    try { await work(); } catch (e) { setBusy(null); throw e; }
+    // Reloading is the honest way to re-init every piece of state from storage at once. The overlay
+    // is deliberately left up: it is the last thing on screen until the page goes away.
+    window.location.reload();
+  };
 
   // iOS is the case this has to get right. A WKWebView ignores <a download>, so `a.click()` on a
   // blob: URL silently does nothing — and this used to report ok:true straight afterwards, so the
@@ -120,34 +138,34 @@ function BackupPanel() {
   const apply = async (mode) => {
     const { obj } = pending;
     try {
-      await saveUndoSnapshot(mode === "replace" ? "backup restore" : "backup merge");
-      if (mode === "replace") {
-        for (let i = localStorage.length - 1; i >= 0; i--) {
-          const k = localStorage.key(i);
-          if (KEY_RE.test(k)) localStorage.removeItem(k);
+      await runBulk(mode === "replace" ? "Restoring backup…" : "Merging backup…", async () => {
+        await saveUndoSnapshot(mode === "replace" ? "backup restore" : "backup merge");
+        if (mode === "replace") {
+          for (let i = localStorage.length - 1; i >= 0; i--) {
+            const k = localStorage.key(i);
+            if (KEY_RE.test(k)) localStorage.removeItem(k);
+          }
+          for (const [k, v] of Object.entries(obj.data)) if (k !== FITS_KEY) localStorage.setItem(k, v);
+          let db = {};
+          try { db = JSON.parse(obj.data[FITS_KEY] || "{}") || {}; } catch {}
+          await replaceFitsDB(db);
+        } else {
+          const merged = mergeFitsDB(await exportFitsBlob(), obj.data[FITS_KEY]);
+          await replaceFitsDB(JSON.parse(merged));
+          // Tag colours merge per-tag rather than all-or-nothing. The blanket rule below would drop
+          // the whole incoming registry the moment you had a single tag of your own, and the
+          // imported fits would arrive carrying tag names with no colours.
+          try {
+            const cur = JSON.parse(localStorage.getItem("pyfa-tagcolors") || "{}") || {};
+            const inc = JSON.parse(obj.data["pyfa-tagcolors"] || "{}") || {};
+            localStorage.setItem("pyfa-tagcolors", JSON.stringify(mergeTagColors(cur, inc)));
+          } catch {}
+          // Only fill in settings that don't exist yet — a merge shouldn't overwrite your skills.
+          for (const [k, v] of Object.entries(obj.data)) {
+            if (k !== FITS_KEY && k !== "pyfa-tagcolors" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
+          }
         }
-        for (const [k, v] of Object.entries(obj.data)) if (k !== FITS_KEY) localStorage.setItem(k, v);
-        let db = {};
-        try { db = JSON.parse(obj.data[FITS_KEY] || "{}") || {}; } catch {}
-        await replaceFitsDB(db);
-      } else {
-        const merged = mergeFitsDB(await exportFitsBlob(), obj.data[FITS_KEY]);
-        await replaceFitsDB(JSON.parse(merged));
-        // Tag colours merge per-tag rather than all-or-nothing. The blanket rule below would drop the
-        // whole incoming registry the moment you had a single tag of your own, and the imported fits
-        // would arrive carrying tag names with no colours.
-        try {
-          const cur = JSON.parse(localStorage.getItem("pyfa-tagcolors") || "{}") || {};
-          const inc = JSON.parse(obj.data["pyfa-tagcolors"] || "{}") || {};
-          localStorage.setItem("pyfa-tagcolors", JSON.stringify(mergeTagColors(cur, inc)));
-        } catch {}
-        // Only fill in settings that don't exist yet — a merge shouldn't overwrite your skills.
-        for (const [k, v] of Object.entries(obj.data)) {
-          if (k !== FITS_KEY && k !== "pyfa-tagcolors" && localStorage.getItem(k) == null) localStorage.setItem(k, v);
-        }
-      }
-      // Reloading is the honest way to re-init every piece of state from storage at once.
-      window.location.reload();
+      });
     } catch (e) {
       setStatus({ ok: false, msg: `Import failed: ${e.message}` });
       setPending(null);
@@ -201,10 +219,11 @@ function BackupPanel() {
   // inside a single pyfa export are separated too rather than collapsing onto one another.
   const applyXml = async () => {
     try {
-      await saveUndoSnapshot("pyfa import");
-      const merged = mergeFitsDB(await exportFitsBlob(), JSON.stringify(xmlPending.db));
-      await replaceFitsDB(JSON.parse(merged));
-      window.location.reload();
+      await runBulk(`Importing ${xmlPending.fits.toLocaleString()} fits…`, async () => {
+        await saveUndoSnapshot("pyfa import");
+        const merged = mergeFitsDB(await exportFitsBlob(), JSON.stringify(xmlPending.db));
+        await replaceFitsDB(JSON.parse(merged));
+      });
     } catch (e) {
       setStatus({ ok: false, msg: `Import failed: ${e.message}` });
       setXmlPending(null);
@@ -222,18 +241,22 @@ function BackupPanel() {
                   : `This device can't store an undo copy, so this CANNOT be undone. Export a backup first.`);
     if (!window.confirm(warn)) return;
     try {
-      await saveUndoSnapshot("clear library");
-      await replaceFitsDB({});
-      window.location.reload();
+      await runBulk("Clearing library…", async () => {
+        await saveUndoSnapshot("clear library");
+        await replaceFitsDB({});
+      });
     } catch (e) { setStatus({ ok: false, msg: `Couldn't clear: ${e.message}` }); }
   };
 
   const doUndo = async () => {
     try {
-      const r = await restoreUndoSnapshot();
-      if (!r) { setStatus({ ok: false, msg: "That undo copy is no longer available." }); setUndo(null); return; }
-      window.location.reload();
-    } catch (e) { setStatus({ ok: false, msg: `Undo failed: ${e.message}` }); }
+      await runBulk("Restoring your fits…", async () => {
+        if (!(await restoreUndoSnapshot())) {
+          setUndo(null);
+          throw new Error("That undo copy is no longer available.");
+        }
+      });
+    } catch (e) { setStatus({ ok: false, msg: e.message }); }
   };
 
   const btn = (bg, border, color) => ({
@@ -243,6 +266,22 @@ function BackupPanel() {
 
   return (
     <div>
+      {/* Covers the whole viewport, not just this panel: the work behind it replaces the entire
+          library, so leaving the rest of the app tappable would invite a second write on top of the
+          one in flight. PORTALLED to <body> because this panel lives inside the settings sheet,
+          which always carries a transform — and a transformed ancestor becomes the containing block
+          for position:fixed, which would trap the overlay inside the sheet's own (overflow:hidden)
+          box. Same ring, size and colours as index.html's boot screen: the reload swaps one for the
+          other mid-operation and the join should be invisible. */}
+      {busy && createPortal(
+        <div style={{ position: "fixed", inset: 0, zIndex: 9000, display: "flex", flexDirection: "column",
+                      alignItems: "center", justifyContent: "center", gap: 14, background: C.bg }}>
+          <span className="vv-spin" style={{ width: 30, height: 30, borderRadius: "50%",
+                                             border: `3px solid ${C.border}`, borderTopColor: C.accent }} />
+          <div style={{ fontSize: 12, color: C.textMid }}>{busy}</div>
+          <div style={{ fontSize: 10, color: C.textMute }}>Don't close the app.</div>
+        </div>, document.body)}
+
       <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>Backup &amp; Restore</div>
       <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12, lineHeight: 1.5 }}>
         Your fits live only in this browser's storage. Clearing site data, switching browsers, or
