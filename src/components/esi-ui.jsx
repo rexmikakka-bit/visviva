@@ -7,6 +7,7 @@ import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
+import { SheetSearchBar } from "./ui.jsx";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
 function friendlyError(e) {
@@ -247,8 +248,9 @@ export function EsiImportModal({ onClose, onImport }) {
         {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
         {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No saved fittings on this character.</div>}
         {fittings && fittings.length > 0 && (
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search fits or hulls…"
-                 style={{ width: "100%", boxSizing: "border-box", marginBottom: 8, padding: "9px 11px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.surfaceAlt, color: C.text, fontSize: 13, outline: "none" }} />
+          <div style={{ marginBottom: 8 }}>
+            <SheetSearchBar value={search} onChange={setSearch} placeholder="Search fits or hulls…" />
+          </div>
         )}
         {fittings && fittings.length > 0 && shown.length === 0 && (
           <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No fit matches “{search.trim()}”.</div>

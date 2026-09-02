@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { ItemDetailSheet, BottomSheet, InfoButton } from "./ui.jsx";
+import { ItemDetailSheet, BottomSheet, InfoButton, SheetSearchBar } from "./ui.jsx";
 import { haptic, implantSetMembers, applyImplantSet, implantData, searchImplants } from "../lib/core.js";
 import { dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
@@ -151,8 +151,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
       </div>
     )}
     <div style={{padding:"10px 14px 4px"}}>
-      <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search implants..."
-        style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13,boxSizing:"border-box"}}/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search implants..."/>
     </div>
     {results
       ? results.map(item=><ItemRow key={item.typeID} item={item}/>)
@@ -188,12 +187,7 @@ function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
   const shown=term?loadouts.filter(l=>l.name.toLowerCase().includes(term)):loadouts;
   return(<BottomSheet title="Implant Loadouts" onClose={onClose} height="70vh" fillHeight>
     {loadouts.length>6&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
-          value={q} onChange={e=>setQ(e.target.value)} placeholder="Search loadouts..."
-          style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={q} onChange={setQ} placeholder="Search loadouts..."/>
     </div>}
     {!shown.length&&<div style={{textAlign:"center",color:C.textMute,padding:"28px 0",fontSize:13}}>No loadouts match "{q}"</div>}
     {shown.map(l=>(
@@ -288,13 +282,10 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
       {/* The x is the way OUT, not a convenience. Emptying this box is the only thing that brings the
           slot list back, so a query matching nothing left you on a bare "no implants match" page with
           no exit but backspacing it clear — which reads as the screen being stuck. */}
-      <div style={{position:"relative",marginTop:6}}>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={query}
-          onChange={e=>setQuery(e.target.value)} placeholder="Search all implants..."
-          style={{width:"100%",background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,padding:"7px 10px",paddingRight:query?30:10,color:C.text,fontSize:12,boxSizing:"border-box"}}/>
-        {query&&<button onClick={()=>{haptic();dismissSearch();}} title="Clear search"
-          style={{position:"absolute",right:0,top:0,bottom:0,width:30,display:"flex",alignItems:"center",justifyContent:"center",
-                  background:"none",border:"none",padding:0,cursor:"pointer",color:C.textMute,fontSize:15}}>&#10005;</button>}
+      <div style={{marginTop:6}}>
+        {/* Haptic on the emptying transition rather than only on the x, so backspacing the last
+            character — which is the same escape hatch — confirms itself the same way. */}
+        <SheetSearchBar value={query} onChange={v=>{if(query&&!v)haptic();setQuery(v);}} placeholder="Search all implants..."/>
       </div>
     </div>
     {/* While searching, the results REPLACE the slot list rather than sitting above it: a result is

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, AccordionSection, DroneMenu } from "./ui.jsx";
+import { BottomSheet, AccordionSection, DroneMenu, SheetSearchBar } from "./ui.jsx";
 import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, droneAddQty } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
@@ -50,12 +50,11 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   }
 
   return(<BottomSheet title="Add Drone" onClose={onClose} height="88vh" fillHeight>
+    {/* Search stays at the TOP here, unlike the module browser's footer bar: this sheet closes on
+        the first pick, so there is no "keep searching with the keyboard up" flow for a footer to
+        serve. Only the multi-add browsers (modules, cargo) put it above the keyboard. */}
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
-        <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search drones..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search drones..."/>
     </div>
     {!searchResults&&drillSub&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={()=>setDrillSub(null)} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>Back</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
     <div>{renderBody()}</div>
@@ -79,7 +78,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
       ))}
     </div>
     <div style={{padding:"0 12px 8px"}}>
-      <input value={q} onChange={e=>setQ(e.target.value)} placeholder={`Search ${cls.toLowerCase()} fighters…`} style={{width:"100%",boxSizing:"border-box",padding:"9px 11px",borderRadius:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,fontSize:13,outline:"none"}}/>
+      <SheetSearchBar value={q} onChange={setQ} placeholder={`Search ${cls.toLowerCase()} fighters…`}/>
     </div>
     {RACE_ORDER.filter(r=>races[r]).map(r=>{
       const list=races[r].filter(f=>!ql||f.name.toLowerCase().includes(ql));

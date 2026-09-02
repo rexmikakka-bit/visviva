@@ -12,10 +12,10 @@ import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleT
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
 import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton, ItemPrice, ResistBars, TraitsPanel, useVisualViewport } from "./ui.jsx";
+import { InfoButton, ItemPrice, ResistBars, SheetSearchBar, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
-import { IconPencil, IconCopy, IconClose, IconSearch, IconTag } from "./glyphs.jsx";
+import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
@@ -844,11 +844,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       </div>
     )}
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
-        <span style={{display:"flex",color:C.textMute,flexShrink:0}}><IconSearch size={16}/></span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search ships or fit names..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
-        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",padding:0,display:"flex"}}><IconClose size={15}/></button>}
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search ships or fit names..."/>
     </div>
     <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
       {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit} recents={recents} act={fitRowAct} tagColors={tagColors}/>}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, ItemDetailSheet, InfoButton, mutaLabel } from "./ui.jsx";
+import { BottomSheet, ItemDetailSheet, InfoButton, mutaLabel, SheetSearchBar } from "./ui.jsx";
 import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { byRecentlyModified } from "../lib/fit-order.js";
@@ -128,10 +128,7 @@ function EnvironmentPickerSheet({current,onSelect,onClose}){
   const toggle=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
   return(<BottomSheet title="System Effects" onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search systems..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13,outline:"none"}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search systems..."/>
     </div>
     <div onClick={()=>onSelect(null)} style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:!current?C.accentLight:"transparent"}}>
       <span style={{fontSize:12,fontWeight:!current?700:500,color:!current?C.accent:C.text}}>Normal space (no effects)</span>
@@ -200,12 +197,7 @@ function BoosterPickerSheet({onAdd,onClose}){
   return(<>
   <BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
-        <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search boosters..."
-          style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
-        {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search boosters..."/>
     </div>
     {breadcrumb&&(
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
@@ -321,10 +313,7 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
   const filtered=allFits&&q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
   return(<BottomSheet title={title} onClose={onClose} height="75vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"6px 10px"}}>
-        <span style={{fontSize:14,color:C.textMute}}>&#128269;</span>
-        <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search fits..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:13}}/>
-      </div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search fits..."/>
     </div>
     {!q&&pinned?.length>0&&<>
       <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"10px 14px 6px"}}>{pinnedLabel}</div>
