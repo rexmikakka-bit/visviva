@@ -1992,7 +1992,11 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           // so clearing the roll is the entire swap.
           onUpdateMod({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc,
                        mutaplasmid:undefined,mutations:undefined});onClose();}} />)}
-        {tab==="mutate"&&(<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/></div>)}
+        {/* No wrapper here either, same reasoning as the info tab above: a second overflowY:auto
+            nested inside this one already-scrolling tab body is redundant, and on iOS it stopped
+            WebKit's native "scroll the focused input above the keyboard" from finding the right
+            scroll container — typing into a mutaplasmid's value box left it under the keyboard. */}
+        {tab==="mutate"&&<MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/>}
       </div>
     </BottomSheet>
     {/* The ammo list offers every compatible charge, but only the LOADED one exists on the fit — so
@@ -2028,7 +2032,11 @@ function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
           // reapply the old drone's numbers to a different type.
           onUpdateDrone({name:v.name,typeID:v.typeID,mutaplasmid:undefined,mutations:undefined});onClose();
         }}/>}
-      {tab==="mutate"&&<div style={{overflowY:"auto",flex:1}}><MutaplasmidEditor mod={drone} onUpdateMod={onUpdateDroneLive||onUpdateDrone}/></div>}
+      {/* No wrapper here either — see the note on ModuleMenu's mutate tab. This tab body already
+          scrolls (the enclosing overflowY:'auto',maxHeight:'60vh' div above), and a nested second
+          scroller broke iOS's native scroll-to-focused-input, leaving a typed value under the
+          keyboard. */}
+      {tab==="mutate"&&<MutaplasmidEditor mod={drone} onUpdateMod={onUpdateDroneLive||onUpdateDrone}/>}
     </div>
   </BottomSheet>);
 }
