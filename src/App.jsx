@@ -78,6 +78,18 @@ export default function App(){
       Cap.Plugins?.SplashScreen?.hide?.();
     }catch(e){}
   },[resolvedTheme]);
+  // The keyboard's own "Hide keyboard" chevron, iPhone-only per Capacitor's Keyboard plugin (a no-op
+  // everywhere else, so no platform check needed beyond isNativePlatform). Off by default. With
+  // Keyboard.resize:"none" (capacitor.config.json — see BottomSheet's useVisualViewport) the OS never
+  // gives the page another way past the keyboard, and every search sheet can land on a results list
+  // short enough that BottomSheet's own scroll-to-dismiss (dismissKeyboardOnScroll) has nothing to
+  // scroll — the "5mn c" module search was the one that surfaced it, but it's every sheet with a
+  // search box, not that one specifically.
+  useEffect(()=>{
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    if(!Cap?.isNativePlatform?.())return;
+    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){}
+  },[]);
   // ESI login callback (native only — the web build's redirect-based login is completed inline by
   // EsiSettingsPanel via esi.handleWebRedirectOnLoad() on mount instead). SSO opens the system
   // browser via @capacitor/browser; CCP redirects to our eveauth-visviva://auth-callback custom
