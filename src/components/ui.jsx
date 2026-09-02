@@ -159,10 +159,18 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
     // never reach the Fit/Stats/Graph swipe handler on an ancestor. React events bubble through the
     // COMPONENT tree, not the DOM tree, so the portal above does not save us from this — which is
     // how dragging an abyssal slider ended up sliding the page behind the sheet.
+    // This outer div is always the full, unconditional viewport (inset:0) — NOT `frame`. `frame`'s
+    // height comes from the native keyboardHeight listener, which trails the real keyboard animation
+    // by however long the Capacitor bridge round trip takes, so anything sized by it directly flashed
+    // the real page behind for that gap on every show/hide. The backdrop below is a sibling that
+    // always spans the true full screen regardless of that lag; only the sheet itself — one layer
+    // further in, already sitting on top of the backdrop — uses `frame`, so a lagging frame can at
+    // worst show a moment of plain backdrop where the sheet hasn't caught up yet, never the raw page.
     <div onTouchStart={e=>e.stopPropagation()} onTouchMove={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()}
-         style={{position:"fixed",...frame,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
+         style={{position:"fixed",inset:0,zIndex:200}}>
       <div onClick={dismiss} style={{position:"absolute",inset:0,background:"rgba(0,0,0,.65)",
            opacity:closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}/>
+      <div style={{position:"absolute",...frame,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen.
           fillHeight additionally sets `height` (not just maxHeight) to that same min(), for a sheet
@@ -204,6 +212,7 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
             sheet's own frame already tracks the keyboard via useVisualViewport, and it never
             scrolls out of reach the way a search box living in `children` used to. */}
         {footerExtra}
+      </div>
       </div>
     </div>,
     document.body
