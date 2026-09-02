@@ -74,25 +74,15 @@ function InfoButton({onClick,title="Item info"}){
 // as the same keyboard state and dropped.
 const KEYBOARD_HEIGHT_THRESHOLD = 100;
 
-// `noAccessoryBar`: true for a caller that keeps the stock accessory bar suppressed for its whole
-// lifetime (see ModuleBrowserSheet) rather than leaving it on. The correction below exists only to
-// account for that bar, so applying it anyway when there is no bar to account for was pure surplus
-// lag — every correction is a round trip through the native Capacitor bridge, which lands strictly
-// after WebKit's own (synchronous, same-frame) visualViewport resize, so the sheet's frame briefly
-// sized itself off a stale kbHeight while the correction caught up — a frame or two of the real page
-// showing through beneath the sheet on every keyboard show/hide. Skipping the whole native round
-// trip for a caller that has no bar removes that lag source entirely, not just papers over it.
-export function useVisualViewport(noAccessoryBar=false){
+export function useVisualViewport(){
   const [vv,setVv]=useState(null);
   const lastHeight=useRef(null);
-  // The iPhone accessory bar App.jsx turns on (Keyboard.setAccessoryBarVisible — the "Hide
-  // keyboard" chevron) is native chrome injected above the software keyboard from outside
-  // WebKit's own keyboard-avoidance path, so `visualViewport.height` doesn't know it's there and
-  // under-reports how much of the screen is covered. That slop was harmless while nothing lived
-  // at the very bottom of a sheet's frame, but a footer pinned there (a search box, see
-  // BottomSheet's footerExtra) renders exactly into the gap — invisible while being typed into.
-  // Capacitor's own `keyboardHeight`, from the native show/hide notification, DOES include the
-  // accessory bar (it slides up as one unit with the keyboard), so it corrects for the gap.
+  // Under Keyboard.resize:"none" (capacitor.config.json), `window.visualViewport` does not reliably
+  // shrink on its own when the keyboard appears — this native `keyboardHeight` listener, not the
+  // browser's own resize event, is what actually makes a sheet keyboard-aware here. (It also happens
+  // to include the iPhone accessory bar App.jsx can turn on — Keyboard.setAccessoryBarVisible, the
+  // "Hide keyboard" chevron — which is native chrome injected outside WebKit's own layout, so a
+  // footer pinned at the very bottom of a sheet needs that included or it renders into the gap.)
   const kbHeight=useRef(0);
   useEffect(()=>{
     const v=window.visualViewport;
@@ -127,10 +117,9 @@ export function useVisualViewport(noAccessoryBar=false){
     // iPhone only: Android's adjustResize already shrinks window.innerHeight itself when the
     // keyboard opens (see capacitor.config.json / AndroidManifest), so subtracting keyboardHeight
     // from it there would double-count — and setAccessoryBarVisible is a no-op off iOS anyway.
-    // Also skipped entirely for a noAccessoryBar caller — see the note above the export.
     let subs=null;
     const Cap=window.Capacitor;
-    if(!noAccessoryBar&&Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
+    if(Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
       const KB=Cap.Plugins.Keyboard;
       const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
       const onHide=()=>{kbHeight.current=0;sync();};
@@ -138,12 +127,12 @@ export function useVisualViewport(noAccessoryBar=false){
         .then(h=>{subs=h;}).catch(()=>{});
     }
     return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
-  },[noAccessoryBar]);
+  },[]);
   return vv;
 }
 
-function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false,noAccessoryBar=false}){
-  const vv=useVisualViewport(noAccessoryBar);
+function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false}){
+  const vv=useVisualViewport();
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
@@ -593,7 +582,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   },[]);
   return(
     <>
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested} noAccessoryBar
+    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
       headerExtra={
         // Header content, not scroller content: position:sticky here used to fight WebKit's handling
         // of sticky across a transformed ancestor (the sheet itself is always under a transform, for
