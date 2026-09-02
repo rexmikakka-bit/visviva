@@ -542,7 +542,15 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         </div>
       )}
       {searchResults?(
-        <div>
+        // minHeight, not the row count: with 0-2 hits this list used to end just below the search
+        // box, leaving the sheet's own scroller nothing to scroll. iOS then decided THAT input
+        // wasn't "in view enough" and fell back to nudging the outer page to bring it into view —
+        // a scroll position:fixed doesn't track mid-gesture, which is what actually vanished the
+        // sheet (see useVisualViewport). Keeping this tall regardless of hit count means the
+        // sheet's own scroller always has room, so the native scroll-into-view never needs to
+        // leave it. 60vh is against the full (keyboard-closed) viewport on purpose — the point is
+        // to outlast whatever the keyboard leaves visible, not to match it.
+        <div style={{minHeight:"60vh"}}>
           {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules found</div>}
           {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
         </div>
