@@ -16,7 +16,7 @@ import { fetchPrices } from "../prices.js";
 import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
-import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
+import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -115,12 +115,7 @@ function BottomSheet({title,onClose,children,height="70vh"}){
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
-        {/* Blur-on-scroll: with the keyboard plugin set to resize:"none" (iOS), nothing else
-            dismisses the keyboard once a search input is focused, so a search sheet's own result
-            list is stuck sharing the screen with it. Scrolling the list is the one gesture a user
-            already makes to browse results, so piggyback the dismiss on it instead of adding a
-            dedicated button. */}
-        <div onScroll={e=>{const ae=document.activeElement;if(ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA")&&e.currentTarget.contains(ae))ae.blur();}} style={{flex:1,overflowY:"auto"}}>{children}</div>
+        <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto"}}>{children}</div>
       </div>
     </div>,
     document.body
@@ -1784,7 +1779,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
       <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
         {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
       </div>
-      <div style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
+      <div onScroll={dismissKeyboardOnScroll} style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
         {tab==="state"&&(<div>
           <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Module State</div>
           <div style={{display:"flex",gap:8,marginBottom:20}}>
@@ -1969,7 +1964,7 @@ function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
     <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
       {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
     </div>
-    <div style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
+    <div onScroll={dismissKeyboardOnScroll} style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
       {tab==="info"&&<ModuleInfoTab typeID={drone.typeID} mod={drone} engineItem={engineItem} bleed={14}/>}
       {tab==="variations"&&<ModuleVariationsTab typeID={drone.typeID} currentName={drone.name}
         baseMutations={drone.mutaplasmid?drone.mutations:null} baseMutaplasmid={drone.mutaplasmid}

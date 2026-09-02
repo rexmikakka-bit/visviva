@@ -3,6 +3,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { ItemDetailSheet, BottomSheet, InfoButton } from "./ui.jsx";
 import { haptic, implantSetMembers, applyImplantSet, implantData, searchImplants } from "../lib/core.js";
+import { dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
@@ -299,7 +300,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     {/* While searching, the results REPLACE the slot list rather than sitting above it: a result is
         already labelled with the slot it fills, so showing both puts the same ten slots on screen
         twice. Clearing the box brings the list straight back. */}
-    <div style={{flex:1,overflowY:"auto",padding:results?0:12}}>
+    <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto",padding:results?0:12}}>
       {results
         ? (results.length
             ? results.map(item=><ImplantRow key={item.typeID} item={item} badge={`Slot ${item.slot}`}

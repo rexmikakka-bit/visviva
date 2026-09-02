@@ -14,7 +14,7 @@ import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, ItemPrice, ResistBars, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
-import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
+import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { IconPencil, IconCopy, IconClose, IconSearch, IconTag } from "./glyphs.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
@@ -850,7 +850,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",padding:0,display:"flex"}}><IconClose size={15}/></button>}
       </div>
     </div>
-    <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
+    <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
       {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit} recents={recents} act={fitRowAct} tagColors={tagColors}/>}
       {/* The cross-hull axis. Chips rather than rows because a doctrine list is short and scanned by
           colour, and rows would push the ship classes below the fold the way Recent Fits used to.

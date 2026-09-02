@@ -83,3 +83,13 @@ export function SheetGrabber({ grabHandlers, onArt, style }) {
     </div>
   );
 }
+
+// With the keyboard plugin set to resize:"none" (iOS), nothing else dismisses the keyboard once a
+// search input is focused, so a search sheet's own result list is stuck sharing the screen with it.
+// Scrolling the list is the one gesture a user already makes to browse results, so piggyback the
+// dismiss on it instead of adding a dedicated button. Drop onto any scrollable results container
+// that sits below a text input: `onScroll={dismissKeyboardOnScroll}`.
+export function dismissKeyboardOnScroll(e) {
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA") && e.currentTarget.contains(ae)) ae.blur();
+}

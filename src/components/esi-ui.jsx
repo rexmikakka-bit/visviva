@@ -6,7 +6,7 @@ import { ESI_CLIENT_ID } from "../esi-config.js";
 import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
-import { useSheetDrag, sheetTransform, SheetGrabber } from "../lib/use-sheet-drag.jsx";
+import { useSheetDrag, sheetTransform, SheetGrabber, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
 function friendlyError(e) {
@@ -239,7 +239,7 @@ export function EsiImportModal({ onClose, onImport }) {
           scrolls off with the fit list stops being reachable exactly when the sheet is longest. */}
       <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88vh", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-        <div style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
+        <div onScroll={dismissKeyboardOnScroll} style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Import from EVE</div>
         {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>Connect a character in Settings → ESI first.</div>}
         <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
