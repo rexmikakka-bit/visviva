@@ -104,7 +104,7 @@ export function useVisualViewport(){
   return vv;
 }
 
-function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,dismissRequested=false}){
+function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false}){
   const vv=useVisualViewport();
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
@@ -167,6 +167,12 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
             when content is forced taller than the visible sheet, e.g. a short module-browser search
             padded out to stay scrollable past the keyboard. */}
         <div onScroll={dismissKeyboardOnScroll} style={{flex:1,minHeight:0,overflowY:"auto"}}>{children}</div>
+        {/* Rendered after the scroller, not inside it — a search box living here needs no
+            keyboard-aware "scroll into view" logic at all. It's the last thing in the flex
+            column, so it sits right above the keyboard by construction, the same way this
+            sheet's own frame already tracks the keyboard via useVisualViewport, and it never
+            scrolls out of reach the way a search box living in `children` used to. */}
+        {footerExtra}
       </div>
     </div>,
     document.body
@@ -542,17 +548,23 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
               ▲ marker, drones.jsx) — this toast should match THAT red, not the tier pink. */}
           {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:justAdded.abyssal?C.danger:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.abyssal?"Abyssal ":""}{justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
         </ResourceStrip>
-      }>
-      <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
-          <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-          <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste} placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
-          {/* padding+negative margin: grows the tap target well past the glyph itself without
-              pushing the search bar's own height out or nudging the input over — the same trick
-              SheetGrabber uses for its drag handle. */}
-          {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+      }
+      footerExtra={
+        // Moved down here from the top of the scroller: with the search box up top, a short
+        // result list left most of a tall sheet empty above the keyboard instead of showing more
+        // results — the exact space Tritanium uses well and we didn't. Down here it sits right
+        // above the keyboard (see BottomSheet's footerExtra note) and results get the space back.
+        <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
+            <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
+            <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste} placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
+            {/* padding+negative margin: grows the tap target well past the glyph itself without
+                pushing the search bar's own height out or nudging the input over — the same trick
+                SheetGrabber uses for its drag handle. */}
+            {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+          </div>
         </div>
-      </div>
+      }>
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
           moment you started looking through a long category. top:0 since ResourceStrip moved out of
           the scroller (into headerExtra) — this is now the first sticky element in here. */}
@@ -563,15 +575,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         </div>
       )}
       {searchResults?(
-        // minHeight, not the row count: with 0-2 hits this list used to end just below the search
-        // box, leaving the sheet's own scroller nothing to scroll. iOS then decided THAT input
-        // wasn't "in view enough" and fell back to nudging the outer page to bring it into view —
-        // a scroll position:fixed doesn't track mid-gesture, which is what actually vanished the
-        // sheet (see useVisualViewport). Keeping this tall regardless of hit count means the
-        // sheet's own scroller always has room, so the native scroll-into-view never needs to
-        // leave it. 60vh is against the full (keyboard-closed) viewport on purpose — the point is
-        // to outlast whatever the keyboard leaves visible, not to match it.
-        <div style={{minHeight:"60vh"}}>
+        // No forced minHeight here anymore: that existed only because the search box used to live
+        // in this same scroller, and a short result list left it nothing to scroll, so iOS gave up
+        // scrolling the box into view and nudged the whole page instead (see useVisualViewport).
+        // The search box is a footer now — outside the scroller, always visible — so a short list
+        // can end wherever it ends and just show more of what's above it.
+        <div>
           {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules found</div>}
           {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod}/>)}
         </div>
