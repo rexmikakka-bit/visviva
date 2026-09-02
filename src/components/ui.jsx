@@ -77,6 +77,15 @@ const KEYBOARD_HEIGHT_THRESHOLD = 100;
 export function useVisualViewport(){
   const [vv,setVv]=useState(null);
   const lastHeight=useRef(null);
+  // The iPhone accessory bar App.jsx turns on (Keyboard.setAccessoryBarVisible — the "Hide
+  // keyboard" chevron) is native chrome injected above the software keyboard from outside
+  // WebKit's own keyboard-avoidance path, so `visualViewport.height` doesn't know it's there and
+  // under-reports how much of the screen is covered. That slop was harmless while nothing lived
+  // at the very bottom of a sheet's frame, but a footer pinned there (a search box, see
+  // BottomSheet's footerExtra) renders exactly into the gap — invisible while being typed into.
+  // Capacitor's own `keyboardHeight`, from the native show/hide notification, DOES include the
+  // accessory bar (it slides up as one unit with the keyboard), so it corrects for the gap.
+  const kbHeight=useRef(0);
   useEffect(()=>{
     const v=window.visualViewport;
     if(!v)return;                                  // no support: fall back to the layout viewport
@@ -92,14 +101,30 @@ export function useVisualViewport(){
       // anywhere to push the document to, the same way overscroll-behavior:none already denies it
       // rubber-band room. Unconditional — cheap, and unrelated to the height-jitter filtering below.
       window.scrollTo(0,0);
-      if(lastHeight.current!=null && Math.abs(v.height-lastHeight.current)<KEYBOARD_HEIGHT_THRESHOLD) return;
-      lastHeight.current=v.height;
-      setVv({height:v.height});
+      // window.innerHeight, not vv itself, is the correction's baseline: with Keyboard.resize:
+      // "none" the WKWebView's layout viewport never shrinks, so it stays a stable "nothing
+      // covered" reference to subtract the native (accessory-bar-inclusive) keyboard height from.
+      const h=kbHeight.current>0?Math.min(v.height,window.innerHeight-kbHeight.current):v.height;
+      if(lastHeight.current!=null && Math.abs(h-lastHeight.current)<KEYBOARD_HEIGHT_THRESHOLD) return;
+      lastHeight.current=h;
+      setVv({height:h});
     };
     sync();
     v.addEventListener("resize",sync);
     v.addEventListener("scroll",sync);
-    return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);};
+    // iPhone only: Android's adjustResize already shrinks window.innerHeight itself when the
+    // keyboard opens (see capacitor.config.json / AndroidManifest), so subtracting keyboardHeight
+    // from it there would double-count — and setAccessoryBarVisible is a no-op off iOS anyway.
+    let subs=null;
+    const Cap=window.Capacitor;
+    if(Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
+      const KB=Cap.Plugins.Keyboard;
+      const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
+      const onHide=()=>{kbHeight.current=0;sync();};
+      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardDidHide",onHide)])
+        .then(h=>{subs=h;}).catch(()=>{});
+    }
+    return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
   },[]);
   return vv;
 }
