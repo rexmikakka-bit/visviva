@@ -605,8 +605,18 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
             {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
             {/* Stands in for the stock accessory bar's Done/chevron, which is suppressed while this
                 input is focused (see setAccessoryBar above) — without this, focusing the search box
-                would leave no way to collapse the keyboard short of scrolling a long enough list. */}
-            {searchFocused&&<button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard" style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:20,lineHeight:1,padding:10,margin:-10,marginLeft:0,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>&#8964;</button>}
+                would leave no way to collapse the keyboard short of scrolling a long enough list.
+                Same circular-badge language as InfoButton, not a bare glyph: a text chevron character
+                sat off-centre and at the wrong weight against its own font baseline. */}
+            {searchFocused&&
+              <button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard"
+                style={{width:26,height:26,flexShrink:0,padding:0,margin:-3,borderRadius:"50%",
+                        border:`1.5px solid ${C.accent}`,background:C.accentLight,color:C.accent,
+                        display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                <svg width={13} height={13} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>}
           </div>
         </div>
       }>
