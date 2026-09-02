@@ -55,12 +55,22 @@ function InfoButton({onClick,title="Item info"}){
 // Exported because any bottom-anchored overlay with a text field needs it, not just BottomSheet.
 // The tag sheet builds its own overlay and went without, so `+ Tag` opened a field behind the
 // keyboard — the same bug this hook already existed to fix, one component over.
+//
+// Deliberately does NOT report `offsetTop`. That property means "how far the visual viewport is
+// panned from the layout viewport's top-left", which only has a legitimate non-zero value under
+// pinch-zoom — and the viewport meta tag sets user-scalable=no, so it should always read 0 here.
+// A sheet on a short results list (e.g. a search narrowed to one hit) used to vanish entirely,
+// still holding keyboard focus with nothing visibly on screen: iOS's own "scroll the focused input
+// above the keyboard" behavior has nowhere to scroll once the results div is shorter than the
+// available space, so it falls back to nudging the outer WKWebView content instead, and that bled
+// into a large, bogus `offsetTop` — which a fixed sheet honestly trusted and followed off-screen.
+// `height` alone (still correctly keyboard-aware) is all a non-zooming app ever needs.
 export function useVisualViewport(){
   const [vv,setVv]=useState(null);
   useEffect(()=>{
     const v=window.visualViewport;
     if(!v)return;                                  // no support: fall back to the layout viewport
-    const sync=()=>setVv({height:v.height,top:v.offsetTop});
+    const sync=()=>setVv({height:v.height});
     sync();
     v.addEventListener("resize",sync);
     v.addEventListener("scroll",sync);
@@ -71,7 +81,7 @@ export function useVisualViewport(){
 
 function BottomSheet({title,onClose,children,height="70vh"}){
   const vv=useVisualViewport();
-  const frame=vv?{top:vv.top,height:vv.height,left:0,right:0}:{inset:0};
+  const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
   // containing block instead, and the sheet anchors to a mid-page element and slides off the

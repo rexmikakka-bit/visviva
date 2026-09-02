@@ -134,7 +134,7 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
   // with it: 70vh is 70% of the FULL screen, which with the keyboard up is taller than the space
   // there is, so the field would scroll out of the sheet even once the sheet itself is in view.
   const vv = useVisualViewport();
-  const frame = vv ? {top:vv.top,height:vv.height,left:0,right:0} : {inset:0};
+  const frame = vv ? {top:0,height:vv.height,left:0,right:0} : {inset:0};
   return (
     <div onClick={sheet.dismiss} style={{position:"fixed",...frame,background:"rgba(0,0,0,.55)",zIndex:60,display:"flex",alignItems:"flex-end",
       opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
