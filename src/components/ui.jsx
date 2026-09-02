@@ -242,6 +242,27 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
     document.body
   );
 }
+// For sheets whose search box lives in the footer, directly above the keyboard. Cheap alternative
+// to a real native inputAccessoryView (App.jsx's global accessory bar is a WebKit stock toolbar,
+// not custom Capacitor UI — see the setAccessoryBarVisible source note in useVisualViewport): with
+// the search box already sitting on top of the keyboard, leaving the stock bar on just stacks a
+// second ~44px strip for no benefit.
+//
+// Lifetime-scoped, NOT focus-scoped, and that distinction is the whole reason this is a hook.
+// Toggling on the input's own focus/blur is too late — the bar is attached to the keyboard as it
+// appears, before the native side has even received our message across the bridge — so a
+// focus-scoped version shows the stock bar for the first keystroke of every focus. Only use this
+// in a sheet with no OTHER focusable field, which would then be missing its Done/chevron; the
+// unmount cleanup restores the bar for the rest of the app.
+export function useSuppressAccessoryBar(){
+  useEffect(()=>{
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    if(!Cap?.isNativePlatform?.())return;
+    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
+    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
+  },[]);
+}
+
 // ═══ SHEET SEARCH BAR ════════════════════════════════════════════
 // One search row for every browser sheet. Ten hand-rolled copies had drifted: three inner paddings,
 // two glyph sizes, two font sizes, and only four of them had a clear-`x` at all — so whether you
@@ -652,22 +673,9 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const slotCount=slots[slotType]?.length??0;
   const filledCount=(slots[slotType]??[]).filter(s=>s.type!=="empty").length;
   const ordinal=Math.min(filledCount+1,slotCount);
-  // Cheap alternative to a real native inputAccessoryView (App.jsx's global accessory bar is a
-  // WebKit stock toolbar, not custom Capacitor UI — see the setAccessoryBarVisible source note in
-  // useVisualViewport): the footer search box already sits directly above the keyboard, so leaving
-  // that stock bar on just stacks a second ~44px strip for no benefit. Toggling this on the input's
-  // own focus/blur is too late — the bar is attached to the keyboard as it appears, before the
-  // native side has even received our message across the bridge — so it's set for the sheet's whole
-  // lifetime instead (this sheet has no other focusable field that would miss the stock bar) and
-  // restored on unmount so every other input in the app keeps its normal Done/chevron bar.
   const searchInputRef=useRef(null);
   const[searchFocused,setSearchFocused]=useState(false);
-  useEffect(()=>{
-    const Cap=(typeof window!=="undefined")&&window.Capacitor;
-    if(!Cap?.isNativePlatform?.())return;
-    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
-    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
-  },[]);
+  useSuppressAccessoryBar();
   return(
     <>
     {/* height="100vh", not 88vh: with fillHeight, the sheet's box is min(height,100%) where 100% is
