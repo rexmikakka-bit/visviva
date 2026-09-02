@@ -561,17 +561,19 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // Cheap alternative to a real native inputAccessoryView (App.jsx's global accessory bar is a
   // WebKit stock toolbar, not custom Capacitor UI — see the setAccessoryBarVisible source note in
   // useVisualViewport): the footer search box already sits directly above the keyboard, so leaving
-  // that stock bar on while it's focused just stacks a second ~44px strip for no benefit. Suppress
-  // it only for the duration of this focus, and restore the global default on blur/unmount so every
-  // other input in the app keeps its normal Done/chevron bar.
+  // that stock bar on just stacks a second ~44px strip for no benefit. Toggling this on the input's
+  // own focus/blur is too late — the bar is attached to the keyboard as it appears, before the
+  // native side has even received our message across the bridge — so it's set for the sheet's whole
+  // lifetime instead (this sheet has no other focusable field that would miss the stock bar) and
+  // restored on unmount so every other input in the app keeps its normal Done/chevron bar.
   const searchInputRef=useRef(null);
   const[searchFocused,setSearchFocused]=useState(false);
-  const setAccessoryBar=v=>{
+  useEffect(()=>{
     const Cap=(typeof window!=="undefined")&&window.Capacitor;
     if(!Cap?.isNativePlatform?.())return;
-    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:v}); }catch(e){}
-  };
-  useEffect(()=>()=>setAccessoryBar(true),[]);
+    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
+    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
+  },[]);
   return(
     <>
     <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
@@ -597,7 +599,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
             <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
             <input ref={searchInputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste}
-              onFocus={()=>{setSearchFocused(true);setAccessoryBar(false);}} onBlur={()=>{setSearchFocused(false);setAccessoryBar(true);}}
+              onFocus={()=>setSearchFocused(true)} onBlur={()=>setSearchFocused(false)}
               placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
             {/* padding+negative margin: grows the tap target well past the glyph itself without
                 pushing the search bar's own height out or nudging the input over — the same trick
