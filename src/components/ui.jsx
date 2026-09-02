@@ -472,9 +472,18 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh">
       {/* Pinned so PG/CPU/Cal stay visible while rapid-filling a whole slot-group — the number you
           need most (is there room for the next one) was previously scrolled away immediately. */}
-      <div ref={stripRef} style={{position:"relative"}}>
-        <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}/>
-        {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
+      <div ref={stripRef}>
+        {/* The toast used to be a sibling of ResourceStrip, absolutely positioned against THIS div —
+            but this div is a plain scroll-flow block, not itself sticky, so the moment the module
+            list was scrolled even slightly, its box (and the toast anchored to it) scrolled out of
+            view above the visible area while ResourceStrip stayed pinned via its own position:sticky.
+            The toast read as "vanishing instantly" because it was almost never inside the sticky
+            strip's visible box to begin with. Passing it as ResourceStrip's `children` renders it
+            INSIDE the sticky element itself, so it is anchored to a containing block that actually
+            stays on screen. */}
+        <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}>
+          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
+        </ResourceStrip>
       </div>
       <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
         <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
