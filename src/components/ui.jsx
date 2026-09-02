@@ -105,7 +105,12 @@ function BottomSheet({title,onClose,children,height="70vh"}){
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
-        <div style={{flex:1,overflowY:"auto"}}>{children}</div>
+        {/* Blur-on-scroll: with the keyboard plugin set to resize:"none" (iOS), nothing else
+            dismisses the keyboard once a search input is focused, so a search sheet's own result
+            list is stuck sharing the screen with it. Scrolling the list is the one gesture a user
+            already makes to browse results, so piggyback the dismiss on it instead of adding a
+            dedicated button. */}
+        <div onScroll={e=>{const ae=document.activeElement;if(ae&&(ae.tagName==="INPUT"||ae.tagName==="TEXTAREA")&&e.currentTarget.contains(ae))ae.blur();}} style={{flex:1,overflowY:"auto"}}>{children}</div>
       </div>
     </div>,
     document.body
