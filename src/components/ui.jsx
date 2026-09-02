@@ -65,13 +65,22 @@ function InfoButton({onClick,title="Item info"}){
 // available space, so it falls back to nudging the outer WKWebView content instead, and that bled
 // into a large, bogus `offsetTop` — which a fixed sheet honestly trusted and followed off-screen.
 // `height` alone (still correctly keyboard-aware) is all a non-zooming app ever needs.
+// iOS toggles its QuickType predictive-text bar above the keyboard as the user types, which nudges
+// visualViewport.height by ~40px with no real keyboard transition — and reacting to that (a React
+// re-render of this sheet's position:fixed frame, on an element that also has an active `transform`
+// from the drag-to-dismiss gesture) fights WebKit's compositor on every keystroke, producing a
+// glitch that compounds until the sheet renders nowhere. A genuine keyboard open/close moves height
+// by hundreds of pixels, so only frame updates past this are kept — below it, the height is treated
+// as the same keyboard state and dropped.
+const KEYBOARD_HEIGHT_THRESHOLD = 100;
+
 export function useVisualViewport(){
   const [vv,setVv]=useState(null);
+  const lastHeight=useRef(null);
   useEffect(()=>{
     const v=window.visualViewport;
     if(!v)return;                                  // no support: fall back to the layout viewport
     const sync=()=>{
-      setVv({height:v.height});
       // index.css's html/body overflow:hidden stops the USER from scrolling the document, but not
       // WebKit's own "scroll the focused input above the keyboard" routine — that one is native
       // code, not a wheel/touch gesture, and it can still push document.scrollingElement's scrollTop
@@ -81,8 +90,11 @@ export function useVisualViewport(){
       // all, until something else triggers a repaint. Stomping scroll back to (0,0) on every
       // visualViewport change (which fires exactly when that native nudge happens) denies it
       // anywhere to push the document to, the same way overscroll-behavior:none already denies it
-      // rubber-band room.
+      // rubber-band room. Unconditional — cheap, and unrelated to the height-jitter filtering below.
       window.scrollTo(0,0);
+      if(lastHeight.current!=null && Math.abs(v.height-lastHeight.current)<KEYBOARD_HEIGHT_THRESHOLD) return;
+      lastHeight.current=v.height;
+      setVv({height:v.height});
     };
     sync();
     v.addEventListener("resize",sync);
