@@ -74,7 +74,15 @@ function InfoButton({onClick,title="Item info"}){
 // as the same keyboard state and dropped.
 const KEYBOARD_HEIGHT_THRESHOLD = 100;
 
-export function useVisualViewport(){
+// `noAccessoryBar`: true for a caller that keeps the stock accessory bar suppressed for its whole
+// lifetime (see ModuleBrowserSheet) rather than leaving it on. The correction below exists only to
+// account for that bar, so applying it anyway when there is no bar to account for was pure surplus
+// lag — every correction is a round trip through the native Capacitor bridge, which lands strictly
+// after WebKit's own (synchronous, same-frame) visualViewport resize, so the sheet's frame briefly
+// sized itself off a stale kbHeight while the correction caught up — a frame or two of the real page
+// showing through beneath the sheet on every keyboard show/hide. Skipping the whole native round
+// trip for a caller that has no bar removes that lag source entirely, not just papers over it.
+export function useVisualViewport(noAccessoryBar=false){
   const [vv,setVv]=useState(null);
   const lastHeight=useRef(null);
   // The iPhone accessory bar App.jsx turns on (Keyboard.setAccessoryBarVisible — the "Hide
@@ -107,7 +115,11 @@ export function useVisualViewport(){
       const h=kbHeight.current>0?Math.min(v.height,window.innerHeight-kbHeight.current):v.height;
       if(lastHeight.current!=null && Math.abs(h-lastHeight.current)<KEYBOARD_HEIGHT_THRESHOLD) return;
       lastHeight.current=h;
-      setVv({height:h});
+      // Whether the keyboard currently covers part of the screen, independent of the accessory-bar
+      // correction above — used to skip reserving the home-indicator safe area (env(safe-area-
+      // inset-bottom)) while the keyboard is up, since the keyboard already occupies that strip and
+      // reserving it too just pads the sheet's content away from the keyboard for no reason.
+      setVv({height:h,keyboardOpen:window.innerHeight-h>KEYBOARD_HEIGHT_THRESHOLD});
     };
     sync();
     v.addEventListener("resize",sync);
@@ -115,9 +127,10 @@ export function useVisualViewport(){
     // iPhone only: Android's adjustResize already shrinks window.innerHeight itself when the
     // keyboard opens (see capacitor.config.json / AndroidManifest), so subtracting keyboardHeight
     // from it there would double-count — and setAccessoryBarVisible is a no-op off iOS anyway.
+    // Also skipped entirely for a noAccessoryBar caller — see the note above the export.
     let subs=null;
     const Cap=window.Capacitor;
-    if(Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
+    if(!noAccessoryBar&&Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
       const KB=Cap.Plugins.Keyboard;
       const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
       const onHide=()=>{kbHeight.current=0;sync();};
@@ -125,12 +138,12 @@ export function useVisualViewport(){
         .then(h=>{subs=h;}).catch(()=>{});
     }
     return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
-  },[]);
+  },[noAccessoryBar]);
   return vv;
 }
 
-function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false}){
-  const vv=useVisualViewport();
+function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,headerExtra,footerExtra,dismissRequested=false,noAccessoryBar=false}){
+  const vv=useVisualViewport(noAccessoryBar);
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
@@ -171,7 +184,11 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
           the wanted look for a short utility sheet (e.g. a quantity stepper) — forcing it tall would
           just add dead space below the control. */}
       <div ref={sheetRef} className={`vv-sheet${closing||dragging?"":" vv-sheet-in"}`}
-           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,...(fillHeight?{height:`min(${height}, 100%)`}:{}),display:"flex",flexDirection:"column",overflow:"hidden",paddingBottom:"env(safe-area-inset-bottom, 0px)",
+           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,...(fillHeight?{height:`min(${height}, 100%)`}:{}),display:"flex",flexDirection:"column",overflow:"hidden",
+                   // Skip the home-indicator safe area while the keyboard is up: the keyboard already
+                   // occupies that strip, so reserving it too just pads the footer away from the
+                   // keyboard for no reason — the extra gap a footer search box reported feeling.
+                   paddingBottom:vv?.keyboardOpen?0:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
@@ -576,7 +593,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   },[]);
   return(
     <>
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
+    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested} noAccessoryBar
       headerExtra={
         // Header content, not scroller content: position:sticky here used to fight WebKit's handling
         // of sticky across a transformed ancestor (the sheet itself is always under a transform, for
