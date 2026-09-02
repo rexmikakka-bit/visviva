@@ -558,6 +558,20 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const slotCount=slots[slotType]?.length??0;
   const filledCount=(slots[slotType]??[]).filter(s=>s.type!=="empty").length;
   const ordinal=Math.min(filledCount+1,slotCount);
+  // Cheap alternative to a real native inputAccessoryView (App.jsx's global accessory bar is a
+  // WebKit stock toolbar, not custom Capacitor UI — see the setAccessoryBarVisible source note in
+  // useVisualViewport): the footer search box already sits directly above the keyboard, so leaving
+  // that stock bar on while it's focused just stacks a second ~44px strip for no benefit. Suppress
+  // it only for the duration of this focus, and restore the global default on blur/unmount so every
+  // other input in the app keeps its normal Done/chevron bar.
+  const searchInputRef=useRef(null);
+  const[searchFocused,setSearchFocused]=useState(false);
+  const setAccessoryBar=v=>{
+    const Cap=(typeof window!=="undefined")&&window.Capacitor;
+    if(!Cap?.isNativePlatform?.())return;
+    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:v}); }catch(e){}
+  };
+  useEffect(()=>()=>setAccessoryBar(true),[]);
   return(
     <>
     <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="88vh" fillHeight dismissRequested={dismissRequested}
@@ -582,11 +596,17 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
           <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 12px"}}>
             <span style={{fontSize:16,color:C.textMute}}>&#128269;</span>
-            <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste} placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
+            <input ref={searchInputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={search} onChange={e=>setSearch(e.target.value)} onPaste={onSearchPaste}
+              onFocus={()=>{setSearchFocused(true);setAccessoryBar(false);}} onBlur={()=>{setSearchFocused(false);setAccessoryBar(true);}}
+              placeholder="Search all modules, or paste an abyssal..." style={{flex:1,background:"none",border:"none",color:C.text,fontSize:14}}/>
             {/* padding+negative margin: grows the tap target well past the glyph itself without
                 pushing the search bar's own height out or nudging the input over — the same trick
                 SheetGrabber uses for its drag handle. */}
             {search&&<button onClick={()=>setSearch("")} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+            {/* Stands in for the stock accessory bar's Done/chevron, which is suppressed while this
+                input is focused (see setAccessoryBar above) — without this, focusing the search box
+                would leave no way to collapse the keyboard short of scrolling a long enough list. */}
+            {searchFocused&&<button onClick={()=>searchInputRef.current?.blur()} aria-label="Dismiss keyboard" style={{background:"none",border:"none",color:C.accent,cursor:"pointer",fontSize:20,lineHeight:1,padding:10,margin:-10,marginLeft:0,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>&#8964;</button>}
           </div>
         </div>
       }>
