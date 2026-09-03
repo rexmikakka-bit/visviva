@@ -1,5 +1,5 @@
 // Shared colour palette. Used ~1000 times across the UI — every component imports C from here.
-// C is a live Proxy over structurally-identical palettes (dark/light/amarr/sansha), so every call site
+// C is a live Proxy over structurally-identical palettes (see PALETTES below), so every call site
 // keeps reading real hex/rgba strings exactly as before — including the `${C.border}22`-style
 // alpha-suffix pattern used all over the app — while still tracking the current theme. Call
 // setTheme() to switch; it takes effect on the next read, so pair it with a re-render (see
@@ -55,35 +55,60 @@ const AMARR_PALETTE={
   high:"#b58bf0",mid:"#5b9ae8",low:"#3fc4d4",rig:"#4bc48a",
   offline:"#5a4d3a",online:"#9a8a72",active:"#3fdc9a",overheat:"#f4602a",
 };
-// Sansha: cold violet-tinted near-black under a crimson that has been pushed toward magenta.
+// Sansha: the oxblood of the Nation hulls over a red-tinted near-black.
 //
-// The accent hue (284) sits in the only wide lane the app's semantics leave open. The other nine
-// are spoken for — danger 0, overheat 25, warning 38, success 142, active 155, rig 158, low 188,
-// mid 218, high 255 — so an accent anywhere below 255 lands on a slot colour or a module state, and
-// only 255->360 is free. Straight Sansha crimson would have landed on `danger` at 0, and in a
-// fitting app red already means "over powergrid"; an accent you can't tell from an error is worse
-// than the amber problem Amarr had.
+// This accent knowingly breaks the rule the other palettes follow. Nine semantic hues are spoken
+// for between 0 and 255 — danger 0, overheat 25, warning 38, success 142, active 155, rig 158,
+// low 188, mid 218, high 255 — leaving 255->360 as the only free lane, and this sits at 357, right
+// on top of `danger`. Earlier drafts obeyed the rule (crimson at 338, then purple at 284); neither
+// looked like the ships.
 //
-// Sitting mid-lane rather than at either end is what makes this palette cheap: 76 degrees off
-// `danger` and 29 off the high-slot violet, so every semantic HUE below is the dark palette's,
-// completely unshifted — only `offline`/`online`, which are neutral greys rather than signal
-// colours, are tinted to match the background. Amarr by contrast had to re-space warning, overheat
-// and danger together before its gold would sit next to them.
-// An earlier draft of this theme put the accent at 338, which forced `danger` off pure red to keep
-// them apart; moving to purple made that nudge unnecessary and it was reverted.
+// So the separation here is SATURATION, not hue: 0.34 against danger's 0.84, a muted oxblood beside
+// a vivid alarm red at nearly the same hue AND the same lightness (they differ 1.15:1). That is a
+// weaker signal than any other palette leans on, and it is why `danger` was left at pure #ef4444
+// rather than nudged — every point of saturation it keeps is separation this depends on. Do not
+// "enrich" the accent: saturating it is exactly what collapses the distinction.
 //
-// The near neighbour now is `high` at 255, 29 degrees away. They stay apart on saturation as much
-// as hue — high is a pale lavender, this is saturated — and they rarely meet, since high labels a
-// slot type and the accent is button and link chrome.
+// True maroon could not be the accent at all. Maroon is dark by definition, and everything dark
+// enough to read as one came in under 3:1 on these backgrounds. The depth is recovered a layer
+// down instead — accentLight and accentBorder are mixed from a far deeper oxblood (#8c2f34) than
+// the accent itself, and being a wash and a hairline they carry no contrast duty. A filled accent
+// button is therefore deep oxblood with the lighter dusty tone on top, much closer to the hulls
+// than any single readable colour gets. Darkening and red-tinting the backgrounds is what buys the
+// accent 5.03:1 on rows without lightening it further toward pink.
 const SANSHA_PALETTE={
-  bg:"#0c0a0e",surface:"#17131b",surfaceAlt:"#211b27",border:"#322839",borderStrong:"#453850",
-  text:"#f0ecf2",textMid:"#9d92aa",textMute:"#8b8098",
-  accent:"#bd5ce0",accentLight:"rgba(189,92,224,0.12)",accentBorder:"rgba(189,92,224,0.35)",
+  bg:"#0d0809",surface:"#171012",surfaceAlt:"#20171a",border:"#33262a",borderStrong:"#46343a",
+  text:"#f2ece9",textMid:"#a89a99",textMute:"#948684",
+  accent:"#bd7679",accentLight:"rgba(140,47,52,0.22)",accentBorder:"rgba(168,63,70,0.45)",
   warning:"#f59e0b",danger:"#ef4444",success:"#22c55e",
   high:"#a78bfa",mid:"#4f8ef7",low:"#22d3ee",rig:"#34d399",
-  offline:"#4a4152",online:"#8b8199",active:"#1ded96",overheat:"#f97316",
+  offline:"#4d4042",online:"#8e817f",active:"#1ded96",overheat:"#f97316",
 };
-const PALETTES={dark:DARK_PALETTE,light:LIGHT_PALETTE,amarr:AMARR_PALETTE,sansha:SANSHA_PALETTE};
+// Intaki: cold slate over a blue-black, the quiet one. Where Amarr and Sansha take a free lane on the
+// hue wheel, this takes the most crowded one — 207 sits between `low` at 188 and `mid` at 218 — and it
+// does so knowingly, because the dark palette's accent IS `mid`, the same hex twice. Splitting them is
+// the point of this theme, so the separation is saturation and lightness: 0.49 against their 0.86 and
+// 0.91, a pale steel beside two vivid blues.
+//
+// That pallor is also a floor, not a preference. A deeper accent (#7aa8cc, the obvious "less washed"
+// choice) lands within 1.02 luminance of textMid, and an accent that matches the secondary text
+// colour stops reading as emphasis anywhere it is used as a label. Going lighter than textMid is what
+// buys the emphasis back; do not darken it toward the other blues to make it look richer.
+//
+// Nothing here fights on the warm side — the entire 340->140 arc is unclaimed, which is the exact
+// opposite of Amarr's problem — so warning, danger, overheat and the slot colours are the dark
+// palette's untouched. There is deliberately no DMG_COLORS entry in lib/core.js either: kinetic's cool
+// grey is the one that usually needs warming, and here the BACKGROUND moved cool instead, so the dark
+// damage set already reads correctly and the ??-fallback is the right answer rather than a copy.
+const INTAKI_PALETTE={
+  bg:"#080b11",surface:"#111722",surfaceAlt:"#19212e",border:"#28323f",borderStrong:"#384453",
+  text:"#e9eef5",textMid:"#97a6b8",textMute:"#8395a8",
+  accent:"#8fb8d9",accentLight:"rgba(143,184,217,0.12)",accentBorder:"rgba(143,184,217,0.35)",
+  warning:"#f59e0b",danger:"#ef4444",success:"#22c55e",
+  high:"#a78bfa",mid:"#4f8ef7",low:"#22d3ee",rig:"#34d399",
+  offline:"#4a5566",online:"#7d8b9c",active:"#1ded96",overheat:"#f97316",
+};
+const PALETTES={dark:DARK_PALETTE,light:LIGHT_PALETTE,amarr:AMARR_PALETTE,sansha:SANSHA_PALETTE,intaki:INTAKI_PALETTE};
 let _theme="dark";
 // Guarded against the palette map rather than a literal list, so adding a palette above is the only
 // edit a new theme needs here. An unknown name is ignored, which keeps a stale stored pref from
@@ -93,7 +118,7 @@ function getTheme(){ return _theme; }
 // The pickable set, in the order the settings screen shows it. Derived from PALETTES so a palette
 // added above appears in Settings on its own, rather than existing but being unreachable.
 const THEMES=Object.keys(PALETTES);
-const THEME_LABELS={dark:"Dark",light:"Light",amarr:"Amarr",sansha:"Sansha"};
+const THEME_LABELS={dark:"Dark",light:"Light",amarr:"Amarr",sansha:"Sansha",intaki:"Intaki"};
 const C=new Proxy({},{ get(_,prop){ return PALETTES[_theme][prop]; } });
 
 // Saira, the bundled face (declared in index.css). It is now the app's base family, so spreading this

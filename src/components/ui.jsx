@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
-import { C } from "../theme.js";
+import { C, getTheme } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { metaOf, META_COLORS, META_ORDER } from "../lib/meta.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
@@ -350,7 +350,27 @@ function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
 // Undo/Grouped toolbar, which was previously scrolled away exactly when you needed it.
 // Powergrid red, CPU blue-teal, calibration grey — loosely EVE's own fitting-window colours; PG and
 // CPU were nudged for contrast (PG more saturated, CPU shifted toward teal) rather than kept literal.
-const RESOURCE_COLORS={pg:"#e84f45",cpu:"#50cdf7",cal:"#9898a6"};
+//
+// Per THEME, because these were a single hardcoded triple for a long time and so painted dark-mode
+// colours everywhere. On the other dark palettes that only looked foreign, but on LIGHT it was a real
+// bug: CPU came out at 1.52:1 and calibration at 2.35:1 on a white strip, i.e. bars you cannot see.
+//
+// Deliberately NOT derived from C. The obvious mapping is danger/low/textMid, and `low` is the trap —
+// it is the low-slot label colour, and the strip sits directly above the slot headers, so a cyan CPU
+// bar would be the same cyan as the "Low Slots" heading a few rows down. Slot colours are a semantic
+// the user learns once; this borrows their look, not their meaning. Same table-plus-fallback shape as
+// DMG_COLORS in lib/core.js, and for the same reason: a theme that forgets to add itself here gets
+// dark's readable triple rather than an undefined colour.
+const RESOURCE_COLORS={
+  dark:  {pg:"#e84f45",cpu:"#50cdf7",cal:"#9898a6"},
+  light: {pg:"#c8352c",cpu:"#0d7ea8",cal:"#55555f"},
+  amarr: {pg:"#e8564f",cpu:"#4cc6d8",cal:"#a89880"},
+  sansha:{pg:"#ef5350",cpu:"#4ec8e8",cal:"#a89a99"},
+  intaki:{pg:"#ef5f55",cpu:"#4fc4ec",cal:"#97a6b8"},
+};
+// Read at call time, not module scope: the palettes are live and a theme switch has to be picked up
+// on the next render, same reasoning as C's Proxy.
+const resourceColor=k=>(RESOURCE_COLORS[getTheme()]??RESOURCE_COLORS.dark)[k];
 
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
   // Memoised because this strip is the module browser's header: without it, every keystroke in the
@@ -417,7 +437,7 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
         // Each bar keeps its RESOURCE's colour at all times, so the three columns are told apart at a
         // glance instead of by reading their labels — a bar that changed colour said "something is
         // wrong" without saying which of the three.
-        const barColor=RESOURCE_COLORS[res.key];
+        const barColor=resourceColor(res.key);
         const rem=(res.total??0)-(res.used??0), over=rem<0;
         // The used figure carries the overload instead, and it FADES: the theme's amber the instant
         // you cross, full danger red by 110%. How far over you are is the thing you act on — a few tf

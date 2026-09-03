@@ -355,9 +355,10 @@ const DMG_COLORS={
   // to brown and competed with EM. Explosive is pulled toward red for the same reason the palette's
   // `warning` is: against a gold accent an orange this close to amber reads as a highlight.
   amarr:{em:"#6aa8f0",th:"#ec5a52",kin:"#d6cbb4",exp:"#f4602a"},
-  // Only kinetic differs from dark: its grey picks up the background's violet tint instead of the
-  // dark theme's blue one. The other three need no adjustment against a purple accent.
-  sansha:{em:"#60a5fa",th:"#ef4444",kin:"#c9c3d4",exp:"#f97316"},
+  // Only kinetic differs from dark: its grey is warmed to sit on a red-tinted background, where the
+  // dark theme's cool #cbd5e1 reads as a blue cast. The other three are the dark palette's — thermal
+  // in particular stays at pure #ef4444, which is the same reason `danger` does (see theme.js).
+  sansha:{em:"#60a5fa",th:"#ef4444",kin:"#d0c8c6",exp:"#f97316"},
 };
 // Falls back to dark rather than indexing straight in: this is read on every damage-profile render,
 // and a theme whose author forgot this table would otherwise take the whole app down instead of
