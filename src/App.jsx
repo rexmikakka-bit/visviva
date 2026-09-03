@@ -3,7 +3,7 @@ import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionRes
 import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
-import { C, setTheme } from "./theme.js";
+import { C, THEMES, setTheme } from "./theme.js";
 import { ImportFitSheet } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
 import { ActiveFitBar, FittingsScreen, ShipInfoSheet } from "./components/FittingsScreen.jsx";
@@ -39,10 +39,13 @@ export default function App(){
     if(_bundleReady){_setTick(1);return;}
     _bundleListeners.push(()=>_setTick(t=>t+1));
   },[]);
-  // Theme: defaults to 'dark' with no stored pref, or a manual 'light'/'dark'/'system' pin.
+  // Theme: defaults to 'dark' with no stored pref, or a manual pin to any palette in theme.js.
   // systemTheme tracks the OS live via a matchMedia listener, so flipping it in iOS Settings
   // while the app is open updates immediately under 'system' without a restart.
-  const[themePref,setThemePref]=useState(()=>{try{const v=localStorage.getItem(THEME_PREF_KEY);return(v==="light"||v==="dark"||v==="system")?v:"dark";}catch{return"dark";}});
+  //
+  // Validated against THEMES rather than a literal list so a new palette needs no edit here. Only
+  // 'system' is special: it is not a palette, it defers to the OS, which can only say light or dark.
+  const[themePref,setThemePref]=useState(()=>{try{const v=localStorage.getItem(THEME_PREF_KEY);return(v==="system"||THEMES.includes(v))?v:"dark";}catch{return"dark";}});
   useEffect(()=>{try{localStorage.setItem(THEME_PREF_KEY,themePref);}catch{}},[themePref]);
   const[systemTheme,setSystemTheme]=useState(()=>{try{return window.matchMedia('(prefers-color-scheme: light)').matches?"light":"dark";}catch{return"dark";}});
   useEffect(()=>{
@@ -74,7 +77,9 @@ export default function App(){
       // Capacitor's style names the CONTENT colour, not the background: "DARK" content reads on a
       // light bar, so it's what our dark theme (light content on the OS bar) needs called "LIGHT",
       // and vice versa for the light theme's dark-on-light bar. Confirmed empirically on-device.
-      if(SB){SB.setStyle?.({style:resolvedTheme==="dark"?"DARK":"LIGHT"});SB.setOverlaysWebView?.({overlay:true});}
+      // Tested against "light" rather than "dark" so every palette that isn't the light one gets
+      // light bar content by default — which is what any new dark theme will want.
+      if(SB){SB.setStyle?.({style:resolvedTheme==="light"?"LIGHT":"DARK"});SB.setOverlaysWebView?.({overlay:true});}
       Cap.Plugins?.SplashScreen?.hide?.();
     }catch(e){}
   },[resolvedTheme]);

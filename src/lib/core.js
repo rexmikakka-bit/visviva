@@ -351,12 +351,24 @@ import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/s
 const DMG_COLORS={
   dark: {em:"#60a5fa",th:"#ef4444",kin:"#cbd5e1",exp:"#f97316"},
   light:{em:"#2f6fe0",th:"#dc2626",kin:"#475569",exp:"#c2410c"},
+  // Kinetic goes warm grey rather than the dark theme's cool #cbd5e1, which looks blue-tinted next
+  // to brown and competed with EM. Explosive is pulled toward red for the same reason the palette's
+  // `warning` is: against a gold accent an orange this close to amber reads as a highlight.
+  amarr:{em:"#6aa8f0",th:"#ec5a52",kin:"#d6cbb4",exp:"#f4602a"},
+  // Only kinetic differs from dark: its grey is warmed to sit on a red-tinted background, where the
+  // dark theme's cool #cbd5e1 reads as a blue cast. The other three are the dark palette's — thermal
+  // in particular stays at pure #ef4444, which is the same reason `danger` does (see theme.js).
+  sansha:{em:"#60a5fa",th:"#ef4444",kin:"#d0c8c6",exp:"#f97316"},
 };
+// Falls back to dark rather than indexing straight in: this is read on every damage-profile render,
+// and a theme whose author forgot this table would otherwise take the whole app down instead of
+// showing four slightly-off colours.
+const dmgColor=k=>(DMG_COLORS[getTheme()]??DMG_COLORS.dark)[k];
 const DMG={
-  em: {label:"EM",  get color(){ return DMG_COLORS[getTheme()].em; }},
-  th: {label:"Th",  get color(){ return DMG_COLORS[getTheme()].th; }},
-  kin:{label:"Kin", get color(){ return DMG_COLORS[getTheme()].kin; }},
-  exp:{label:"Exp", get color(){ return DMG_COLORS[getTheme()].exp; }},
+  em: {label:"EM",  get color(){ return dmgColor("em"); }},
+  th: {label:"Th",  get color(){ return dmgColor("th"); }},
+  kin:{label:"Kin", get color(){ return dmgColor("kin"); }},
+  exp:{label:"Exp", get color(){ return dmgColor("exp"); }},
 };
 // Proxy, not a plain object: values must be read live off C (itself a live Proxy) so a theme
 // switch is picked up instead of freezing at whatever C.offline/etc. resolved to on first import.
