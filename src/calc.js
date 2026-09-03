@@ -12,7 +12,7 @@
  * so App.jsx requires no modifications.
  */
 
-import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES } from './dogma-engine-init.js';
+import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES, setTrace } from './dogma-engine-init.js';
 import alphaCloneData from './data/alpha-clone.json' with { type: 'json' };
 // Attribute ID → name map (inverse of AID), for abyssal/mutaplasmid attribute resolution.
 export const ATTR_ID_TO_NAME = {};
@@ -1748,7 +1748,55 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   return { reps, caps, webs, neuts, painters, scrams, damps, sensorBoosts, trackDisr, guideDisr, ecm };
 }
 
+/**
+ * Public entry point. Delegates to the real implementation and hangs an on-demand provenance hook
+ * off each fitted item — see attachRetrace.
+ */
 export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
+  const cs = _calcFitStats(ship, slots, drones, skills, opts);
+  if (cs) attachRetrace(cs, [ship, slots, drones, skills, opts]);
+  return cs;
+}
+
+/**
+ * Gives every fitted item a `_retrace()` returning its twin from a TRACED recompute, whose
+ * `attrs.explain(attr)` names the modifiers behind each value.
+ *
+ * On demand rather than always-on because tracing measured ~15% on a full stats pass (+2.2 ms on a
+ * desktop, and this recomputes on every keystroke of a mutaplasmid slider — already the laggiest
+ * interaction in the app). The breakdown is read when someone taps a row, so it is not worth a
+ * permanent tax on every recalculation to have it sitting ready.
+ *
+ * The recompute is memoised on the closure, so opening five rows on four different modules still
+ * costs exactly one extra pass, and it is discarded with the stats object it belongs to — which
+ * happens on any edit to the fit, so a stale breakdown cannot outlive the numbers it explains.
+ */
+function attachRetrace(cs, args) {
+  let traced;
+  const run = () => {
+    if (traced === undefined) {
+      setTrace(true);
+      // finally, not a trailing call: an exception here would otherwise leave tracing on for the
+      // rest of the session and quietly impose the cost this whole design exists to avoid.
+      try { traced = _calcFitStats(...args); } finally { setTrace(false); }
+    }
+    return traced;
+  };
+  const wire = (map, pick) => {
+    for (const [key, item] of map) {
+      item._retrace = () => pick(run())?.get(key) ?? null;
+      // A charge has no map of its own — it is reachable only through the module holding it, and the
+      // charge panel is handed the charge rather than that module. Wired here and not as a side
+      // effect of the launcher's _retrace, which would make it depend on the order the two panels
+      // happen to be opened in.
+      if (item._charge) item._charge._retrace = () => pick(run())?.get(key)?._charge ?? null;
+    }
+  };
+  wire(cs.fittedItems, t => t?.fittedItems);
+  wire(cs.fittedDrones, t => t?.fittedDrones);
+}
+
+function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
   if (!ship || !slots) return null;
 
   const sk = { ...SKILL_DEFAULTS, ...skills };

@@ -19,7 +19,7 @@
  */
 
 import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
-import { typeIDByName } from './dogma-engine-init.js';
+import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
@@ -5114,6 +5114,126 @@ Agency 'Overclocker' SB7 Dose III
         cloakedVel('Syndicate Cloaking Device'), 171, 0.005);
   check('blackops', 'Covert Ops Cloaking Device II: no penalty -> role-bonus speed boost',
         cloakedVel('Covert Ops Cloaking Device II'), 1706, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12g. ATTRIBUTE PROVENANCE: explain() decomposes a value into the modifiers behind it.
+//
+// The attribute panel shows, under a changed value, every modifier that moved it and the multiplier
+// each one contributed. Two independent things have to hold for that display to be honest, and both
+// are pinned here:
+//
+//   1. base × Π rows.mult === final, EXACTLY. explain() does not read applyStacking's output; it
+//      re-derives the per-modifier terms in stackingTerms(), a deliberate second implementation of
+//      the same partition/sort/factor rules (applyStacking runs on every attribute read of every
+//      item and must not carry provenance machinery). Nothing but this check stops the two from
+//      drifting — a wrong sort order still produces plausible-looking rows that no longer multiply
+//      back, which is the failure mode that would ship a confidently wrong breakdown.
+//
+//   2. Every row names its source. A row with no source renders as "Other", so this is the gate on
+//      the source threading: a new modifier path added without a descriptor shows up here rather
+//      than as a silent gap in the panel.
+//
+// And the perf contract, which is the third thing that can regress invisibly: tracing is OFF unless
+// calc.js's attachRetrace turns it on around one recompute. If a stray setTrace(true) survives, every
+// calculate() in the app pays ~15% forever and nothing else in the suite would notice.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nATTRIBUTE PROVENANCE (explain() decomposition + source coverage)');
+  let _sn = 0;
+  const MI = (name, state, ammo) => ({ id: `p${_sn++}`, typeID: tid(name), state, ammo });
+
+  const FITS = [
+    ['Rupture', { high: Array(5).fill(0).map(() => MI('425mm AutoCannon II', 'active', 'Republic Fleet EMP M')),
+      mid: [MI('Tracking Computer II', 'active')],
+      low: [MI('Gyrostabilizer II','active'), MI('Gyrostabilizer II','active'), MI('Gyrostabilizer II','active')],
+      rigs: [MI('Medium Projectile Burst Aerator I','online')] }, []],
+    ['Caracal', { high: Array(5).fill(0).map(() => MI('Heavy Missile Launcher II','active','Scourge Fury Heavy Missile')),
+      mid: [MI('Large Shield Extender II','online')],
+      low: [MI('Ballistic Control System II','active'), MI('Ballistic Control System II','active')], rigs: [] }, []],
+    ['Abaddon', { high: Array(8).fill(0).map(() => MI('Mega Pulse Laser II','active','Conflagration L')),
+      mid: [MI('Cap Recharger II','online')],
+      low: [MI('Heat Sink II','active'), MI('Heat Sink II','active'), MI('Damage Control II','active')], rigs: [] }, []],
+    ['Vargur', { high: Array(4).fill(0).map(() => MI('800mm Repeating Cannon II','overheated','Republic Fleet EMP L')),
+      mid: [MI('Large Shield Booster II','overheated')],
+      low: [MI('Gyrostabilizer II','active')], rigs: [] }, []],
+    ['Ishtar', { high: [], mid: [MI('10MN Afterburner II','active')],
+      low: [MI('Drone Damage Amplifier II','active'), MI('Drone Damage Amplifier II','active')], rigs: [] },
+      [{ id: 'pd0', typeID: tid('Ogre II'), qty: 5, active: true }]],
+    // Mining crystals are the only fit here that reaches the ModAdd and PostAssignment branches of
+    // explain(); without a Hulk in the sweep those two row kinds are written but never executed.
+    ['Hulk', { high: [MI('Modulated Strip Miner II','active','Simple Asteroid Mining Crystal Type A II')],
+      mid: [], low: [], rigs: [] }, []],
+  ];
+
+  let checked = 0, worst = 0, unattributed = 0, adds = 0, assigns = 0;
+  for (const [ship, fit, drones] of FITS) {
+    const cs = calcFitStats({ typeID: tid(ship), name: ship }, fit, drones, null, {});
+    for (const it of [...cs.fittedItems.values(), ...cs.fittedDrones.values()]) {
+      const t = it._retrace(); if (!t) continue;
+      for (const o of [t, t._charge].filter(Boolean)) {
+        for (const n of Object.keys(o._td.a ?? {})) {
+          const ex = o.attrs.explain(n); if (!ex?.rows.length) continue;
+          checked++;
+          if (!ex.covered) unattributed++;
+          for (const r of ex.rows) { if (r.add != null) adds++; if (r.assigns) assigns++; }
+          // An add onto a base of zero has no multiplicative form at all (mult is null there), so the
+          // chain is genuinely not a product and there is nothing to assert. The panel still renders
+          // that row correctly, as the flat "+N" it really is.
+          if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+          const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+          // maxAttributeID clamps AFTER the chain, so on a capped attribute the product legitimately
+          // overshoots the printed value and there is no identity to assert.
+          if (ex.capped && prod > ex.final) continue;
+          worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+        }
+      }
+    }
+  }
+  console.log(`  (swept ${checked} modified attributes across ${FITS.length} fits, worst drift ${worst.toExponential(2)})`);
+  check('provenance', 'swept a meaningful number of attrs', checked > 150 ? 1 : 0, 1, 0);
+  // Float noise only — the terms are recomputed, not re-read, so anything above this is a real
+  // divergence between stackingTerms and applyStacking rather than rounding.
+  check('provenance', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('provenance', 'every modifier row names a source', unattributed, 0, 0);
+  check('provenance', 'ModAdd rows exercised', adds > 0 ? 1 : 0, 1, 0);
+  check('provenance', 'PostAssignment rows exercised', assigns > 0 ? 1 : 0, 1, 0);
+
+  // The stacking penalty is the reason to build this feature at all: EVE tells a player a
+  // Gyrostabilizer II is +10% damage and never tells them the third one is not. exp(-(rank^2)/7.1289)
+  // for ranks 0..2 = 1, 0.869120, 0.570583, so the third gives +5.706%, not +10%.
+  const gyros = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, FITS[0][1], [], null, {});
+  const dm = gyros.fittedItems.get('p0')._retrace().attrs.explain('damageMultiplier');
+  const pen = (dm?.rows ?? []).filter(r => r.source?.name === 'Gyrostabilizer II');
+  check('provenance', 'three Gyros listed separately', pen.length, 3, 0);
+  // Optional chaining so that losing the source labels reports as three failed checks rather than a
+  // stack trace out of the suite — a broken descriptor is a regression to read, not a crash.
+  check('provenance', 'first Gyro unpenalised', pen[0]?.mult, 1.1, 1e-9);
+  check('provenance', 'second Gyro at 86.912%', pen[1]?.mult, 1.0869119980800398, 1e-9);
+  check('provenance', 'third Gyro at 57.058%', pen[2]?.mult, 1.0570583143510561, 1e-9);
+  // The raw value survives alongside the effective one, so the panel can say "+10% at 57%" rather
+  // than only showing a number the player cannot reconcile with the module's own tooltip.
+  check('provenance', 'raw modifier kept beside effective', pen[2]?.raw, 1.1, 1e-9);
+
+  // Tracing is a global; a leak makes every calculate() in the app slower with no other symptom.
+  check('provenance', 'tracing off after a normal calc', tracing() ? 1 : 0, 0, 0);
+  const cold = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, FITS[0][1], [], null, {});
+  check('provenance', 'untraced explain() returns null',
+        cold.fittedItems.get('p0').attrs.explain('damageMultiplier') === null ? 1 : 0, 1, 0);
+  cold.fittedItems.get('p0')._retrace();
+  check('provenance', 'tracing off again after a retrace', tracing() ? 1 : 0, 0, 0);
+  // The traced twin must agree with the value actually on screen, or the breakdown explains a number
+  // the user is not looking at.
+  check('provenance', 'traced twin matches untraced value',
+        cold.fittedItems.get('p0')._retrace().attrs.get('damageMultiplier'),
+        cold.fittedItems.get('p0').attrs.get('damageMultiplier'), 1e-12);
+
+  // A charge panel can be opened without its launcher's panel ever being opened. The hook is wired
+  // at attach time rather than as a side effect of the launcher's _retrace precisely so that the
+  // order the two panels happen to be opened in cannot matter.
+  const fresh = calcFitStats({ typeID: tid('Abaddon'), name: 'Abaddon' }, FITS[2][1], [], null, {});
+  const ammo = [...fresh.fittedItems.values()].find(i => i._charge)?._charge?._retrace?.();
+  check('provenance', 'charge retraces without its launcher first', ammo?._td?.n, 'Conflagration L');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

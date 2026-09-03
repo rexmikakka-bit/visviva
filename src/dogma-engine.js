@@ -148,6 +148,40 @@ function applyStacking(base, mods, aid) {
   return v;
 }
 
+// Same partition, sort and factor assignment as applyStacking, but carrying each modifier's source
+// alongside and returning the per-modifier terms instead of their product.
+//
+// It is a SEPARATE function on purpose. applyStacking runs on every attribute read of every item on
+// every calculate(); making it optionally emit provenance would put an allocation and a branch in the
+// hottest loop in the engine to serve a panel that is open a fraction of a percent of the time.
+// The duplication is the price, and the decomposition check in the regression suite is what keeps the
+// two honest about the sort order — a divergence there shows up as rows that do not multiply back.
+//
+// Exact, not approximate: applyStacking's result is a PRODUCT of independent per-modifier terms
+// (1 + (m-1)*factor(rank)), so a modifier's effective multiplier is a real quantity and not a share
+// apportioned after the fact. That is what makes "this second Tracking Enhancer is only giving you
+// +17.4%, not +20%" a statement about the engine rather than a rationalisation of it.
+function stackingTerms(mods, srcs, aid) {
+  const wrap = mods.map((m, i) => ({ mult: m, src: srcs?.[i] ?? null }));
+  if (isStackable(aid)) return wrap.map(w => ({ ...w, factor: 1, effective: w.mult }));
+  const hi = highIsGood(aid);
+  const bonuses   = wrap.filter(w => hi ? w.mult > 1 : w.mult < 1).sort((a,b) => hi ? b.mult-a.mult : a.mult-b.mult);
+  const penalties = wrap.filter(w => hi ? w.mult < 1 : w.mult > 1).sort((a,b) => hi ? a.mult-b.mult : b.mult-a.mult);
+  const out = [];
+  for (const [rank, w] of bonuses.entries())   out.push({ ...w, factor: stackingFactor(rank), effective: 1 + (w.mult-1)*stackingFactor(rank) });
+  for (const [rank, w] of penalties.entries()) out.push({ ...w, factor: stackingFactor(rank), effective: 1 + (w.mult-1)*stackingFactor(rank) });
+  // A modifier of exactly 1 is in neither partition (it is not a bonus and not a penalty) and so
+  // takes no slot — matching applyStacking, which likewise multiplies it into neither loop.
+  return out;
+}
+
+// Provenance recording. OFF by default: with it off, applyMod does one boolean test and allocates
+// nothing, so a calculate() costs exactly what it did before. calc.js turns it on around the single
+// recompute that backs the attribute panel's breakdown — see traceFitStats there.
+let _trace = false;
+function setTrace(on) { _trace = !!on; }
+function tracing() { return _trace; }
+
 // ─── AttrMap ──────────────────────────────────────────────────────────────────
 class AttrMap {
   constructor(baseAttrs) {
@@ -168,6 +202,22 @@ class AttrMap {
                          //   RoF + overload RoF penalise vs each other but NOT vs the main op4/op6 pool.
     this._mul   = {};   // attrID → direct multipliers (skills, hull bonuses, implants)
     this._force = {};   // attrID → forced post-value (PostAssignment)
+    // Provenance, only populated while tracing (see setTrace). `_src` mirrors the PENALISED pools
+    // index-for-index — _src.post0[aid][i] is the source of _post0[aid][i] — because those pools keep
+    // their members as separate array entries, so alignment is the whole record. The unpenalised
+    // routes (_add, _mul, direct op0 into _base) collapse their members into one running scalar and
+    // cannot be mirrored that way, so each keeps its own list of contributions instead.
+    //
+    // Written by applyMod at the exact moment of the corresponding push, never reconstructed
+    // afterwards: anything that re-derived "which modifiers were these" from the final numbers would
+    // be a second implementation of the routing rules above, free to disagree with the first.
+    this._src = null;
+  }
+
+  // Lazily built so a non-tracing calculate() never allocates it.
+  _srcBucket(pool, aid) {
+    const s = (this._src ??= {});
+    return ((s[pool] ??= {})[aid] ??= []);
   }
 
   // Override a base attribute value (used for abyssal/mutated modules). Modifiers still apply on top.
@@ -182,9 +232,15 @@ class AttrMap {
   // Called by the engine to apply one modifier value
   // direct=true: bypass stacking penalty (skills, hull bonuses, implants, boosters)
   // direct=false: use stacking penalty pool (modules)
-  applyMod(attrID, op, value, direct = false, penaltyGroup = null) {
+  // `source` is provenance only — a {name, kind} descriptor for the attribute panel's breakdown. It
+  // never affects routing or arithmetic, and is ignored entirely unless setTrace(true) is in force.
+  applyMod(attrID, op, value, direct = false, penaltyGroup = null, source = null) {
     const aid = Number(attrID);
     if (value == null || isNaN(value)) return;
+    // `before` is only passed by the baseMul route, which multiplies _base IN PLACE — by the time
+    // explain() runs there is no way to recover the pre-modifier base from the pools, and dividing it
+    // back out breaks on a multiplier of zero.
+    const rec = _trace ? (pool, mult, before) => this._srcBucket(pool, aid).push({ source, op, value, mult, before }) : null;
     // eos penaltyGroup='postPerc': a self-contained penalised group (mode-module RoF + overload RoF).
     // Its members penalise against EACH OTHER but not against the main op4/op6 pool. Convert the op to
     // a raw multiplier and stash it; get() stacks this pool separately.
@@ -193,42 +249,46 @@ class AttrMap {
       if (op === 6) mult = 1 + value / 100;
       else if (op === 4) mult = value;
       else if (op === 5 && value !== 0) mult = 1 / value;
-      if (mult != null) { (this._postPerc[aid] ??= []).push(mult); return; }
+      if (mult != null) { (this._postPerc[aid] ??= []).push(mult); rec?.('postPerc', mult); return; }
     }
     switch (op) {
       case -1: // PreAssignment
-        this._pre[aid] = value; break;
+        this._pre[aid] = value; rec?.('pre', null); break;
       case 0:  // PreMul
         // direct=true  → _base (skills, hull, implants — not stacking-penalised)
         // direct=false → _post0 (separate stacking pool for op=0 module effects)
         //   DC II + Bastion stack with each other (both op=0), but NOT with
         //   hardeners (op=6, which go to _post). EVE keeps these pools separate.
         if (direct) {
-          this._base[aid] = (this._base[aid] ?? attrDefault(aid)) * value;
+          const before = this._base[aid] ?? attrDefault(aid);
+          this._base[aid] = before * value;
+          rec?.('baseMul', value, before);
         } else {
           (this._post0[aid] ??= []).push(value);
+          rec?.('post0', value);
         }
         break;
       case 2:  // ModAdd
-        this._add[aid] = (this._add[aid] ?? 0) + value; break;
+        this._add[aid] = (this._add[aid] ?? 0) + value; rec?.('add', value); break;
       case 3:  // ModSub
-        this._add[aid] = (this._add[aid] ?? 0) - value; break;
+        this._add[aid] = (this._add[aid] ?? 0) - value; rec?.('add', -value); break;
       case 4:  // PostMul → separate _post4 pool from op=6 PostPercent
-        if (direct) this._mul[aid] = (this._mul[aid] ?? 1) * value;
-        else (this._post4[aid] ??= []).push(value); break;
+        if (direct) { this._mul[aid] = (this._mul[aid] ?? 1) * value; rec?.('mul', value); }
+        else { (this._post4[aid] ??= []).push(value); rec?.('post4', value); } break;
       case 5:  // PostDiv
         if (value !== 0) {
-          if (direct) this._mul[aid] = (this._mul[aid] ?? 1) / value;
-          else (this._post[aid] ??= []).push(1 / value);
+          if (direct) { this._mul[aid] = (this._mul[aid] ?? 1) / value; rec?.('mul', 1 / value); }
+          else { (this._post[aid] ??= []).push(1 / value); rec?.('post', 1 / value); }
         } break;
       case 6:  // PostPercent (+value%)
-        if (direct) {          this._mul[aid] = (this._mul[aid] ?? 1) * (1 + value / 100);
+        if (direct) {          this._mul[aid] = (this._mul[aid] ?? 1) * (1 + value / 100); rec?.('mul', 1 + value / 100);
         } else {
           (this._post[aid] ??= []).push(1 + value / 100);
+          rec?.('post', 1 + value / 100);
         }
         break;
       case 7:  // PostAssignment
-        this._force[aid] = value; break;
+        this._force[aid] = value; rec?.('force', null); break;
       // op 9 = skill-level tracking, no-op
     }
   }
@@ -309,6 +369,99 @@ class AttrMap {
       : (/^\d+$/.test(attrIDorName) ? Number(attrIDorName)
          : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName)));
     return this._base[aid] ?? attrDefault(aid);
+  }
+
+  /**
+   * Which modifiers moved this attribute, and by how much each.
+   *
+   * Returns null unless the value was computed under setTrace(true) — an untraced AttrMap has no
+   * provenance to report, and returning an empty breakdown instead would be indistinguishable from
+   * "genuinely nothing modified this".
+   *
+   * Shape: { base, final, rows: [{ source, kind, mult, factor, penalised }], covered }
+   *
+   *   base × Π rows.mult === final
+   *
+   * That identity is the contract, and section 9c of the regression suite asserts it. It holds
+   * because every route out of applyMod is either a flat add folded into the base, or a multiplier —
+   * and applyStacking's output is a PRODUCT of per-modifier terms, so a penalised modifier has a
+   * real effective multiplier rather than a share invented after the fact. `factor` is the stacking
+   * factor it was charged (1 when it took the first slot or the attribute is exempt), which is the
+   * number that answers "why is my second hardener doing so little".
+   *
+   * `covered` is false when a modifier reached this attribute from a call site that does not pass a
+   * source yet — the custom handlers in _runCustomHandlers, and the fighter/skill bonuses calc.js
+   * applies by hand. The rows still multiply out correctly (an unattributed modifier is listed with
+   * a null source), so the identity holds; `covered` exists so the UI can say "and something else"
+   * rather than quietly presenting a partial list as complete.
+   */
+  explain(attrIDorName) {
+    if (!this._src) return null;
+    const aid = typeof attrIDorName === 'number'
+      ? attrIDorName
+      : (/^\d+$/.test(attrIDorName) ? Number(attrIDorName)
+         : (AID[attrIDorName] != null ? AID[attrIDorName] : Number(attrIDorName)));
+    const s = this._src;
+    const at = (pool) => s[pool]?.[aid] ?? [];
+    const rows = [];
+    const push = (e, extra) => rows.push({ source: e.source, op: e.op, value: e.value, ...extra });
+
+    // PostAssignment wins over everything, exactly as _resolve returns early on it. Last writer wins
+    // there (a plain assignment), so it is the last recorded entry that is actually in force.
+    const forced = at('force');
+    if (forced.length) {
+      const win = forced[forced.length - 1];
+      return { base: this._force[aid], final: this.get(aid), assigned: true,
+               rows: [{ source: win.source, op: win.op, value: win.value, mult: 1, factor: 1, penalised: false, assigns: true }],
+               covered: win.source != null };
+    }
+
+    // Base. PreAssignment replaces it outright; otherwise it is the type's own value stepped through
+    // each direct PreMul, then the flat adds. `before` on the first baseMul is the only surviving
+    // record of the pre-modifier base — see the note in applyMod.
+    const baseMuls = at('baseMul');
+    const pres = at('pre');
+    // The value the chain STARTS from, so that base × Π rows.mult === final. Not the same as
+    // getBase(), which reports _base AFTER the direct PreMuls have already been folded into it.
+    const base = pres.length ? this._pre[aid]
+               : (baseMuls.length ? baseMuls[0].before : (this._base[aid] ?? attrDefault(aid)));
+    if (pres.length) {
+      const win = pres[pres.length - 1];
+      push(win, { mult: 1, factor: 1, penalised: false, assigns: true });
+    } else {
+      for (const e of baseMuls) push(e, { mult: e.mult, factor: 1, penalised: false });
+    }
+
+    // Flat adds land on the base, so they have no multiplier of their own. Each is expressed as the
+    // ratio the running total moved by, which keeps the whole breakdown a single chain of multipliers
+    // — a mixed list of "+50" and "×1.2" rows cannot be multiplied back and checked. `add` carries
+    // the flat amount so the UI can still print "+50" rather than a meaningless ×1.043.
+    let running = base;
+    for (const e of at('add')) {
+      const next = running + e.mult;
+      push(e, { mult: running === 0 ? null : next / running, factor: 1, penalised: false, add: e.mult });
+      running = next;
+    }
+
+    const emit = (terms, penalised) => { for (const t of terms) {
+      rows.push({ source: t.src, mult: t.effective, factor: t.factor, penalised, raw: t.mult });
+    } };
+    emit(stackingTerms(this._post0[aid] ?? [], at('post0').map(e => e.source), aid), true);
+    // op4 and op6 share one pool, and _resolve concatenates them in that order — the sources must be
+    // concatenated the same way or every term is attributed to the wrong modifier.
+    emit(stackingTerms([...(this._post4[aid] ?? []), ...(this._post[aid] ?? [])],
+                       [...at('post4').map(e => e.source), ...at('post').map(e => e.source)], aid), true);
+    for (const e of at('mul')) push(e, { mult: e.mult, factor: 1, penalised: false });
+    emit(stackingTerms(this._postPerc[aid] ?? [], at('postPerc').map(e => e.source), aid), true);
+
+    // Null source = a modifier that arrived from a call site not yet threaded (the custom handlers,
+    // and the bonuses calc.js applies by hand). The row still carries a correct multiplier, so the
+    // identity holds either way; `covered` is what lets the UI admit the list is incomplete rather
+    // than presenting a partial one as the whole story.
+    const covered = rows.every(r => r.source != null);
+    // A capped attribute (maxAttributeID) is clamped AFTER the chain, so on a fit that hits the cap
+    // the product legitimately overshoots `final`. Callers checking the identity have to allow for it.
+    return { base, final: this.get(aid), assigned: false, rows, covered, capped: !!ATTRS[aid]?.x };
   }
 }
 
@@ -647,10 +800,14 @@ export class Fit {
     for (const m of this._modules) {
       if (m.state === 'offline' || !m._charge) continue;
       const ca = m._charge._td?.a ?? {};
+      // Every modifier below comes from the loaded charge, not from the module, so they all share
+      // one descriptor — "Conflagration L" is what a player needs to see next to a laser's raised
+      // capacitor need, and the module's own name there would explain nothing.
+      const cs = _trace ? { name: m._charge._td?.n ?? 'Charge', kind: 'charge' } : null;
       for (const [name, val] of Object.entries(ca)) {
         if (val == null || isNaN(val)) continue;
         if (name === 'sensorStrengthBonusBonus') {
-          for (const t of SENSOR_STRENGTH_TARGETS) { const aid = AID[t]; if (aid != null) m.attrs.applyMod(aid, 6, val, true); }
+          for (const t of SENSOR_STRENGTH_TARGETS) { const aid = AID[t]; if (aid != null) m.attrs.applyMod(aid, 6, val, true, null, cs); }
           continue;
         }
         // Crystals/ammo modify their PARENT MODULE via effects with domain "otherID" (charge -> module).
@@ -659,7 +816,7 @@ export class Fit {
         // Revelation Navy Issue drained 165.9 GJ/s instead of pyfa's 178.
         if (name === 'capNeedBonus') {
           const aid = AID['capacitorNeed'];
-          if (aid != null) m.attrs.applyMod(aid, 6, val, true);
+          if (aid != null) m.attrs.applyMod(aid, 6, val, true, null, cs);
           continue;
         }
         // Mining crystals are the same shape (Effect1200, all three modifiers domain otherID): the
@@ -669,23 +826,23 @@ export class Fit {
         // number. pyfa's multiplyItemAttr/increaseItemAttr pass no stacking flag → unpenalised.
         if (name === 'specializationAsteroidYieldMultiplier') {
           const aid = AID['miningAmount'];
-          if (aid != null) m.attrs.applyMod(aid, 4, val, true);
+          if (aid != null) m.attrs.applyMod(aid, 4, val, true, null, cs);
           continue;
         }
         if (name === 'specializationCrystalMiningWastedVolumeMultiplierBonus') {
           const aid = AID['miningWastedVolumeMultiplier'];
-          if (aid != null) m.attrs.applyMod(aid, 2, val, true);
+          if (aid != null) m.attrs.applyMod(aid, 2, val, true, null, cs);
           continue;
         }
         if (name === 'specializationCrystalMiningWasteProbabilityBonus') {
           const aid = AID['miningWasteProbability'];
-          if (aid != null) m.attrs.applyMod(aid, 2, val, true);
+          if (aid != null) m.attrs.applyMod(aid, 2, val, true, null, cs);
           continue;
         }
         const mm = name.match(/^(.+Bonus)Bonus$/);
         if (!mm) continue;
         const targetAid = AID[mm[1]];
-        if (targetAid != null) m.attrs.applyMod(targetAid, 6, val, true);
+        if (targetAid != null) m.attrs.applyMod(targetAid, 6, val, true, null, cs);
       }
     }
 
@@ -782,7 +939,10 @@ export class Fit {
         for (const bonusAttr of bonusAttrs) {
           if (!(bonusAttr in (mi._td?.a ?? {}))) continue;
           const aid = AID[bonusAttr];
-          if (aid != null) mi.attrs.applyMod(aid, 4, setProduct, true);
+          // Named for the SET, not for `mi` — the bonus is the product across every member, so
+          // attributing it to the one implant it happens to be landing on would misdescribe it.
+          if (aid != null) mi.attrs.applyMod(aid, 4, setProduct, true, null,
+            _trace ? { name: 'Implant set bonus', kind: 'implantSet' } : null);
         }
       }
     }
@@ -792,6 +952,7 @@ export class Fit {
     const env = this._environment;
     if (!env) return;
     const OP = { mul: 4, boost: 6, inc: 2 };   // PostMul / PostPercent / ModAdd
+    const source = _trace ? { name: env._td?.n ?? 'System effect', kind: 'env' } : null;
     for (const eid of (env.effectIDs ?? [])) {
       for (const op of (SYSTEM_EFFECTS[eid] ?? SYSTEM_EFFECTS[String(eid)] ?? [])) {
         // Warfare-buff beacons (Pochven, insurgency) hand buffs to the fit like a command burst.
@@ -819,20 +980,39 @@ export class Fit {
           if (f.hasAttr) return f.hasAttr in (item._td?.a ?? {});
           return false;
         };
-        if (op.t === 'ship') { this.ship.attrs.applyMod(aid, OP[op.op], val, direct); continue; }
+        if (op.t === 'ship') { this.ship.attrs.applyMod(aid, OP[op.op], val, direct, null, source); continue; }
         const coll = op.t === 'drones' ? this._drones : this._modules;
         for (const it of coll) {
           if (op.t === 'charges') {
             // filtered on the CHARGE, applied to the CHARGE
-            if (it._charge && match(it._charge)) it._charge.attrs.applyMod(aid, OP[op.op], val, direct);
+            if (it._charge && match(it._charge)) it._charge.attrs.applyMod(aid, OP[op.op], val, direct, null, source);
           } else if (match(it)) {
-            it.attrs.applyMod(aid, OP[op.op], val, direct);
+            it.attrs.applyMod(aid, OP[op.op], val, direct, null, source);
           }
         }
         // 'fighters' ops are dropped here on purpose: the engine has no fighter collection —
         // calc.js computes fighters from raw type data — so there is nothing to modify.
       }
     }
+  }
+
+  // Provenance descriptor for whatever is applying an effect, for the attribute panel's breakdown.
+  // Built once per effect rather than per modifier, and only while tracing.
+  //
+  // `kind` exists because the NAME alone is often ambiguous in the one place this is read: a hull
+  // bonus and the hull's own base attributes both say "Phantasm", and an overheat bonus would
+  // otherwise be listed as the module modifying itself, which reads as nonsense next to that same
+  // module's name in the panel header.
+  _sourceOf(src, skillLevel) {
+    const name = src?._td?.n ?? String(src?.typeID ?? '?');
+    if (skillLevel != null) return { name, kind: 'skill', level: skillLevel };
+    if (src === this.ship) return { name, kind: 'hull' };
+    if (src === this._shipMode) return { name, kind: 'mode' };
+    if (this._boosterSet?.has(src)) return { name, kind: 'booster' };
+    if (this._implants.includes(src)) return { name, kind: 'implant' };
+    if (this._subsystems.includes(src)) return { name, kind: 'subsystem' };
+    if (this._drones.includes(src)) return { name, kind: 'drone' };
+    return { name, kind: 'module' };
   }
 
   // ── Internal: apply one effect from a source item ───────────────────────────
@@ -993,6 +1173,12 @@ export class Fit {
       // main op4/op6 pool); everything else uses the ordinary direct/penalised routing.
       const pg = postPercGroup ? 'postPerc' : null;
 
+      // An overheat bonus comes from the module itself, so the plain descriptor would list a module as
+      // its own modifier. It is really the HEAT that is doing it, and saying so is what makes the
+      // difference between an overheated row and a cold one legible.
+      const source = !_trace ? null
+        : (OVERHEAT_SRC.has(srcAttr) ? { name: 'Overheating', kind: 'heat' } : this._sourceOf(src, skillLevel));
+
       // Apply to the correct target(s)
       if (func === 'ItemModifier') {
         // domain=shipID → target is ship; domain=itemID → target is src itself
@@ -1007,9 +1193,9 @@ export class Fit {
         if (domain === 'shipID' && skillLevel != null && _isStructureFit) {
           // skip: skill → structure's own hull attribute
         } else if (domain === 'shipID') {
-          this.ship.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+          this.ship.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
         } else if (domain === 'itemID') {
-          src.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+          src.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
         } else if (domain === 'charID') {
           // skill → char attr; not used for fitting stats
         } else if (domain === 'otherID') {
@@ -1019,15 +1205,15 @@ export class Fit {
       } else if (func === 'LocationModifier') {
         // Applies to all modules (+ subsystems/ship-mode, which are location items too)
         if (domain === 'shipID') {
-          for (const m of this._modules) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
-          for (const s of this._subsystems) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
-          if (this._shipMode) this._shipMode.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+          for (const m of this._modules) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
+          for (const s of this._subsystems) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
+          if (this._shipMode) this._shipMode.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
         }
 
       } else if (func === 'LocationGroupModifier') {
         if (domain === 'shipID') {
           for (const m of this._modules) {
-            if (Number(m.groupID) === Number(groupID)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+            if (Number(m.groupID) === Number(groupID)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
           }
           // Loaded charges are location items too, and some hull bonuses target the CHARGE's group
           // rather than the module's — e.g. the Minokawa's Force Auxiliary C5 bonus (Effect12835)
@@ -1036,13 +1222,13 @@ export class Fit {
           // the bonus silently no-ops and cap-booster injection is understated.
           for (const m of this._modules) {
             if (m._charge && Number(m._charge.groupID) === Number(groupID)) {
-              m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+              m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
             }
           }
           // Subsystems are group-filtered location items too: a subsystem skill scales the
           // subsystem's own bonus attrs (e.g. Minmatar Offensive Systems → group 956 bonus2).
           for (const s of this._subsystems) {
-            if (Number(s.groupID) === Number(groupID)) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+            if (Number(s.groupID) === Number(groupID)) s.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
           }
         }
 
@@ -1060,13 +1246,13 @@ export class Fit {
         if (domain === 'shipID') {
           const skill = skillID != null ? (TYPES[skillID]?.n ?? '') : '';
           for (const m of this._modules) {
-            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+            if (m.requiresSkill(skill)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
           }
           // Loaded charges (missile ammo) require missile skills; ship/subsystem damage bonuses
           // (e.g. Legion Offensive → emDamage on Light Missiles) filter on those skills and must
           // reach the charge's damage attributes.
           for (const m of this._modules) {
-            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg);
+            if (m._charge && m._charge.requiresSkill(skill)) m._charge.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, pg, source);
           }
         }
       } else if (func === 'OwnerRequiredSkillModifier') {
@@ -1078,10 +1264,10 @@ export class Fit {
                          : (domain === 'charID' ? src.name : null);
         if (skillName != null) {
           for (const m of this._modules) {
-            if (m.requiresSkill(skillName)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (m.requiresSkill(skillName)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, null, source);
           }
           for (const d of this._drones) {
-            if (d.requiresSkill(skillName)) d.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect);
+            if (d.requiresSkill(skillName)) d.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, null, source);
           }
         }
       }
@@ -1272,7 +1458,8 @@ export class Fit {
         const bonus = skillItem.get('damageMultiplierBonus');
         if (!bonus) continue;
         for (const d of this._drones) {
-          if (d.requiresSkill(skillName)) d.attrs.applyMod(AID.damageMultiplier ?? 64, 6, bonus, true);
+          if (d.requiresSkill(skillName)) d.attrs.applyMod(AID.damageMultiplier ?? 64, 6, bonus, true, null,
+            _trace ? { name: skillName, kind: 'skill', level } : null);
         }
       }
     }
@@ -1348,9 +1535,10 @@ export class Fit {
       const rng = ch.getBase('weaponRangeMultiplier');
       const fal = ch.getBase('fallofMultiplier');
       const trk = ch.getBase('trackingSpeedMultiplier');
-      if (rng && rng !== 1) m.attrs.applyMod(AID.maxRange,       0, rng, true);
-      if (fal && fal !== 1) m.attrs.applyMod(AID.falloff,        4, fal, true);
-      if (trk && trk !== 1) m.attrs.applyMod(AID.trackingSpeed,  4, trk, true);
+      const cs = _trace ? { name: ch._td?.n ?? 'Charge', kind: 'charge' } : null;
+      if (rng && rng !== 1) m.attrs.applyMod(AID.maxRange,       0, rng, true, null, cs);
+      if (fal && fal !== 1) m.attrs.applyMod(AID.falloff,        4, fal, true, null, cs);
+      if (trk && trk !== 1) m.attrs.applyMod(AID.trackingSpeed,  4, trk, true, null, cs);
     }
     // ── 5a. (removed) Cloak velocity Black-Ops ordering correction ──────────────
     // This used to re-multiply ship maxVelocity by shipBonusRole1 (Effect8151) here, on the theory
@@ -1680,4 +1868,4 @@ export class Fit {
 // ─── Convenience re-exports for calc.js ───────────────────────────────────────
 // Export the LIVE `let` bindings (not a snapshot). initEngine() reassigns EFFECTS/ATTRS
 // after module eval, so `export const X = EFFECTS` would freeze the initial empty {}.
-export { EFFECTS as EFFECTS_DATA, ATTRS as ATTR_META };
+export { EFFECTS as EFFECTS_DATA, ATTRS as ATTR_META, setTrace, tracing };
