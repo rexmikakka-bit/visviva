@@ -12,7 +12,7 @@ Formerly *Vis Viva*.
 
 ## Getting it
 
-- **iOS** — TestFlight.
+- **iOS** — [App Store](https://apps.apple.com/us/app/axis-mobile-fitting-tool/id6798416488).
 - **Android** — the APK on the [Releases page](https://github.com/rexmikakka-bit/visviva/releases).
   Sideload it; you may need to allow installs from unknown sources.
 
