@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { C } from "../theme.js";
+import { C, THEMES, THEME_LABELS } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
 import { SKILL_CATALOG, ALPHA_SKILLS } from "../calc.js";
 import { EsiSettingsPanel, EsiSkillAlignPanel } from "./esi-ui.jsx";
@@ -233,17 +233,19 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
         </div>}
         {section==="interface"&&<div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Theme</div>
-          <div style={{display:"flex",gap:6,marginBottom:4}}>
-            {[{key:"system",label:"System"},{key:"light",label:"Light"},{key:"dark",label:"Dark"}].map(t=>{
+          {/* Wraps rather than squeezing: at four-plus themes an equal-flex single row drives each
+              label under its own width and they start truncating. */}
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:4}}>
+            {[{key:"system",label:"System"},...THEMES.map(k=>({key:k,label:THEME_LABELS[k]??k}))].map(t=>{
               const active=(themePref??"system")===t.key;
               return(<button key={t.key} onClick={()=>setThemePref?.(t.key)} aria-pressed={active}
-                style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
+                style={{flex:"1 1 70px",padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
                         background:active?C.accentLight:C.surfaceAlt,
                         border:`1px solid ${active?C.accentBorder:C.border}`,
                         color:active?C.accent:C.textMid}}>{t.label}</button>);
             })}
           </div>
-          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>System follows your device's light/dark setting; Light and Dark pin the app regardless.</div>
+          <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>System follows your device's light/dark setting; the rest pin the app regardless. Amarr and Sansha are dark themes, in imperial gold and Nation purple.</div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>Fit Tabs</div>
           <ToggleRow label="Always open fits in a new tab" on={!!openInNewTab} onChange={setOpenInNewTab}
             note="Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa."/>
