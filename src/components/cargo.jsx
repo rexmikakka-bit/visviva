@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { BottomSheet, NumpadModal, SheetSearchBar, useSuppressAccessoryBar } from "./ui.jsx";
+import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressAccessoryBar } from "./ui.jsx";
 import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 
@@ -128,6 +128,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
 
 export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   const[numpad,setNumpad]=useState(null);
+  const[info,setInfo]=useState(null);
   const[showCargoPicker,setShowCargoPicker]=useState(false);
   // Confirmation for adds made from the browser, which stays open behind the numpad — so the toast
   // fires when the numpad goes away rather than when the item lands, or it would be covered by it.
@@ -180,17 +181,26 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
     <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((parseFloat(totalVol)/cap)*100,100):0}%`,height:"100%",background:parseFloat(totalVol)>cap?C.danger:C.accent}}/></div>
     <div style={{flex:1,overflowY:"auto",padding:12}}>
       {items.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>Cargo bay is empty</div>}
-      {items.map(item=>(<div key={item.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:6}}>
-        <div style={{width:32,height:32,borderRadius:7,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,overflow:"hidden"}}>{(()=>{const tid=item.typeID??tidByName(item.name);return tid?<img className="eve-icon" src={eveIcon(tid,32)} width={30} height={30} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>📦</span>;})()}</div>
-        <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{(item.qty*volOf(item)).toFixed(1)} m3</div></div>
-        <button className="press" onClick={()=>{haptic();setNumpad(item);}} style={{display:"flex",flexDirection:"column",alignItems:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer"}}>
-          <span style={{fontSize:14,fontWeight:800,color:C.text}}>{item.qty.toLocaleString()}</span>
-          <span style={{fontSize:8,color:C.textMute,marginTop:1}}>tap to edit</span>
-        </button>
-        {/* There was no way to take anything back OUT of the cargo bay. */}
-        <button className="press" onClick={()=>{haptic("heavy");setItems(items.filter(i=>i.id!==item.id));}} aria-label={`Remove ${item.name}`} title="Remove from cargo"
-          style={{width:28,height:28,flexShrink:0,borderRadius:7,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:C.danger,fontSize:16,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
-      </div>))}
+      {items.map(item=>{
+        // Resolved once for the row: the icon needs it, and so does the info sheet, which the card
+        // won't open without one — an item whose name we can't resolve has nothing to show.
+        const tid=item.typeID??tidByName(item.name);
+        // The whole card is the info target, so the two controls sitting on it have to stop the
+        // click reaching the card — otherwise editing a quantity or removing an item also opens
+        // the sheet behind whatever it did.
+        return(<div key={item.id} onClick={tid?()=>{haptic();setInfo({typeID:tid,name:item.name});}:undefined}
+          style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:6,cursor:tid?"pointer":"default"}}>
+          <div style={{width:32,height:32,borderRadius:7,background:C.surfaceAlt,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0,overflow:"hidden"}}>{tid?<img className="eve-icon" src={eveIcon(tid,32)} width={30} height={30} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>📦</span>}</div>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{(item.qty*volOf(item)).toFixed(1)} m3</div></div>
+          <button className="press" onClick={e=>{e.stopPropagation();haptic();setNumpad(item);}} style={{display:"flex",flexDirection:"column",alignItems:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer"}}>
+            <span style={{fontSize:14,fontWeight:800,color:C.text}}>{item.qty.toLocaleString()}</span>
+            <span style={{fontSize:8,color:C.textMute,marginTop:1}}>tap to edit</span>
+          </button>
+          {/* There was no way to take anything back OUT of the cargo bay. */}
+          <button className="press" onClick={e=>{e.stopPropagation();haptic("heavy");setItems(items.filter(i=>i.id!==item.id));}} aria-label={`Remove ${item.name}`} title="Remove from cargo"
+            style={{width:28,height:28,flexShrink:0,borderRadius:7,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:C.danger,fontSize:16,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
+        </div>);
+      })}
     </div>
     {numpad&&(()=>{
       const unitVol=volOf(numpad);
@@ -201,5 +211,8 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
         onClose={closeNumpad}/>;
     })()}
     {showCargoPicker&&<CargoBrowserSheet slots={slots} onAdd={addItem} justAdded={justAdded} onClose={()=>setShowCargoPicker(false)}/>}
+    {/* No onSwap: the Variations tab still lists the family, which for the ammo that fills most
+        cargo bays is the useful part, but swapping what is in the bay is the browser's job. */}
+    {info&&<ItemDetailSheet typeID={info.typeID} name={info.name} onClose={()=>setInfo(null)}/>}
   </div>);
 }
