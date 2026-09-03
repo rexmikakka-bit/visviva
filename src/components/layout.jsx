@@ -51,6 +51,9 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
   const [incBoosters, setIncBoosters] = useState(_p.boosters ?? true);
   const [incCargo,    setIncCargo]    = useState(_p.cargo    ?? false);
   const [incMutations,setIncMutations]= useState(_p.mutations ?? true);
+  // Off by default: the fences are for pasting into Discord, and anything else that takes an EFT
+  // block (the in-game fitting window, pyfa, this app's own importer) would choke on them.
+  const [codeBlock,   setCodeBlock]   = useState(_p.codeBlock ?? false);
   const [copied,      setCopied]      = useState(false);
 
   const genEFT = () => fitToEFT(
@@ -60,8 +63,10 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
      cargo: incCargo, mutations: incMutations});
 
   const doExport = () => {
-    try { localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({charges:incCharges,implants:incImplants,boosters:incBoosters,cargo:incCargo,mutations:incMutations})); } catch(e) {}
-    const txt = genEFT();
+    try { localStorage.setItem(EXPORT_PREFS_KEY, JSON.stringify({charges:incCharges,implants:incImplants,boosters:incBoosters,cargo:incCargo,mutations:incMutations,codeBlock})); } catch(e) {}
+    // Discord needs the fences on their own lines. fitToEFT ends without a trailing newline, so the
+    // closing one goes straight on — an extra blank line here would show up inside the rendered box.
+    const txt = codeBlock ? "```\n" + genEFT() + "\n```" : genEFT();
     if (navigator.clipboard && window.isSecureContext) {
       navigator.clipboard.writeText(txt).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}).catch(()=>{
         const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);setCopied(true);setTimeout(()=>setCopied(false),2000);
@@ -91,6 +96,10 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
         <CheckRow label="Boosters" val={incBoosters} setVal={setIncBoosters}/>
         <CheckRow label="Cargo" val={incCargo} setVal={setIncCargo}/>
         <CheckRow label="Abyssal Rolls (mutated modules)" val={incMutations} setVal={setIncMutations}/>
+        {/* Separated from the five above because it is not the same kind of choice: those pick what
+            goes in the fit, this changes how the text is wrapped for one destination. */}
+        <div style={{fontSize:11,color:C.textMute,margin:'16px 0 0'}}>Formatting</div>
+        <CheckRow label="Wrap in a code block (for Discord)" val={codeBlock} setVal={setCodeBlock}/>
         <button onClick={doExport} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:10,border:'none',background:copied?C.rig:C.accent,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
           {copied ? '✓ Copied to clipboard!' : 'Copy EFT to Clipboard'}
         </button>
