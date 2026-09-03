@@ -1007,7 +1007,12 @@ function ResistBars({layers}) {
 // base times every line equals the printed value. `raw` vs `mult` is where the stacking penalty
 // becomes visible, and it is the reason to build this at all: a second Tracking Enhancer is not
 // giving you what its own tooltip claims, and nothing in EVE's UI tells you what it IS giving you.
-function ModifierBreakdown({attr, ex, bleed}) {
+// `fmt` overrides how a VALUE is printed (the unmodified header, a flat add, a "set to"). The hull's
+// attributes tab keeps its own per-row formatters — mass in millions of kg, lock range in km — and
+// without this the breakdown would print the same quantity in a different unit to the row directly
+// above it. Percentages are unaffected: those are ratios, not values in the attribute's unit.
+export function ModifierBreakdown({attr, ex, bleed, fmt}) {
+  const fv = fmt ?? (v => fmtInfoVal(attr, v));
   // A modifier that changed nothing is dropped: a multiplier of exactly 1, or an add of exactly 0.
   // Both happen for real — a mining crystal adds 0 to one of the strip miner's waste attributes, and
   // a bonus attribute that computes to zero yields a 1x — and listing them invites "why is this here"
@@ -1024,7 +1029,7 @@ function ModifierBreakdown({attr, ex, bleed}) {
             with ammo those differ — the chain starts at 2.4 km optimal and the BASE column reads
             1.2 km, because the ammo's −50% is listed below as its own row. Both numbers are right;
             calling them both "base" is what would be wrong. */}
-        {fmtInfoVal(attr, ex.base)} unmodified
+        {fv(ex.base)} unmodified
         {ex.capped && <span style={{marginLeft:6}}>· capped</span>}
       </div>
       {rows.map((r, i) => (
@@ -1043,8 +1048,8 @@ function ModifierBreakdown({attr, ex, bleed}) {
           </span>
           <span style={{fontSize:11,fontWeight:600,color:C.text,textAlign:'right',
                         fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
-            {r.assigns ? `set to ${fmtInfoVal(attr, ex.final)}`
-              : r.add != null ? `${r.add >= 0 ? '+' : '−'}${fmtInfoVal(attr, Math.abs(r.add))}`
+            {r.assigns ? `set to ${fv(ex.final)}`
+              : r.add != null ? `${r.add >= 0 ? '+' : '−'}${fv(Math.abs(r.add))}`
               : fmtMult(r.mult)}
           </span>
         </div>

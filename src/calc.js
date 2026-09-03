@@ -1794,6 +1794,8 @@ function attachRetrace(cs, args) {
   };
   wire(cs.fittedItems, t => t?.fittedItems);
   wire(cs.fittedDrones, t => t?.fittedDrones);
+  // Singular, so it takes the direct form rather than going through wire().
+  if (cs.fittedShip) cs.fittedShip._retrace = () => run()?.fittedShip ?? null;
 }
 
 function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
@@ -3998,6 +4000,16 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       .filter(({ slot }) => slot?.id != null)
       .map(({ slot, fitItem }) => [slot.id, fitItem])),
     fittedDrones: new Map(droneItems.filter(d => d.item).map(d => [d.raw?.id ?? d.item.name, d.item])),
+
+    // The hull itself, for the same reason: the ship sheet's attributes tab wants to explain a lock
+    // range or a max velocity the way a module row explains its damage modifier. It is NOT a map —
+    // there is exactly one — so attachRetrace wires it directly.
+    //
+    // Read it with care downstream: unlike a module, most rows on that tab print a stat this file
+    // DERIVED (targetRange in km, capRechargeMs, the post-engine speed chain), not the engine
+    // attribute. The consumer is responsible for checking the two agree before offering a
+    // breakdown; see shipAttrExplain() in FittingsScreen.
+    fittedShip: s,
 
     // A loaded missile's flight time, velocity and application are NOT engine values: this file
     // reads charge attributes raw off TYPES and builds its own multiplier chain for the hull

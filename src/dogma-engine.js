@@ -406,14 +406,27 @@ class AttrMap {
     const rows = [];
     const push = (e, extra) => rows.push({ source: e.source, op: e.op, value: e.value, ...extra });
 
+    // "The cap actually bit", not "this attribute declares a maxAttributeID". Most attributes that
+    // carry one never approach it — maxVelocity has one, so the looser reading labelled every ship in
+    // the game as capped — and the panel prints that word to the user. Shared by both exits below so
+    // the flag cannot mean one thing on a forced value and another on a multiplied one. Compared
+    // against the same clamp get() applies, so the two cannot disagree about where the ceiling is.
+    const cappedAt = (v) => {
+      const capAid = ATTRS[aid]?.x;
+      if (!capAid) return false;
+      const c = this.get(capAid, true);
+      return c != null && !isNaN(c) && v >= c;
+    };
+
     // PostAssignment wins over everything, exactly as _resolve returns early on it. Last writer wins
     // there (a plain assignment), so it is the last recorded entry that is actually in force.
     const forced = at('force');
     if (forced.length) {
       const win = forced[forced.length - 1];
-      return { base: this._force[aid], final: this.get(aid), assigned: true,
+      const fv = this.get(aid);
+      return { base: this._force[aid], final: fv, assigned: true,
                rows: [{ source: win.source, op: win.op, value: win.value, mult: 1, factor: 1, penalised: false, assigns: true }],
-               covered: win.source != null };
+               covered: win.source != null, capped: cappedAt(fv) };
     }
 
     // Base. PreAssignment replaces it outright; otherwise it is the type's own value stepped through
@@ -459,9 +472,10 @@ class AttrMap {
     // identity holds either way; `covered` is what lets the UI admit the list is incomplete rather
     // than presenting a partial one as the whole story.
     const covered = rows.every(r => r.source != null);
-    // A capped attribute (maxAttributeID) is clamped AFTER the chain, so on a fit that hits the cap
-    // the product legitimately overshoots `final`. Callers checking the identity have to allow for it.
-    return { base, final: this.get(aid), assigned: false, rows, covered, capped: !!ATTRS[aid]?.x };
+    const final = this.get(aid);
+    // A capped attribute (maxAttributeID) is clamped AFTER the chain, so on a fit that HITS the cap
+    // the product legitimately overshoots `final` and the identity has to allow for it.
+    return { base, final, assigned: false, rows, covered, capped: cappedAt(final) };
   }
 }
 
@@ -1804,15 +1818,19 @@ export class Fit {
         const hasSig = AID_SIGBONUS in (m._td?.a ?? {}) ||
                        String(AID_SIGBONUS) in (m._td?.a ?? {}) ||
                        'signatureRadiusBonus' in (m._td?.a ?? {});
+        // Both mods below come from the prop mod itself, so they carry its own descriptor — an
+        // afterburner is exactly what a player needs to see next to a hull's raised mass, and it is
+        // the only reason that number moved.
+        const ps = _trace ? this._sourceOf(m) : null;
         if (hasSig) {
           const sigBonus = m.get('signatureRadiusBonus');
-          if (sigBonus) this.ship.attrs.applyMod(AID.signatureRadius, 6, sigBonus, false);
+          if (sigBonus) this.ship.attrs.applyMod(AID.signatureRadius, 6, sigBonus, false, null, ps);
         }
         // massAddition as a modAdd (op 2) so hull mass multipliers (Higgs Anchor massBonusPercentage,
         // a postPercent) apply to the combined base+prop mass — matching eos operator ordering. calc.js
         // therefore reads the prop-inclusive mass straight from s.get('mass').
         const massAdd = m.get('massAddition');
-        if (massAdd) this.ship.attrs.applyMod(AID.mass ?? 4, 2, massAdd, false);
+        if (massAdd) this.ship.attrs.applyMod(AID.mass ?? 4, 2, massAdd, false, null, ps);
       }
     }
 

@@ -5237,6 +5237,89 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12h. HULL PROVENANCE: the same breakdown, for the ship's own attributes.
+//
+// The hull is reached differently from a module — `cs.fittedShip` is a single item, not a map — but
+// the arithmetic contract is identical and is re-asserted here rather than assumed from 12g.
+//
+// The part that is NOT identical, and is the real subject of this section, is the GATE. Most rows on
+// ShipInfoSheet's attributes tab print a stat calc.js derived, not the engine attribute: lock range
+// in km where the engine holds metres, an AU/s warp speed where the engine holds a multiplier. The
+// sheet decides whether to offer a breakdown by rendering the ENGINE value through the row's own
+// formatter and requiring the exact string the row already shows.
+//
+// That decision is made against the UNTRACED hull, because deciding whether to draw a chevron must
+// not trigger the traced recompute the whole design exists to defer. Which means the untraced and
+// traced twins have to agree attribute-for-attribute, or the sheet decides a row is safe using one
+// number and then explains a different one. That is the invariant below.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nHULL PROVENANCE (ship attributes + the untraced/traced gate)');
+  let _hn = 0;
+  const HM = (name, state = 'active') => ({ id: `h${_hn++}`, typeID: tid(name), state });
+
+  const HULLS = [
+    ['Rupture', { high: [], mid: [HM('10MN Afterburner II'), HM('Large Shield Extender II', 'online')],
+      low: [HM('Nanofiber Internal Structure II', 'online'), HM('Signal Amplifier II'), HM('Damage Control II')],
+      rigs: [] }],
+    ['Abaddon', { high: [], mid: [HM('Cap Recharger II', 'online')],
+      low: [HM('1600mm Steel Plates II', 'online'), HM('Damage Control II')], rigs: [] }],
+    ['Ishtar', { high: [], mid: [HM('10MN Afterburner II')], low: [HM('Damage Control II')], rigs: [] }],
+  ];
+
+  let checked = 0, worst = 0, unattributed = 0, disagreed = 0;
+  for (const [ship, fit] of HULLS) {
+    const cs = calcFitStats({ typeID: tid(ship), name: ship }, fit, [], null, {});
+    const untraced = cs.fittedShip;
+    const t = untraced?._retrace();
+    if (!t) { check('hull-prov', `${ship} retraces`, 0, 1, 0); continue; }
+    for (const n of Object.keys(t._td.a ?? {})) {
+      // The gate's premise: whatever the sheet read off the untraced hull to decide, the traced twin
+      // reports the same. Checked on EVERY attribute, not just the dozen the sheet happens to list,
+      // so adding a row to that tab cannot quietly land outside the tested set.
+      const a = untraced.attrs.get(n), b = t.attrs.get(n);
+      if (typeof a === 'number' && typeof b === 'number'
+          && Math.abs(a - b) > Math.abs(b || 1) * 1e-12) disagreed++;
+      const ex = t.attrs.explain(n);
+      if (!ex?.rows.length) continue;
+      checked++;
+      if (!ex.covered) unattributed++;
+      if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+      const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+      if (ex.capped && prod > ex.final) continue;
+      worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+    }
+  }
+  console.log(`  (swept ${checked} modified hull attributes across ${HULLS.length} hulls, worst drift ${worst.toExponential(2)})`);
+  check('hull-prov', 'swept a meaningful number of hull attrs', checked > 60 ? 1 : 0, 1, 0);
+  check('hull-prov', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('hull-prov', 'every hull modifier row names a source', unattributed, 0, 0);
+  check('hull-prov', 'untraced and traced hull agree everywhere', disagreed, 0, 0);
+
+  // The prop mod's two hardcoded ship effects (sig bloom, mass addition) are applied outside the
+  // effect dispatcher, so they were the last unattributed rows on a hull and are the reason the
+  // Afterburner is in every fit above. Mass is also the only ModAdd a bare hull reaches.
+  const ab = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, HULLS[0][1], [], null, {});
+  const mass = ab.fittedShip._retrace().attrs.explain('mass');
+  const abRow = (mass?.rows ?? []).find(r => r.source?.name === '10MN Afterburner II');
+  check('hull-prov', 'prop mod named as the source of added mass', abRow?.source?.kind, 'module');
+  check('hull-prov', 'mass added as a flat ModAdd', abRow?.add, 5000000, 1e-9);
+
+  // `capped` means the cap actually BIT, not "this attribute has a maxAttributeID". maxVelocity
+  // carries one, so the looser reading labelled every ship in the game as capped on a row that was
+  // nowhere near its ceiling -- and the panel prints that word to the user.
+  const vel = ab.fittedShip._retrace().attrs.explain('maxVelocity');
+  check('hull-prov', 'an uncapped maxVelocity is not flagged capped', vel?.capped ? 1 : 0, 0, 0);
+  // Polarized weapons force a resonance far above 1.0 and rely on the cap to floor the resist at 0%,
+  // which is the clearest case of a cap that genuinely bit.
+  const pol = calcFitStats({ typeID: tid('Rifter'), name: 'Rifter' },
+    { high: [{ id: 'x0', typeID: tid('Polarized 200mm AutoCannon'), state: 'active' }], mid: [], low: [], rigs: [] },
+    [], null, {});
+  const res = pol.fittedShip._retrace().attrs.explain('shieldEmDamageResonance');
+  check('hull-prov', 'a cap that bit IS flagged', res?.capped ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
