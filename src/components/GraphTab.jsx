@@ -80,6 +80,17 @@ const GRAPH_CONFIG=[
   {key:"lock",label:"Lock",icon:"target",color:"danger",yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
 ];
 
+// Lock time against a target of signature `sig`, in seconds. pyfa's eos/calc.py calculateLockTime,
+// including CCP's 30-minute ceiling.
+//
+// Named and shared rather than inlined in the curve, because the headline's tap-to-expand evaluates it
+// AGAIN at the cursor's sig. Reading the extra digits off the plotted curve instead would have printed
+// a lie: the curve is 198 samples with the readout interpolating between them, and that interpolation
+// runs up to 0.49 s off the true value at the low-sig end where the curve is steepest — an error in the
+// first decimal, never mind the third. Two call sites, one formula, so they cannot drift.
+const lockTimeAt=(scanRes,sig)=>
+  (scanRes>0&&sig>0)?Math.min(40000/scanRes/Math.pow(Math.asinh(sig),2),1800):0;
+
 // The one distance to evaluate at when the X axis is sweeping something other than range: the reach of
 // the longest-ranged weapon on the fit, or 30 km if it has none. The speed and sig axes hold range
 // constant at this while they vary the tracking inputs, and the angular-velocity readout quotes it, so
@@ -441,7 +452,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
   else if(catKey==="lock"){
     const sr=cs?.scanRes??ship.scanResolution??200;
     const sEnd=dom(1000), sStep=Math.max(1,sEnd/198);
-    for(let s=10;s<=sEnd+1e-9;s+=sStep){const t=sr>0?Math.min(40000/sr/Math.pow(Math.asinh(s),2),1800):0;pts.push([s,t]);}
+    for(let s=10;s<=sEnd+1e-9;s+=sStep)pts.push([s,lockTimeAt(sr,s)]);
     xMax=sEnd;yMax=(pts.length?Math.max(...pts.map(p=>p[1])):10)*1.15||10;
   }
   // The ghost column counts toward the axis fit, or the ceiling it draws gets clipped off the top of
@@ -1035,12 +1046,16 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // doesn't re-render, same reasoning as ScrubField's `drag`/`suppressClick`.
   const zoomDrag=useRef({}),zoomSuppressClick=useRef({});
   const[zoomScrubAxis,setZoomScrubAxis]=useState(null);
+  // Headline shows its unrounded value. Persisted with the rest of the setup rather than reset per
+  // visit: someone comparing lock times across fits wants the digits on every fit they open, and this
+  // panel remounts on each swipe, so plain state would drop it.
+  const[exactHeadline,setExactHeadline]=useState(()=>gp('exactHeadline',false));
   // One write whenever any of it changes. Cheap, and it means leaving by ANY route (swipe, tab bar,
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline]);
   // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
   // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
   // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
@@ -1157,6 +1172,19 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const angularSpeed=calcAngularSpeed(selfVelEff,selfAngle,cs?.shipRadius??0,angularDistM,targetVelWebbed,targetAngle,0);
   const displayVal=cursorY!=null?cursorY:baseHeadline;
   const displayX=cursorY!=null?cursorX:null;
+  // The headline unrounded, or null where no such number exists to show.
+  //
+  // Only the Lock graph, and that is a limit rather than an omission: every other category is a
+  // SAMPLED simulation (a cap trace, a damage sweep), so its headline is already the best value there
+  // is and further digits would be digits of the sampling, not of the ship. Lock is the one curve that
+  // is a closed form we can re-evaluate exactly at the cursor's sig — so it is the one place extra
+  // digits are real. `sigAt` follows the cursor when there is one and otherwise reads the same base
+  // sample the headline does, so the two can never quote different targets.
+  const exactVal=(()=>{
+    if(catKey!=="lock"||!pts.length)return null;
+    const sigAt=displayX!=null?displayX:pts[_baseIdx][0];
+    return lockTimeAt(cs?.scanRes??ship?.scanResolution??200,sigAt);
+  })();
   // What the same point would be worth with application perfect, as a share.
   //
   // Shown for the whole of a damage graph, including where it reads 100%. It used to appear only where
@@ -1172,6 +1200,13 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // Clamped: application cannot beat perfect, and float dust at the ceiling must not print 101%.
   const appliedPct=(displayGhost>0&&displayVal!=null)?Math.min(100,Math.round(displayVal/displayGhost*100)):null;
   const fmt=v=>v==null?"--":v>=10000?`${(v/1000).toFixed(1)}k`:v>=100?v.toFixed(0):v.toFixed(1);
+  // Three decimals, matching the Stats tab's Align and Lock-range cells — the same question asked of
+  // the same unit. Offered only when it actually reveals something: at the 30-minute cap, and anywhere
+  // the rounding happens to land clean, the extra digits ARE the displayed value and the tap is inert
+  // (and says so by not taking the pointer), exactly as the Targeting cells behave.
+  const exactStr=exactVal!=null?exactVal.toFixed(3):null;
+  const canExact=exactStr!=null&&displayVal!=null&&exactStr!==fmt(displayVal);
+  const showingExact=canExact&&exactHeadline;
   return(<div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:5,paddingBottom:2}}>
@@ -1250,8 +1285,15 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       })}
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
-      <div>
-        <span style={{fontSize:22,fontWeight:800,color:catColor}}>{fmt(displayVal)}</span>
+      {/* Tap to unround, same gesture as the Stats tab's Targeting cells. Lock time is quantised to
+          whole server ticks in practice, so the difference between 13.0 and 13.066 decides whether a
+          target clears before it can align out — the sort of margin the one displayed decimal hides.
+          The extra digits appearing are the whole signal, so the swapped value keeps the same size,
+          weight and colour as the rounded one. */}
+      <div onClick={canExact?()=>setExactHeadline(v=>!v):undefined}
+           title={canExact?`${exactStr} ${yAxis?.label??""}`:undefined}
+           style={{cursor:canExact?"pointer":"default"}}>
+        <span style={{fontSize:22,fontWeight:800,color:catColor,fontVariantNumeric:"tabular-nums"}}>{showingExact?exactStr:fmt(displayVal)}</span>
         <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span>
         {hasIdeal&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct!=null?`${appliedPct}%`:"--"}</div>}
       </div>
