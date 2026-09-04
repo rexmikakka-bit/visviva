@@ -6,7 +6,7 @@ import { C, DISPLAY } from "../theme.js";
 import { eveIcon, eveHeroRender, eveRender, eveRenderHi, prefetchRenderHi } from "../lib/icons.js";
 import shipSmallIcon from "../assets/ship_small.png";
 import { shipTraits, shipsByClass, raceIcons, generateEmptySlots, lookupShip, haptic } from "../lib/core.js";
-import { isT3Cruiser, t3cSlotLayout } from "../calc.js";
+import { isT3Cruiser, t3cSlotLayout, effectiveWeaponMultipliers } from "../calc.js";
 import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleTag,
          allTags, fitsWithTag, colorForTag, setTagColor, renameTag, removeTagEverywhere } from "../lib/fit-tags.js";
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
@@ -403,6 +403,28 @@ export function ShipInfoSheet({ship, cs, onClose}) {
     m:   v=>`${rnd(v)} m`,          mkg: v=>`${(v/1e6).toFixed(2)}M kg`,
     hp:  v=>`${Math.round(v).toLocaleString()} HP`,
     m3:  v=>`${rnd(v)} m³`,         mbit:v=>`${rnd(v)} Mbit/s`,
+    // One decimal, because most hulls do not land on a whole one: a Rifter's -37.5% cycle makes its
+    // three guns worth 4.8, and rounding that to 5 would state a coincidence as a fact.
+    eff: v=>`${rnd(v,1)}`,
+  };
+  // What the hull's OWN bonuses make a hardpoint worth, beside how many of them there are. Damage
+  // and rate of fire both count — see effectiveWeaponMultipliers, which is also where the reason
+  // this reads hull and subsystem bonuses only lives.
+  //
+  // The figure moves with ammo on the hulls whose bonus is damage-type filtered, and that is the
+  // point rather than a wobble: a Cerberus's six launchers are worth ten with Scourge loaded and
+  // eight with Mjolnir, because the kinetic bonus is only there when you are shooting kinetic.
+  //
+  // Costs the traced recompute, which every other part of this tab defers until a row is tapped.
+  // Affordable HERE and nowhere else on the fitting screen: this is a modal sheet, so the fit
+  // cannot change underneath it, and calc.js memoises the pass per stats object — so it is one
+  // extra pass on open, not one per keystroke.
+  const effWeapons = useMemo(() => cs ? effectiveWeaponMultipliers(cs) : {turret:null,launcher:null}, [cs]);
+  // Absent, not 1.0, on a hull with no weapon of that kind fitted — and dropped entirely when the
+  // hull adds nothing, where the row would only repeat the hardpoint count directly above it.
+  const effRow = (label, mult, hardpoints, attr) => {
+    const on = mult != null && mult !== 1 && hardpoints > 0;
+    return R(label, on ? hardpoints : null, on ? hardpoints * mult : null, F.eff, attr);
   };
   const attrs = {
     fitting: [
@@ -414,7 +436,9 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       R('Low Slots', ship?.lowSlots, null, F.int),
       R('Rig Slots', ship?.rigSlots, null, F.int),
       R('Turret Hardpoints', ship?.turrets, null, F.int),
+      effRow('Effective Turrets', effWeapons.turret, ship?.turrets, 'turretSlotsLeft'),
       R('Launcher Hardpoints', ship?.launchers, null, F.int),
+      effRow('Effective Launchers', effWeapons.launcher, ship?.launchers, 'launcherSlotsLeft'),
     ],
     capacitor: [
       R('Capacitor Capacity', ship?.capCapacity, cs?.capCapacity, F.gj, 'capacitorCapacity'),

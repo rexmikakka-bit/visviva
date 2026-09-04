@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
 import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, reconcileRacks, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
@@ -340,6 +340,17 @@ export default function App(){
     const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
     return {faction:sh?.race??"",cls:sh?.hullClass??sh?.groupName??""};
   },[activeFit]);
+  // A T3 cruiser's slots and hardpoints all come from its subsystems — the hull record itself is
+  // zeros. Same substitution FittingsScreen makes for the fitting grid, made here because the info
+  // sheet's attributes tab reads those counts, and a Tengu opened from a fit was reporting no
+  // launcher hardpoints at all.
+  const shipInfoHull=useMemo(()=>{
+    const sh=activeFit?.ship?(lookupShip(activeFit.ship)??{name:activeFit.ship}):null;
+    if(!sh?.name||!isT3Cruiser(sh.name))return sh;
+    const layout=t3cSlotLayout((slots?.subsystems??[]).filter(s=>s?.typeID));
+    return{...sh,turrets:layout.turrets,launchers:layout.launchers,
+           hiSlots:layout.hiSlots,medSlots:layout.medSlots,lowSlots:layout.lowSlots,rigSlots:layout.rigSlots};
+  },[activeFit?.ship,slots?.subsystems]);
   // One memo, two consumers: the drone rows read `droneInfo` and the drone INFO SHEET reads the
   // engine items behind those rows (for its current-vs-base attribute columns). Splitting them into
   // two memos would mean running the whole fit twice to answer one screen.
@@ -733,7 +744,7 @@ export default function App(){
       {icon:IconClipboard,label:"To EFT",sub:"Copy to clipboard",onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
       {icon:IconCharacter,label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
     ]}/>}
-    {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={lookupShip(activeFit.ship)??{name:activeFit.ship}} cs={snapshotStats} onClose={()=>setShowShipInfo(false)}/>}
+    {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={shipInfoHull} cs={snapshotStats} onClose={()=>setShowShipInfo(false)}/>}
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
