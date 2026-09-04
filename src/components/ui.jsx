@@ -74,16 +74,52 @@ function InfoButton({onClick,title="Item info"}){
 // as the same keyboard state and dropped.
 const KEYBOARD_HEIGHT_THRESHOLD = 100;
 
+// Under Keyboard.resize:"none" (capacitor.config.json), `window.visualViewport` does not reliably
+// shrink on its own when the keyboard appears — this native `keyboardHeight` listener, not the
+// browser's own resize event, is what actually makes a sheet keyboard-aware here. (It also happens
+// to include the iPhone accessory bar App.jsx can turn on — Keyboard.setAccessoryBarVisible, the
+// "Hide keyboard" chevron — which is native chrome injected outside WebKit's own layout, so a
+// footer pinned at the very bottom of a sheet needs that included or it renders into the gap.)
+//
+// It lives here as app-global STATE with an app-long lifetime, rather than inside useVisualViewport's
+// mount effect where it started, because a per-sheet subscription races its own sheet. Capacitor's
+// addListener() resolves over the native bridge, while a sheet's autoFocus fires in React's commit
+// phase — strictly earlier. So the keyboardWillShow that the focus itself triggered arrived before
+// anything was listening and was simply lost, and with resize:"none" there is no second chance: the
+// visual viewport never shrinks on its own, so nothing else would ever correct the height. The module
+// browser opened with its search box behind the keyboard and only righted itself once you dismissed
+// the keyboard and tapped the field again, by which point the listener had finally attached.
+//
+// Keeping the height in a durable global instead of reacting to an event makes the ordering moot: a
+// sheet mounting late reads the current value, and a keyboard opening late notifies it.
+let kbHeight=0;
+const kbSubscribers=new Set();
+export function initKeyboardTracking(){
+  if(initKeyboardTracking.done)return;
+  const Cap=(typeof window!=="undefined")&&window.Capacitor;
+  // iPhone only: Android's adjustResize already shrinks window.innerHeight itself when the keyboard
+  // opens (see capacitor.config.json / AndroidManifest), so subtracting keyboardHeight from it there
+  // would double-count — and setAccessoryBarVisible is a no-op off iOS anyway.
+  if(!(Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard))return;
+  initKeyboardTracking.done=true;
+  const KB=Cap.Plugins.Keyboard;
+  const set=h=>{kbHeight=h;kbSubscribers.forEach(fn=>fn());};
+  // Never removed: this is boot-to-exit state, not a component's. willHide as well as didHide, to
+  // match willShow — didHide alone only fires once the keyboard has finished animating away, so for
+  // that whole ~250ms a sheet was still sized to a screen the keyboard no longer covered and the
+  // strip it vacated showed the dimmed page behind. Both are wired because willHide is not
+  // guaranteed to arrive (an interactive dismiss can skip it) and the second call is idempotent —
+  // sync()'s height filter drops it as the same keyboard state.
+  try{
+    KB.addListener("keyboardWillShow",i=>set(i?.keyboardHeight||0));
+    KB.addListener("keyboardWillHide",()=>set(0));
+    KB.addListener("keyboardDidHide",()=>set(0));
+  }catch(e){}
+}
+
 export function useVisualViewport(){
   const [vv,setVv]=useState(null);
   const lastHeight=useRef(null);
-  // Under Keyboard.resize:"none" (capacitor.config.json), `window.visualViewport` does not reliably
-  // shrink on its own when the keyboard appears — this native `keyboardHeight` listener, not the
-  // browser's own resize event, is what actually makes a sheet keyboard-aware here. (It also happens
-  // to include the iPhone accessory bar App.jsx can turn on — Keyboard.setAccessoryBarVisible, the
-  // "Hide keyboard" chevron — which is native chrome injected outside WebKit's own layout, so a
-  // footer pinned at the very bottom of a sheet needs that included or it renders into the gap.)
-  const kbHeight=useRef(0);
   useEffect(()=>{
     const v=window.visualViewport;
     if(!v)return;                                  // no support: fall back to the layout viewport
@@ -102,7 +138,7 @@ export function useVisualViewport(){
       // window.innerHeight, not vv itself, is the correction's baseline: with Keyboard.resize:
       // "none" the WKWebView's layout viewport never shrinks, so it stays a stable "nothing
       // covered" reference to subtract the native (accessory-bar-inclusive) keyboard height from.
-      const h=kbHeight.current>0?Math.min(v.height,window.innerHeight-kbHeight.current):v.height;
+      const h=kbHeight>0?Math.min(v.height,window.innerHeight-kbHeight):v.height;
       if(lastHeight.current!=null && Math.abs(h-lastHeight.current)<KEYBOARD_HEIGHT_THRESHOLD) return;
       lastHeight.current=h;
       // Whether the keyboard currently covers part of the screen, independent of the accessory-bar
@@ -111,28 +147,14 @@ export function useVisualViewport(){
       // reserving it too just pads the sheet's content away from the keyboard for no reason.
       setVv({height:h,keyboardOpen:window.innerHeight-h>KEYBOARD_HEIGHT_THRESHOLD});
     };
+    // Called before subscribing, so a sheet that mounts with the keyboard ALREADY up is sized right
+    // on its first paint rather than waiting for the next keyboard transition to tell it.
     sync();
     v.addEventListener("resize",sync);
     v.addEventListener("scroll",sync);
-    // iPhone only: Android's adjustResize already shrinks window.innerHeight itself when the
-    // keyboard opens (see capacitor.config.json / AndroidManifest), so subtracting keyboardHeight
-    // from it there would double-count — and setAccessoryBarVisible is a no-op off iOS anyway.
-    let subs=null;
-    const Cap=window.Capacitor;
-    if(Cap?.isNativePlatform?.()&&Cap.getPlatform?.()==="ios"&&Cap.Plugins?.Keyboard){
-      const KB=Cap.Plugins.Keyboard;
-      const onShow=info=>{kbHeight.current=info?.keyboardHeight||0;sync();};
-      const onHide=()=>{kbHeight.current=0;sync();};
-      // willHide as well as didHide, to match willShow: didHide alone only fires once the keyboard has
-      // finished animating away, so for that whole ~250ms the sheet was still sized to a screen the
-      // keyboard no longer covered and the strip it vacated showed the dimmed page behind. Both are
-      // wired because willHide is not guaranteed to arrive (an interactive dismiss can skip it) and
-      // the second call is idempotent — sync()'s height filter drops it as the same keyboard state.
-      Promise.all([KB.addListener("keyboardWillShow",onShow),KB.addListener("keyboardWillHide",onHide),
-                   KB.addListener("keyboardDidHide",onHide)])
-        .then(h=>{subs=h;}).catch(()=>{});
-    }
-    return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);subs?.forEach(s=>s.remove?.());};
+    kbSubscribers.add(sync);
+    return()=>{v.removeEventListener("resize",sync);v.removeEventListener("scroll",sync);
+               kbSubscribers.delete(sync);};
   },[]);
   return vv;
 }
