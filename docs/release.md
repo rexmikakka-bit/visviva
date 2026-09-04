@@ -45,8 +45,14 @@ which only advances the patch digit — so a feature release built that way sile
 Verify the APK rather than trusting the bump script's own output — the two have disagreed before:
 
 ```bash
-"$LOCALAPPDATA"/Android/Sdk/build-tools/*/aapt2.exe dump badging android/app/build/outputs/apk/debug/app-debug.apk | head -1
+AAPT2=$(ls -d "$LOCALAPPDATA"/Android/Sdk/build-tools/*/aapt2.exe | sort -V | tail -1)
+"$AAPT2" dump badging android/app/build/outputs/apk/debug/app-debug.apk | head -1
 ```
+
+Resolve the version explicitly like that rather than globbing the command itself. Once more than one
+build-tools version is installed, `.../build-tools/*/aapt2.exe dump badging <apk>` expands to every
+match, so the oldest becomes the command and the rest become stray arguments — it fails on stderr and
+prints nothing, which reads exactly like a missing APK.
 
 Then commit `android/version.properties` alone as `Release 1.3.0: versionCode 14`, push, and attach
 the APK (`android/app/build/outputs/apk/debug/app-debug.apk`, ~16 MB) to a GitHub release tagged
