@@ -2345,15 +2345,21 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   let weaponDps    = { em:0, th:0, kin:0, exp:0, total:0 };
   let weaponVolley = { em:0, th:0, kin:0, exp:0, total:0 };
   // Damage a full clip puts out before the guns go quiet: volley × shots-per-clip, per weapon.
-  // Only weapons whose reload actually costs time count — a laser's crystal swap is 0.01 ms and a
-  // disintegrator's is the same, so for them "before reload" is not a limit and summing their clips
-  // would bury a Rapid launcher's real burst ceiling under a meaningless number.
-  const RELOAD_MS_MIN = 1000;
+  //
+  // RAPID LAUNCHERS ONLY, deliberately. Every weapon in the game has a nominal clip, but only these
+  // three trade a short one against a punishing reload — 20/25/30 shots and 35–40 s — which is the
+  // whole reason the figure decides a fight rather than being trivia. An autocannon's 120-round belt
+  // reloads in 10 s and a laser's crystal swap in 0.01 ms, so their clip damage is a number nobody
+  // fits around, and including them would swamp a real ceiling on a mixed rack.
+  //
+  // CCP's own group names carry the distinction exactly: 'Missile Launcher Rapid Light', '... Rapid
+  // Heavy', '... Rapid Torpedo', and nothing else in the data matches. Keyed on the group rather than
+  // a hand-listed table of the 37 launchers in them, per gotcha 9.
+  const isRapidLauncher = (fitItem) => /^Missile Launcher Rapid /.test(fitItem.groupName ?? '');
   const clipVolley = { em:0, th:0, kin:0, exp:0, total:0 };
   let clipWeapons = 0;
   const addClip = (fitItem, numShots, dmg) => {
-    if (!(numShots > 0)) return false;
-    if ((fitItem.get('reloadTime') ?? 0) < RELOAD_MS_MIN) return false;
+    if (!(numShots > 0) || !isRapidLauncher(fitItem)) return false;
     clipWeapons++;
     for (const t of ['em','th','kin','exp']) clipVolley[t] += (dmg[t] ?? 0) * numShots;
     clipVolley.total += (dmg.em + dmg.th + dmg.kin + dmg.exp) * numShots;
@@ -2503,7 +2509,6 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const slotVolTotal = vol('em')+vol('th')+vol('kin')+vol('exp');
         weaponDps.total  += slotDpsTotal;
         weaponVolley.total += slotVolTotal;
-        addClip(fitItem, numShots, { em:vol('em'), th:vol('th'), kin:vol('kin'), exp:vol('exp') });
         // Record this weapon's contribution to the spool base only if it actually spools, so the
         // max-spool display ramps this weapon alone and leaves co-fitted non-spool guns at base.
         if (spoolMax > 0 && spoolPerCycle > 0) {

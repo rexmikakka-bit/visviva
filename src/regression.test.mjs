@@ -5450,20 +5450,21 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 12j. CLIP DAMAGE: what the guns put out before they have to reload.
+// 12j. CLIP DAMAGE: what a rapid launcher puts out before its long reload.
 //
-// Rapid launchers are the reason this exists. An RLML's DPS and volley both read like an ordinary
-// launcher's, and neither says the thing that decides the fight: 20 shots, then 35 seconds of
-// nothing. Clip damage is volley x shots-per-clip, so it is a straight product of numbers this
-// suite already validates against pyfa — the checks below pin the MULTIPLIER and the GATE, which
-// is where the judgement is.
+// An RLML's DPS and volley both read like an ordinary launcher's, and neither says the thing that
+// decides the fight: 20 shots, then 35 seconds of nothing. Clip damage is volley x shots-per-clip,
+// so it is a straight product of numbers this suite already validates against pyfa — the checks
+// below pin the MULTIPLIER and the GATE, which is where the judgement is.
 //
-// The gate matters as much as the arithmetic. Every weapon in the game has a nominal clip, but a
-// laser's crystal swap and a disintegrator's reload are both 0.01 ms, so for them "damage before
-// reload" is not a ceiling and their enormous clips would swamp a real one on a mixed rack.
+// The gate matters as much as the arithmetic, and it is narrow ON PURPOSE. Every weapon in the game
+// has a nominal clip; only the three rapid launcher groups trade a short one against a punishing
+// reload. An autocannon's 120-round belt reloads in 10 s and a laser's crystal swap in 0.01 ms, so
+// their clip damage is a number nobody fits around and would swamp a real ceiling on a mixed rack.
+// The exclusions below are the specification, not incidental coverage.
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  console.log('\nCLIP DAMAGE (damage per clip, before reload)');
+  console.log('\nCLIP DAMAGE (rapid launchers, damage before reload)');
   let _cn = 0;
   const CM = (name, state = 'active', ammo) => ({ id: `c${_cn++}`, typeID: tid(name), state, ammo });
   const clipFit = (ship, high, drones = []) => calcFitStats(
@@ -5481,23 +5482,38 @@ Agency 'Overclocker' SB7 Dose III
   const cv = rlml.clipVolley;
   check('clip-dmg', 'the damage-type split sums to the total', cv.em + cv.th + cv.kin + cv.exp, cv.total, 1e-9);
 
-  // Clip size is per-launcher, not a constant: a Rapid HEAVY holds 25 and an ordinary Heavy 40.
-  // Reading one number for all of them is the easy mistake this pair would catch.
+  // Clip size is per-launcher, not a constant: 20 / 25 / 30 across the three rapid groups. Reading
+  // one number for all of them is the easy mistake these would catch.
   const rhml = clipFit('Drake', rack(7, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'));
   check('clip-dmg', 'an RHML empties 25 shots', rhml.clipVolley.total / rhml.weaponVolley.total, 25, 1e-9);
-  const hml = clipFit('Caracal', rack(5, 'Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'));
-  check('clip-dmg', 'an ordinary HML empties 40', hml.clipVolley.total / hml.weaponVolley.total, 40, 1e-9);
-  const acs = clipFit('Rupture', rack(4, '425mm AutoCannon II', 'Republic Fleet EMP M'));
-  check('clip-dmg', 'turret clips count too', acs.clipVolley.total / acs.weaponVolley.total, 120, 1e-9);
+  const rtl = clipFit('Barghest', rack(5, 'Rapid Torpedo Launcher II', 'Scourge Rage Torpedo'));
+  check('clip-dmg', 'a Rapid Torpedo Launcher empties 30', rtl.clipVolley.total / rtl.weaponVolley.total, 30, 1e-9);
 
-  // The gate. A laser reloads in 0.01 ms and a disintegrator the same, so neither has a burst
-  // ceiling to report; both must be absent, not present with a huge number.
-  const lasers = clipFit('Omen', rack(5, 'Heavy Pulse Laser II', 'Scorch M'));
-  check('clip-dmg', 'lasers have no clip to empty', lasers.clipWeapons, 0, 0);
-  check('clip-dmg', 'and contribute no clip damage', lasers.clipVolley.total, 0, 0);
-  check('clip-dmg', 'but still have a volley', lasers.weaponVolley.total > 0 ? 1 : 0, 1, 0);
-  const disi = clipFit('Vedmak', [CM('Heavy Entropic Disintegrator II', 'active', 'Occult M')]);
-  check('clip-dmg', 'a disintegrator does not reload either', disi.clipWeapons, 0, 0);
+  // The gate, which is the whole specification. Every weapon below HAS a clip; none of them trades
+  // it against a reload worth planning around, so all four must report nothing at all rather than a
+  // large number that would swamp a real rapid launcher's on a mixed rack.
+  const excluded = [
+    ['an ordinary HML',   clipFit('Caracal', rack(5, 'Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'))],
+    ['an autocannon',     clipFit('Rupture', rack(4, '425mm AutoCannon II', 'Republic Fleet EMP M'))],
+    ['a pulse laser',     clipFit('Omen',    rack(5, 'Heavy Pulse Laser II', 'Scorch M'))],
+    ['a disintegrator',   clipFit('Vedmak',  [CM('Heavy Entropic Disintegrator II', 'active', 'Occult M')])],
+  ];
+  for (const [what, stats] of excluded) {
+    check('clip-dmg', `${what} reports no clip`, stats.clipWeapons, 0, 0);
+    check('clip-dmg', `${what} contributes no clip damage`, stats.clipVolley.total, 0, 0);
+    // ...but is still a working weapon. Without this the four pairs above would also pass on a
+    // build where the whole damage chain returned zero.
+    check('clip-dmg', `${what} still has a volley`, stats.weaponVolley.total > 0 ? 1 : 0, 1, 0);
+  }
+
+  // A rapid launcher sharing a rack with an excluded weapon reports its own clip and only its own.
+  const mixed = clipFit('Drake', [...rack(4, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'),
+                                  ...rack(3, 'Heavy Missile Launcher II', 'Scourge Fury Heavy Missile')]);
+  check('clip-dmg', 'a mixed rack counts only the rapid launchers', mixed.clipWeapons, 4, 0);
+  check('clip-dmg', 'and the HMLs do not inflate its clip',
+    mixed.clipVolley.total, rhml.clipVolley.total * 4 / 7, 1e-9);
+  check('clip-dmg', 'while total volley still counts everything',
+    mixed.weaponVolley.total > mixed.clipVolley.total / 25 ? 1 : 0, 1, 0);
 
   // Drones keep shooting while the launchers reload, so folding them in would make the figure grow
   // with something that has no clip at all. Same fit, same clip damage, larger total volley.
