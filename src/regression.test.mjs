@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -5573,6 +5573,193 @@ Agency 'Overclocker' SB7 Dose III
   // MAX across the rack, not a sum: the rack is empty when its slowest launcher empties. A mixed
   // rack of 4 RHML must report the same duration as a rack of 7, not four sevenths of it.
   check('clip-dmg', 'clip duration is per-rack, not summed', mixed.clipSeconds, rhml.clipSeconds, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12k. LOCK TIME: how long to acquire a target, from scan resolution and TARGET signature.
+//
+// pyfa eos/calc.py calculateLockTime: 40000 / scanRes / asinh(tgtSig)^2, capped at CCP's 30-minute
+// ceiling. The expected values below were produced by EXECUTING that function out of the pyfa source
+// tree, not by reading back what ours prints.
+//
+// This shipped wrong for a long time and nothing caught it, because nothing rendered it. It read
+// 40000 / (scanRes * tgtSig**1.4) — not a loose approximation of the real curve but a different shape
+// entirely, saying 2.21 s where pyfa says 13.07 for a pod and 0.03 s against 4.41 for a battleship.
+// The Lock graph was right throughout only because it carried a private inline copy of the correct
+// formula; the two are now a single function, and this section is what stops them parting again.
+//
+// The eight radii are pyfa's own reference hull sizes (gui/builtinStatsViews/targetingMiscViewMinimal
+// RADII), so any figure here can be read straight off pyfa's Scan Resolution tooltip.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nLOCK TIME (scan resolution vs target signature)');
+  const PYFA_AT_200 = [
+    ['Pod',            25, 13.065873],
+    ['Interceptor',    33, 11.392681],
+    ['Frigate',        38, 10.662828],
+    ['Destroyer',      83,  7.653220],
+    ['Cruiser',       130,  6.468024],
+    ['Battlecruiser', 265,  5.082717],
+    ['Battleship',    420,  4.411241],
+    ['Carrier',      3000,  2.642652],
+  ];
+  // The shape of the curve, and the only checks here that would have caught the old formula.
+  for (const [size, radius, expected] of PYFA_AT_200) {
+    check('locktime', `${size} (sig ${radius}) at 200mm`, calcLockTime(200, radius), expected, 1e-6);
+  }
+  // Scan resolution divides linearly, so doubling it exactly halves every figure above. Asserted
+  // against our own 200mm result rather than against `expected / 2`: the literals are pyfa's output
+  // rounded to six places, and halving that rounding leaves a ~5e-7 relative gap — enough to fail a
+  // tolerance tight enough to mean anything. Comparing the two calls pins the scan-res axis exactly.
+  // Deliberately WEAK against the old bug, which was also 1/scanRes; the radii above are what pin the
+  // signature axis, where the error actually lived.
+  for (const [size, radius] of PYFA_AT_200) {
+    check('locktime', `${size} halves at 400mm`, calcLockTime(400, radius), calcLockTime(200, radius) / 2, 1e-12);
+  }
+  // CCP's 30-minute ceiling — the one place the curve stops being a curve, reachable in game only by
+  // a heavily damped ship against something tiny.
+  check('locktime', 'capped at 30 minutes', calcLockTime(1, 25), 1800, 0);
+  check('locktime', 'below the cap is left alone', calcLockTime(4, 25) < 1800 ? 1 : 0, 1, 0);
+  // Null, not 0 or Infinity: a ship with no scan resolution cannot lock at all, which is a different
+  // statement from "locks instantly". The Lock graph turns that into a plotted 0 explicitly (`?? 0`)
+  // rather than by accident.
+  check('locktime', 'no scan res is null', calcLockTime(0, 25) === null ? 1 : 0, 1, 0);
+  check('locktime', 'no target sig is null', calcLockTime(200, 0) === null ? 1 : 0, 1, 0);
+  // A real hull, so the function is pinned against the engine's scan resolution and not only against
+  // hand-fed numbers. The Astarte's 306 mm is already validated in section 1.
+  const astarteScanRes = 306;
+  check('locktime', 'Astarte (306mm) locks a cruiser', calcLockTime(astarteScanRes, 130), 4.227467, 1e-6);
+}
+
+// ─── 12l. PROPULSION SIZE SPLIT ──────────────────────────────────────────────
+//     CCP ships microwarpdrives and afterburners as two flat market groups, so the browser inserts
+//     a size level of its own off the "5MN"/"50000MN" token in each name. That is a synthetic node,
+//     which makes the loss-free property the thing worth pinning: if a future EVE patch names one
+//     of these without the token, it must fall back to sitting directly under the group, never
+//     vanish. The counts below are the whole group, walked recursively — the same walk the search
+//     corpus uses — so they hold whatever the split does internally.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPROPULSION SIZE SPLIT');
+  const node = (name) => {
+    let found = null;
+    (function walk(ns) { for (const n of ns) { if (n.name === name) found ??= n; walk(n.children ?? []); } })(REAL_MODULE_BROWSER.mid);
+    return found;
+  };
+  const countAll = (n) => (n.mods?.length ?? 0) + (n.children ?? []).reduce((s, c) => s + countAll(c), 0);
+  for (const [group, total, sizes] of [['Microwarpdrives', 69, ['5MN', '50MN', '500MN', '50000MN']],
+                                       ['Afterburners', 70, ['1MN', '10MN', '100MN', '10000MN']]]) {
+    const n = node(group);
+    check('propsize', `${group} still holds every module`, countAll(n), total, 0);
+    // Ascending by the NUMBER, which is why the node names are generated and sorted numerically:
+    // sorted as text, "50000MN" would land between "5MN" and "500MN".
+    check('propsize', `${group} splits into sizes, smallest first`,
+          (n.children ?? []).map((c) => c.name).join(',') === sizes.join(',') ? 1 : 0, 1, 0);
+    // Nothing left stranded at the group level — every one of these carries the token today, so a
+    // non-zero count here means a name shape changed and the list above needs revisiting.
+    check('propsize', `${group} has no unsized leftovers`, n.mods.length, 0, 0);
+  }
+  // Spot-check one item per group actually landed in its own size, not just that the buckets exist.
+  const inSize = (group, size, re) =>
+    (node(group).children.find((c) => c.name === size)?.mods ?? []).some((m) => re.test(m.name)) ? 1 : 0;
+  check('propsize', '500MN holds the battleship MWD', inSize('Microwarpdrives', '500MN', /^500MN Microwarpdrive II$/), 1, 0);
+  // A deadspace name puts the size mid-string rather than at the front, which a prefix-only match
+  // would miss and drop into the leftovers.
+  check('propsize', '5MN holds Coreli A-Type', inSize('Microwarpdrives', '5MN', /^Coreli A-Type 5MN Microwarpdrive$/), 1, 0);
+  check('propsize', '10000MN holds the capital AB', inSize('Afterburners', '10000MN', /^10000MN Afterburner II$/), 1, 0);
+}
+
+// ─── 12m. THE CENOTAPH: STALE SLOT COUNTS, AND RESIST-IGNORING DAMAGE ─────────
+//
+// Two unrelated bugs that the same hull happened to surface.
+//
+// (1) ships.json is a legacy precomputed bundle and is authoritative for nothing — lookupShip
+//     already overrode mass/volume/sensors from the dogma bundle, and slot counts now go the same
+//     way. Four hulls disagreed, all four verified against pyfa's eve.db. A wrong count is worse
+//     than a wrong readout: it is a rack you can drop a module into that the real ship cannot
+//     mount, so the fit is quietly invalid and the fitting numbers are quietly fiction.
+//
+// (2) Breacher pods deal damage that no resist touches. It used to be folded into weaponDps.total
+//     with no per-type component, and applyTargetResists REBUILDS total from the components — so
+//     the instant a target profile was selected, 750 DPS became 0. The fix is pyfa's: a fifth
+//     `pure` channel (eos/utils/stats.py DmgTypes.pure) that is summed into total and never
+//     weighted. That is why the checks below sweep resists to 100% and expect no movement at all.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCENOTAPH: SLOTS + RESIST-IGNORING DAMAGE');
+  // Every hull where ships.json and the dogma bundle disagree, expectations read out of pyfa's
+  // eve.db. What ships.json gets wrong, in the same order: Cenotaph 3 lows, Maelstrom 8/6 (CCP moved
+  // one high to the mids), and one high each on the two Precursor destroyers.
+  for (const [name, hi, med, low, rig] of [['Cenotaph', 8, 7, 2, 3], ['Maelstrom', 7, 7, 5, 3],
+                                           ['Skybreaker', 2, 4, 3, 3], ['Stormbringer', 2, 6, 3, 3]]) {
+    const s = lookupShip(name);
+    check('ceno', `${name} racks match pyfa`,
+          [s.hiSlots, s.medSlots, s.lowSlots, s.rigSlots].join('/') === [hi, med, low, rig].join('/') ? 1 : 0, 1, 0);
+  }
+  // A T3 cruiser's hull really does carry zero highs — its racks come from its subsystems. Pinned
+  // because the override is guarded on `!= null` rather than truthiness precisely to allow this.
+  check('ceno', 'T3 hull keeps its zero high slots', lookupShip('Loki').hiSlots, 0, 0);
+
+  const breacher = { typeID: tid('Cenotaph'), name: 'Cenotaph' };
+  const bSlots = { high: [M('Medium Breacher Pod Launcher', 'active', 'SCARAB Breacher Pod M')],
+                   mid: [], low: [], rigs: [] };
+  const at = (r) => calcFitStats(breacher, bSlots, [], null, r ? { targetResists: r } : {});
+  const raw = at(null);
+  check('ceno', 'one Medium breacher pod is 750 DPS', raw.weaponDps.total, 750, 0.0001);
+  check('ceno', 'it is all in the pure channel', raw.weaponDps.pure, raw.weaponDps.total, 0.0000001);
+  check('ceno', 'and none of it in the elemental ones',
+        raw.weaponDps.em + raw.weaponDps.th + raw.weaponDps.kin + raw.weaponDps.exp, 0, 0);
+  // The actual bug, at three points on the sweep including the degenerate one.
+  for (const [label, r] of [['no profile', null], ['50% flat', [0.5, 0.5, 0.5, 0.5]],
+                            ['Guristas', [0.55, 0.2, 0.3, 0.65]], ['100% immune', [1, 1, 1, 1]]]) {
+    const cs = at(r);
+    check('ceno', `breacher DPS survives ${label}`, cs.effective.weaponDps.total, 750, 0.0001);
+    check('ceno', `breacher volley survives ${label}`, cs.effective.weaponVolley.total,
+          raw.weaponVolley.total, 0.0000001);
+    check('ceno', `and reaches the headline total vs ${label}`, cs.effective.totalDps.total, 750, 0.0001);
+  }
+  // Resist-ignoring must not mean resist-ignoring for the guns bolted on beside it. Same hull, same
+  // pod, plus drones that DO care — the elemental part still has to take the full hit.
+  const mixed = calcFitStats(breacher, bSlots,
+                             [{ id: 'd0', typeID: tid('Hornet II'), name: 'Hornet II', qty: 5, active: true }],
+                             null, { targetResists: [1, 1, 1, 1] });
+  check('ceno', 'drones alongside are still fully resisted', mixed.effective.droneDps.total, 0, 0);
+  check('ceno', 'while the pod beside them is not', mixed.effective.totalDps.total, 750, 0.0001);
+
+  // Correcting the hull is only half of it: a SAVED fit stores its racks verbatim, so every existing
+  // Cenotaph keeps the third low it was built with and the fix looks like it did nothing. Racks are
+  // therefore reconciled against the hull on load. A migration would not do — it runs once, so the
+  // next eve.db bump would strand fits again.
+  const empty = (id, label) => ({ id, name: `[Empty ${label} Slot]`, type: 'empty' });
+  const mod = (id, name) => ({ id, name, typeID: tid(name), type: 'module', state: 'active' });
+  const stale = { high: [], mid: [],
+                  low: [mod('l0', 'Damage Control II'), empty('l1', 'Low'), mod('l2', '400mm Steel Plates II')],
+                  rigs: [] };
+  const fixed = reconcileRacks(stale, lookupShip('Cenotaph'));
+  check('ceno', 'a saved fit is trimmed to the real rack', fixed.low.length, 3, 0);
+  check('ceno', 'the surviving slots keep their modules',
+        fixed.low.slice(0, 2).map((m) => m.name).join('|'), 'Damage Control II|[Empty Low Slot]', 0);
+  // Kept, not deleted — deleting would silently eat a module the user paid for. Flagged instead, and
+  // calc.js already excludes orphans from every stat.
+  check('ceno', 'the stranded module is kept, flagged', fixed.low[2].orphan === true ? 1 : 0, 1, 0);
+  check('ceno', 'and it is the one that was stranded', fixed.low[2].name, '400mm Steel Plates II', 0);
+  check('ceno', 'the orphan is excluded from stats',
+        calcFitStats({ typeID: tid('Cenotaph'), name: 'Cenotaph' }, fixed, [], null, {}).armorHP,
+        calcFitStats({ typeID: tid('Cenotaph'), name: 'Cenotaph' },
+                     { ...fixed, low: fixed.low.slice(0, 2) }, [], null, {}).armorHP, 0.0000001);
+  // The other direction: the two Precursor destroyers GAINED a high, so a fit saved with one must be
+  // padded rather than left short.
+  const short = reconcileRacks({ high: [mod('h0', 'Light Entropic Disintegrator II')], mid: [], low: [], rigs: [] },
+                               lookupShip('Skybreaker'));
+  check('ceno', 'a rack that grew is padded', short.high.length, 2, 0);
+  check('ceno', 'padding is empty, not a clone', short.high[1].type, 'empty', 0);
+  // A T3 cruiser's racks come from its subsystems, so the hull's own counts are not the answer.
+  const loki = { high: [mod('h0', 'Damage Control II')], mid: [], low: [], rigs: [] };
+  check('ceno', 'T3 cruisers are left alone', reconcileRacks(loki, lookupShip('Loki')) === loki ? 1 : 0, 1, 0);
+  // An already-correct fit must come back by reference, so loading one causes no re-render churn.
+  const ok = generateEmptySlots(lookupShip('Cenotaph'));
+  check('ceno', 'a correct fit is returned untouched',
+        reconcileRacks(ok, lookupShip('Cenotaph')) === ok ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

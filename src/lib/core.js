@@ -506,12 +506,23 @@ function lookupShip(name){
   //                    tab prints it verbatim ("20 Laser" on a Vargur).
   //   sensorStrength — two hulls are stale (Cenotaph 25→15, Tholos 16→8), so it comes across with
   //                    the type it belongs to rather than being left to disagree with it.
+  //   slot counts    — four hulls are stale, and this is the one users notice: ships.json gives the
+  //                    Cenotaph a third low slot it does not have, the Maelstrom 8 high / 6 mid
+  //                    (CCP moved one to the mids: it is 7/7), and the Skybreaker and Stormbringer
+  //                    one high each instead of two. All four verified against pyfa's eve.db.
+  //                    A wrong count is worse than a wrong readout — it is a rack you can fit a
+  //                    module into that the real ship cannot mount, so the fit is quietly invalid.
+  //                    Guarded on `!= null` rather than truthiness: 0 is the correct hiSlots for a
+  //                    T3 cruiser, whose racks come from its subsystems instead.
   const _a=ship.typeID?((TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.attrs??(TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.a):null;
   if(_a){
     if(!ship.mass)ship.mass=_a.mass??0;
     if(!ship.volume)ship.volume=_a.volume??0;
     const sen=strongestSensor(_a)[0];
     if(sen){ship.sensorType=sen[0];ship.sensorStrength=sen[1];}
+    for(const[k,v]of[["hiSlots",_a.hiSlots],["medSlots",_a.medSlots],["lowSlots",_a.lowSlots],
+                     ["rigSlots",_a.rigSlots??_a.upgradeSlotsLeft]])
+      if(v!=null)ship[k]=v;
   }
   return ship;
 }
@@ -638,6 +649,43 @@ function generateEmptySlots(ship,subsystems){
     // so this section is simply empty for ships, no isStructure() check needed.
     services:make("sv","Service",s.serviceSlots??0),
   };
+}
+
+// A saved fit stores its racks verbatim, so a fit keeps whatever slot count the app believed in on
+// the day it was made. That is normally invisible — until the count itself turns out to have been
+// wrong (ships.json gave the Cenotaph a third low it does not have) or CCP moves one in a patch, at
+// which point every EXISTING fit is still the old shape and the correction appears not to have
+// worked. Reconcile on load rather than in a storage migration: a migration is one-shot, so the next
+// eve.db bump would strand fits all over again, whereas this is self-healing by construction.
+//
+// A module in a slot that no longer exists is KEPT, flagged `orphan` — the same thing a T3 subsystem
+// swap does (tabs.jsx), rendered red with a NO SLOT badge and excluded from every stat. Deleting it
+// would silently eat a module the user paid for, and pyfa keeps it for the same reason. A rack that
+// GREW is padded with empties, which is the Skybreaker/Stormbringer direction of the same bug.
+//
+// T3 cruisers are skipped: their racks come from fitted subsystems, not the hull, so the hull's own
+// counts are not the answer and swapSubsystem already reconciles them.
+function reconcileRacks(slots,ship){
+  if(!slots||!ship||isT3Cruiser(ship.name))return slots;
+  const RACKS=[["high","h","High",ship.hiSlots],["mid","m","Mid",ship.medSlots],
+               ["low","l","Low",ship.lowSlots],["rigs","r","Rig",ship.rigSlots],
+               ["services","sv","Service",ship.serviceSlots]];
+  let changed=false;
+  const out={...slots};
+  for(const[key,prefix,label,count]of RACKS){
+    const cur=slots[key];
+    if(!Array.isArray(cur)||typeof count!=="number")continue;
+    if(cur.length===count&&!cur.some(m=>m?.orphan))continue;
+    const rack=[];
+    for(let i=0;i<count;i++)
+      rack.push(cur[i]?{...cur[i],orphan:false}
+                      :{id:`${prefix}${i}`,name:`[Empty ${label} Slot]`,icon:null,type:"empty"});
+    for(let i=count;i<cur.length;i++)
+      if(cur[i]?.typeID&&cur[i].type!=="empty")rack.push({...cur[i],orphan:true});
+    out[key]=rack;
+    changed=true;
+  }
+  return changed?out:slots;
 }
 
 // Reads the fit a user has copied — native (Capacitor's Clipboard plugin, the only thing that can
@@ -925,6 +973,15 @@ MT_GROUP_ICON['1708']=33176;
 // A Cynosural Field Generator is the one thing under here everyone recognises on sight.
 MT_GROUP_ICON['779']=21096;
 
+// CCP sells every microwarpdrive (69 of them) and every afterburner (70) in one flat market group,
+// so the first thing you have to do in either list is scroll past three sizes you can't fit. Insert
+// the size level the market tree doesn't have, off the "5MN"/"50000MN" token every one of these
+// carries in its name — that token IS the size designation in EVE, and it is the choice you make
+// before meta tier, not after. Any module that somehow lacks the token stays directly under the
+// group rather than being dropped, so the split can never hide an item.
+const MG_SIZE_SPLIT=new Set([131,542]);
+const MN_SIZE=/\b(\d+)MN\b/;
+
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
   const metaOrder={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,Abyssal:6};
@@ -960,13 +1017,32 @@ function buildModuleBrowser(slotType){
       return {name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID,
               calib:a.upgradeCost??a['1153']??null};
     });
+    // String ids so a synthetic node can never collide with a real marketGroupID sitting beside it.
+    // Sizes ascend numerically ("50MN" before "500MN"), which localeCompare would not give.
+    let ownMods=outMods,subNodes=children;
+    if(MG_SIZE_SPLIT.has(mgId)&&children.length===0){
+      const bySize=new Map();
+      const rest=[];
+      for(const m of outMods){
+        const size=MN_SIZE.exec(m.name)?.[1];
+        if(size==null){rest.push(m);continue;}
+        if(!bySize.has(size))bySize.set(size,[]);
+        bySize.get(size).push(m);
+      }
+      if(bySize.size>1){
+        ownMods=rest;
+        subNodes=[...bySize.entries()].sort((a,b)=>Number(a[0])-Number(b[0]))
+          .map(([size,ms])=>({id:`${mgId}:${size}`,name:`${size}MN`,children:[],mods:ms,
+                              iconTid:ms.find(m=>m.typeID)?.typeID??null}));
+      }
+    }
     // CCP's nominated item first; otherwise the first real item anywhere beneath this node, which
     // is what makes the icon meaningful for leaf groups the market tree does not nominate one for.
     const iconTid=MT_GROUP_ICON[String(mgId)]
-      ?? outMods.find(m=>m.typeID)?.typeID
-      ?? children.map(c=>c.iconTid).find(Boolean)
+      ?? ownMods.find(m=>m.typeID)?.typeID
+      ?? subNodes.map(c=>c.iconTid).find(Boolean)
       ?? null;
-    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children,mods:outMods,iconTid};
+    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children:subNodes,mods:ownMods,iconTid};
   }
   const rootId=SLOT_ROOT[slotType]??9;
   return(MG_CHILDREN[String(rootId)]??[]).sort((a,b)=>a.name.localeCompare(b.name)).map(c=>buildNode(c.id)).filter(Boolean);
@@ -1586,4 +1662,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

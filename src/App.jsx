@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
-import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
+import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, reconcileRacks, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
 import { C, THEMES, setTheme } from "./theme.js";
@@ -126,7 +126,11 @@ export default function App(){
   const[fitsDB,setFitsDB]=useState(()=>getLoadedFitsDB()??SAVED_FITS_SEED);
   const[activeFit,setActiveFit]=useState(()=>{try{const s=localStorage.getItem("pyfa-activefit");if(s)return JSON.parse(s);}catch{}return null;});
   const initialFit=(()=>{try{const db=getLoadedFitsDB();const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af)return db[af.ship]?.find(f=>f.name===af.fitName)||null;}catch{}return null;})();
-  const[slots,setSlots]=useState(initialFit?.slots??generateEmptySlots(lookupShip("Hyperion")));
+  // reconcileRacks, because a saved fit carries the rack sizes it was made with — see core.js. Both
+  // fit-load paths go through it (here for the fit restored on launch, and in loadFit below).
+  const[slots,setSlots]=useState(initialFit?.slots
+    ?reconcileRacks(initialFit.slots,lookupShip(activeFit?.ship))
+    :generateEmptySlots(lookupShip("Hyperion")));
   const[drones,setDrones]=useState(initialFit?.drones??[]);
   const[fighters,setFighters]=useState(initialFit?.fighters??[]);
   const[dmgProfile,setDmgProfile]=useState({name:"Uniform",p:[0.25,0.25,0.25,0.25]});
@@ -467,7 +471,7 @@ export default function App(){
       const next=[...base,entry];
       return next.length>MAX_OPEN_TABS?next.slice(next.length-MAX_OPEN_TABS):next;
     });
-    setSlots(fit?.slots??generateEmptySlots(lookupShip(ship)));
+    setSlots(fit?.slots?reconcileRacks(fit.slots,lookupShip(ship)):generateEmptySlots(lookupShip(ship)));
     setDrones(fit?.drones??[]);
     setFighters(fit?.fighters??[]);
     setCargoItems(fit?.cargo??[]);
