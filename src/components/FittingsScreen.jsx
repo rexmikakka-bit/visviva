@@ -12,7 +12,7 @@ import { TAG_PALETTE, MAX_TAG_LEN, normalizeTag, tagKey, tagsOf, hasTag, toggleT
 import { nameMatchesQuery, searchScore } from "../lib/jargon.js";
 import { directionOf } from "../lib/compare.js";
 import { FitTab, StatsTab } from "./tabs.jsx";
-import { InfoButton, ItemPrice, ResistBars, SheetSearchBar, TraitsPanel, useVisualViewport } from "./ui.jsx";
+import { InfoButton, ItemPrice, ModifierBreakdown, ResistBars, SheetSearchBar, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
@@ -333,6 +333,10 @@ const heroMaxFor = (width, vh) => Math.max(HERO_MIN, Math.round(Math.min(width, 
 
 export function ShipInfoSheet({ship, cs, onClose}) {
   const [tab, setTab] = useState('traits');
+  // Which attribute rows have their modifier breakdown expanded. Deliberately the only state here:
+  // the traced twin is derived below rather than stored, so it cannot go stale against a recomputed
+  // `cs` the way a useState copy would.
+  const [openAttrs, setOpenAttrs] = useState(() => new Set());
   // Scroll-driven, so no CSS transition on the height: the pixels are already coming one frame at a
   // time and easing them would make the art lag the finger.
   const [scrollY, setScrollY] = useState(0);
@@ -446,6 +450,36 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   };
   const twoCol = !!cs;
   const GRID = twoCol ? '1fr auto auto' : '1fr auto';
+
+  // ── Modifier breakdowns for the hull's own attributes ─────────────────────
+  //
+  // Unlike a module's info panel, most rows on this tab print a stat calc.js DERIVED rather than the
+  // engine attribute itself — lock range in km where the engine holds metres, an AU/s warp speed
+  // where the engine holds a multiplier. Handing such a row to the engine's breakdown would explain
+  // a different number than the one printed beside it.
+  //
+  // So the gate is: render the engine's value through the ROW'S OWN formatter and require the exact
+  // string the row is already showing. If it renders identically it IS that number, whatever route
+  // calc.js took to it; if the row is a different quantity the strings diverge immediately (a warp
+  // speed of "3.00 AU/s" against a multiplier's "1.00 AU/s"), and no breakdown is offered. That is a
+  // property each row proves about itself, rather than a hand-kept list of the safe ones — which
+  // would be the thing that silently rots the next time calc.js changes how a stat is derived.
+  //
+  // Note this reads the UNTRACED hull, which is already computed. Deciding whether to show the ▶
+  // must not itself cost the traced recompute the whole design exists to defer.
+  const shipEng = cs?.fittedShip ?? null;
+  const explainable = (r, changed) => {
+    if (!changed || !r.attr || !shipEng?._retrace) return false;
+    const eng = shipEng.attrs?.get?.(r.attr);
+    if (typeof eng !== 'number' || !isFinite(eng)) return false;
+    try { return r.fmt(eng) === r.fmt(r.cur); } catch { return false; }
+  };
+  // Pulled during render rather than held in state: calc.js memoises the traced pass per stats
+  // object, so this costs one recompute however many rows are open, and it re-derives for free if a
+  // new `cs` arrives while the sheet is up.
+  const traced = openAttrs.size && shipEng?._retrace ? shipEng._retrace() : null;
+  const toggleAttr = (k) =>
+    setOpenAttrs(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   return (
     <div style={{position:'fixed',inset:0,zIndex:300,display:'flex',flexDirection:'column'}}
@@ -569,16 +603,29 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                     const dir = changed ? Math.sign(r.cur - r.base) : 0;
                     const better = changed && r.attr ? directionOf(r.attr, r.cur, r.base, ship?.typeID) : null;
                     const valColor = better == null ? C.text : (better ? C.rig : C.danger);
+                    // Only a CHANGED row has anything to explain, so the highlight band doubles as
+                    // the affordance — exactly as it does on a module's info panel one tap away.
+                    const tappable = explainable(r, changed);
+                    const isOpen = tappable && openAttrs.has(r.attr);
                     // A changed row widens by this panel's own 16px inset and gives it straight back
                     // as padding, so the band reaches the screen edges while the columns do not move.
                     // The scroll box above has no padding of its own, so -16 lands exactly on its
                     // edge and creates no overflow.
                     return (
-                    <div key={r.label} style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
+                    <div key={r.label}>
+                    <div onClick={tappable?()=>toggleAttr(r.attr):undefined}
+                      role={tappable?'button':undefined} tabIndex={tappable?0:undefined}
+                      aria-expanded={tappable?isOpen:undefined}
+                      style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
                       padding:changed?'5px 16px':'5px 0',margin:changed?'0 -16px':0,
-                      borderBottom:`1px solid ${C.border}`,
+                      borderBottom:isOpen?'none':`1px solid ${C.border}`,
+                      cursor:tappable?'pointer':'default',
                       background:changed?C.accentLight:'transparent'}}>
-                      <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{r.label}</span>
+                      <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>
+                        {r.label}
+                        {tappable&&<span style={{display:'inline-block',fontSize:8,marginLeft:5,color:C.textMute,
+                                                 transform:isOpen?'rotate(90deg)':'none'}}>▶</span>}
+                      </span>
                       <span style={{fontSize:12,fontWeight:600,color:valColor,textAlign:'right',
                         fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
                         ...(twoCol&&r.cur==null?{gridColumn:'2 / span 2'}:{})}}>
@@ -588,6 +635,11 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                       {twoCol&&r.cur!=null&&<span style={{fontSize:12,textAlign:'right',fontVariantNumeric:'tabular-nums',
                         whiteSpace:'nowrap',color:changed?C.textMid:C.textMute}}>
                         {r.base!=null?r.fmt(r.base):'—'}</span>}
+                    </div>
+                    {/* The row's own formatter, so the breakdown states mass in the millions of kg
+                        the row above it uses rather than the info panel's default rendering. */}
+                    {isOpen&&<ModifierBreakdown attr={r.attr} ex={traced?.attrs?.explain(r.attr)}
+                                                bleed={16} fmt={r.fmt}/>}
                     </div>);
                   })}
                 </div>);

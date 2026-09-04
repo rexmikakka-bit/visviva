@@ -12,7 +12,7 @@
  * so App.jsx requires no modifications.
  */
 
-import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES } from './dogma-engine-init.js';
+import { Fit, TYPES, typeIDByName, AID, EFFECTS_DATA, ATTR_META, DRONE_TYPES, setTrace, tracing } from './dogma-engine-init.js';
 import alphaCloneData from './data/alpha-clone.json' with { type: 'json' };
 // Attribute ID → name map (inverse of AID), for abyssal/mutaplasmid attribute resolution.
 export const ATTR_ID_TO_NAME = {};
@@ -1360,11 +1360,13 @@ const IMMOBILISING_SUPERWEAPON_EFFECTS = new Set([4489, 4490, 4491, 4492, 6201, 
 // EVE does NOT stack same-type warfare buffs from different sources: only the strongest of each
 // type applies, which is why these are collected into a buffID -> strongest map first.
 function collectBursts(modItems, externalBursts) {
-  const burstByType = new Map();  // buffID -> strongest value
-  const addBurst = (buffID, value) => {
+  const burstByType = new Map();  // buffID -> { value: strongest, label: the charge that supplied it }
+  const addBurst = (buffID, value, label) => {
     if (!buffID || !value) return;
     const cur = burstByType.get(buffID);
-    if (cur == null || Math.abs(value) > Math.abs(cur)) burstByType.set(buffID, value);
+    // The label follows the WINNER, not the first seen. Only the strongest of each buff type applies,
+    // so naming any other source in the breakdown would credit a burst that is doing nothing.
+    if (cur == null || Math.abs(value) > Math.abs(cur.value)) burstByType.set(buffID, { value, label });
   };
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isActive(slot.state)) continue;
@@ -1372,19 +1374,29 @@ function collectBursts(modItems, externalBursts) {
     const chargeName = (slot.ammo || '').replace(/\s*\(\d+\)$/, '');
     const chargeTid = chargeName ? (typeIDByName(chargeName) ?? tidByName(chargeName)) : null;
     const cAttrs = chargeTid ? (TYPES[chargeTid]?.attrs || {}) : {};
-    for (const eb of extractChargeBursts(fitItem, cAttrs)) addBurst(eb.buffID, eb.value);
+    for (const eb of extractChargeBursts(fitItem, cAttrs)) addBurst(eb.buffID, eb.value, chargeName);
   }
-  for (const eb of (externalBursts ?? [])) addBurst(eb.buffID, eb.value);
+  for (const eb of (externalBursts ?? [])) addBurst(eb.buffID, eb.value, eb.label);
   return burstByType;
 }
+
+// A warfare buff is named by its CHARGE — "Shield Harmonizing Charge" is what the pilot loads, what
+// the Effects tab lists, and what distinguishes one boost from another; the burst MODULE is nearly
+// the same item whatever it is projecting. `burst` is its own kind because the source is usually not
+// on this ship at all, so calling it a module would be a lie the panel repeats next to real ones.
+const burstSource = (b) => ({ name: b?.label || 'Command burst', kind: 'burst' });
 
 // Module-targeted warfare buffs, by group or by required skill. Ship-attribute buffs are applied
 // separately in calcFitStats (they must land before the HP/resist snapshot); a projection SOURCE
 // only needs its MODULES boosted, since all we read off it is rep amounts and cycle times.
 function applyModuleBursts(burstByType, modItems) {
-  for (const [buffID, eff] of burstByType) {
+  for (const [buffID, b] of burstByType) {
+    const eff = b.value;
     const def = WARFARE_BUFFS[buffID];
     if (!def || !eff) continue;
+    // Built once per buff rather than per module — a fleet boost lands on every weapon on the rack,
+    // and `tracing()` is false on the pass whose cost actually matters.
+    const src = tracing() ? burstSource(b) : null;
     // Group-targeted buffs (e.g. Electronic Superiority): apply by numeric attr ID to modules of the group.
     // NOT gated on module state. This lands on the module's own stat block (max range, falloff,
     // tracking, EWAR strength...) exactly like a skill or rig bonus would, and the engine's own
@@ -1396,7 +1408,7 @@ function applyModuleBursts(burstByType, modItems) {
       for (const { a, g } of def.groupMods) {
         for (const { fitItem: m } of modItems) {
           if (!m) continue;
-          if (TYPES[m.typeID]?.g === g) m.attrs.applyMod(a, 6, eff, false);
+          if (TYPES[m.typeID]?.g === g) m.attrs.applyMod(a, 6, eff, false, null, src);
         }
       }
       continue;
@@ -1409,7 +1421,7 @@ function applyModuleBursts(burstByType, modItems) {
       for (const { fitItem: m } of modItems) {
         if (!m) continue;
         const rsArr = TYPES[m.typeID]?.rs ?? [];
-        if (rsArr.includes(skill)) m.attrs.applyMod(aid, 6, eff, false);
+        if (rsArr.includes(skill)) m.attrs.applyMod(aid, 6, eff, false, null, src);
       }
     }
   }
@@ -1484,12 +1496,13 @@ export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts
     // hit at full strength. A Celestis under an Information Command Burst read 26.5 km of lock range
     // against eos's 48.5. calcFitStats already applies these; this function has to as well.
     const burstByType = collectBursts(modItems, opts.externalBursts);
-    for (const [buffID, eff] of burstByType) {
+    for (const [buffID, b] of burstByType) {
       const def = WARFARE_BUFFS[buffID];
-      if (!def?.ship || !eff) continue;
+      if (!def?.ship || !b.value) continue;
+      const src = tracing() ? burstSource(b) : null;
       for (const attrName of def.ship) {
         const aid = AID[attrName];
-        if (aid != null) fit.ship.attrs.applyMod(aid, 6, eff, false);
+        if (aid != null) fit.ship.attrs.applyMod(aid, 6, b.value, false, null, src);
       }
     }
     for (const [key, attr] of Object.entries(EWAR_RESIST_ATTRS)) {
@@ -1748,7 +1761,57 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
   return { reps, caps, webs, neuts, painters, scrams, damps, sensorBoosts, trackDisr, guideDisr, ecm };
 }
 
+/**
+ * Public entry point. Delegates to the real implementation and hangs an on-demand provenance hook
+ * off each fitted item — see attachRetrace.
+ */
 export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
+  const cs = _calcFitStats(ship, slots, drones, skills, opts);
+  if (cs) attachRetrace(cs, [ship, slots, drones, skills, opts]);
+  return cs;
+}
+
+/**
+ * Gives every fitted item a `_retrace()` returning its twin from a TRACED recompute, whose
+ * `attrs.explain(attr)` names the modifiers behind each value.
+ *
+ * On demand rather than always-on because tracing measured ~15% on a full stats pass (+2.2 ms on a
+ * desktop, and this recomputes on every keystroke of a mutaplasmid slider — already the laggiest
+ * interaction in the app). The breakdown is read when someone taps a row, so it is not worth a
+ * permanent tax on every recalculation to have it sitting ready.
+ *
+ * The recompute is memoised on the closure, so opening five rows on four different modules still
+ * costs exactly one extra pass, and it is discarded with the stats object it belongs to — which
+ * happens on any edit to the fit, so a stale breakdown cannot outlive the numbers it explains.
+ */
+function attachRetrace(cs, args) {
+  let traced;
+  const run = () => {
+    if (traced === undefined) {
+      setTrace(true);
+      // finally, not a trailing call: an exception here would otherwise leave tracing on for the
+      // rest of the session and quietly impose the cost this whole design exists to avoid.
+      try { traced = _calcFitStats(...args); } finally { setTrace(false); }
+    }
+    return traced;
+  };
+  const wire = (map, pick) => {
+    for (const [key, item] of map) {
+      item._retrace = () => pick(run())?.get(key) ?? null;
+      // A charge has no map of its own — it is reachable only through the module holding it, and the
+      // charge panel is handed the charge rather than that module. Wired here and not as a side
+      // effect of the launcher's _retrace, which would make it depend on the order the two panels
+      // happen to be opened in.
+      if (item._charge) item._charge._retrace = () => pick(run())?.get(key)?._charge ?? null;
+    }
+  };
+  wire(cs.fittedItems, t => t?.fittedItems);
+  wire(cs.fittedDrones, t => t?.fittedDrones);
+  // Singular, so it takes the direct form rather than going through wire().
+  if (cs.fittedShip) cs.fittedShip._retrace = () => run()?.fittedShip ?? null;
+}
+
+function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts = {}) {
   if (!ship || !slots) return null;
 
   const sk = { ...SKILL_DEFAULTS, ...skills };
@@ -1951,8 +2014,13 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
         const val = (se.value ?? 0) * recoveryMult;   // e.g. -25 × 0.75 = -18.75
         if (!val) continue;
         const aid = AID[info.attr] ?? info.attr;
+        // Its own kind rather than plain 'booster': the drug's DESIGNED bonus already reaches this
+        // attribute through the engine under that name, so on a fit where both land the breakdown
+        // would otherwise print the same booster twice with no hint that one line is the penalty the
+        // pilot opted into and the other is what they took the drug for.
+        const src = tracing() ? { name: b.name, kind: 'sideEffect' } : null;
         if (info.kind === 'ship') {
-          fit.ship.attrs.applyMod(aid, 6, val, true);
+          fit.ship.attrs.applyMod(aid, 6, val, true, null, src);
         } else {
           for (const { slot, fitItem } of modItems) {
             if (!fitItem || !isActive(slot.state)) continue;
@@ -1961,7 +2029,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
               info.kind === 'turret'   ? TURRET_GROUPS.has(gn) :
               info.kind === 'launcher' ? gn.includes('Launcher') :
               info.kind === 'group'    ? info.groups.includes(gn) : false;
-            if (match) fitItem.attrs.applyMod(aid, 6, val, true);
+            if (match) fitItem.attrs.applyMod(aid, 6, val, true, null, src);
           }
         }
       }
@@ -1980,7 +2048,7 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // handed to the engine's RAH handler (it applies buff 13 before adapting). We then skip our own
   // buff-13 application below to avoid double-counting (the engine already put it on ship.attrs).
   let engineAppliedArmorBurst = false;
-  const armorBurstEff = burstByType.get(13);
+  const armorBurstEff = burstByType.get(13)?.value;
   if (armorBurstEff) {
     const hasActiveRAH = modItems.some(({ slot, fitItem }) =>
       fitItem && isActive(slot.state) && (fitItem.effectIDs ?? []).includes(4928));
@@ -1994,13 +2062,14 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   // Apply ship-attribute buffs (resonances, HP, sig, agility, sensor strength, scan res, etc.)
   // BEFORE we snapshot resists/HP below. Module-targeted buffs are applied later.
-  for (const [buffID, eff] of burstByType) {
+  for (const [buffID, b] of burstByType) {
     if (buffID === 13 && engineAppliedArmorBurst) continue; // already on ship.attrs from the RAH pass
     const def = WARFARE_BUFFS[buffID];
-    if (!def || !def.ship || !eff) continue;
+    if (!def || !def.ship || !b.value) continue;
+    const src = tracing() ? burstSource(b) : null;
     for (const attrName of def.ship) {
       const aid = AID[attrName];
-      if (aid != null) s.attrs.applyMod(aid, 6, eff, false);
+      if (aid != null) s.attrs.applyMod(aid, 6, b.value, false, null, src);
     }
   }
 
@@ -2012,11 +2081,18 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
   // multiplying afterwards gave 70.6 km against eos's 62.9. Projected DAMPS are still applied
   // post-hoc as opts.projectedDebuffs, and that stays correct: eos chains penalties separately from
   // bonuses, so a pure-penalty chain never competes with the ship's own bonuses.
+  //
+  // One array entry is one projected module, so each gets its own row and the stacking penalty
+  // between them is visible — which is the whole reason they go through the pool. The name is the
+  // module CLASS rather than the individual booster: the projection pipeline range-factors and
+  // resistance-scales the bonus down to a bare number well before it reaches here, and inventing a
+  // per-source identity at this point would be guessing at which one it was.
+  const rsbSrc = tracing() ? { name: 'Remote Sensor Booster', kind: 'projected' } : null;
   for (const b of (opts.projectedBoosts?.lock ?? [])) {
-    if (b && AID.maxTargetRange != null) s.attrs.applyMod(AID.maxTargetRange, 6, b, false);
+    if (b && AID.maxTargetRange != null) s.attrs.applyMod(AID.maxTargetRange, 6, b, false, null, rsbSrc);
   }
   for (const b of (opts.projectedBoosts?.scan ?? [])) {
-    if (b && AID.scanResolution != null) s.attrs.applyMod(AID.scanResolution, 6, b, false);
+    if (b && AID.scanResolution != null) s.attrs.applyMod(AID.scanResolution, 6, b, false, null, rsbSrc);
   }
 
   // HP — engine now applies all skill multipliers (Shield Management, Hull Upgrades, Mechanic)
@@ -2087,18 +2163,25 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
 
   // Projected EWAR debuffs (target painter, sensor dampener, weapon disruptors). Caller pre-stacks
   // each effect, so apply as direct PostPercent mods. Ship attrs hit the hull; weapon attrs hit modules.
+  //
+  // These arrive ALREADY STACKED — the caller collapses every damp on the field into one number,
+  // deliberately, because the stacking has to happen before the target's EWAR resistance scales it.
+  // So a row here is the whole incoming effect of that class, and naming it after the effect is the
+  // only honest label available: there is no longer a per-module identity to recover.
   const pd = opts.projectedDebuffs;
   if (pd) {
-    if (pd.lockRange) s.attrs.applyMod(AID['maxTargetRange'],  6, pd.lockRange, true);
-    if (pd.scanRes)   s.attrs.applyMod(AID['scanResolution'],  6, pd.scanRes, true);
+    const dampSrc = tracing() ? { name: 'Sensor dampening', kind: 'projected' } : null;
+    const disrSrc = tracing() ? { name: 'Tracking disruption', kind: 'projected' } : null;
+    if (pd.lockRange) s.attrs.applyMod(AID['maxTargetRange'],  6, pd.lockRange, true, null, dampSrc);
+    if (pd.scanRes)   s.attrs.applyMod(AID['scanResolution'],  6, pd.scanRes, true, null, dampSrc);
     if (pd.tracking || pd.turretOptimal || pd.turretFalloff) {
       for (const { slot: s2, fitItem: m } of modItems) {
         if (!m || !isActive(s2.state)) continue;
         const rs = TYPES[m.typeID]?.rs ?? [];
         if (rs.includes('Gunnery')) {
-          if (pd.tracking)      m.attrs.applyMod(AID['trackingSpeed'], 6, pd.tracking, true);
-          if (pd.turretOptimal) m.attrs.applyMod(AID['maxRange'],      6, pd.turretOptimal, true);
-          if (pd.turretFalloff) m.attrs.applyMod(AID['falloff'],       6, pd.turretFalloff, true);
+          if (pd.tracking)      m.attrs.applyMod(AID['trackingSpeed'], 6, pd.tracking, true, null, disrSrc);
+          if (pd.turretOptimal) m.attrs.applyMod(AID['maxRange'],      6, pd.turretOptimal, true, null, disrSrc);
+          if (pd.turretFalloff) m.attrs.applyMod(AID['falloff'],       6, pd.turretFalloff, true, null, disrSrc);
         }
       }
     }
@@ -3950,6 +4033,16 @@ export function calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, 
       .filter(({ slot }) => slot?.id != null)
       .map(({ slot, fitItem }) => [slot.id, fitItem])),
     fittedDrones: new Map(droneItems.filter(d => d.item).map(d => [d.raw?.id ?? d.item.name, d.item])),
+
+    // The hull itself, for the same reason: the ship sheet's attributes tab wants to explain a lock
+    // range or a max velocity the way a module row explains its damage modifier. It is NOT a map —
+    // there is exactly one — so attachRetrace wires it directly.
+    //
+    // Read it with care downstream: unlike a module, most rows on that tab print a stat this file
+    // DERIVED (targetRange in km, capRechargeMs, the post-engine speed chain), not the engine
+    // attribute. The consumer is responsible for checking the two agree before offering a
+    // breakdown; see shipAttrExplain() in FittingsScreen.
+    fittedShip: s,
 
     // A loaded missile's flight time, velocity and application are NOT engine values: this file
     // reads charge attributes raw off TYPES and builds its own multiplier chain for the hull

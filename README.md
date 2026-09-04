@@ -61,7 +61,7 @@ swaps every module for its cheapest **stat-identical** variant — same numbers,
 pyfa v2.68.0 (EVE client build 3424810) is the reference implementation. Where Axis disagrees with
 pyfa, Axis is treated as wrong until proven otherwise.
 
-Correctness is held in place by a regression suite of **993 checks** — real fits whose every number
+Correctness is held in place by a regression suite of **1,151 checks** — real fits whose every number
 was validated by hand against pyfa, and in many cases against pyfa's `eos` engine driven directly as
 a library. It runs on every change. A number in this app is not "whatever the code currently
 prints"; it is a value someone confirmed.

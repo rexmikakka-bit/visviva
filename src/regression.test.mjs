@@ -19,7 +19,7 @@
  */
 
 import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
-import { typeIDByName } from './dogma-engine-init.js';
+import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
@@ -5114,6 +5114,339 @@ Agency 'Overclocker' SB7 Dose III
         cloakedVel('Syndicate Cloaking Device'), 171, 0.005);
   check('blackops', 'Covert Ops Cloaking Device II: no penalty -> role-bonus speed boost',
         cloakedVel('Covert Ops Cloaking Device II'), 1706, 0.005);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12g. ATTRIBUTE PROVENANCE: explain() decomposes a value into the modifiers behind it.
+//
+// The attribute panel shows, under a changed value, every modifier that moved it and the multiplier
+// each one contributed. Two independent things have to hold for that display to be honest, and both
+// are pinned here:
+//
+//   1. base × Π rows.mult === final, EXACTLY. explain() does not read applyStacking's output; it
+//      re-derives the per-modifier terms in stackingTerms(), a deliberate second implementation of
+//      the same partition/sort/factor rules (applyStacking runs on every attribute read of every
+//      item and must not carry provenance machinery). Nothing but this check stops the two from
+//      drifting — a wrong sort order still produces plausible-looking rows that no longer multiply
+//      back, which is the failure mode that would ship a confidently wrong breakdown.
+//
+//   2. Every row names its source. A row with no source renders as "Other", so this is the gate on
+//      the source threading: a new modifier path added without a descriptor shows up here rather
+//      than as a silent gap in the panel.
+//
+// And the perf contract, which is the third thing that can regress invisibly: tracing is OFF unless
+// calc.js's attachRetrace turns it on around one recompute. If a stray setTrace(true) survives, every
+// calculate() in the app pays ~15% forever and nothing else in the suite would notice.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nATTRIBUTE PROVENANCE (explain() decomposition + source coverage)');
+  let _sn = 0;
+  const MI = (name, state, ammo) => ({ id: `p${_sn++}`, typeID: tid(name), state, ammo });
+
+  const FITS = [
+    ['Rupture', { high: Array(5).fill(0).map(() => MI('425mm AutoCannon II', 'active', 'Republic Fleet EMP M')),
+      mid: [MI('Tracking Computer II', 'active')],
+      low: [MI('Gyrostabilizer II','active'), MI('Gyrostabilizer II','active'), MI('Gyrostabilizer II','active')],
+      rigs: [MI('Medium Projectile Burst Aerator I','online')] }, []],
+    ['Caracal', { high: Array(5).fill(0).map(() => MI('Heavy Missile Launcher II','active','Scourge Fury Heavy Missile')),
+      mid: [MI('Large Shield Extender II','online')],
+      low: [MI('Ballistic Control System II','active'), MI('Ballistic Control System II','active')], rigs: [] }, []],
+    ['Abaddon', { high: Array(8).fill(0).map(() => MI('Mega Pulse Laser II','active','Conflagration L')),
+      mid: [MI('Cap Recharger II','online')],
+      low: [MI('Heat Sink II','active'), MI('Heat Sink II','active'), MI('Damage Control II','active')], rigs: [] }, []],
+    ['Vargur', { high: Array(4).fill(0).map(() => MI('800mm Repeating Cannon II','overheated','Republic Fleet EMP L')),
+      mid: [MI('Large Shield Booster II','overheated')],
+      low: [MI('Gyrostabilizer II','active')], rigs: [] }, []],
+    ['Ishtar', { high: [], mid: [MI('10MN Afterburner II','active')],
+      low: [MI('Drone Damage Amplifier II','active'), MI('Drone Damage Amplifier II','active')], rigs: [] },
+      [{ id: 'pd0', typeID: tid('Ogre II'), qty: 5, active: true }]],
+    // Mining crystals are the only fit here that reaches the ModAdd and PostAssignment branches of
+    // explain(); without a Hulk in the sweep those two row kinds are written but never executed.
+    ['Hulk', { high: [MI('Modulated Strip Miner II','active','Simple Asteroid Mining Crystal Type A II')],
+      mid: [], low: [], rigs: [] }, []],
+  ];
+
+  let checked = 0, worst = 0, unattributed = 0, adds = 0, assigns = 0;
+  for (const [ship, fit, drones] of FITS) {
+    const cs = calcFitStats({ typeID: tid(ship), name: ship }, fit, drones, null, {});
+    for (const it of [...cs.fittedItems.values(), ...cs.fittedDrones.values()]) {
+      const t = it._retrace(); if (!t) continue;
+      for (const o of [t, t._charge].filter(Boolean)) {
+        for (const n of Object.keys(o._td.a ?? {})) {
+          const ex = o.attrs.explain(n); if (!ex?.rows.length) continue;
+          checked++;
+          if (!ex.covered) unattributed++;
+          for (const r of ex.rows) { if (r.add != null) adds++; if (r.assigns) assigns++; }
+          // An add onto a base of zero has no multiplicative form at all (mult is null there), so the
+          // chain is genuinely not a product and there is nothing to assert. The panel still renders
+          // that row correctly, as the flat "+N" it really is.
+          if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+          const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+          // maxAttributeID clamps AFTER the chain, so on a capped attribute the product legitimately
+          // overshoots the printed value and there is no identity to assert.
+          if (ex.capped && prod > ex.final) continue;
+          worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+        }
+      }
+    }
+  }
+  console.log(`  (swept ${checked} modified attributes across ${FITS.length} fits, worst drift ${worst.toExponential(2)})`);
+  check('provenance', 'swept a meaningful number of attrs', checked > 150 ? 1 : 0, 1, 0);
+  // Float noise only — the terms are recomputed, not re-read, so anything above this is a real
+  // divergence between stackingTerms and applyStacking rather than rounding.
+  check('provenance', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('provenance', 'every modifier row names a source', unattributed, 0, 0);
+  check('provenance', 'ModAdd rows exercised', adds > 0 ? 1 : 0, 1, 0);
+  check('provenance', 'PostAssignment rows exercised', assigns > 0 ? 1 : 0, 1, 0);
+
+  // The stacking penalty is the reason to build this feature at all: EVE tells a player a
+  // Gyrostabilizer II is +10% damage and never tells them the third one is not. exp(-(rank^2)/7.1289)
+  // for ranks 0..2 = 1, 0.869120, 0.570583, so the third gives +5.706%, not +10%.
+  const gyros = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, FITS[0][1], [], null, {});
+  const dm = gyros.fittedItems.get('p0')._retrace().attrs.explain('damageMultiplier');
+  const pen = (dm?.rows ?? []).filter(r => r.source?.name === 'Gyrostabilizer II');
+  check('provenance', 'three Gyros listed separately', pen.length, 3, 0);
+  // Optional chaining so that losing the source labels reports as three failed checks rather than a
+  // stack trace out of the suite — a broken descriptor is a regression to read, not a crash.
+  check('provenance', 'first Gyro unpenalised', pen[0]?.mult, 1.1, 1e-9);
+  check('provenance', 'second Gyro at 86.912%', pen[1]?.mult, 1.0869119980800398, 1e-9);
+  check('provenance', 'third Gyro at 57.058%', pen[2]?.mult, 1.0570583143510561, 1e-9);
+  // The raw value survives alongside the effective one, so the panel can say "+10% at 57%" rather
+  // than only showing a number the player cannot reconcile with the module's own tooltip.
+  check('provenance', 'raw modifier kept beside effective', pen[2]?.raw, 1.1, 1e-9);
+
+  // Tracing is a global; a leak makes every calculate() in the app slower with no other symptom.
+  check('provenance', 'tracing off after a normal calc', tracing() ? 1 : 0, 0, 0);
+  const cold = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, FITS[0][1], [], null, {});
+  check('provenance', 'untraced explain() returns null',
+        cold.fittedItems.get('p0').attrs.explain('damageMultiplier') === null ? 1 : 0, 1, 0);
+  cold.fittedItems.get('p0')._retrace();
+  check('provenance', 'tracing off again after a retrace', tracing() ? 1 : 0, 0, 0);
+  // The traced twin must agree with the value actually on screen, or the breakdown explains a number
+  // the user is not looking at.
+  check('provenance', 'traced twin matches untraced value',
+        cold.fittedItems.get('p0')._retrace().attrs.get('damageMultiplier'),
+        cold.fittedItems.get('p0').attrs.get('damageMultiplier'), 1e-12);
+
+  // A charge panel can be opened without its launcher's panel ever being opened. The hook is wired
+  // at attach time rather than as a side effect of the launcher's _retrace precisely so that the
+  // order the two panels happen to be opened in cannot matter.
+  const fresh = calcFitStats({ typeID: tid('Abaddon'), name: 'Abaddon' }, FITS[2][1], [], null, {});
+  const ammo = [...fresh.fittedItems.values()].find(i => i._charge)?._charge?._retrace?.();
+  check('provenance', 'charge retraces without its launcher first', ammo?._td?.n, 'Conflagration L');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12h. HULL PROVENANCE: the same breakdown, for the ship's own attributes.
+//
+// The hull is reached differently from a module — `cs.fittedShip` is a single item, not a map — but
+// the arithmetic contract is identical and is re-asserted here rather than assumed from 12g.
+//
+// The part that is NOT identical, and is the real subject of this section, is the GATE. Most rows on
+// ShipInfoSheet's attributes tab print a stat calc.js derived, not the engine attribute: lock range
+// in km where the engine holds metres, an AU/s warp speed where the engine holds a multiplier. The
+// sheet decides whether to offer a breakdown by rendering the ENGINE value through the row's own
+// formatter and requiring the exact string the row already shows.
+//
+// That decision is made against the UNTRACED hull, because deciding whether to draw a chevron must
+// not trigger the traced recompute the whole design exists to defer. Which means the untraced and
+// traced twins have to agree attribute-for-attribute, or the sheet decides a row is safe using one
+// number and then explains a different one. That is the invariant below.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nHULL PROVENANCE (ship attributes + the untraced/traced gate)');
+  let _hn = 0;
+  const HM = (name, state = 'active') => ({ id: `h${_hn++}`, typeID: tid(name), state });
+
+  const HULLS = [
+    ['Rupture', { high: [], mid: [HM('10MN Afterburner II'), HM('Large Shield Extender II', 'online')],
+      low: [HM('Nanofiber Internal Structure II', 'online'), HM('Signal Amplifier II'), HM('Damage Control II')],
+      rigs: [] }],
+    ['Abaddon', { high: [], mid: [HM('Cap Recharger II', 'online')],
+      low: [HM('1600mm Steel Plates II', 'online'), HM('Damage Control II')], rigs: [] }],
+    ['Ishtar', { high: [], mid: [HM('10MN Afterburner II')], low: [HM('Damage Control II')], rigs: [] }],
+  ];
+
+  let checked = 0, worst = 0, unattributed = 0, disagreed = 0;
+  for (const [ship, fit] of HULLS) {
+    const cs = calcFitStats({ typeID: tid(ship), name: ship }, fit, [], null, {});
+    const untraced = cs.fittedShip;
+    const t = untraced?._retrace();
+    if (!t) { check('hull-prov', `${ship} retraces`, 0, 1, 0); continue; }
+    for (const n of Object.keys(t._td.a ?? {})) {
+      // The gate's premise: whatever the sheet read off the untraced hull to decide, the traced twin
+      // reports the same. Checked on EVERY attribute, not just the dozen the sheet happens to list,
+      // so adding a row to that tab cannot quietly land outside the tested set.
+      const a = untraced.attrs.get(n), b = t.attrs.get(n);
+      if (typeof a === 'number' && typeof b === 'number'
+          && Math.abs(a - b) > Math.abs(b || 1) * 1e-12) disagreed++;
+      const ex = t.attrs.explain(n);
+      if (!ex?.rows.length) continue;
+      checked++;
+      if (!ex.covered) unattributed++;
+      if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+      const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+      if (ex.capped && prod > ex.final) continue;
+      worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+    }
+  }
+  console.log(`  (swept ${checked} modified hull attributes across ${HULLS.length} hulls, worst drift ${worst.toExponential(2)})`);
+  check('hull-prov', 'swept a meaningful number of hull attrs', checked > 60 ? 1 : 0, 1, 0);
+  check('hull-prov', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('hull-prov', 'every hull modifier row names a source', unattributed, 0, 0);
+  check('hull-prov', 'untraced and traced hull agree everywhere', disagreed, 0, 0);
+
+  // The prop mod's two hardcoded ship effects (sig bloom, mass addition) are applied outside the
+  // effect dispatcher, so they were the last unattributed rows on a hull and are the reason the
+  // Afterburner is in every fit above. Mass is also the only ModAdd a bare hull reaches.
+  const ab = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, HULLS[0][1], [], null, {});
+  const mass = ab.fittedShip._retrace().attrs.explain('mass');
+  const abRow = (mass?.rows ?? []).find(r => r.source?.name === '10MN Afterburner II');
+  check('hull-prov', 'prop mod named as the source of added mass', abRow?.source?.kind, 'module');
+  check('hull-prov', 'mass added as a flat ModAdd', abRow?.add, 5000000, 1e-9);
+
+  // `capped` means the cap actually BIT, not "this attribute has a maxAttributeID". maxVelocity
+  // carries one, so the looser reading labelled every ship in the game as capped on a row that was
+  // nowhere near its ceiling -- and the panel prints that word to the user.
+  const vel = ab.fittedShip._retrace().attrs.explain('maxVelocity');
+  check('hull-prov', 'an uncapped maxVelocity is not flagged capped', vel?.capped ? 1 : 0, 0, 0);
+  // Polarized weapons force a resonance far above 1.0 and rely on the cap to floor the resist at 0%,
+  // which is the clearest case of a cap that genuinely bit.
+  const pol = calcFitStats({ typeID: tid('Rifter'), name: 'Rifter' },
+    { high: [{ id: 'x0', typeID: tid('Polarized 200mm AutoCannon'), state: 'active' }], mid: [], low: [], rigs: [] },
+    [], null, {});
+  const res = pol.fittedShip._retrace().attrs.explain('shieldEmDamageResonance');
+  check('hull-prov', 'a cap that bit IS flagged', res?.capped ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12i. OFF-SHIP PROVENANCE: modifiers calc.js applies itself, from outside the fit.
+//
+// 12g and 12h sweep fits whose every modifier reaches the attribute through the ENGINE's effect
+// dispatcher, which threads a descriptor for free. The three classes below never touch it — calc.js
+// applies them by hand, after calculate(), because each needs information the engine does not have:
+// a command burst comes off another pilot's fit entirely, a booster side effect is a penalty the user
+// toggled in the UI, and a projected damp has already been range-factored and resistance-scaled by
+// App.jsx. Those hand-written applyMod calls passed no source, so the panel fell back to the honest
+// but useless "Some modifiers on this value aren't identified yet" on exactly the fits — fleet, drug
+// and EWAR — where a player most wants the breakdown.
+//
+// The sweep below is the real gate (0 unattributed on a fit carrying all three at once). The named
+// checks after it pin the LABELLING rules, which the sweep cannot see: a source that says the wrong
+// thing is worse than one that says nothing, and it still counts as covered.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nOFF-SHIP PROVENANCE (command bursts, booster side effects, projected EWAR)');
+  let _on = 0;
+  const OM = (name, state = 'active', ammo) => ({ id: `o${_on++}`, typeID: tid(name), state, ammo });
+
+  const SLOTS = {
+    high: [OM('425mm AutoCannon II', 'active', 'Republic Fleet EMP M'),
+           OM('Shield Command Burst II', 'active', 'Shield Extension Charge')],
+    mid:  [OM('10MN Afterburner II'), OM('Large Shield Extender II', 'online')],
+    low:  [OM('Gyrostabilizer II', 'online')],
+    rigs: [],
+  };
+  // -30 is the raw attribute off Strong Blue Pill; Neurotoxin Recovery V scales the MAGNITUDE by
+  // 0.75, so the applied value is -22.5 and the row must read x0.775.
+  const BOOSTERS = [{ name: 'Strong Blue Pill Booster', active: true, sideEffects: [
+    { key: 'boosterShieldCapacityPenalty',    value: -30, enabled: true },
+    { key: 'boosterCapacitorCapacityPenalty', value: -30, enabled: true },
+    { key: 'boosterTurretOptimalRangePenalty', value: -30, enabled: true },
+  ] }];
+  // Two remote sensor boosters, deliberately unequal, so the pair proves they compete for stacking
+  // slots. Damps and disruptors arrive PRE-STACKED as single numbers -- that is the caller's job,
+  // because stacking must precede the target's EWAR resistance -- so those are one row each.
+  const OPTS = {
+    boosters: BOOSTERS,
+    projectedBoosts: { lock: [40, 30], scan: [] },
+    projectedDebuffs: { lockRange: -25, scanRes: -18, tracking: -30, turretOptimal: -20, turretFalloff: -10 },
+  };
+  const cs = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null, OPTS);
+
+  let checked = 0, worst = 0, unattributed = 0;
+  const items = [cs.fittedShip, ...cs.fittedItems.values()].filter(Boolean);
+  for (const it of items) {
+    const t = it._retrace(); if (!t) continue;
+    for (const o of [t, t._charge].filter(Boolean)) {
+      for (const n of Object.keys(o._td.a ?? {})) {
+        const ex = o.attrs.explain(n); if (!ex?.rows.length) continue;
+        checked++;
+        if (!ex.covered) unattributed++;
+        if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+        const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+        if (ex.capped && prod > ex.final) continue;
+        worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+      }
+    }
+  }
+  console.log(`  (swept ${checked} attributes on a burst + drug + EWAR fit, worst drift ${worst.toExponential(2)})`);
+  check('offship-prov', 'swept a meaningful number of attrs', checked > 40 ? 1 : 0, 1, 0);
+  check('offship-prov', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('offship-prov', 'nothing on a burst/drug/EWAR fit is unattributed', unattributed, 0, 0);
+
+  const rowsOf = (item, attr) => item?._retrace()?.attrs?.explain(attr)?.rows ?? [];
+  const named = (item, attr, name) => rowsOf(item, attr).find(r => r.source?.name === name);
+  const gunOf = (stats) => [...stats.fittedItems.values()].find(m => m._td?.n === '425mm AutoCannon II');
+
+  // A warfare buff is named by its CHARGE, not by the burst module. "Shield Command Burst II" is the
+  // same item whatever it is projecting; the charge is what the pilot chose and what the Effects tab
+  // already lists, so it is the only name that distinguishes one boost from another.
+  const shieldBurst = named(cs.fittedShip, 'shieldCapacity', 'Shield Extension Charge');
+  check('offship-prov', 'a ship buff is named after its charge', shieldBurst?.source?.kind, 'burst');
+  check('offship-prov', 'ship buff carries its multiplier', shieldBurst?.mult, 1.15, 1e-9);
+
+  // The drug's toggled PENALTY gets its own kind. The same booster's designed bonus reaches other
+  // attributes through the engine as kind 'booster', and on a fit where both land the panel would
+  // otherwise print one name twice with nothing to say which line is which.
+  const drug = named(cs.fittedShip, 'shieldCapacity', 'Strong Blue Pill Booster');
+  check('offship-prov', 'a booster side effect is distinguished from its bonus', drug?.source?.kind, 'sideEffect');
+  check('offship-prov', 'side effect scaled by Neurotoxin Recovery', drug?.mult, 0.775, 1e-9);
+
+  // Projected EWAR names the EFFECT, not a module: by the time it reaches calc.js the caller has
+  // collapsed every damp on the field into one range-factored, resistance-scaled number, and there
+  // is no per-source identity left to recover. Saying "Sensor dampening" is the true statement.
+  const damp = named(cs.fittedShip, 'maxTargetRange', 'Sensor dampening');
+  check('offship-prov', 'an incoming damp is named', damp?.source?.kind, 'projected');
+  check('offship-prov', 'damp carries its multiplier', damp?.mult, 0.75, 1e-9);
+  const disr = named(gunOf(cs), 'trackingSpeed', 'Tracking disruption');
+  check('offship-prov', 'an incoming tracking disruptor is named', disr?.source?.kind, 'projected');
+  check('offship-prov', 'disruptor carries its multiplier', disr?.mult, 0.7, 1e-9);
+
+  // Remote sensor boosters go through the attribute POOL rather than being multiplied onto the
+  // finished number, precisely so they compete with the ship's own bonuses for stacking slots. That
+  // is invisible in the final figure and visible here: two rows, the weaker one penalised. If a
+  // future edit ever "simplifies" them back into a post-hoc multiply, these two checks fail.
+  const rsb = rowsOf(cs.fittedShip, 'maxTargetRange').filter(r => r.source?.name === 'Remote Sensor Booster');
+  check('offship-prov', 'each projected sensor booster is its own row', rsb.length, 2, 0);
+  check('offship-prov', 'strongest booster unpenalised', rsb[0]?.mult, 1.4, 1e-9);
+  check('offship-prov', 'second booster at 86.912%', rsb[1]?.mult, 1.2607359942401193, 1e-9);
+
+  // A burst that targets MODULES rather than the hull takes a different code path (applyModuleBursts,
+  // by required skill), so it is asserted separately rather than assumed from the ship buff above.
+  const csL = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20, label: 'Sharpshooter Charge' }] });
+  const modBurst = named(gunOf(csL), 'maxRange', 'Sharpshooter Charge');
+  check('offship-prov', 'a module buff is named after its charge', modBurst?.source?.kind, 'burst');
+  check('offship-prov', 'module buff carries its multiplier', modBurst?.mult, 1.2, 1e-9);
+
+  // A burst with no label still has to name SOMETHING: `covered` is what suppresses the "not
+  // identified yet" footer, so a null source here would leave the panel claiming a complete list
+  // while rendering the row as "Other".
+  const csU = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20 }] });
+  check('offship-prov', 'an unlabelled burst falls back to a generic name',
+    named(gunOf(csU), 'maxRange', 'Command burst')?.mult, 1.2, 1e-9);
+
+  // Only the STRONGEST of each buff type applies -- that is a game rule, enforced in collectBursts --
+  // so the label has to follow the winner. Naming the first one seen would credit a burst that is
+  // contributing nothing, on a fit flying under two boosters at once.
+  const csW = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20, label: 'Weaker Charge' },
+                       { buffID: 28, value: 35, label: 'Stronger Charge' }] });
+  const win = rowsOf(gunOf(csW), 'maxRange').find(r => r.source?.kind === 'burst');
+  check('offship-prov', 'the label follows the strongest burst', win?.source?.name, 'Stronger Charge');
+  check('offship-prov', 'and so does the value', win?.mult, 1.35, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

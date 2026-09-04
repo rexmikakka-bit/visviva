@@ -891,6 +891,27 @@ function fmtInfoVal(name, val) {
   const num = typeof val === 'number' ? (Number.isInteger(val) ? val : parseFloat(val.toFixed(4))) : val;
   return `${num}${unit}`;
 }
+// A modifier source's secondary label, for the attribute breakdown. Only the kinds whose NAME is
+// ambiguous on its own get one: "Gyrostabilizer II" explains itself, but "Phantasm" sitting under a
+// Phantasm's own damage attribute does not, and neither does an ammo type listed beside the modules.
+const SRC_NOTE = {hull:'hull bonus', charge:'ammo', env:'environment', mode:'tactical mode',
+                  subsystem:'subsystem', implant:'implant', booster:'booster', drone:'drone',
+                  // The three that do not come from this ship's own hull and racks. `burst` is named
+                  // after its charge and may be another pilot entirely; `projected` is something
+                  // being done TO this fit; `sideEffect` is a drug penalty the pilot opted into, kept
+                  // apart from that same drug's intended bonus so one row is not mistaken for both.
+                  burst:'command burst', projected:'projected', sideEffect:'booster side effect'};
+const ROMAN = ['0','I','II','III','IV','V'];
+const srcLabel = (s) => !s ? 'Other'
+  : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}` : s.name;
+// Modifiers read as percentages everywhere in EVE, so a multiplier is shown as the change it makes
+// rather than as a bare factor. Two decimals under 10% — the difference between a second hardener at
+// +4.34% and a third at +2.51% is the entire point of showing this, and one decimal blurs it.
+const fmtMult = (m) => {
+  const d = (m - 1) * 100;
+  return `${d >= 0 ? '+' : '−'}${Math.abs(d) < 10 ? Math.abs(d).toFixed(2) : Math.abs(d).toFixed(1)}%`;
+};
+
 function fmtAttrName(name) {
   if (ATTR_LABEL[name]) return ATTR_LABEL[name];
   return name.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase()).trim();
@@ -984,6 +1005,72 @@ function ResistBars({layers}) {
   );
 }
 
+// The modifier list behind one changed attribute, shown inline under its row.
+//
+// Every line is a multiplier, including the flat adds (rendered with their real "+50", but carrying
+// the ratio they moved the running total by) — because that is what makes the list verifiable: the
+// base times every line equals the printed value. `raw` vs `mult` is where the stacking penalty
+// becomes visible, and it is the reason to build this at all: a second Tracking Enhancer is not
+// giving you what its own tooltip claims, and nothing in EVE's UI tells you what it IS giving you.
+// `fmt` overrides how a VALUE is printed (the unmodified header, a flat add, a "set to"). The hull's
+// attributes tab keeps its own per-row formatters — mass in millions of kg, lock range in km — and
+// without this the breakdown would print the same quantity in a different unit to the row directly
+// above it. Percentages are unaffected: those are ratios, not values in the attribute's unit.
+export function ModifierBreakdown({attr, ex, bleed, fmt}) {
+  const fv = fmt ?? (v => fmtInfoVal(attr, v));
+  // A modifier that changed nothing is dropped: a multiplier of exactly 1, or an add of exactly 0.
+  // Both happen for real — a mining crystal adds 0 to one of the strip miner's waste attributes, and
+  // a bonus attribute that computes to zero yields a 1x — and listing them invites "why is this here"
+  // rather than explaining anything.
+  const rows = (ex?.rows ?? []).filter(r => r.assigns
+    || (r.add != null ? r.add !== 0 : r.mult != null && Math.abs(r.mult - 1) > 1e-12));
+  if (!rows.length) return null;
+  return (
+    <div style={{margin:`0 ${-bleed}px`,padding:`7px ${bleed + 10}px 9px`,background:C.surfaceAlt,
+                 borderBottom:`1px solid ${C.border}`}}>
+      <div style={{fontSize:10,color:C.textMute,marginBottom:5,fontVariantNumeric:'tabular-nums'}}>
+        {/* Deliberately NOT the word "base": this is the start of the modifier chain, and the row's
+            own BASE column is getBase(), which has already folded in the direct PreMuls. On a turret
+            with ammo those differ — the chain starts at 2.4 km optimal and the BASE column reads
+            1.2 km, because the ammo's −50% is listed below as its own row. Both numbers are right;
+            calling them both "base" is what would be wrong. */}
+        {fv(ex.base)} unmodified
+        {ex.capped && <span style={{marginLeft:6}}>· capped</span>}
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{display:'grid',gridTemplateColumns:'1fr auto',gap:10,alignItems:'baseline',padding:'2px 0'}}>
+          <span style={{fontSize:11,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>
+            {srcLabel(r.source)}
+            {r.source && SRC_NOTE[r.source.kind] &&
+              <span style={{color:C.textMute,marginLeft:5}}>{SRC_NOTE[r.source.kind]}</span>}
+            {/* The penalty is stated as what the modifier LOST, not as the exp() factor itself — a
+                player wants "this is only doing 87% of its job", not a number from the formula. */}
+            {r.factor != null && r.factor < 0.9999 && (
+              <span style={{color:C.warning,marginLeft:5,whiteSpace:'nowrap'}}>
+                stacked · {fmtMult(r.raw)} at {(r.factor * 100).toFixed(0)}%
+              </span>
+            )}
+          </span>
+          <span style={{fontSize:11,fontWeight:600,color:C.text,textAlign:'right',
+                        fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
+            {r.assigns ? `set to ${fv(ex.final)}`
+              : r.add != null ? `${r.add >= 0 ? '+' : '−'}${fv(Math.abs(r.add))}`
+              : fmtMult(r.mult)}
+          </span>
+        </div>
+      ))}
+      {/* Only the effect dispatcher and the ammo forwarding pass a source so far; the hand-written
+          custom handlers do not. Saying so is the difference between an incomplete list and a wrong
+          one — the arithmetic still adds up, the attribution just stops short. */}
+      {!ex.covered && (
+        <div style={{fontSize:10,color:C.textMute,marginTop:4}}>
+          Some modifiers on this value aren’t identified yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Organized attribute panel — used in both ItemInfoSheet and ModuleInfoTab.
 //
 // `item` (optional) is this item's ENGINE object for the fit it is actually sitting in — a DogmaItem
@@ -1011,6 +1098,14 @@ function ResistBars({layers}) {
 // in DroneMenu, 16 in ItemInfoSheet, 14+2 nested in ModuleMenu) and a row cannot see its own inset.
 function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
   const typeDescriptions = useTypeDescriptions();
+  // Which rows are showing their modifier breakdown, and the traced twin of `item` that supplies it.
+  // Both must be declared before the `!td` bail below — they are hooks.
+  //
+  // A Set rather than a single key: the interesting comparison is usually between two attributes
+  // (optimal and falloff, damage and rate of fire), and an accordion that shuts one to open the
+  // other makes exactly that comparison impossible.
+  const [openAttrs, setOpenAttrs] = useState(() => new Set());
+  const [traced, setTraced] = useState(null);
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
   const attrs = td.attrs ?? td.a ?? {};
@@ -1051,6 +1146,14 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
 
   const GRID = eng ? '1fr auto auto' : '1fr auto';
 
+  // The traced recompute is pulled on the first tap and reused for every row after it — see
+  // attachRetrace in calc.js for why it is not simply always available.
+  const canExplain = !!eng?._retrace;
+  const toggleAttr = (k) => {
+    if (!traced) setTraced(eng._retrace());
+    setOpenAttrs(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  };
+
   const Row = ({k}) => {
     const cur  = (ov && k in ov) ? ov[k] : (eng ? eng.get(k) : attrs[k]);
     const base = eng ? eng.getBase(k) : attrs[k];
@@ -1071,12 +1174,30 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
     // offset box-shadows: accentLight is 10% alpha, and a left and a right shadow overlap each other
     // and the element's own background, so the middle of the row would paint three times over and
     // come out darker than the ends.
+    // Only a CHANGED row has anything to explain, so the changed band doubles as the affordance —
+    // the set of rows worth tapping is already the set of rows that are highlighted, and no separate
+    // "tap for detail" cue has to be taught. `overrides` rows are excluded: their value comes from
+    // calc.js's own chain rather than the engine, so the engine's breakdown would explain a number
+    // other than the one printed beside it.
+    const tappable = changed && canExplain && !(ov && k in ov);
+    const isOpen = openAttrs.has(k);
     return (
-      <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
+      <>
+      <div onClick={tappable ? () => toggleAttr(k) : undefined}
+           role={tappable ? 'button' : undefined} tabIndex={tappable ? 0 : undefined}
+           aria-expanded={tappable ? isOpen : undefined}
+           style={{display:'grid',gridTemplateColumns:GRID,gap:10,alignItems:'baseline',
                    padding:changed?`5px ${bleed}px`:'5px 0',margin:changed?`0 ${-bleed}px`:0,
-                   borderBottom:`1px solid ${C.border}`,
+                   borderBottom:isOpen?'none':`1px solid ${C.border}`,
+                   cursor:tappable?'pointer':'default',
                    background:changed?`${C.accentLight}`:'transparent'}}>
-        <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>{fmtAttrName(k)}</span>
+        <span style={{fontSize:12,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>
+          {fmtAttrName(k)}
+          {/* Rotates rather than swapping glyphs, so the open state is legible at a glance in a long
+              list without a second symbol to interpret. */}
+          {tappable&&<span style={{display:'inline-block',fontSize:8,marginLeft:5,color:C.textMute,
+                                   transform:isOpen?'rotate(90deg)':'none'}}>▶</span>}
+        </span>
         <span style={{fontSize:12,fontWeight:600,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
                       color:changed?(better==null?C.text:(better?C.rig:C.danger)):C.text}}>
           {dir!==0&&<span style={{fontSize:7,verticalAlign:1,marginRight:3}}>{dir>0?'▲':'▼'}</span>}
@@ -1085,6 +1206,8 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
         {eng&&<span style={{fontSize:12,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
                             color:changed?C.textMid:C.textMute}}>{fmtInfoVal(k, base)}</span>}
       </div>
+      {isOpen&&<ModifierBreakdown attr={k} ex={traced?.attrs?.explain(k)} bleed={bleed}/>}
+      </>
     );
   };
 
