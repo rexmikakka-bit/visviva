@@ -1013,14 +1013,13 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 // ═══ STATS TAB ══════════════════════════════════════════════════
 function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   const _scroll=useScrollMemory("Stats");
+  // Per-section collapse state — all open by default.
   // Everything on this page that you SET rather than read goes through useViewMemory, because this
   // panel unmounts on every tab swipe and plain state would come back at its default. The two
   // pickers below are the exception: a modal has to reopen closed.
-  //
-  // Sections used to be collapsible ("Stats:collapsed"). Nothing here is long enough to be worth
-  // hiding, and a chevron on every group made the page read as nine closed drawers rather than one
-  // sheet of numbers. The nested Fit Value breakdowns below are a different thing and stay: those
-  // are per-item detail that is genuinely long and genuinely optional.
+  const [collapsed,setCollapsed]=useViewMemory("Stats:collapsed",{});
+  const toggle=(k)=>setCollapsed(c=>({...c,[k]:!c[k]}));
+  const isOpen=(k)=>!collapsed[k];
   // Firepower: which stat's damage-type split to show. Cap: toggle readouts.
   const [dmgSource,setDmgSource]=useViewMemory("Stats:dmgSource","weapon");
   // The fourth cell shows one volley, or a whole clip's worth. Sticky like the rest of the panel:
@@ -1141,20 +1140,16 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const fmtF=n=>n==null?"0.0":n>=100?n.toFixed(0):n.toFixed(2);
   const fmtDps=n=>n==null||n<0.05?"0":n>=100?n.toFixed(0):n.toFixed(1);
 
-  // A section is a label in the GUTTER above a filled panel, rather than a bordered box with a filled
-  // header bar inside it. That older shape put three layers of chrome — outer border, header fill,
-  // header rule — around every group, nine times down the page, all of it drawn at the same weight as
-  // the numbers it was framing. The panel's own fill and radius already say "these rows belong
-  // together", so the rest was saying it twice more. Grouping now comes from whitespace and the label,
-  // which is the idiom the fit list already uses for RECENT FITS.
-  const panel={background:C.surface,borderRadius:12,overflow:"hidden"};
+  const card={background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,marginBottom:8,overflow:"hidden"};
+  const hd={display:"flex",alignItems:"center",justifyContent:"space-between",padding:"7px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt};
   const Row=({label,value,color,last})=>(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",borderBottom:last?"none":`1px solid ${C.border}`}}><span style={{fontSize:11,color:C.textMid}}>{label}</span><span style={{fontSize:11,fontWeight:600,color:color||C.text}}>{value}</span></div>);
-  // `right` still carries the live readouts and controls the old header bar held (EHP, cap stability,
-  // the Reload toggle). Nothing in here toggles the section any more, so the stopPropagation those
-  // controls needed is gone with it.
-  const SectionHead=({title,right})=>(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"14px 4px 5px"}}>
-      <span style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.7}}>{title}</span>
+  // Collapsible section header — click toggles open/closed; `right` is optional header-right content.
+  const SectionHead=({id,title,right})=>(
+    <div style={{...hd,cursor:"pointer",borderBottom:isOpen(id)?hd.borderBottom:"none"}} onClick={()=>toggle(id)}>
+      <span style={{display:"flex",alignItems:"center",gap:6}}>
+        <span style={{fontSize:10,color:C.textMute,transform:isOpen(id)?"rotate(90deg)":"none",transition:"transform 0.15s",display:"inline-block",width:10}}>▶</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.text}}>{title}</span>
+      </span>
       {right}
     </div>
   );
@@ -1241,10 +1236,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const jammers = [...new Set((projectedEffects?.ecm??[])
     .filter(e=>(e.byType?.[cs.sensorType]??0)>0).map(e=>e.ship).filter(Boolean))].join(", ");
 
-  // No top padding: the first SectionHead brings its own 14px, and stacking the two put a visible
-  // gap under the tab bar that no other tab has.
   return(
-    <div ref={_scroll} style={{flex:1,overflowY:"auto",padding:"0 10px 20px"}}>
+    <div ref={_scroll} style={{flex:1,overflowY:"auto",padding:"10px 10px 20px"}}>
       {showProfilePicker&&<DamageProfileSheet current={dmgProfile} onSelect={setDmgProfile} onClose={()=>setShowProfilePicker(false)}/>}
       {showTargetPicker&&<TargetProfileSheet current={tgtProfile} onSelect={setTgtProfile} onClose={()=>setShowTargetPicker(false)}/>}
 
@@ -1268,39 +1261,36 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         const hasErr=issues.some(i=>i.sev==="err");
         const accent=hasErr?C.danger:(issues.length?C.warning:C.success);
         return(
-          <>
-            <SectionHead title="Validation" right={<span style={{fontSize:11,fontWeight:700,color:accent}}>{issues.length?`${issues.length} issue${issues.length>1?"s":""}`:"Valid"}</span>}/>
-            {/* The only section that keeps a ring. Everywhere else the border was decoration; here it
-                is the severity, readable before you have read a word of the list inside it. A clean
-                fit gets nothing, so the ring only ever means something is wrong. */}
-            <div style={{...panel,border:issues.length?`1px solid ${accent}`:"none"}}>
-              {issues.length
-                ?<div style={{padding:"2px 0"}}>{issues.map((it,i)=>(
-                    <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",borderBottom:i<issues.length-1?`1px solid ${C.border}`:"none"}}>
-                      <span style={{width:7,height:7,borderRadius:99,background:it.sev==="err"?C.danger:C.warning,flexShrink:0}}/>
-                      <span style={{fontSize:11,color:C.text}}>{it.msg}</span>
-                    </div>))}</div>
-                :<div style={{padding:"8px 12px",fontSize:11,color:C.textMid,display:"flex",alignItems:"center",gap:8}}><span style={{color:C.success,fontWeight:800}}>✓</span> No fitting issues detected.</div>}
-            </div>
-          </>
+          <div style={{...card,border:`1px solid ${issues.length?accent:C.border}`}}>
+            <SectionHead id="validation" title="Validation" right={<span style={{fontSize:11,fontWeight:700,color:accent}}>{issues.length?`${issues.length} issue${issues.length>1?"s":""}`:"Valid"}</span>}/>
+            {isOpen("validation")&&(issues.length
+              ?<div style={{padding:"2px 0"}}>{issues.map((it,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",borderBottom:i<issues.length-1?`1px solid ${C.border}`:"none"}}>
+                    <span style={{width:7,height:7,borderRadius:99,background:it.sev==="err"?C.danger:C.warning,flexShrink:0}}/>
+                    <span style={{fontSize:11,color:C.text}}>{it.msg}</span>
+                  </div>))}</div>
+              :<div style={{padding:"8px 12px",fontSize:11,color:C.textMid,display:"flex",alignItems:"center",gap:8}}><span style={{color:C.success,fontWeight:800}}>✓</span> No fitting issues detected.</div>)}
+          </div>
         );
       })()}
 
       {/* Resistances */}
-      {/* The clip is shown as an ADDITION rather than merged straight in, because it is a pool you
-          get once per reload and only while the charges last — the split form says that, a single
-          bigger number does not. Tapping it commits to the combined figure, which is what a "EHP +
-          clip" comparison in a fit discussion actually wants. Separate tap target from the exact-
-          value toggle on the EHP number itself, so neither has to give up its gesture. */}
-      <SectionHead title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
-        onClick={()=>toggleExact("ehp")} title={fmtExact(headEHP)}
-        style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(headEHP):fmtN(headEHP)}</span>
-        {clipEHP>0&&<span onClick={()=>setClipMerged(m=>!m)}
-          title={clipMerged?"Includes the ancillary clip — tap to show it separately":"Ancillary clip pool — tap to add it into the EHP total"}
-          style={{color:C.high,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>
-          {clipMerged?" w/ ancil.":` +${ehpExact?fmtExact(clipEHP):fmtN(clipEHP)} ancil.`}</span>}</span>}/>
-      <div style={panel}>
-        <div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
+      <div style={card}>
+        {/* stopPropagation: the whole header row collapses the section, and tapping the number for
+            its exact value must not also close what you are reading. */}
+        {/* The clip is shown as an ADDITION rather than merged straight in, because it is a pool you
+            get once per reload and only while the charges last — the split form says that, a single
+            bigger number does not. Tapping it commits to the combined figure, which is what a "EHP +
+            clip" comparison in a fit discussion actually wants. Separate tap target from the exact-
+            value toggle on the EHP number itself, so neither has to give up its gesture. */}
+        <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
+          onClick={e=>{e.stopPropagation();toggleExact("ehp");}} title={fmtExact(headEHP)}
+          style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(headEHP):fmtN(headEHP)}</span>
+          {clipEHP>0&&<span onClick={e=>{e.stopPropagation();setClipMerged(m=>!m);}}
+            title={clipMerged?"Includes the ancillary clip — tap to show it separately":"Ancillary clip pool — tap to add it into the EHP total"}
+            style={{color:C.high,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>
+            {clipMerged?" w/ ancil.":` +${ehpExact?fmtExact(clipEHP):fmtN(clipEHP)} ancil.`}</span>}</span>}/>
+        {isOpen("resists")&&<div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>Incoming damage</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{display:"flex",gap:3}}>
@@ -1308,8 +1298,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             </span>
             <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{dmgProfile.name}</span>
           </span>
-        </div>
-        <>
+        </div>}
+        {isOpen("resists")&&<>
         <div style={{display:"grid",gridTemplateColumns:`52px 1fr 1fr 1fr 1fr ${ehpCol}`,padding:"5px 12px 4px",borderBottom:`1px solid ${C.border}`}}>
           <span/>{Object.values(DMG).map(d=><span key={d.label} style={{fontSize:10,fontWeight:700,color:d.color,textAlign:"center"}}>{d.label}</span>)}<span style={{fontSize:10,fontWeight:700,color:C.textMute,textAlign:"right"}}>EHP</span>
         </div>
@@ -1349,13 +1339,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             </Hint>
           </div>
         </div>);})}
-        </>
+        </>}
       </div>
 
       {/* Recharge Rates */}
-      <SectionHead title="Recharge Rates"/>
-      <div style={panel}>
-        {(() => {
+      <div style={card}>
+        <SectionHead id="recharge" title="Recharge Rates"/>
+        {isOpen("recharge")&&(() => {
             // Convert HP/s to EHP/s using the selected incoming damage profile.
             const avgR=(r)=>((r?.em??0)+(r?.th??0)+(r?.kin??0)+(r?.exp??0))/4;
             const toEhp=(hps,layer)=>hps*ehpForProfile(1,cs.resists?.[layer]);
@@ -1411,7 +1401,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 {peak.map((rr,i,arr)=>(
                   <div key={rr.label} style={{padding:"8px 8px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none"}}>
                     {/* lineHeight pinned rather than inherited: at the body's 1.93 a 9px label
-                        takes ~17px of line box, and that alone is where this panel's height comes
+                        takes ~17px of line box, and that alone is where this card's height comes
                         from. Remote Reps pins theirs to match; Firepower deliberately does not. */}
                     <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{rr.label}</div>
                     <div style={{fontSize:12,fontWeight:700,color:rr.val.startsWith("0")?C.textMute:rr.color}}>{rr.val}</div>
@@ -1439,16 +1429,16 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       </div>
 
       {/* Firepower */}
-      <SectionHead title="Firepower" right={
-          <button onClick={()=>setFactorInReload&&setFactorInReload(v=>!v)}
+      <div style={card}>
+        <SectionHead id="firepower" title="Firepower" right={
+          <button onClick={e=>{e.stopPropagation();setFactorInReload&&setFactorInReload(v=>!v);}}
             style={{display:"flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:6,fontSize:9,fontWeight:700,cursor:"pointer",
               background:factorInReload?C.accentLight:C.surface,border:`1px solid ${factorInReload?C.accent:C.border}`,color:factorInReload?C.accent:C.textMute}}>
             <span style={{width:7,height:7,borderRadius:"50%",background:factorInReload?C.accent:C.textMute,display:"inline-block"}}/>
             Reload
           </button>
         }/>
-      <div style={panel}>
-        <div onClick={()=>setShowTargetPicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
+        {isOpen("firepower")&&<div onClick={()=>setShowTargetPicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{display:"flex",gap:3}}>
@@ -1456,8 +1446,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             </span>
             <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??"None (0%)"}</span>
           </span>
-        </div>
-        <>
+        </div>}
+        {isOpen("firepower")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
           {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],[volleyLabel,volleyVal,"volley"]].map(([label,val,srcKey],i,arr)=>{
             const sel=dmgSource===srcKey;
@@ -1471,7 +1461,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             <div key={srcKey} onClick={onTap} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
               <div style={{fontSize:14,fontWeight:800,color:val==="0"?C.textMute:(sel?C.accent:C.text)}}>{val}</div>
               {/* Deliberately NOT pinned to Recharge Rates' 1.2 — the inherited line-height leaves
-                  this panel taller than its neighbours, which is what makes it read as the headline. */}
+                  this card taller than its neighbours, which is what makes it read as the headline. */}
               <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4}}>{label}</div>
             </div>);
           })}
@@ -1497,7 +1487,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
             ))}
           </div>}
-        </>
+        </>}
       </div>
 
       {/* Remote Reps — text labels, same style as other sections */}
@@ -1507,7 +1497,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         const armorMax = spoolRep ? (cs.remoteArmorPS??0) - (spoolRep.repPS??0) + (spoolRep.repPSMax??0) : (cs.remoteArmorPS??0);
         // HP repaired per GJ spent, not GJ per HP — the reciprocal lands the number in the same
         // small-double-digit range as the rate cells either side of it (7-8, not 0.12-0.13), and
-        // "bigger is better" here matches every other figure on this panel. capPS===0 with reps
+        // "bigger is better" here matches every other figure on this card. capPS===0 with reps
         // present (drone-only, or an ASB on cap-booster charges — remote ASBs don't currently exist,
         // but the guard costs nothing) means the layer heals for free.
         const effOf = (gj) => gj==null ? null : gj===0 ? Infinity : 1/gj;
@@ -1527,13 +1517,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             eff: effOf(cs.remoteHullGJPerHP)},
         ];
         return(
-          <>
-            <SectionHead title="Remote Reps"/>
-            <div style={panel}>
+          <div style={card}>
+            <SectionHead id="remotereps" title="Remote Reps"/>
+            {isOpen("remotereps")&&<>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:spoolRep?`1px solid ${C.border}`:"none"}}>
               {cols.map((col,i)=>{
                 // Tap a Shield/Armor/Hull cell to swap its rate for GJ efficiency, same gesture as
-                // the Capacitor panel's Capacity/In-Out/Peak-regen cells.
+                // the Capacitor card's Capacity/In-Out/Peak-regen cells.
                 const can=col.eff!=null, on=can&&exactCells.has(`remoteEff_${col.key}`);
                 const content=on?(col.eff===Infinity?"Free":(col.effDisp??`${fmtF(col.eff)} HP/GJ`)):(col.disp??`${fmtF(col.val)} ${col.unit}`);
                 return(<div key={col.key} onClick={can?()=>toggleExact(`remoteEff_${col.key}`):undefined}
@@ -1548,8 +1538,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <span style={{color:C.textMute}}>Spool-up time</span>
               <span style={{color:C.text,fontWeight:700}}>{fmtF(spoolRep.spoolTimeS)}s</span>
             </div>}
-            </div>
-          </>
+            </>}
+          </div>
         );
       })()}
 
@@ -1562,9 +1552,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           {key:"total", label:"Total", val:mn.totalM3S, color:C.success},
         ];
         return(
-          <>
-            <SectionHead title="Mining" right={<span style={{fontSize:11,fontWeight:700,color:C.success}}>{fmtF(mn.totalM3S)} m³/s</span>}/>
-            <div style={panel}>
+          <div style={card}>
+            <SectionHead id="mining" title="Mining" right={<span style={{fontSize:11,fontWeight:700,color:C.success}}>{fmtF(mn.totalM3S)} m³/s</span>}/>
+            {isOpen("mining")&&<>
             <div style={{display:"grid",gridTemplateColumns:`repeat(${cols.length},1fr)`,borderBottom:`1px solid ${C.border}`}}>
               {cols.map((col,i)=>(
                 <div key={col.key} style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none"}}>
@@ -1577,19 +1567,20 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             {/* Waste is ore destroyed, not yield lost — the hold still fills at the rate above. It
                 decides how fast the rock disappears, which is what separates two equal-yield fits. */}
             {(mn.wasteM3S??0)>0&&<Row label="Ore wasted" value={`${fmtF(mn.wasteM3S)} m³/s`} color={C.warning} last/>}
-            </div>
-          </>
+            </>}
+          </div>
         );
       })()}
 
       {/* Cap */}
-      <SectionHead title="Capacitor" right={(()=>{
-        const fmtDur=(s)=>{if(s==null)return "?";s=Math.round(s);if(s<60)return s+"s";const m=Math.floor(s/60),sec=s%60;if(m<60)return sec?`${m}m ${sec}s`:`${m}m`;const h=Math.floor(m/60),mm=m%60;return mm?`${h}h ${mm}m`:`${h}h`;};
-        return cs.capStable
-          ?<span style={{fontSize:11,fontWeight:700,color:C.success}}>Stable at {((cs.capLevel??1)*100).toFixed(1)}%</span>
-          :<span style={{fontSize:11,fontWeight:700,color:C.danger}}>Unstable - depleted in {fmtDur(cs.capTime)}</span>;
-      })()}/>
-      <div style={panel}>
+      <div style={card}>
+        <SectionHead id="cap" title="Capacitor" right={(()=>{
+          const fmtDur=(s)=>{if(s==null)return "?";s=Math.round(s);if(s<60)return s+"s";const m=Math.floor(s/60),sec=s%60;if(m<60)return sec?`${m}m ${sec}s`:`${m}m`;const h=Math.floor(m/60),mm=m%60;return mm?`${h}h ${mm}m`:`${h}h`;};
+          return cs.capStable
+            ?<span style={{fontSize:11,fontWeight:700,color:C.success}}>Stable at {((cs.capLevel??1)*100).toFixed(1)}%</span>
+            :<span style={{fontSize:11,fontWeight:700,color:C.danger}}>Unstable - depleted in {fmtDur(cs.capTime)}</span>;
+        })()}/>
+        {isOpen("cap")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
           {/* Tap to unround, same as the Targeting & Misc cells: fmtN abbreviates a capital's
               capacitor to "78.8k GJ", and those hidden digits are what a cap-stability margin turns
@@ -1618,11 +1609,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Neut resist</div></>}
           </div>
         </div>
+        </>}
       </div>
 
       {/* Targeting & Misc */}
-      <SectionHead title="Targeting and Misc"/>
-      <div style={panel}>
+      <div style={card}>
+        <SectionHead id="targeting" title="Targeting and Misc"/>
         {/* Every figure here is rounded to stay legible in a 1fr column, and for one of them that
             rounding is dangerous: align time is quantised to whole server ticks, so a 4.003 s align
             displayed as "4.00" hides a fifth second of exposure and reads as already under the wire.
@@ -1631,7 +1623,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             colour as every other figure. Cells whose exact value IS the displayed one — target count,
             and anything that happens to land on a round number — are inert and say so by not
             offering the pointer. */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
+        {isOpen("targeting")&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr"}}>
           {(()=>{
             const x=cs.exact??{};
             const abOn=cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity;
@@ -1672,20 +1664,19 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               <span style={{fontWeight:600,color:C.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</span>
             </div>);
           })}
-        </div>
+        </div>}
       </div>
 
       {/* Fit Value */}
-      <SectionHead title="Fit Value" right={
-        <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
-          <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
-          {!priceLoading&&(groupTotals.implants??0)>0&&
-            <span style={{color:C.accent}} title="Including implants">{fmtISK(totalPrice)}</span>}
-        </span>
-      }/>
-      {/* The one place a chevron survives. It is not a section toggle — each row expands into its
-          own per-item price list, which is genuinely long and genuinely optional detail. */}
-      <div style={panel}>
+      <div style={card}>
+        <SectionHead id="fitvalue" title="Fit Value" right={
+          <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
+            <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
+            {!priceLoading&&(groupTotals.implants??0)>0&&
+              <span style={{color:C.accent}} title="Including implants">{fmtISK(totalPrice)}</span>}
+          </span>
+        }/>
+        {isOpen("fitvalue")&&<>
           {[['Ship','ship'],['Modules','modules'],['Charges','charges'],['Drones','drones'],['Boosters','boosters'],['Implants','implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
@@ -1715,6 +1706,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               ))}
             </div>);
           })}
+        </>}
       </div>
     </div>
   );
