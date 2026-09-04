@@ -882,9 +882,15 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   // The + on the tab strip drops you here with the next open already destined for a new tab, which
   // is invisible until it happens. Rendered on all three list views because any of them can be where
   // the fit is finally tapped -- browse (a recent fit or a search hit), a tag, or a hull's own list.
+  //
+  // SOLID accent, not the accentLight wash it started as: this sits directly beneath ActiveFitBar,
+  // which is itself a full-width accentLight strip with an accentBorder rule and accent text, so a
+  // tinted version read as a second line of that bar rather than as its own thing. Filling it inverts
+  // the relationship instead of repeating it. Small and uppercase keeps it a status line rather than
+  // a call to action -- the bar above IS tappable and this is not, so it must not look like a button.
   const newTabHint=newTabIntent?(
-    <div style={{padding:"6px 12px",background:C.accentLight,borderBottom:`1px solid ${C.accentBorder}`,
-                 color:C.accent,fontSize:11,fontWeight:700,textAlign:"center"}}>
+    <div style={{padding:"6px 12px",background:C.accent,color:"#fff",fontSize:10,fontWeight:700,
+                 textAlign:"center",textTransform:"uppercase",letterSpacing:.7,flexShrink:0}}>
       Select a fit to open in a new tab
     </div>
   ):null;
