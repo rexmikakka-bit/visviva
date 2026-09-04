@@ -276,12 +276,24 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
 // focus-scoped version shows the stock bar for the first keystroke of every focus. Only use this
 // in a sheet with no OTHER focusable field, which would then be missing its Done/chevron; the
 // unmount cleanup restores the bar for the rest of the app.
-export function useSuppressAccessoryBar(){
+//
+// `focusRef` opts into opening with the keyboard already up, and it lives HERE rather than on the
+// input as autoFocus because summoning the keyboard has a hard ordering dependency on the line
+// above: the bar is attached to the keyboard as it appears, so the keyboard must not be summoned
+// until the native side has confirmed the bar is gone. autoFocus cannot express that — React fires
+// it in the commit phase, strictly before this effect, so the keyboard was already on its way up
+// (stock bar and all) while the suppression was still crossing the bridge, and the sheet opened
+// with the bar showing. Awaiting the call and focusing after costs one bridge round-trip.
+export function useSuppressAccessoryBar({focusRef}={}){
   useEffect(()=>{
     const Cap=(typeof window!=="undefined")&&window.Capacitor;
-    if(!Cap?.isNativePlatform?.())return;
-    try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:false}); }catch(e){}
-    return ()=>{ try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
+    const focus=()=>focusRef?.current?.focus();
+    // Off iOS there is no bar and nothing to wait for, so don't make focus wait on a no-op.
+    if(!Cap?.isNativePlatform?.()){focus();return;}
+    const KB=Cap.Plugins?.Keyboard;
+    try{ Promise.resolve(KB?.setAccessoryBarVisible?.({isVisible:false})).catch(()=>{}).then(focus); }
+    catch(e){ focus(); }
+    return ()=>{ try{ KB?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){} };
   },[]);
 }
 
@@ -732,7 +744,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const ordinal=Math.min(filledCount+1,slotCount);
   const searchInputRef=useRef(null);
   const[searchFocused,setSearchFocused]=useState(false);
-  useSuppressAccessoryBar();
+  useSuppressAccessoryBar({focusRef:searchInputRef});
   return(
     <>
     {/* height="100vh", not 88vh: with fillHeight, the sheet's box is min(height,100%) where 100% is
@@ -765,15 +777,16 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           {/* The only sheet that passes onDismiss: it suppresses the stock accessory bar for its
               whole lifetime (see setAccessoryBarVisible above), so without this chevron there is no
               way to collapse the keyboard short of scrolling a long enough list. */}
-          {/* autoFocus, so the sheet opens ready to type. Reaching the keyboard from JS works here
-              specifically because Capacitor calls setKeyboardShouldRequireUserInteraction(false) on
-              the WKWebView — a plain WKWebView focuses the field but withholds the keyboard unless
-              the focus happens inside a user gesture, and this one fires from React's commit phase.
+          {/* The sheet opens ready to type, but the focus is driven by useSuppressAccessoryBar
+              above rather than by autoFocus here — it has to wait for the stock bar to actually be
+              gone, see the note on that hook. Reaching the keyboard from JS at all works because
+              Capacitor calls setKeyboardShouldRequireUserInteraction(false) on the WKWebView; a
+              plain WKWebView focuses the field but withholds the keyboard outside a user gesture.
               Mount-only, so re-targeting the sheet at the next empty slot (which deliberately keeps
               it mounted, see tabs.jsx) doesn't yank focus back out of a list you were browsing. */}
           <SheetSearchBar value={search} onChange={setSearch} onPaste={onSearchPaste}
             inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
-            inputProps={{autoFocus:true,onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
+            inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
             placeholder="Search all modules, or paste an abyssal..."/>
         </div>
       }>
