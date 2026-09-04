@@ -1579,7 +1579,11 @@ export function applyTargetResists(dmg, r) {
   const res = (Array.isArray(r) && r.length === 4) ? r : NO_TARGET_RESISTS;
   const em = (dmg.em ?? 0) * (1 - res[0]), th = (dmg.th ?? 0) * (1 - res[1]);
   const kin = (dmg.kin ?? 0) * (1 - res[2]), exp = (dmg.exp ?? 0) * (1 - res[3]);
-  return { em, th, kin, exp, total: em + th + kin + exp };
+  // `pure` passes through at full value by definition — see the channel's note where weaponDps is
+  // declared. It is not a fifth resist we happen to have no number for; the damage genuinely ignores
+  // resists, so weighting it by anything would be wrong rather than merely approximate.
+  const pure = dmg.pure ?? 0;
+  return { em, th, kin, exp, pure, total: em + th + kin + exp + pure };
 }
 
 export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts = {}) {
@@ -2353,8 +2357,13 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
 
   // ── 8. Weapons — all skill bonuses now applied by engine ──────────────────
 
-  let weaponDps    = { em:0, th:0, kin:0, exp:0, total:0 };
-  let weaponVolley = { em:0, th:0, kin:0, exp:0, total:0 };
+  // `pure` is a fifth damage channel that no resist touches — pyfa's DmgTypes.pure, which exists for
+  // exactly one weapon family (breacher pods). It is summed into `total` alongside the four elemental
+  // types but never resist-weighted, so it must be carried as its own component rather than folded
+  // straight into `total`: applyTargetResists rebuilds `total` from the components, and a breacher
+  // contribution that lives only in `total` is silently dropped the moment a target profile is set.
+  let weaponDps    = { em:0, th:0, kin:0, exp:0, pure:0, total:0 };
+  let weaponVolley = { em:0, th:0, kin:0, exp:0, pure:0, total:0 };
   // Damage a full clip puts out before the guns go quiet: volley × shots-per-clip, per weapon.
   //
   // RAPID LAUNCHERS ONLY, deliberately. Every weapon in the game has a nominal clip, but only these
@@ -4033,13 +4042,15 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   // Breacher pod launchers report a resist-ignoring DoT. pyfa folds the flat (absolute) DPS into
   // Weapon DPS, so do the same; it is not spooled and has no damage-type breakdown. Volley is ONE
   // tick's flat damage (pyfa reports the earliest subcycle's absolute cap), so fold perTickFlat
-  // into weaponVolley.total the same way.
-  let breacherDps = 0;
+  // in the same way. It lands in the `pure` channel, which is what keeps the figure intact once a
+  // target resist profile is applied — a Cenotaph's ~750 breacher DPS used to vanish there.
+  let breacherDps = 0, breacherVolley = 0;
   for (const st of slotEngineStats.values()) {
-    if (st.isBreacher && st.flatDps)     breacherDps        += st.flatDps;
-    if (st.isBreacher && st.perTickFlat) weaponVolley.total += st.perTickFlat;
+    if (st.isBreacher && st.flatDps)     breacherDps    += st.flatDps;
+    if (st.isBreacher && st.perTickFlat) breacherVolley += st.perTickFlat;
   }
-  weaponDps.total += breacherDps;
+  weaponDps.pure    += breacherDps;    weaponDps.total    += breacherDps;
+  weaponVolley.pure += breacherVolley; weaponVolley.total += breacherVolley;
 
   // Defensive: never surface NaN/Infinity in headline damage numbers (e.g. from an unusual
   // charge/module combination). Clamp non-finite values to 0 so the UI stays clean.
@@ -4143,11 +4154,13 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     totalDps: {
       em: weaponDps.em + droneDps.em + fighterDps.em, th: weaponDps.th + droneDps.th + fighterDps.th,
       kin: weaponDps.kin + droneDps.kin + fighterDps.kin, exp: weaponDps.exp + droneDps.exp + fighterDps.exp,
+      pure: weaponDps.pure,
       total: weaponDps.total + droneDps.total + fighterDps.total,
     },
     totalVolley: {
       em: weaponVolley.em + droneVolley.em + fighterVolley.em, th: weaponVolley.th + droneVolley.th + fighterVolley.th,
       kin: weaponVolley.kin + droneVolley.kin + fighterVolley.kin, exp: weaponVolley.exp + droneVolley.exp + fighterVolley.exp,
+      pure: weaponVolley.pure,
       total: weaponVolley.total + droneVolley.total + fighterVolley.total,
     },
     // Weapons only, deliberately: drones and fighters have no clip to empty, so folding them in
@@ -4180,6 +4193,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       const sum = (...xs) => ({
         em: xs.reduce((a,x)=>a+x.em,0), th: xs.reduce((a,x)=>a+x.th,0),
         kin: xs.reduce((a,x)=>a+x.kin,0), exp: xs.reduce((a,x)=>a+x.exp,0),
+        pure: xs.reduce((a,x)=>a+(x.pure ?? 0),0),
         total: xs.reduce((a,x)=>a+x.total,0),
       });
       return {

@@ -5669,6 +5669,64 @@ Agency 'Overclocker' SB7 Dose III
   check('propsize', '10000MN holds the capital AB', inSize('Afterburners', '10000MN', /^10000MN Afterburner II$/), 1, 0);
 }
 
+// ─── 12m. THE CENOTAPH: STALE SLOT COUNTS, AND RESIST-IGNORING DAMAGE ─────────
+//
+// Two unrelated bugs that the same hull happened to surface.
+//
+// (1) ships.json is a legacy precomputed bundle and is authoritative for nothing — lookupShip
+//     already overrode mass/volume/sensors from the dogma bundle, and slot counts now go the same
+//     way. Four hulls disagreed, all four verified against pyfa's eve.db. A wrong count is worse
+//     than a wrong readout: it is a rack you can drop a module into that the real ship cannot
+//     mount, so the fit is quietly invalid and the fitting numbers are quietly fiction.
+//
+// (2) Breacher pods deal damage that no resist touches. It used to be folded into weaponDps.total
+//     with no per-type component, and applyTargetResists REBUILDS total from the components — so
+//     the instant a target profile was selected, 750 DPS became 0. The fix is pyfa's: a fifth
+//     `pure` channel (eos/utils/stats.py DmgTypes.pure) that is summed into total and never
+//     weighted. That is why the checks below sweep resists to 100% and expect no movement at all.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCENOTAPH: SLOTS + RESIST-IGNORING DAMAGE');
+  // Every hull where ships.json and the dogma bundle disagree, expectations read out of pyfa's
+  // eve.db. What ships.json gets wrong, in the same order: Cenotaph 3 lows, Maelstrom 8/6 (CCP moved
+  // one high to the mids), and one high each on the two Precursor destroyers.
+  for (const [name, hi, med, low, rig] of [['Cenotaph', 8, 7, 2, 3], ['Maelstrom', 7, 7, 5, 3],
+                                           ['Skybreaker', 2, 4, 3, 3], ['Stormbringer', 2, 6, 3, 3]]) {
+    const s = lookupShip(name);
+    check('ceno', `${name} racks match pyfa`,
+          [s.hiSlots, s.medSlots, s.lowSlots, s.rigSlots].join('/') === [hi, med, low, rig].join('/') ? 1 : 0, 1, 0);
+  }
+  // A T3 cruiser's hull really does carry zero highs — its racks come from its subsystems. Pinned
+  // because the override is guarded on `!= null` rather than truthiness precisely to allow this.
+  check('ceno', 'T3 hull keeps its zero high slots', lookupShip('Loki').hiSlots, 0, 0);
+
+  const breacher = { typeID: tid('Cenotaph'), name: 'Cenotaph' };
+  const bSlots = { high: [M('Medium Breacher Pod Launcher', 'active', 'SCARAB Breacher Pod M')],
+                   mid: [], low: [], rigs: [] };
+  const at = (r) => calcFitStats(breacher, bSlots, [], null, r ? { targetResists: r } : {});
+  const raw = at(null);
+  check('ceno', 'one Medium breacher pod is 750 DPS', raw.weaponDps.total, 750, 0.0001);
+  check('ceno', 'it is all in the pure channel', raw.weaponDps.pure, raw.weaponDps.total, 0.0000001);
+  check('ceno', 'and none of it in the elemental ones',
+        raw.weaponDps.em + raw.weaponDps.th + raw.weaponDps.kin + raw.weaponDps.exp, 0, 0);
+  // The actual bug, at three points on the sweep including the degenerate one.
+  for (const [label, r] of [['no profile', null], ['50% flat', [0.5, 0.5, 0.5, 0.5]],
+                            ['Guristas', [0.55, 0.2, 0.3, 0.65]], ['100% immune', [1, 1, 1, 1]]]) {
+    const cs = at(r);
+    check('ceno', `breacher DPS survives ${label}`, cs.effective.weaponDps.total, 750, 0.0001);
+    check('ceno', `breacher volley survives ${label}`, cs.effective.weaponVolley.total,
+          raw.weaponVolley.total, 0.0000001);
+    check('ceno', `and reaches the headline total vs ${label}`, cs.effective.totalDps.total, 750, 0.0001);
+  }
+  // Resist-ignoring must not mean resist-ignoring for the guns bolted on beside it. Same hull, same
+  // pod, plus drones that DO care — the elemental part still has to take the full hit.
+  const mixed = calcFitStats(breacher, bSlots,
+                             [{ id: 'd0', typeID: tid('Hornet II'), name: 'Hornet II', qty: 5, active: true }],
+                             null, { targetResists: [1, 1, 1, 1] });
+  check('ceno', 'drones alongside are still fully resisted', mixed.effective.droneDps.total, 0, 0);
+  check('ceno', 'while the pod beside them is not', mixed.effective.totalDps.total, 750, 0.0001);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

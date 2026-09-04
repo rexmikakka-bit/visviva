@@ -506,12 +506,23 @@ function lookupShip(name){
   //                    tab prints it verbatim ("20 Laser" on a Vargur).
   //   sensorStrength — two hulls are stale (Cenotaph 25→15, Tholos 16→8), so it comes across with
   //                    the type it belongs to rather than being left to disagree with it.
+  //   slot counts    — four hulls are stale, and this is the one users notice: ships.json gives the
+  //                    Cenotaph a third low slot it does not have, the Maelstrom 8 high / 6 mid
+  //                    (CCP moved one to the mids: it is 7/7), and the Skybreaker and Stormbringer
+  //                    one high each instead of two. All four verified against pyfa's eve.db.
+  //                    A wrong count is worse than a wrong readout — it is a rack you can fit a
+  //                    module into that the real ship cannot mount, so the fit is quietly invalid.
+  //                    Guarded on `!= null` rather than truthiness: 0 is the correct hiSlots for a
+  //                    T3 cruiser, whose racks come from its subsystems instead.
   const _a=ship.typeID?((TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.attrs??(TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.a):null;
   if(_a){
     if(!ship.mass)ship.mass=_a.mass??0;
     if(!ship.volume)ship.volume=_a.volume??0;
     const sen=strongestSensor(_a)[0];
     if(sen){ship.sensorType=sen[0];ship.sensorStrength=sen[1];}
+    for(const[k,v]of[["hiSlots",_a.hiSlots],["medSlots",_a.medSlots],["lowSlots",_a.lowSlots],
+                     ["rigSlots",_a.rigSlots??_a.upgradeSlotsLeft]])
+      if(v!=null)ship[k]=v;
   }
   return ship;
 }
