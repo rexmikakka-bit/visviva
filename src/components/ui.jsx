@@ -743,9 +743,15 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           {/* The only sheet that passes onDismiss: it suppresses the stock accessory bar for its
               whole lifetime (see setAccessoryBarVisible above), so without this chevron there is no
               way to collapse the keyboard short of scrolling a long enough list. */}
+          {/* autoFocus, so the sheet opens ready to type. Reaching the keyboard from JS works here
+              specifically because Capacitor calls setKeyboardShouldRequireUserInteraction(false) on
+              the WKWebView — a plain WKWebView focuses the field but withholds the keyboard unless
+              the focus happens inside a user gesture, and this one fires from React's commit phase.
+              Mount-only, so re-targeting the sheet at the next empty slot (which deliberately keeps
+              it mounted, see tabs.jsx) doesn't yank focus back out of a list you were browsing. */}
           <SheetSearchBar value={search} onChange={setSearch} onPaste={onSearchPaste}
             inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
-            inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
+            inputProps={{autoFocus:true,onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
             placeholder="Search all modules, or paste an abyssal..."/>
         </div>
       }>
