@@ -752,6 +752,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
           moment you started looking through a long category. top:0 since ResourceStrip moved out of
           the scroller (into headerExtra) — this is now the first sticky element in here. */}
+      {/* minHeight:100% + a flex column so the swipe-to-go-back target below can be told to fill
+          whatever the list leaves over. The handlers used to sit on the list itself, which is only
+          as tall as its rows — so in a short category (four sizes of afterburner, say) the back
+          swipe worked in the top inch of the sheet and nowhere else, which reads as the gesture
+          being broken rather than as a target you missed. */}
+      <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
       {!searchResults&&navPath.length>0&&(
         <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
@@ -770,6 +776,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         </div>
       ):(
         <div key={navPath.join(">")} onTouchStart={_navStart} onTouchMove={_navMove} onTouchEnd={_navEnd}
+             style={{flex:1}}
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
           {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
           {currentLevel.nodes.map(node=>(
@@ -792,6 +799,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           )}
         </div>
       )}
+      </div>
     </BottomSheet>
     {infoItem&&<ItemInfoSheet typeID={infoItem.typeID} onClose={()=>setInfoItem(null)}/>}
     </>
