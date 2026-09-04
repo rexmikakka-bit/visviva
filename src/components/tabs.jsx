@@ -1018,6 +1018,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const isOpen=(k)=>!collapsed[k];
   // Firepower: which stat's damage-type split to show. Cap: toggle readouts.
   const [dmgSource,setDmgSource]=useViewMemory("Stats:dmgSource","weapon");
+  // The fourth cell shows one volley, or a whole clip's worth. Sticky like the rest of the panel:
+  // someone flying a Rapid launcher cares about the clip on every fit they open, not just this one.
+  const [volleyMode,setVolleyMode]=useViewMemory("Stats:volleyMode","volley");
   const [capDeltaMode,setCapDeltaMode]=useViewMemory("Stats:capDeltaMode","net");
   const [peakMode,setPeakMode]=useViewMemory("Stats:peakMode","regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
@@ -1200,11 +1203,23 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const weapDpsDisp   = hasSpool ? `${weapDpsTotal}-${fmtDps(_wDpsMax)}` : weapDpsTotal;
   const totalDpsDisp  = hasSpool ? `${totalDpsN}-${fmtDps(_tDpsMax)}`    : totalDpsN;
   const totalVolDisp  = hasSpool ? `${totalVolleyN}-${fmtDps(_tVolMax)}` : totalVolleyN;
+  // Clip damage: everything the guns can put out before they have to reload. Only offered when the
+  // fit actually has a weapon that reloads (calc.js excludes lasers and disintegrators, whose
+  // "reload" is 0.01 ms) — otherwise the cell would toggle to a number that means nothing.
+  const _clip         = (_tgtOn?eff.clipVolley:cs.clipVolley)??{};
+  const hasClip       = (cs.clipWeapons??0)>0 && (_clip.total??0)>0;
+  const showClip      = hasClip && volleyMode==="clip";
+  // fmtN, not fmtDps: a clip is one to three orders of magnitude bigger than a volley and a
+  // battleship's would run off the end of a quarter-width cell. The split row below still spells it
+  // out in full, and "19.1k" is the same shorthand this panel already uses for EHP and capacitor.
+  const volleyVal     = showClip ? fmtN(_clip.total??0) : totalVolDisp;
+  const volleyLabel   = showClip ? "Clip Dmg" : "Volley";
   // Selected firepower stat's damage-type split (tap a column to switch). Fighters are lumped
   // with drones (as Pyfa does) in the "Drone" column.
   const _dfSplit = ['em','th','kin','exp','total'].reduce((o,k)=>{o[k]=(_dDps?.[k]??0)+(_fDps?.[k]??0);return o;},{});
-  const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_tVol}[dmgSource])??{};
-  const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:"Volley"}[dmgSource]);
+  const _volSplit     = showClip ? _clip : _tVol;
+  const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_volSplit}[dmgSource])??{};
+  const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:volleyLabel}[dmgSource]);
   // Cap: incoming GJ/s (peak regen + injector fill) and cap-battery neut resistance %.
   const capInGJs      = peakRegen(cs.capCapacity,cs.capRechargeMs)+(cs.capFillPS??0);
   const neutResistPct = (1-(cs.energyWarfareResist??1))*100;
@@ -1427,14 +1442,20 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         </div>}
         {isOpen("firepower")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
-          {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],["Volley",totalVolDisp,"volley"]].map(([label,val,srcKey],i,arr)=>{
+          {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],[volleyLabel,volleyVal,"volley"]].map(([label,val,srcKey],i,arr)=>{
             const sel=dmgSource===srcKey;
+            // The volley cell carries a second meaning: once it is the selected column, tapping it
+            // again swaps one volley for a full clip. Tapping from another column still just selects,
+            // so the swap can never happen by accident on the way to reading the split.
+            const cycles=srcKey==="volley"&&hasClip;
+            const onTap=()=>{ if(cycles&&sel) setVolleyMode(m=>m==="clip"?"volley":"clip"); else setDmgSource(srcKey); };
             return(
-            <div key={label} onClick={()=>setDmgSource(srcKey)} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+            <div key={srcKey} onClick={onTap} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
               <div style={{fontSize:14,fontWeight:800,color:val==="0"?C.textMute:(sel?C.accent:C.text)}}>{val}</div>
               {/* Deliberately NOT pinned to Recharge Rates' 1.2 — the inherited line-height leaves
                   this card taller than its neighbours, which is what makes it read as the headline. */}
-              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4}}>{label}</div>
+              <div style={{fontSize:9,color:sel?C.accent:C.textMute,marginTop:4,
+                           borderBottom:cycles?`1px dotted ${sel?C.accent:C.textMute}`:"none",display:"inline-block"}}>{label}</div>
             </div>);
           })}
         </div>

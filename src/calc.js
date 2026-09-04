@@ -2344,6 +2344,21 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
 
   let weaponDps    = { em:0, th:0, kin:0, exp:0, total:0 };
   let weaponVolley = { em:0, th:0, kin:0, exp:0, total:0 };
+  // Damage a full clip puts out before the guns go quiet: volley × shots-per-clip, per weapon.
+  // Only weapons whose reload actually costs time count — a laser's crystal swap is 0.01 ms and a
+  // disintegrator's is the same, so for them "before reload" is not a limit and summing their clips
+  // would bury a Rapid launcher's real burst ceiling under a meaningless number.
+  const RELOAD_MS_MIN = 1000;
+  const clipVolley = { em:0, th:0, kin:0, exp:0, total:0 };
+  let clipWeapons = 0;
+  const addClip = (fitItem, numShots, dmg) => {
+    if (!(numShots > 0)) return false;
+    if ((fitItem.get('reloadTime') ?? 0) < RELOAD_MS_MIN) return false;
+    clipWeapons++;
+    for (const t of ['em','th','kin','exp']) clipVolley[t] += (dmg[t] ?? 0) * numShots;
+    clipVolley.total += (dmg.em + dmg.th + dmg.kin + dmg.exp) * numShots;
+    return true;
+  };
   const slotEngineStats = new Map();  // slot → { optimal, falloff, tracking, cycleMs, dmgMult }
   // slot id → effective CHARGE attributes, for the ones this file computes outside the engine.
   const fittedChargeStats = new Map();
@@ -2488,6 +2503,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const slotVolTotal = vol('em')+vol('th')+vol('kin')+vol('exp');
         weaponDps.total  += slotDpsTotal;
         weaponVolley.total += slotVolTotal;
+        addClip(fitItem, numShots, { em:vol('em'), th:vol('th'), kin:vol('kin'), exp:vol('exp') });
         // Record this weapon's contribution to the spool base only if it actually spools, so the
         // max-spool display ramps this weapon alone and leaves co-fitted non-spool guns at base.
         if (spoolMax > 0 && spoolPerCycle > 0) {
@@ -2745,6 +2761,8 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           weaponDps.exp  += dps*(chExp/safeTot); weaponVolley.exp  += vol*(chExp/safeTot);
           weaponDps.total  += dps;
           weaponVolley.total += vol;
+          addClip(fitItem, numShots, { em:vol*(chEm/safeTot), th:vol*(chTh/safeTot),
+                                       kin:vol*(chKin/safeTot), exp:vol*(chExp/safeTot) });
         }
 
         // ── Missile range + explosion stats (pyfa-exact, verified vs Affected-By panel) ──
@@ -4110,6 +4128,10 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       kin: weaponVolley.kin + droneVolley.kin + fighterVolley.kin, exp: weaponVolley.exp + droneVolley.exp + fighterVolley.exp,
       total: weaponVolley.total + droneVolley.total + fighterVolley.total,
     },
+    // Weapons only, deliberately: drones and fighters have no clip to empty, so folding them in
+    // would make the figure grow with something that never stops shooting.
+    clipVolley,
+    clipWeapons,
     // Spool-up (entropic disintegrators). weaponSpoolFactor>1 means the weapon ramps damage:
     // the unspooled totals above are the MIN. Only the spooling weapon's OWN contribution
     // (spoolBaseDps/spoolBaseVolley) ramps — co-fitted smartbombs/guns, breacher DoTs and drones
@@ -4139,6 +4161,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       return {
         weaponDps: w, weaponVolley: wv, droneDps: d, droneVolley: dv, fighterDps: f, fighterVolley: fv,
         totalDps: sum(w,d,f), totalVolley: sum(wv,dv,fv),
+        clipVolley: applyTargetResists(clipVolley, _tgtRes),
         weaponDpsMax:   w.total  + sd * (weaponSpoolFactor - 1),
         weaponVolleyMax: wv.total + sv * (weaponSpoolFactor - 1),
         totalDpsMax:    w.total  + sd * (weaponSpoolFactor - 1) + d.total + f.total,
