@@ -744,7 +744,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 4px"}}>
               <img src={(slotIcons??{})[sec.key==="rigs"?"rig":sec.key==="subsystems"?"subsystem":sec.key]} style={{width:12,height:12,objectFit:"contain",filter:"brightness(10)",marginRight:2}} alt=""/>
               <span style={{fontSize:12,fontWeight:700,color:C.text}}>{sec.label}</span>
-              <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600}}>{(slots[sec.key]??[]).length}</span>
+              {/* Orphans excluded: the badge is how many slots the SHIP has, and a module stranded
+                  past the end of the rack is being kept, not fitted. Counting it made the rack read
+                  as one longer than the hull — which is exactly the thing the red NO SLOT row is
+                  there to tell you it is not. */}
+              <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600}}>{(slots[sec.key]??[]).filter(m=>!m?.orphan).length}</span>
             </div>
             {rows.map((row,rowIdx)=>{
               if(row.type==="empty")return(

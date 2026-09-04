@@ -651,6 +651,43 @@ function generateEmptySlots(ship,subsystems){
   };
 }
 
+// A saved fit stores its racks verbatim, so a fit keeps whatever slot count the app believed in on
+// the day it was made. That is normally invisible — until the count itself turns out to have been
+// wrong (ships.json gave the Cenotaph a third low it does not have) or CCP moves one in a patch, at
+// which point every EXISTING fit is still the old shape and the correction appears not to have
+// worked. Reconcile on load rather than in a storage migration: a migration is one-shot, so the next
+// eve.db bump would strand fits all over again, whereas this is self-healing by construction.
+//
+// A module in a slot that no longer exists is KEPT, flagged `orphan` — the same thing a T3 subsystem
+// swap does (tabs.jsx), rendered red with a NO SLOT badge and excluded from every stat. Deleting it
+// would silently eat a module the user paid for, and pyfa keeps it for the same reason. A rack that
+// GREW is padded with empties, which is the Skybreaker/Stormbringer direction of the same bug.
+//
+// T3 cruisers are skipped: their racks come from fitted subsystems, not the hull, so the hull's own
+// counts are not the answer and swapSubsystem already reconciles them.
+function reconcileRacks(slots,ship){
+  if(!slots||!ship||isT3Cruiser(ship.name))return slots;
+  const RACKS=[["high","h","High",ship.hiSlots],["mid","m","Mid",ship.medSlots],
+               ["low","l","Low",ship.lowSlots],["rigs","r","Rig",ship.rigSlots],
+               ["services","sv","Service",ship.serviceSlots]];
+  let changed=false;
+  const out={...slots};
+  for(const[key,prefix,label,count]of RACKS){
+    const cur=slots[key];
+    if(!Array.isArray(cur)||typeof count!=="number")continue;
+    if(cur.length===count&&!cur.some(m=>m?.orphan))continue;
+    const rack=[];
+    for(let i=0;i<count;i++)
+      rack.push(cur[i]?{...cur[i],orphan:false}
+                      :{id:`${prefix}${i}`,name:`[Empty ${label} Slot]`,icon:null,type:"empty"});
+    for(let i=count;i<cur.length;i++)
+      if(cur[i]?.typeID&&cur[i].type!=="empty")rack.push({...cur[i],orphan:true});
+    out[key]=rack;
+    changed=true;
+  }
+  return changed?out:slots;
+}
+
 // Reads the fit a user has copied — native (Capacitor's Clipboard plugin, the only thing that can
 // reach the OS clipboard from inside the WebView) and web (navigator.clipboard) alike. Shared by the
 // "From EFT" chooser button, which imports straight off a successful read with no sheet in between,
@@ -1625,4 +1662,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

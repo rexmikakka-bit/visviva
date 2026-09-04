@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -5725,6 +5725,41 @@ Agency 'Overclocker' SB7 Dose III
                              null, { targetResists: [1, 1, 1, 1] });
   check('ceno', 'drones alongside are still fully resisted', mixed.effective.droneDps.total, 0, 0);
   check('ceno', 'while the pod beside them is not', mixed.effective.totalDps.total, 750, 0.0001);
+
+  // Correcting the hull is only half of it: a SAVED fit stores its racks verbatim, so every existing
+  // Cenotaph keeps the third low it was built with and the fix looks like it did nothing. Racks are
+  // therefore reconciled against the hull on load. A migration would not do — it runs once, so the
+  // next eve.db bump would strand fits again.
+  const empty = (id, label) => ({ id, name: `[Empty ${label} Slot]`, type: 'empty' });
+  const mod = (id, name) => ({ id, name, typeID: tid(name), type: 'module', state: 'active' });
+  const stale = { high: [], mid: [],
+                  low: [mod('l0', 'Damage Control II'), empty('l1', 'Low'), mod('l2', '400mm Steel Plates II')],
+                  rigs: [] };
+  const fixed = reconcileRacks(stale, lookupShip('Cenotaph'));
+  check('ceno', 'a saved fit is trimmed to the real rack', fixed.low.length, 3, 0);
+  check('ceno', 'the surviving slots keep their modules',
+        fixed.low.slice(0, 2).map((m) => m.name).join('|'), 'Damage Control II|[Empty Low Slot]', 0);
+  // Kept, not deleted — deleting would silently eat a module the user paid for. Flagged instead, and
+  // calc.js already excludes orphans from every stat.
+  check('ceno', 'the stranded module is kept, flagged', fixed.low[2].orphan === true ? 1 : 0, 1, 0);
+  check('ceno', 'and it is the one that was stranded', fixed.low[2].name, '400mm Steel Plates II', 0);
+  check('ceno', 'the orphan is excluded from stats',
+        calcFitStats({ typeID: tid('Cenotaph'), name: 'Cenotaph' }, fixed, [], null, {}).armorHP,
+        calcFitStats({ typeID: tid('Cenotaph'), name: 'Cenotaph' },
+                     { ...fixed, low: fixed.low.slice(0, 2) }, [], null, {}).armorHP, 0.0000001);
+  // The other direction: the two Precursor destroyers GAINED a high, so a fit saved with one must be
+  // padded rather than left short.
+  const short = reconcileRacks({ high: [mod('h0', 'Light Entropic Disintegrator II')], mid: [], low: [], rigs: [] },
+                               lookupShip('Skybreaker'));
+  check('ceno', 'a rack that grew is padded', short.high.length, 2, 0);
+  check('ceno', 'padding is empty, not a clone', short.high[1].type, 'empty', 0);
+  // A T3 cruiser's racks come from its subsystems, so the hull's own counts are not the answer.
+  const loki = { high: [mod('h0', 'Damage Control II')], mid: [], low: [], rigs: [] };
+  check('ceno', 'T3 cruisers are left alone', reconcileRacks(loki, lookupShip('Loki')) === loki ? 1 : 0, 1, 0);
+  // An already-correct fit must come back by reference, so loading one causes no re-render churn.
+  const ok = generateEmptySlots(lookupShip('Cenotaph'));
+  check('ceno', 'a correct fit is returned untouched',
+        reconcileRacks(ok, lookupShip('Cenotaph')) === ok ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
