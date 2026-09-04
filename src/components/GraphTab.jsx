@@ -8,7 +8,7 @@ import { targetFitProfile } from "../lib/graph-target.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
   calcRangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, calcAngularSpeed,
-  stackingPenalty, simulateCapTrace,
+  calcLockTime, stackingPenalty, simulateCapTrace,
 } from "../calc.js";
 
 // "Ideal" is a REAL point in the parameter space, not a special case: a stationary target with an
@@ -80,16 +80,12 @@ const GRAPH_CONFIG=[
   {key:"lock",label:"Lock",icon:"target",color:"danger",yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
 ];
 
-// Lock time against a target of signature `sig`, in seconds. pyfa's eos/calc.py calculateLockTime,
-// including CCP's 30-minute ceiling.
-//
-// Named and shared rather than inlined in the curve, because the headline's tap-to-expand evaluates it
-// AGAIN at the cursor's sig. Reading the extra digits off the plotted curve instead would have printed
-// a lie: the curve is 198 samples with the readout interpolating between them, and that interpolation
-// runs up to 0.49 s off the true value at the low-sig end where the curve is steepest — an error in the
-// first decimal, never mind the third. Two call sites, one formula, so they cannot drift.
-const lockTimeAt=(scanRes,sig)=>
-  (scanRes>0&&sig>0)?Math.min(40000/scanRes/Math.pow(Math.asinh(sig),2),1800):0;
+// The plotted curve and the headline's tap-to-expand both evaluate lock time, the latter AGAIN at the
+// cursor's sig — reading the extra digits off the curve instead would have printed a lie, since it is
+// 198 samples with the readout interpolating between them and that interpolation runs up to 0.49 s off
+// at the low-sig end where the curve is steepest. `?? 0` because a curve needs a number to plot: the
+// shared function returns null for a fit with no scan resolution, where there is no lock time at all.
+const lockTimeAt=(scanRes,sig)=>calcLockTime(scanRes,sig)??0;
 
 // The one distance to evaluate at when the X axis is sweeping something other than range: the reach of
 // the longest-ranged weapon on the fit, or 30 km if it has none. The speed and sig axes hold range

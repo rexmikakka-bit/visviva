@@ -248,9 +248,20 @@ export function rangeFactor(optKm, fallKm, distKm, restricted = true) {
   return 0.5 ** (x * x);
 }
 
-export function calcLockTime(scanRes, sigRadius) {
-  if (!scanRes || !sigRadius) return null;
-  return 40000 / (scanRes * Math.pow(sigRadius, 1.4));
+// Time for a ship with `scanRes` mm of scan resolution to lock a target of `tgtSigRadius` m.
+//
+// pyfa's eos/calc.py calculateLockTime, including CCP's 30-minute ceiling. This used to read
+// `40000 / (scanRes * tgtSigRadius**1.4)`, which is not an approximation of the real curve but a
+// different shape entirely — it said 2.2 s where pyfa says 13.1 s for a frigate, and 0.03 s against
+// 4.2 s for a battleship. Nothing rendered it, so the error sat here untested; the Graph tab was
+// unaffected because it carried its own (correct) inline copy, now folded back into this one.
+//
+// The second argument is the TARGET's signature, never your own. Lock time is a property of the
+// pair, which is why a fit has no scalar "lock time" — pyfa surfaces it as a table over reference
+// hull radii, and we sweep target sig as the Lock graph's X axis.
+export function calcLockTime(scanRes, tgtSigRadius) {
+  if (!scanRes || !tgtSigRadius) return null;
+  return Math.min(40000 / scanRes / Math.pow(Math.asinh(tgtSigRadius), 2), 30 * 60);
 }
 
 export function peakRegen(capacityHP, rechargeRateMs) {
@@ -3949,7 +3960,6 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   const alignTime  = calcAlignTime(agility, mass);  // mass includes MWD massAddition
   // Always use engine-computed warpSpeedMultiplier (attr600) so rig bonuses apply
   const warpSpeed  = s.get('warpSpeedMultiplier') ?? ship.warpSpeed ?? 3;
-  const lockTime   = calcLockTime(scanRes, sigRadius);
 
   // An Ancillary Armor Repairer runs on Nanite Repair Paste (x3 rep), so its EHP/s comes from the
   // engine stats rather than the raw armorDamageAmount. It must be ADDED to the other repairers, not
@@ -4198,7 +4208,6 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     scanRes:        Math.round(scanRes),
     targetRange:    Math.round(targetRange * 10) / 10,
     maxTargets,
-    lockTime:       lockTime ? Math.round(lockTime * 100) / 100 : null,
     sensorStrength: Math.round(sensorStrength * 10) / 10,
     sensorType:     ship.sensorType ?? '',
     jamChance:      Math.round(jamChance * 10) / 10,
@@ -4211,7 +4220,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     //
     // A separate bag rather than unrounding the fields themselves: those values are read all over the
     // UI and pinned by the regression baselines, and nothing else wants the extra digits.
-    exact: { alignTime, warpSpeed, sigRadius, scanRes, targetRange, sensorStrength, lockTime,
+    exact: { alignTime, warpSpeed, sigRadius, scanRes, targetRange, sensorStrength,
              maxVelocity, maxVelocityAB: abMwdSpeed },
 
     // Drone bay (from ship base data, not engine)

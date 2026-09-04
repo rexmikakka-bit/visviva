@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -5573,6 +5573,62 @@ Agency 'Overclocker' SB7 Dose III
   // MAX across the rack, not a sum: the rack is empty when its slowest launcher empties. A mixed
   // rack of 4 RHML must report the same duration as a rack of 7, not four sevenths of it.
   check('clip-dmg', 'clip duration is per-rack, not summed', mixed.clipSeconds, rhml.clipSeconds, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12k. LOCK TIME: how long to acquire a target, from scan resolution and TARGET signature.
+//
+// pyfa eos/calc.py calculateLockTime: 40000 / scanRes / asinh(tgtSig)^2, capped at CCP's 30-minute
+// ceiling. The expected values below were produced by EXECUTING that function out of the pyfa source
+// tree, not by reading back what ours prints.
+//
+// This shipped wrong for a long time and nothing caught it, because nothing rendered it. It read
+// 40000 / (scanRes * tgtSig**1.4) — not a loose approximation of the real curve but a different shape
+// entirely, saying 2.21 s where pyfa says 13.07 for a pod and 0.03 s against 4.41 for a battleship.
+// The Lock graph was right throughout only because it carried a private inline copy of the correct
+// formula; the two are now a single function, and this section is what stops them parting again.
+//
+// The eight radii are pyfa's own reference hull sizes (gui/builtinStatsViews/targetingMiscViewMinimal
+// RADII), so any figure here can be read straight off pyfa's Scan Resolution tooltip.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nLOCK TIME (scan resolution vs target signature)');
+  const PYFA_AT_200 = [
+    ['Pod',            25, 13.065873],
+    ['Interceptor',    33, 11.392681],
+    ['Frigate',        38, 10.662828],
+    ['Destroyer',      83,  7.653220],
+    ['Cruiser',       130,  6.468024],
+    ['Battlecruiser', 265,  5.082717],
+    ['Battleship',    420,  4.411241],
+    ['Carrier',      3000,  2.642652],
+  ];
+  // The shape of the curve, and the only checks here that would have caught the old formula.
+  for (const [size, radius, expected] of PYFA_AT_200) {
+    check('locktime', `${size} (sig ${radius}) at 200mm`, calcLockTime(200, radius), expected, 1e-6);
+  }
+  // Scan resolution divides linearly, so doubling it exactly halves every figure above. Asserted
+  // against our own 200mm result rather than against `expected / 2`: the literals are pyfa's output
+  // rounded to six places, and halving that rounding leaves a ~5e-7 relative gap — enough to fail a
+  // tolerance tight enough to mean anything. Comparing the two calls pins the scan-res axis exactly.
+  // Deliberately WEAK against the old bug, which was also 1/scanRes; the radii above are what pin the
+  // signature axis, where the error actually lived.
+  for (const [size, radius] of PYFA_AT_200) {
+    check('locktime', `${size} halves at 400mm`, calcLockTime(400, radius), calcLockTime(200, radius) / 2, 1e-12);
+  }
+  // CCP's 30-minute ceiling — the one place the curve stops being a curve, reachable in game only by
+  // a heavily damped ship against something tiny.
+  check('locktime', 'capped at 30 minutes', calcLockTime(1, 25), 1800, 0);
+  check('locktime', 'below the cap is left alone', calcLockTime(4, 25) < 1800 ? 1 : 0, 1, 0);
+  // Null, not 0 or Infinity: a ship with no scan resolution cannot lock at all, which is a different
+  // statement from "locks instantly". The Lock graph turns that into a plotted 0 explicitly (`?? 0`)
+  // rather than by accident.
+  check('locktime', 'no scan res is null', calcLockTime(0, 25) === null ? 1 : 0, 1, 0);
+  check('locktime', 'no target sig is null', calcLockTime(200, 0) === null ? 1 : 0, 1, 0);
+  // A real hull, so the function is pinned against the engine's scan resolution and not only against
+  // hand-fed numbers. The Astarte's 306 mm is already validated in section 1.
+  const astarteScanRes = 306;
+  check('locktime', 'Astarte (306mm) locks a cruiser', calcLockTime(astarteScanRes, 130), 4.227467, 1e-6);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
