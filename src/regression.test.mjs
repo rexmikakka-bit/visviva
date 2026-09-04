@@ -5526,6 +5526,53 @@ Agency 'Overclocker' SB7 Dose III
   // A launcher that is not firing has no clip damage, for the same reason it has no volley.
   const cold = clipFit('Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile', 'offline'));
   check('clip-dmg', 'an offline launcher is not counted', cold.clipWeapons, 0, 0);
+
+  // CLIP DURATION: how long the damage takes to land, and the silence after it. The panel shows
+  // these as "43s (+35s)" in place of the damage-type split, which is a single colour on a rapid
+  // rack anyway.
+  //
+  // Duration is shots x CYCLE TIME. With reload factoring off, cycle time is exactly volley/dps -- a
+  // quantity this suite already validates against pyfa through the DPS checks -- so the identity pins
+  // the multiplier without re-asserting a cycle time pinned elsewhere. It catches a wrong shot count
+  // or a per-rack sum.
+  for (const [what, stats, shots] of [['an RLML', rlml, 20], ['an RHML', rhml, 25], ['a Rapid Torpedo', rtl, 30]]) {
+    check('clip-dmg', `${what} clip lasts shots x cycle`,
+      stats.clipSeconds, shots * (stats.weaponVolley.total / stats.weaponDps.total), 1e-9);
+  }
+  // ...but that identity is BLIND to the reload, because with factoring off the reload is zero and
+  // effCycleMs collapses onto cycleMs. Factoring on is where they diverge: effCycleMs amortises the
+  // reload across the clip, so shots x effCycleMs = shots x cycle + reload -- the exact duration the
+  // panel then ALSO prints as its "(+35s)". Reading the wrong one double-counts the reload and is
+  // invisible in every check above. The clip empties at the same wall-clock moment either way; only
+  // the DPS the user asked to average differs.
+  const reloadOn = (ship, high) => calcFitStats(
+    { typeID: tid(ship), name: ship }, { high, mid: [], low: [], rigs: [] }, [], null,
+    { factorInReload: true });
+  for (const [what, stats, ship, high] of [
+    ['an RLML', rlml, 'Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile')],
+    ['an RHML', rhml, 'Drake',   rack(7, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile')],
+  ]) {
+    const on = reloadOn(ship, high);
+    check('clip-dmg', `${what} clip duration ignores reload factoring`, on.clipSeconds, stats.clipSeconds, 1e-9);
+    check('clip-dmg', `${what} reload figure ignores reload factoring`, on.clipReloadSeconds, stats.clipReloadSeconds, 0);
+    // Proof the toggle actually did something on this fit, or the two above pass vacuously.
+    check('clip-dmg', `${what} reload factoring does lower DPS`,
+      on.weaponDps.total < stats.weaponDps.total ? 1 : 0, 1, 0);
+  }
+  // Reload is CCP's own attribute, read straight off the launcher: 35 s for both rapid light and
+  // rapid heavy, 40 s for rapid torpedo. Hardcoded expectations, since the whole point of the figure
+  // is that this number is punishing and specific.
+  check('clip-dmg', 'RLML reload is 35 s', rlml.clipReloadSeconds, 35, 0);
+  check('clip-dmg', 'RHML reload is 35 s', rhml.clipReloadSeconds, 35, 0);
+  check('clip-dmg', 'Rapid Torpedo reload is 40 s', rtl.clipReloadSeconds, 40, 0);
+  // An excluded weapon reports no duration either, or the panel would offer a reload countdown for
+  // a laser whose crystal swap takes 0.01 ms.
+  for (const [what, stats] of excluded) {
+    check('clip-dmg', `${what} reports no clip duration`, stats.clipSeconds, 0, 0);
+  }
+  // MAX across the rack, not a sum: the rack is empty when its slowest launcher empties. A mixed
+  // rack of 4 RHML must report the same duration as a rack of 7, not four sevenths of it.
+  check('clip-dmg', 'clip duration is per-rack, not summed', mixed.clipSeconds, rhml.clipSeconds, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
