@@ -356,13 +356,17 @@ export function BottomNav({active,onChange,badges}){
     {key:"effects", label:"Effects", navKey:"effects"},
   ];
   const NAV_ICON_TYPEIDS={fit:1353,cargo:1317,drones:24395,implants:10216};
-  // The full inset is 34px on a notched iPhone, which left a visibly dead strip under the labels.
-  // The home indicator itself only occupies the bottom ~20px, so trimming 14 still clears it;
-  // max() keeps the result sane on devices whose inset is 0.
-  return(<div style={{display:"flex",background:C.surface,borderTop:`1px solid ${C.border}`,paddingBottom:"max(4px, calc(env(safe-area-inset-bottom, 0px) - 14px))"}}>
+  // Two devices read this expression very differently. A notched iPhone reports a 34px inset, of which
+  // the home indicator only occupies the bottom ~20px, so trimming 12 still clears it and avoids a dead
+  // strip under the labels. Android's Capacitor WebView reports ~0 even when the 3-button system bar is
+  // present, so it lands on the floor instead — which is why the floor cannot be a token 4px: that is
+  // the whole of Android's breathing room, and the labels and active-tab indicator pressed straight
+  // against the WebView edge. 10px floor, and the buttons carry a little more of their own padding so
+  // the row is not relying on the inset for its internal spacing at all.
+  return(<div style={{display:"flex",background:C.surface,borderTop:`1px solid ${C.border}`,paddingBottom:"max(10px, calc(env(safe-area-inset-bottom, 0px) - 12px))"}}>
     {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;
       const count=badges?.[t.key];
-      return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"5px 0 4px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+      return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"8px 0 6px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
       <div style={{position:"relative"}}>
         <img src={t.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
         {/* Pyfa-style: a count only shows for things currently switched ON (or, for cargo/implants,
