@@ -5450,6 +5450,132 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12j. CLIP DAMAGE: what a rapid launcher puts out before its long reload.
+//
+// An RLML's DPS and volley both read like an ordinary launcher's, and neither says the thing that
+// decides the fight: 20 shots, then 35 seconds of nothing. Clip damage is volley x shots-per-clip,
+// so it is a straight product of numbers this suite already validates against pyfa — the checks
+// below pin the MULTIPLIER and the GATE, which is where the judgement is.
+//
+// The gate matters as much as the arithmetic, and it is narrow ON PURPOSE. Every weapon in the game
+// has a nominal clip; only the three rapid launcher groups trade a short one against a punishing
+// reload. An autocannon's 120-round belt reloads in 10 s and a laser's crystal swap in 0.01 ms, so
+// their clip damage is a number nobody fits around and would swamp a real ceiling on a mixed rack.
+// The exclusions below are the specification, not incidental coverage.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCLIP DAMAGE (rapid launchers, damage before reload)');
+  let _cn = 0;
+  const CM = (name, state = 'active', ammo) => ({ id: `c${_cn++}`, typeID: tid(name), state, ammo });
+  const clipFit = (ship, high, drones = []) => calcFitStats(
+    { typeID: tid(ship), name: ship }, { high, mid: [], low: [], rigs: [] }, drones, null, {});
+  const rack = (n, name, ammo, state = 'active') => Array.from({ length: n }, () => CM(name, state, ammo));
+
+  const rlml = clipFit('Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile'));
+  check('clip-dmg', 'every firing launcher counts once', rlml.clipWeapons, 5, 0);
+  // 0.3 m3 bay / 0.015 m3 per Light Missile = 20. The volley itself is pinned elsewhere; what is
+  // asserted here is that the clip figure is exactly 20 of them.
+  check('clip-dmg', 'an RLML empties 20 shots', rlml.clipVolley.total / rlml.weaponVolley.total, 20, 1e-9);
+  check('clip-dmg', 'RLML clip damage', rlml.clipVolley.total, 15950, 1e-9);
+  // The Firepower panel colours the damage-type bars from this split, so it has to add up to the
+  // total it sits under -- a split that drifts would render bars that do not fill their own row.
+  const cv = rlml.clipVolley;
+  check('clip-dmg', 'the damage-type split sums to the total', cv.em + cv.th + cv.kin + cv.exp, cv.total, 1e-9);
+
+  // Clip size is per-launcher, not a constant: 20 / 25 / 30 across the three rapid groups. Reading
+  // one number for all of them is the easy mistake these would catch.
+  const rhml = clipFit('Drake', rack(7, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'));
+  check('clip-dmg', 'an RHML empties 25 shots', rhml.clipVolley.total / rhml.weaponVolley.total, 25, 1e-9);
+  const rtl = clipFit('Barghest', rack(5, 'Rapid Torpedo Launcher II', 'Scourge Rage Torpedo'));
+  check('clip-dmg', 'a Rapid Torpedo Launcher empties 30', rtl.clipVolley.total / rtl.weaponVolley.total, 30, 1e-9);
+
+  // The gate, which is the whole specification. Every weapon below HAS a clip; none of them trades
+  // it against a reload worth planning around, so all four must report nothing at all rather than a
+  // large number that would swamp a real rapid launcher's on a mixed rack.
+  const excluded = [
+    ['an ordinary HML',   clipFit('Caracal', rack(5, 'Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'))],
+    ['an autocannon',     clipFit('Rupture', rack(4, '425mm AutoCannon II', 'Republic Fleet EMP M'))],
+    ['a pulse laser',     clipFit('Omen',    rack(5, 'Heavy Pulse Laser II', 'Scorch M'))],
+    ['a disintegrator',   clipFit('Vedmak',  [CM('Heavy Entropic Disintegrator II', 'active', 'Occult M')])],
+  ];
+  for (const [what, stats] of excluded) {
+    check('clip-dmg', `${what} reports no clip`, stats.clipWeapons, 0, 0);
+    check('clip-dmg', `${what} contributes no clip damage`, stats.clipVolley.total, 0, 0);
+    // ...but is still a working weapon. Without this the four pairs above would also pass on a
+    // build where the whole damage chain returned zero.
+    check('clip-dmg', `${what} still has a volley`, stats.weaponVolley.total > 0 ? 1 : 0, 1, 0);
+  }
+
+  // A rapid launcher sharing a rack with an excluded weapon reports its own clip and only its own.
+  const mixed = clipFit('Drake', [...rack(4, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile'),
+                                  ...rack(3, 'Heavy Missile Launcher II', 'Scourge Fury Heavy Missile')]);
+  check('clip-dmg', 'a mixed rack counts only the rapid launchers', mixed.clipWeapons, 4, 0);
+  check('clip-dmg', 'and the HMLs do not inflate its clip',
+    mixed.clipVolley.total, rhml.clipVolley.total * 4 / 7, 1e-9);
+  check('clip-dmg', 'while total volley still counts everything',
+    mixed.weaponVolley.total > mixed.clipVolley.total / 25 ? 1 : 0, 1, 0);
+
+  // Drones keep shooting while the launchers reload, so folding them in would make the figure grow
+  // with something that has no clip at all. Same fit, same clip damage, larger total volley.
+  const withDrones = clipFit('Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile'),
+    [{ typeID: tid('Hobgoblin II'), qty: 5, active: true }]);
+  check('clip-dmg', 'drones do not change the clip', withDrones.clipVolley.total, rlml.clipVolley.total, 1e-9);
+  check('clip-dmg', 'but they do change total volley',
+    withDrones.totalVolley.total > rlml.totalVolley.total ? 1 : 0, 1, 0);
+
+  // A launcher that is not firing has no clip damage, for the same reason it has no volley.
+  const cold = clipFit('Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile', 'offline'));
+  check('clip-dmg', 'an offline launcher is not counted', cold.clipWeapons, 0, 0);
+
+  // CLIP DURATION: how long the damage takes to land, and the silence after it. The panel shows
+  // these as "43s (+35s)" in place of the damage-type split, which is a single colour on a rapid
+  // rack anyway.
+  //
+  // Duration is shots x CYCLE TIME. With reload factoring off, cycle time is exactly volley/dps -- a
+  // quantity this suite already validates against pyfa through the DPS checks -- so the identity pins
+  // the multiplier without re-asserting a cycle time pinned elsewhere. It catches a wrong shot count
+  // or a per-rack sum.
+  for (const [what, stats, shots] of [['an RLML', rlml, 20], ['an RHML', rhml, 25], ['a Rapid Torpedo', rtl, 30]]) {
+    check('clip-dmg', `${what} clip lasts shots x cycle`,
+      stats.clipSeconds, shots * (stats.weaponVolley.total / stats.weaponDps.total), 1e-9);
+  }
+  // ...but that identity is BLIND to the reload, because with factoring off the reload is zero and
+  // effCycleMs collapses onto cycleMs. Factoring on is where they diverge: effCycleMs amortises the
+  // reload across the clip, so shots x effCycleMs = shots x cycle + reload -- the exact duration the
+  // panel then ALSO prints as its "(+35s)". Reading the wrong one double-counts the reload and is
+  // invisible in every check above. The clip empties at the same wall-clock moment either way; only
+  // the DPS the user asked to average differs.
+  const reloadOn = (ship, high) => calcFitStats(
+    { typeID: tid(ship), name: ship }, { high, mid: [], low: [], rigs: [] }, [], null,
+    { factorInReload: true });
+  for (const [what, stats, ship, high] of [
+    ['an RLML', rlml, 'Caracal', rack(5, 'Rapid Light Missile Launcher II', 'Scourge Fury Light Missile')],
+    ['an RHML', rhml, 'Drake',   rack(7, 'Rapid Heavy Missile Launcher II', 'Scourge Fury Heavy Missile')],
+  ]) {
+    const on = reloadOn(ship, high);
+    check('clip-dmg', `${what} clip duration ignores reload factoring`, on.clipSeconds, stats.clipSeconds, 1e-9);
+    check('clip-dmg', `${what} reload figure ignores reload factoring`, on.clipReloadSeconds, stats.clipReloadSeconds, 0);
+    // Proof the toggle actually did something on this fit, or the two above pass vacuously.
+    check('clip-dmg', `${what} reload factoring does lower DPS`,
+      on.weaponDps.total < stats.weaponDps.total ? 1 : 0, 1, 0);
+  }
+  // Reload is CCP's own attribute, read straight off the launcher: 35 s for both rapid light and
+  // rapid heavy, 40 s for rapid torpedo. Hardcoded expectations, since the whole point of the figure
+  // is that this number is punishing and specific.
+  check('clip-dmg', 'RLML reload is 35 s', rlml.clipReloadSeconds, 35, 0);
+  check('clip-dmg', 'RHML reload is 35 s', rhml.clipReloadSeconds, 35, 0);
+  check('clip-dmg', 'Rapid Torpedo reload is 40 s', rtl.clipReloadSeconds, 40, 0);
+  // An excluded weapon reports no duration either, or the panel would offer a reload countdown for
+  // a laser whose crystal swap takes 0.01 ms.
+  for (const [what, stats] of excluded) {
+    check('clip-dmg', `${what} reports no clip duration`, stats.clipSeconds, 0, 0);
+  }
+  // MAX across the rack, not a sum: the rack is empty when its slowest launcher empties. A mixed
+  // rack of 4 RHML must report the same duration as a rack of 7, not four sevenths of it.
+  check('clip-dmg', 'clip duration is per-rack, not summed', mixed.clipSeconds, rhml.clipSeconds, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);

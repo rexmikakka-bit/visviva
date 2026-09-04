@@ -653,7 +653,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   );
 }
 
-export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,autoFillHardpoints}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -879,7 +879,24 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const leaveNode=()=>{setBrowsePath(p=>p.slice(0,-1));haptic("light");};
   const resetNode=()=>{setBrowsePath([]);haptic("light");};
 
+  // The + on the tab strip drops you here with the next open already destined for a new tab, which
+  // is invisible until it happens. Rendered on all three list views because any of them can be where
+  // the fit is finally tapped -- browse (a recent fit or a search hit), a tag, or a hull's own list.
+  //
+  // SOLID accent, not the accentLight wash it started as: this sits directly beneath ActiveFitBar,
+  // which is itself a full-width accentLight strip with an accentBorder rule and accent text, so a
+  // tinted version read as a second line of that bar rather than as its own thing. Filling it inverts
+  // the relationship instead of repeating it. Small and uppercase keeps it a status line rather than
+  // a call to action -- the bar above IS tappable and this is not, so it must not look like a button.
+  const newTabHint=newTabIntent?(
+    <div style={{padding:"6px 12px",background:C.accent,color:"#fff",fontSize:10,fontWeight:700,
+                 textAlign:"center",textTransform:"uppercase",letterSpacing:.7,flexShrink:0}}>
+      Select a fit to open in a new tab
+    </div>
+  ):null;
+
   if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    {newTabHint}
     {browsePath.length>0&&(
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* pyfa's order, back-to-start first. One level down it would do exactly what Back does,
@@ -990,6 +1007,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     const tagged=selectedTag?fitsWithTag(fitsDB,selectedTag):[];
     const color=colorForTag(selectedTag,tagColors);
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {newTabHint}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* A tag cuts across the hull tree rather than sitting in it, so there is no "one level up"
             to offer — only the way out. */}
@@ -1044,6 +1062,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
     return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {newTabHint}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* The ship's fit list is one more level of the browse hierarchy, so it gets the same two
             arrows. Back keeps browsePath, landing you among this hull's siblings. */}

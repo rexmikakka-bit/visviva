@@ -1018,6 +1018,9 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const isOpen=(k)=>!collapsed[k];
   // Firepower: which stat's damage-type split to show. Cap: toggle readouts.
   const [dmgSource,setDmgSource]=useViewMemory("Stats:dmgSource","weapon");
+  // The fourth cell shows one volley, or a whole clip's worth. Sticky like the rest of the panel:
+  // someone flying a Rapid launcher cares about the clip on every fit they open, not just this one.
+  const [volleyMode,setVolleyMode]=useViewMemory("Stats:volleyMode","volley");
   const [capDeltaMode,setCapDeltaMode]=useViewMemory("Stats:capDeltaMode","net");
   const [peakMode,setPeakMode]=useViewMemory("Stats:peakMode","regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
@@ -1200,11 +1203,26 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const weapDpsDisp   = hasSpool ? `${weapDpsTotal}-${fmtDps(_wDpsMax)}` : weapDpsTotal;
   const totalDpsDisp  = hasSpool ? `${totalDpsN}-${fmtDps(_tDpsMax)}`    : totalDpsN;
   const totalVolDisp  = hasSpool ? `${totalVolleyN}-${fmtDps(_tVolMax)}` : totalVolleyN;
+  // Clip damage: everything the guns can put out before they have to reload. Only offered when the
+  // fit actually has a weapon that reloads (calc.js excludes lasers and disintegrators, whose
+  // "reload" is 0.01 ms) — otherwise the cell would toggle to a number that means nothing.
+  const _clip         = (_tgtOn?eff.clipVolley:cs.clipVolley)??{};
+  const hasClip       = (cs.clipWeapons??0)>0 && (_clip.total??0)>0;
+  const showClip      = hasClip && volleyMode==="clip";
+  // fmtN, not fmtDps: a clip is one to three orders of magnitude bigger than a volley and a
+  // battleship's would run off the end of a quarter-width cell. The split row below still spells it
+  // out in full, and "19.1k" is the same shorthand this panel already uses for EHP and capacitor.
+  const volleyVal     = showClip ? fmtN(_clip.total??0) : totalVolDisp;
+  const volleyLabel   = showClip ? "Clip Dmg" : "Volley";
   // Selected firepower stat's damage-type split (tap a column to switch). Fighters are lumped
   // with drones (as Pyfa does) in the "Drone" column.
   const _dfSplit = ['em','th','kin','exp','total'].reduce((o,k)=>{o[k]=(_dDps?.[k]??0)+(_fDps?.[k]??0);return o;},{});
-  const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_tVol}[dmgSource])??{};
-  const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:"Volley"}[dmgSource]);
+  const _volSplit     = showClip ? _clip : _tVol;
+  const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_volSplit}[dmgSource])??{};
+  const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:volleyLabel}[dmgSource]);
+  // Only when the split row would be describing the CLIP. Selecting another column while the cell
+  // still reads Clip Dmg means that column's split is what the row is for.
+  const showClipDuration = showClip && dmgSource==="volley" && (cs.clipSeconds??0)>0;
   // Cap: incoming GJ/s (peak regen + injector fill) and cap-battery neut resistance %.
   const capInGJs      = peakRegen(cs.capCapacity,cs.capRechargeMs)+(cs.capFillPS??0);
   const neutResistPct = (1-(cs.energyWarfareResist??1))*100;
@@ -1427,10 +1445,16 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         </div>}
         {isOpen("firepower")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
-          {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],["Volley",totalVolDisp,"volley"]].map(([label,val,srcKey],i,arr)=>{
+          {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],[volleyLabel,volleyVal,"volley"]].map(([label,val,srcKey],i,arr)=>{
             const sel=dmgSource===srcKey;
+            // One tap, not two. This used to require selecting the column before the swap would fire,
+            // to keep it from happening by accident — but a rapid launcher rack is nearly always one
+            // ammo type, so the volley damage split that first tap bought is a row of one colour and
+            // the tap that earned it was pure toll.
+            const cycles=srcKey==="volley"&&hasClip;
+            const onTap=()=>{ if(cycles) setVolleyMode(m=>m==="clip"?"volley":"clip"); setDmgSource(srcKey); };
             return(
-            <div key={label} onClick={()=>setDmgSource(srcKey)} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
+            <div key={srcKey} onClick={onTap} style={{padding:"8px 6px",textAlign:"center",borderRight:arr.length>(i+1)?`1px solid ${C.border}`:"none",cursor:"pointer",background:sel?C.accentLight:"transparent"}}>
               <div style={{fontSize:14,fontWeight:800,color:val==="0"?C.textMute:(sel?C.accent:C.text)}}>{val}</div>
               {/* Deliberately NOT pinned to Recharge Rates' 1.2 — the inherited line-height leaves
                   this card taller than its neighbours, which is what makes it read as the headline. */}
@@ -1442,12 +1466,23 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           <span style={{color:C.textMute}}>Spool-up time</span>
           <span style={{color:C.text,fontWeight:700}}>{fmtF(cs.weaponSpoolTimeS)}s</span>
         </div>}
-        {(dmgSplit.total??0)>0&&<div style={{padding:"6px 12px",background:`${C.surfaceAlt}88`,display:"flex",gap:10,fontSize:10,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{dmgSourceLabel}</span>
-          {[["EM",dmgSplit.em,DMG.em.color],["Thermal",dmgSplit.th,DMG.th.color],["Kinetic",dmgSplit.kin,DMG.kin.color],["Explosive",dmgSplit.exp,DMG.exp.color]].filter(([,v])=>(v??0)>0.05).map(([l,v,c])=>(
-            <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
-          ))}
-        </div>}
+        {/* With the clip selected this row spends itself on a damage split that is nearly always a
+            single colour, since a rapid launcher rack carries one ammo type. The clip's cost is the
+            more useful thing to put there: how long it takes to land, and the silence that follows. */}
+        {showClipDuration
+          ?<div style={{padding:"6px 12px",background:`${C.surfaceAlt}88`,display:"flex",gap:10,fontSize:10,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>Clip Duration</span>
+            <span>
+              <span style={{color:C.text,fontWeight:700}}>{Math.round(cs.clipSeconds)}s</span>
+              {(cs.clipReloadSeconds??0)>0&&<span style={{color:C.textMute}}> (+{Math.round(cs.clipReloadSeconds)}s)</span>}
+            </span>
+          </div>
+          :(dmgSplit.total??0)>0&&<div style={{padding:"6px 12px",background:`${C.surfaceAlt}88`,display:"flex",gap:10,fontSize:10,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{dmgSourceLabel}</span>
+            {[["EM",dmgSplit.em,DMG.em.color],["Thermal",dmgSplit.th,DMG.th.color],["Kinetic",dmgSplit.kin,DMG.kin.color],["Explosive",dmgSplit.exp,DMG.exp.color]].filter(([,v])=>(v??0)>0.05).map(([l,v,c])=>(
+              <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
+            ))}
+          </div>}
         </>}
       </div>
 
