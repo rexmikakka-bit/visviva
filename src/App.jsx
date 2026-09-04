@@ -4,7 +4,7 @@ import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlo
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
 import { C, THEMES, setTheme } from "./theme.js";
-import { ImportFitSheet } from "./components/ui.jsx";
+import { ImportFitSheet, initKeyboardTracking } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
 import { ActiveFitBar, FittingsScreen, ShipInfoSheet } from "./components/FittingsScreen.jsx";
 import { CargoScreen } from "./components/cargo.jsx";
@@ -90,7 +90,12 @@ export default function App(){
   // short enough that BottomSheet's own scroll-to-dismiss (dismissKeyboardOnScroll) has nothing to
   // scroll — the "5mn c" module search was the one that surfaced it, but it's every sheet with a
   // search box, not that one specifically.
+  // initKeyboardTracking is load-bearing and must happen HERE, at boot, not from the sheets that
+  // consume it: attaching Capacitor's keyboard listeners on a sheet's own mount lost the very first
+  // keyboardWillShow, because the sheet's autoFocus triggers it before the bridge finishes attaching.
+  // See the note above useVisualViewport in components/ui.jsx.
   useEffect(()=>{
+    initKeyboardTracking();
     const Cap=(typeof window!=="undefined")&&window.Capacitor;
     if(!Cap?.isNativePlatform?.())return;
     try{ Cap.Plugins?.Keyboard?.setAccessoryBarVisible?.({isVisible:true}); }catch(e){}
