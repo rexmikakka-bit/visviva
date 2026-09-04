@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, effectiveWeaponMultipliers, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -5447,6 +5447,100 @@ Agency 'Overclocker' SB7 Dose III
   const win = rowsOf(gunOf(csW), 'maxRange').find(r => r.source?.kind === 'burst');
   check('offship-prov', 'the label follows the strongest burst', win?.source?.name, 'Stronger Charge');
   check('offship-prov', 'and so does the value', win?.mult, 1.35, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12ia. EFFECTIVE HARDPOINTS: what the hull's own bonuses make a turret/launcher worth.
+//
+// effectiveWeaponMultipliers answers "how much more DPS does a hardpoint do on THIS hull than on a
+// hull with no weapon bonus", and the attributes tab prints hardpoints x that. It is assembled from
+// three disjoint sources — the engine's provenance for `speed` and `damageMultiplier`, calc.js's
+// hand-applied shipMd for missile charge damage, and the traced charge for a T3 subsystem's
+// charge boost — so the failure mode is a source going quietly missing and the figure sagging
+// toward 1.0 without anything else in the suite noticing.
+//
+// So none of the expectations below is a hardcoded number. Each is MEASURED: the same weapon and
+// ammo is fitted to a reference hull of the same size with no bonus of that kind, and the DPS ratio
+// is what the multiplier must equal. That makes these checks a statement about the identity rather
+// than about today's output, and it is why the tolerance is 1e-9 rather than a display tolerance —
+// the two are computing the same quantity by different routes and have no licence to differ.
+//
+// Drop any one of the three sources and the ratio moves: without shipMd a Cerberus reads 1.333
+// instead of 1.667, without the ROF share a Rifter reads 1.0 instead of 1.6.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nEFFECTIVE HARDPOINTS (hull bonus as a multiple of a bare hardpoint)');
+  let _en = 0;
+  const EW = (name, state, ammo) => ({ id: `e${_en++}`, typeID: tid(name), state, ammo });
+  const ES = (name) => ({ id: `e${_en++}`, typeID: tid(name), state: 'online' });
+  const fitOf = (shipName, high, subsystems) =>
+    calcFitStats(lookupShip(shipName) ?? { typeID: tid(shipName), name: shipName },
+                 { high, mid: [], low: [], rigs: [], ...(subsystems ? { subsystems } : {}) }, [], null, {});
+
+  // One weapon on each hull, so the DPS ratio IS the per-hardpoint multiplier with no aggregation
+  // in the way. The reference hulls carry no bonus to the weapon in question.
+  const measured = (label, shipName, refName, mod, ammo, subs) => {
+    const a = fitOf(shipName, [EW(mod, 'active', ammo)], subs);
+    const b = fitOf(refName, [EW(mod, 'active', ammo)]);
+    const eff = effectiveWeaponMultipliers(a);
+    const got = eff.turret ?? eff.launcher;
+    check('eff-hp', label, got, b.weaponDps.total > 0 ? a.weaponDps.total / b.weaponDps.total : 0, 1e-9);
+  };
+  // Rate of fire only (the Caracal's kinetic bonus is long gone; its launcher bonus is pure cycle).
+  measured('a ROF bonus counts as damage', 'Caracal', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile');
+  // ROF and a kinetic damage bonus together, and the same hull denied the damage half by its ammo.
+  measured('ROF and damage compound', 'Cerberus', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile');
+  measured('a kinetic bonus is worth nothing on EM ammo', 'Cerberus', 'Osprey', 'Heavy Missile Launcher II', 'Mjolnir Heavy Missile');
+  // Turrets: ROF-bonused, then damage-bonused, so neither half can be the one carrying both cases.
+  measured('a turret ROF bonus', 'Rifter', 'Navitas', '200mm AutoCannon II', 'Republic Fleet EMP S');
+  measured('a turret damage bonus', 'Harbinger', 'Osprey', 'Focused Medium Pulse Laser II', 'Scorch M');
+  measured('a T2 hull stacks both', 'Zealot', 'Osprey', 'Focused Medium Pulse Laser II', 'Scorch M');
+  // A T3 cruiser's weapon bonus lives entirely on the subsystem — the hull contributes nothing.
+  measured('a subsystem bonus counts', 'Tengu', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile',
+           [ES('Tengu Offensive - Accelerated Ejection Bay')]);
+  measured('and a subsystem without one does not', 'Tengu', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile',
+           [ES('Tengu Offensive - Support Processor')]);
+  // The third source, and the only fit in the game that reaches it: this subsystem boosts the loaded
+  // CHARGE through the engine rather than the launcher, so neither the launcher's traced attributes
+  // nor calc.js's shipMd sees it. Without the charge term the hull reads as unbonused.
+  measured('a subsystem boosting the charge itself counts', 'Legion', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile',
+           [ES('Legion Offensive - Assault Optimization')]);
+
+  // Two ammo types across one rack pool by DPS rather than averaging, so the answer is the
+  // multiplier the fit's actual output earns. Equal DPS shares here, so it lands between the two.
+  const mixed = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile'),
+                                   EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]);
+  const kin = effectiveWeaponMultipliers(fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')])).launcher;
+  const em  = effectiveWeaponMultipliers(fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')])).launcher;
+  const mix = effectiveWeaponMultipliers(mixed).launcher;
+  check('eff-hp', 'mixed ammo lands between its two single-ammo answers', (mix > em && mix < kin) ? 1 : 0, 1, 0);
+  // The pooling rule, stated: total DPS divided by the pooled multiplier is what the same weapons
+  // would do with the hull's bonuses taken away, which is the sum of each weapon's own bare figure.
+  // An arithmetic mean of the two multipliers does not satisfy this and is the mistake it guards.
+  const kinDps = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')]).weaponDps.total;
+  const emDps  = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]).weaponDps.total;
+  check('eff-hp', 'and pools by DPS, so stripping the bonus back out reconciles',
+        mixed.weaponDps.total / mix, kinDps / kin + emDps / em, 1e-9);
+
+  // Null, not 1.0, wherever the fit cannot answer — the attributes tab drops the row rather than
+  // claiming a bonused hull has none. An empty rack and a non-weapon high slot are both that case.
+  const bare = effectiveWeaponMultipliers(fitOf('Caracal', []));
+  check('eff-hp', 'an empty rack has no answer, not an answer of 1', bare.launcher == null ? 1 : 0, 1, 0);
+  check('eff-hp', 'and neither does the category it never had', bare.turret == null ? 1 : 0, 1, 0);
+  const probe = effectiveWeaponMultipliers(fitOf('Caracal', [EW('Core Probe Launcher II', 'active')]));
+  check('eff-hp', 'a probe launcher takes no hardpoint and earns no multiplier', probe.launcher == null ? 1 : 0, 1, 0);
+  // An offline weapon is not firing, so it contributes no DPS and cannot vote on the multiplier.
+  const off = effectiveWeaponMultipliers(fitOf('Caracal', [EW('Heavy Missile Launcher II', 'offline', 'Scourge Heavy Missile')]));
+  check('eff-hp', 'an offline launcher does not vote', off.launcher == null ? 1 : 0, 1, 0);
+
+  // Hull and subsystem ONLY. A ballistic control system is a huge missile damage bonus and must not
+  // move this number by a hair, or the row would claim hardpoints the hull does not have.
+  const plain = effectiveWeaponMultipliers(fitOf('Caracal', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')])).launcher;
+  const withBcs = calcFitStats(lookupShip('Caracal'),
+    { high: [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')], mid: [],
+      low: [EW('Ballistic Control System II', 'online')], rigs: [] }, [], null, {});
+  check('eff-hp', 'a BCS raises the DPS', withBcs.weaponDps.total > 0 ? 1 : 0, 1, 0);
+  check('eff-hp', 'but not the effective launcher count', effectiveWeaponMultipliers(withBcs).launcher, plain, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

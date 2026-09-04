@@ -854,6 +854,94 @@ const EFF_TURRET_FITTED = 42, EFF_LAUNCHER_FITTED = 40;
 export function usesTurretHardpoint(effectIDs)   { return Array.isArray(effectIDs) && effectIDs.includes(EFF_TURRET_FITTED); }
 export function usesLauncherHardpoint(effectIDs) { return Array.isArray(effectIDs) && effectIDs.includes(EFF_LAUNCHER_FITTED); }
 
+// A hull bonus and a subsystem bonus are the ship being good at something; everything else on this
+// list is a module, a rig, the pilot or a drug being good at it. Only the first two belong in an
+// "effective hardpoints" figure — folding a gyrostabiliser in would have a Rifter claim more guns
+// than it has slots for. 'mode' is left out deliberately: a T3 destroyer's tactical mode is a state
+// the pilot chooses, not something the hull does for free.
+const HULL_BONUS_KINDS = new Set(['hull', 'subsystem']);
+// Every modifier of `attr` that came from the hull or a subsystem, multiplied out. Null — NOT 1 —
+// when the item was not traced, because "nothing modified this" and "we never looked" must not
+// collapse into the same answer for a caller that is about to divide by it.
+function hullShareOf(item, attr) {
+  const ex = item?.attrs?.explain?.(attr);
+  if (!ex) return null;
+  let m = 1;
+  for (const r of ex.rows) if (HULL_BONUS_KINDS.has(r.source?.kind)) m *= r.mult;
+  return m;
+}
+const CHARGE_DMG_ATTRS = ['emDamage', 'thermalDamage', 'kineticDamage', 'explosiveDamage'];
+
+/**
+ * What one turret/launcher hardpoint is worth on THIS hull, as a multiple of a bare one — the
+ * number behind the "Effective Turrets" / "Effective Launchers" rows on the hull's attribute sheet.
+ *
+ * Rate of fire counts as well as damage, because the question is DPS per hardpoint: a Caracal's
+ * -25% launcher cycle and a hypothetical +33% launcher damage are the same ship, and reading only
+ * the damage bonus would score every Minmatar and Caldari hull in the game at 1.0.
+ *
+ *   mult = (hull damage share) ÷ (hull rate-of-fire share)
+ *
+ * Three sources have to agree here because a weapon's DPS is assembled from three places:
+ *
+ *   • `speed` and `damageMultiplier` are real dogma modifiers, so the ENGINE's own provenance
+ *     reports the hull's share of them. That is the whole turret story and the ROF half of the
+ *     missile one.
+ *   • Missile hull bonuses are filteredChargeBoost effects applied by hand in _calcFitStats, and a
+ *     traced launcher's charge shows its damage untouched — so that share arrives precomputed as
+ *     `handDmg` rather than being read off the trace. Nothing double-counts: the two are disjoint.
+ *   • A T3 cruiser's offensive subsystem boosts the loaded CHARGE through the engine (Legion
+ *     Offensive, +25% missile damage), which is neither of the above and is read off the charge.
+ *
+ * Requires the TRACED pass, so callers reach it through `_retrace()`. Weapons are pooled by DPS
+ * rather than averaged, so a hull carrying two ammo types reports the multiplier its actual output
+ * earns, not the mean of two numbers it is not shooting.
+ *
+ * Returns null for a category with nothing firing in it. That is not the same as 1.0, and the
+ * attribute sheet drops the row rather than answering a question the fit cannot answer.
+ */
+export function effectiveWeaponMultipliers(cs) {
+  const out = { turret: null, launcher: null };
+  if (!cs?.fittedItems || !cs.weaponHullShare) return out;
+  const acc = { turret: { dps: 0, bare: 0 }, launcher: { dps: 0, bare: 0 } };
+  for (const [id, item] of cs.fittedItems) {
+    const rec = cs.weaponHullShare.get(id);
+    if (!rec || !(rec.dps > 0)) continue;
+    const isTurret = usesTurretHardpoint(item.effectIDs);
+    const cat = isTurret ? 'turret' : usesLauncherHardpoint(item.effectIDs) ? 'launcher' : null;
+    if (!cat) continue;
+    const traced = item._retrace?.();
+    const rof = hullShareOf(traced, 'speed');
+    const dmg = hullShareOf(traced, 'damageMultiplier');
+    // No trace, no honest answer for the whole category — a weapon silently scored at 1.0 would
+    // drag the pooled figure down and read as a hull bonus that had gone missing.
+    if (rof == null || dmg == null || !(rof > 0)) return out;
+    // Turret DPS is built from the RAW charge profile, so an engine-applied charge bonus is not in
+    // the DPS this is explaining and must not be in the multiplier either.
+    let chargeDmg = 1;
+    if (!isTurret && traced._charge) {
+      let bare = 0, boosted = 0;
+      for (const a of CHARGE_DMG_ATTRS) {
+        const ex = traced._charge.attrs?.explain?.(a);
+        if (!ex) { bare = 0; break; }
+        let m = 1;
+        for (const r of ex.rows) if (HULL_BONUS_KINDS.has(r.source?.kind)) m *= r.mult;
+        bare += ex.base ?? 0;
+        boosted += (ex.base ?? 0) * m;
+      }
+      if (bare > 0) chargeDmg = boosted / bare;
+    }
+    const mult = (rec.handDmg * dmg * chargeDmg) / rof;
+    if (!(mult > 0)) return out;
+    acc[cat].dps += rec.dps;
+    acc[cat].bare += rec.dps / mult;
+  }
+  for (const cat of ['turret', 'launcher']) {
+    if (acc[cat].bare > 0) out[cat] = acc[cat].dps / acc[cat].bare;
+  }
+  return out;
+}
+
 /**
  * Is a BIGGER value of this attribute better for the pilot?
  *
@@ -2395,6 +2483,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   const slotEngineStats = new Map();  // slot → { optimal, falloff, tracking, cycleMs, dmgMult }
   // slot id → effective CHARGE attributes, for the ones this file computes outside the engine.
   const fittedChargeStats = new Map();
+  // slot id → { dps, handDmg }, the raw material for effectiveWeaponMultipliers(). `handDmg` is the
+  // part of the hull's damage bonus that the ENGINE cannot report — see the note on that function.
+  const weaponHullShare = new Map();
   const graphWeapons = [];  // per-weapon hit-math data for the damage graph
 
   // Tracking for graph tab — read from engine now (skills applied there)
@@ -2536,6 +2627,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const slotVolTotal = vol('em')+vol('th')+vol('kin')+vol('exp');
         weaponDps.total  += slotDpsTotal;
         weaponVolley.total += slotVolTotal;
+        // A turret needs no hand-applied term: both halves of its DPS, damageMultiplier and speed,
+        // are real dogma modifiers, so the engine's own provenance covers the hull's whole share.
+        if (slot.id != null) weaponHullShare.set(slot.id, { dps: slotDpsTotal, handDmg: 1 });
         // Record this weapon's contribution to the spool base only if it actually spools, so the
         // max-spool display ramps this weapon alone and leaves co-fitted non-spool guns at base.
         if (spoolMax > 0 && spoolPerCycle > 0) {
@@ -2795,6 +2889,17 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           weaponVolley.total += vol;
           addClip(fitItem, numShots, cycleMs, { em:vol*(chEm/safeTot), th:vol*(chTh/safeTot),
                                                 kin:vol*(chKin/safeTot), exp:vol*(chExp/safeTot) });
+          // shipMd — step (d) above — is the one weapon multiplier with no engine provenance behind
+          // it: those hull bonuses are filteredChargeBoost effects applied by hand here, so a traced
+          // launcher's charge reads its damage completely unmodified. Isolated as a ratio against the
+          // same per-type weighting the DPS above uses, because a damage-type-filtered bonus (a
+          // Cerberus's kinetic) is worth its full value on Scourge and nothing at all on Mjolnir.
+          if (slot.id != null) {
+            const bare = charge.em + charge.th + charge.kin + charge.exp;
+            const withHull = charge.em*shipMd.em + charge.th*shipMd.th
+                           + charge.kin*shipMd.kin + charge.exp*shipMd.exp;
+            weaponHullShare.set(slot.id, { dps, handDmg: bare > 0 ? withHull / bare : 1 });
+          }
         }
 
         // ── Missile range + explosion stats (pyfa-exact, verified vs Affected-By panel) ──
@@ -4248,6 +4353,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
 
     // Per-slot engine-computed stats (ammo-adjusted range, cycle time etc.)
     slotEngineStats,
+    weaponHullShare,
     // Per-GROUP "how many may run at once / be fitted" limits — see where they're built above.
     groupLimits,
     groupOverFitted,
