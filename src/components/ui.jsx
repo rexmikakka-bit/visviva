@@ -895,7 +895,12 @@ function fmtInfoVal(name, val) {
 // ambiguous on its own get one: "Gyrostabilizer II" explains itself, but "Phantasm" sitting under a
 // Phantasm's own damage attribute does not, and neither does an ammo type listed beside the modules.
 const SRC_NOTE = {hull:'hull bonus', charge:'ammo', env:'environment', mode:'tactical mode',
-                  subsystem:'subsystem', implant:'implant', booster:'booster', drone:'drone'};
+                  subsystem:'subsystem', implant:'implant', booster:'booster', drone:'drone',
+                  // The three that do not come from this ship's own hull and racks. `burst` is named
+                  // after its charge and may be another pilot entirely; `projected` is something
+                  // being done TO this fit; `sideEffect` is a drug penalty the pilot opted into, kept
+                  // apart from that same drug's intended bonus so one row is not mistaken for both.
+                  burst:'command burst', projected:'projected', sideEffect:'booster side effect'};
 const ROMAN = ['0','I','II','III','IV','V'];
 const srcLabel = (s) => !s ? 'Other'
   : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}` : s.name;

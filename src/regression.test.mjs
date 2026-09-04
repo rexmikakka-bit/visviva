@@ -5320,6 +5320,136 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12i. OFF-SHIP PROVENANCE: modifiers calc.js applies itself, from outside the fit.
+//
+// 12g and 12h sweep fits whose every modifier reaches the attribute through the ENGINE's effect
+// dispatcher, which threads a descriptor for free. The three classes below never touch it — calc.js
+// applies them by hand, after calculate(), because each needs information the engine does not have:
+// a command burst comes off another pilot's fit entirely, a booster side effect is a penalty the user
+// toggled in the UI, and a projected damp has already been range-factored and resistance-scaled by
+// App.jsx. Those hand-written applyMod calls passed no source, so the panel fell back to the honest
+// but useless "Some modifiers on this value aren't identified yet" on exactly the fits — fleet, drug
+// and EWAR — where a player most wants the breakdown.
+//
+// The sweep below is the real gate (0 unattributed on a fit carrying all three at once). The named
+// checks after it pin the LABELLING rules, which the sweep cannot see: a source that says the wrong
+// thing is worse than one that says nothing, and it still counts as covered.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nOFF-SHIP PROVENANCE (command bursts, booster side effects, projected EWAR)');
+  let _on = 0;
+  const OM = (name, state = 'active', ammo) => ({ id: `o${_on++}`, typeID: tid(name), state, ammo });
+
+  const SLOTS = {
+    high: [OM('425mm AutoCannon II', 'active', 'Republic Fleet EMP M'),
+           OM('Shield Command Burst II', 'active', 'Shield Extension Charge')],
+    mid:  [OM('10MN Afterburner II'), OM('Large Shield Extender II', 'online')],
+    low:  [OM('Gyrostabilizer II', 'online')],
+    rigs: [],
+  };
+  // -30 is the raw attribute off Strong Blue Pill; Neurotoxin Recovery V scales the MAGNITUDE by
+  // 0.75, so the applied value is -22.5 and the row must read x0.775.
+  const BOOSTERS = [{ name: 'Strong Blue Pill Booster', active: true, sideEffects: [
+    { key: 'boosterShieldCapacityPenalty',    value: -30, enabled: true },
+    { key: 'boosterCapacitorCapacityPenalty', value: -30, enabled: true },
+    { key: 'boosterTurretOptimalRangePenalty', value: -30, enabled: true },
+  ] }];
+  // Two remote sensor boosters, deliberately unequal, so the pair proves they compete for stacking
+  // slots. Damps and disruptors arrive PRE-STACKED as single numbers -- that is the caller's job,
+  // because stacking must precede the target's EWAR resistance -- so those are one row each.
+  const OPTS = {
+    boosters: BOOSTERS,
+    projectedBoosts: { lock: [40, 30], scan: [] },
+    projectedDebuffs: { lockRange: -25, scanRes: -18, tracking: -30, turretOptimal: -20, turretFalloff: -10 },
+  };
+  const cs = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null, OPTS);
+
+  let checked = 0, worst = 0, unattributed = 0;
+  const items = [cs.fittedShip, ...cs.fittedItems.values()].filter(Boolean);
+  for (const it of items) {
+    const t = it._retrace(); if (!t) continue;
+    for (const o of [t, t._charge].filter(Boolean)) {
+      for (const n of Object.keys(o._td.a ?? {})) {
+        const ex = o.attrs.explain(n); if (!ex?.rows.length) continue;
+        checked++;
+        if (!ex.covered) unattributed++;
+        if (ex.rows.some(r => r.mult == null && !r.assigns)) continue;
+        const prod = ex.rows.reduce((p, r) => p * (r.mult ?? 1), ex.base);
+        if (ex.capped && prod > ex.final) continue;
+        worst = Math.max(worst, Math.abs(prod - ex.final) / (Math.abs(ex.final) || 1));
+      }
+    }
+  }
+  console.log(`  (swept ${checked} attributes on a burst + drug + EWAR fit, worst drift ${worst.toExponential(2)})`);
+  check('offship-prov', 'swept a meaningful number of attrs', checked > 40 ? 1 : 0, 1, 0);
+  check('offship-prov', 'base x product(mult) == final', worst < 1e-9 ? 1 : 0, 1, 0);
+  check('offship-prov', 'nothing on a burst/drug/EWAR fit is unattributed', unattributed, 0, 0);
+
+  const rowsOf = (item, attr) => item?._retrace()?.attrs?.explain(attr)?.rows ?? [];
+  const named = (item, attr, name) => rowsOf(item, attr).find(r => r.source?.name === name);
+  const gunOf = (stats) => [...stats.fittedItems.values()].find(m => m._td?.n === '425mm AutoCannon II');
+
+  // A warfare buff is named by its CHARGE, not by the burst module. "Shield Command Burst II" is the
+  // same item whatever it is projecting; the charge is what the pilot chose and what the Effects tab
+  // already lists, so it is the only name that distinguishes one boost from another.
+  const shieldBurst = named(cs.fittedShip, 'shieldCapacity', 'Shield Extension Charge');
+  check('offship-prov', 'a ship buff is named after its charge', shieldBurst?.source?.kind, 'burst');
+  check('offship-prov', 'ship buff carries its multiplier', shieldBurst?.mult, 1.15, 1e-9);
+
+  // The drug's toggled PENALTY gets its own kind. The same booster's designed bonus reaches other
+  // attributes through the engine as kind 'booster', and on a fit where both land the panel would
+  // otherwise print one name twice with nothing to say which line is which.
+  const drug = named(cs.fittedShip, 'shieldCapacity', 'Strong Blue Pill Booster');
+  check('offship-prov', 'a booster side effect is distinguished from its bonus', drug?.source?.kind, 'sideEffect');
+  check('offship-prov', 'side effect scaled by Neurotoxin Recovery', drug?.mult, 0.775, 1e-9);
+
+  // Projected EWAR names the EFFECT, not a module: by the time it reaches calc.js the caller has
+  // collapsed every damp on the field into one range-factored, resistance-scaled number, and there
+  // is no per-source identity left to recover. Saying "Sensor dampening" is the true statement.
+  const damp = named(cs.fittedShip, 'maxTargetRange', 'Sensor dampening');
+  check('offship-prov', 'an incoming damp is named', damp?.source?.kind, 'projected');
+  check('offship-prov', 'damp carries its multiplier', damp?.mult, 0.75, 1e-9);
+  const disr = named(gunOf(cs), 'trackingSpeed', 'Tracking disruption');
+  check('offship-prov', 'an incoming tracking disruptor is named', disr?.source?.kind, 'projected');
+  check('offship-prov', 'disruptor carries its multiplier', disr?.mult, 0.7, 1e-9);
+
+  // Remote sensor boosters go through the attribute POOL rather than being multiplied onto the
+  // finished number, precisely so they compete with the ship's own bonuses for stacking slots. That
+  // is invisible in the final figure and visible here: two rows, the weaker one penalised. If a
+  // future edit ever "simplifies" them back into a post-hoc multiply, these two checks fail.
+  const rsb = rowsOf(cs.fittedShip, 'maxTargetRange').filter(r => r.source?.name === 'Remote Sensor Booster');
+  check('offship-prov', 'each projected sensor booster is its own row', rsb.length, 2, 0);
+  check('offship-prov', 'strongest booster unpenalised', rsb[0]?.mult, 1.4, 1e-9);
+  check('offship-prov', 'second booster at 86.912%', rsb[1]?.mult, 1.2607359942401193, 1e-9);
+
+  // A burst that targets MODULES rather than the hull takes a different code path (applyModuleBursts,
+  // by required skill), so it is asserted separately rather than assumed from the ship buff above.
+  const csL = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20, label: 'Sharpshooter Charge' }] });
+  const modBurst = named(gunOf(csL), 'maxRange', 'Sharpshooter Charge');
+  check('offship-prov', 'a module buff is named after its charge', modBurst?.source?.kind, 'burst');
+  check('offship-prov', 'module buff carries its multiplier', modBurst?.mult, 1.2, 1e-9);
+
+  // A burst with no label still has to name SOMETHING: `covered` is what suppresses the "not
+  // identified yet" footer, so a null source here would leave the panel claiming a complete list
+  // while rendering the row as "Other".
+  const csU = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20 }] });
+  check('offship-prov', 'an unlabelled burst falls back to a generic name',
+    named(gunOf(csU), 'maxRange', 'Command burst')?.mult, 1.2, 1e-9);
+
+  // Only the STRONGEST of each buff type applies -- that is a game rule, enforced in collectBursts --
+  // so the label has to follow the winner. Naming the first one seen would credit a burst that is
+  // contributing nothing, on a fit flying under two boosters at once.
+  const csW = calcFitStats({ typeID: tid('Rupture'), name: 'Rupture' }, SLOTS, [], null,
+    { externalBursts: [{ buffID: 28, value: 20, label: 'Weaker Charge' },
+                       { buffID: 28, value: 35, label: 'Stronger Charge' }] });
+  const win = rowsOf(gunOf(csW), 'maxRange').find(r => r.source?.kind === 'burst');
+  check('offship-prov', 'the label follows the strongest burst', win?.source?.name, 'Stronger Charge');
+  check('offship-prov', 'and so does the value', win?.mult, 1.35, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
