@@ -925,6 +925,15 @@ MT_GROUP_ICON['1708']=33176;
 // A Cynosural Field Generator is the one thing under here everyone recognises on sight.
 MT_GROUP_ICON['779']=21096;
 
+// CCP sells every microwarpdrive (69 of them) and every afterburner (70) in one flat market group,
+// so the first thing you have to do in either list is scroll past three sizes you can't fit. Insert
+// the size level the market tree doesn't have, off the "5MN"/"50000MN" token every one of these
+// carries in its name — that token IS the size designation in EVE, and it is the choice you make
+// before meta tier, not after. Any module that somehow lacks the token stays directly under the
+// group rather than being dropped, so the split can never hide an item.
+const MG_SIZE_SPLIT=new Set([131,542]);
+const MN_SIZE=/\b(\d+)MN\b/;
+
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
   const metaOrder={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,Abyssal:6};
@@ -960,13 +969,32 @@ function buildModuleBrowser(slotType){
       return {name:m.name,meta:m.meta,cpu:m.cpu,pg:m.pg,typeID:m.typeID,
               calib:a.upgradeCost??a['1153']??null};
     });
+    // String ids so a synthetic node can never collide with a real marketGroupID sitting beside it.
+    // Sizes ascend numerically ("50MN" before "500MN"), which localeCompare would not give.
+    let ownMods=outMods,subNodes=children;
+    if(MG_SIZE_SPLIT.has(mgId)&&children.length===0){
+      const bySize=new Map();
+      const rest=[];
+      for(const m of outMods){
+        const size=MN_SIZE.exec(m.name)?.[1];
+        if(size==null){rest.push(m);continue;}
+        if(!bySize.has(size))bySize.set(size,[]);
+        bySize.get(size).push(m);
+      }
+      if(bySize.size>1){
+        ownMods=rest;
+        subNodes=[...bySize.entries()].sort((a,b)=>Number(a[0])-Number(b[0]))
+          .map(([size,ms])=>({id:`${mgId}:${size}`,name:`${size}MN`,children:[],mods:ms,
+                              iconTid:ms.find(m=>m.typeID)?.typeID??null}));
+      }
+    }
     // CCP's nominated item first; otherwise the first real item anywhere beneath this node, which
     // is what makes the icon meaningful for leaf groups the market tree does not nominate one for.
     const iconTid=MT_GROUP_ICON[String(mgId)]
-      ?? outMods.find(m=>m.typeID)?.typeID
-      ?? children.map(c=>c.iconTid).find(Boolean)
+      ?? ownMods.find(m=>m.typeID)?.typeID
+      ?? subNodes.map(c=>c.iconTid).find(Boolean)
       ?? null;
-    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children,mods:outMods,iconTid};
+    return{id:mgId,name:marketGroupsData[String(mgId)]?.name??"",children:subNodes,mods:ownMods,iconTid};
   }
   const rootId=SLOT_ROOT[slotType]??9;
   return(MG_CHILDREN[String(rootId)]??[]).sort((a,b)=>a.name.localeCompare(b.name)).map(c=>buildNode(c.id)).filter(Boolean);

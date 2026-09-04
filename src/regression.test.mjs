@@ -5631,6 +5631,44 @@ Agency 'Overclocker' SB7 Dose III
   check('locktime', 'Astarte (306mm) locks a cruiser', calcLockTime(astarteScanRes, 130), 4.227467, 1e-6);
 }
 
+// ─── 12l. PROPULSION SIZE SPLIT ──────────────────────────────────────────────
+//     CCP ships microwarpdrives and afterburners as two flat market groups, so the browser inserts
+//     a size level of its own off the "5MN"/"50000MN" token in each name. That is a synthetic node,
+//     which makes the loss-free property the thing worth pinning: if a future EVE patch names one
+//     of these without the token, it must fall back to sitting directly under the group, never
+//     vanish. The counts below are the whole group, walked recursively — the same walk the search
+//     corpus uses — so they hold whatever the split does internally.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nPROPULSION SIZE SPLIT');
+  const node = (name) => {
+    let found = null;
+    (function walk(ns) { for (const n of ns) { if (n.name === name) found ??= n; walk(n.children ?? []); } })(REAL_MODULE_BROWSER.mid);
+    return found;
+  };
+  const countAll = (n) => (n.mods?.length ?? 0) + (n.children ?? []).reduce((s, c) => s + countAll(c), 0);
+  for (const [group, total, sizes] of [['Microwarpdrives', 69, ['5MN', '50MN', '500MN', '50000MN']],
+                                       ['Afterburners', 70, ['1MN', '10MN', '100MN', '10000MN']]]) {
+    const n = node(group);
+    check('propsize', `${group} still holds every module`, countAll(n), total, 0);
+    // Ascending by the NUMBER, which is why the node names are generated and sorted numerically:
+    // sorted as text, "50000MN" would land between "5MN" and "500MN".
+    check('propsize', `${group} splits into sizes, smallest first`,
+          (n.children ?? []).map((c) => c.name).join(',') === sizes.join(',') ? 1 : 0, 1, 0);
+    // Nothing left stranded at the group level — every one of these carries the token today, so a
+    // non-zero count here means a name shape changed and the list above needs revisiting.
+    check('propsize', `${group} has no unsized leftovers`, n.mods.length, 0, 0);
+  }
+  // Spot-check one item per group actually landed in its own size, not just that the buckets exist.
+  const inSize = (group, size, re) =>
+    (node(group).children.find((c) => c.name === size)?.mods ?? []).some((m) => re.test(m.name)) ? 1 : 0;
+  check('propsize', '500MN holds the battleship MWD', inSize('Microwarpdrives', '500MN', /^500MN Microwarpdrive II$/), 1, 0);
+  // A deadspace name puts the size mid-string rather than at the front, which a prefix-only match
+  // would miss and drop into the leftovers.
+  check('propsize', '5MN holds Coreli A-Type', inSize('Microwarpdrives', '5MN', /^Coreli A-Type 5MN Microwarpdrive$/), 1, 0);
+  check('propsize', '10000MN holds the capital AB', inSize('Afterburners', '10000MN', /^10000MN Afterburner II$/), 1, 0);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
