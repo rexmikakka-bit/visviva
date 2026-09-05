@@ -78,7 +78,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   // 100vh rather than 86vh, for the same reason the module browser uses it: with fillHeight the
   // box is min(height,100%) where 100% is the keyboard-shrunk frame, so at 86vh the sheet rests
   // with a peek gap below the status bar and then snaps its TOP upward the instant the keyboard
-  // pushes the frame under 86vh. 100vh makes min() always resolve to the frame itself.
+  // pushes the frame under 86vh. 100vh asks BottomSheet for a peek that no keyboard can move.
   return(<BottomSheet title="Add Cargo" onClose={onClose} height="100vh" fillHeight
     headerExtra={
       // height:0 so this overlays the top of the list instead of reserving a strip that is empty

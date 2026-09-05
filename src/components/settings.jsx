@@ -195,7 +195,11 @@ function ToggleRow({label,note,on,onChange}){
 export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref,autoFillHardpoints,setAutoFillHardpoints}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
-  return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
+  // Tap the dimmed strip above the sheet to close, the way every other sheet in the app already
+  // does — this was the one that had only the x. Self-targeted clicks only, so nothing inside has
+  // to stop propagation to be safe.
+  return(<div onClick={e=>{ if(e.target===e.currentTarget) sheet.dismiss(); }}
+    style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:100,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",opacity:sheet.closing?0:1,transition:`opacity ${SHEET_EXIT_MS}ms ease`}}>
     <div ref={sheet.sheetRef} style={{width:"100%",maxWidth:430,background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden",...sheetTransform(sheet)}}>
       <SheetGrabber grabHandlers={sheet.grabHandlers} style={{padding:"10px 0 0"}}/>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px 12px",borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:16,fontWeight:700,color:C.text}}>Settings</span><button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button></div>
