@@ -227,7 +227,9 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
         <SheetGrabber grabHandlers={sheet.grabHandlers} style={{padding:"10px 0 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px 12px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:15,fontWeight:700,color:C.text}}>Pilot</span>
-          <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>×</button>
+          {/* Letter x, not ×: the multiplication sign sits on the math axis and draws visibly smaller
+              at the same font size, which is what made one sheet's close control look shrunken. */}
+          <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button>
         </div>
         <div style={{overflowY:"auto"}}>
           {opts.map(o=>{

@@ -164,8 +164,17 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
   const frame=vv?{top:0,height:vv.height,left:0,right:0}:{inset:0};
   // Derived, not a third prop that could drift out of step with the two it would have to agree with:
   // `height="100vh"` + fillHeight is already exactly how a caller says "fill the screen", because
-  // min(100vh, 100%) can only ever resolve to the frame itself. The module browser is the only one.
+  // min(100vh, 100%) can only ever resolve to the frame itself. The module and cargo browsers.
   const fullScreen=fillHeight&&height==="100vh";
+  // A full-height sheet stops SHORT of the physical top instead of covering it. The strip it leaves
+  // clears the status bar and keeps the grabber, the rounded corners and a sliver of dimmed page in
+  // view — which is what says "sheet you can drag or tap away" rather than "new screen you are now
+  // on". Subtracted from 100%, i.e. from `frame`, never from the viewport: frame is what the
+  // keyboard shrinks, so the gap stays the same size whether the keyboard is up or down and the
+  // sheet's top never moves. That last part is the whole reason these callers were pinned to 100vh
+  // in the first place — at 88vh, min(88vh,100%) flipped from one operand to the other the moment
+  // the keyboard pushed frame under 88vh, and the bottom-anchored sheet's top jumped.
+  const box=fullScreen?"calc(100% - env(safe-area-inset-top, 0px) - 28px)":`min(${height}, 100%)`;
   // Rendered into <body>. position:fixed is only relative to the viewport while no ancestor has a
   // transform, filter, perspective or will-change — any one of those silently becomes the
   // containing block instead, and the sheet anchors to a mid-page element and slides off the
@@ -209,7 +218,14 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
           had just been. Painting the gap the same colour as the sheet above it makes the lag read as
           the sheet simply being taller for a moment, rather than the page flashing through. */}
       {vv?.keyboardOpen&&<div style={{position:"absolute",left:0,right:0,top:vv.height,bottom:0,background:C.surface}}/>}
-      <div style={{position:"absolute",...frame,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
+      {/* This layer spans the whole frame and paints OVER the backdrop, so the strip above the sheet
+          — the part of the screen a user reads as "outside" — was landing its taps here and doing
+          nothing, with the backdrop's own dismiss sitting uselessly underneath. Dismissing on a
+          self-targeted click hands that strip back. The target check is what keeps it honest: a tap
+          anywhere inside the sheet reports the sheet's own descendant as target, so only the bare
+          strip qualifies, and no child needs to remember to stop propagation to stay safe. */}
+      <div onClick={e=>{ if(e.target===e.currentTarget) dismiss(); }}
+           style={{position:"absolute",...frame,display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center"}}>
       {/* min(): the sheet keeps its designed height normally, but can never exceed the space the
           keyboard leaves — otherwise its bottom (and the list you are scrolling) is off-screen.
           fillHeight additionally sets `height` (not just maxHeight) to that same min(), for a sheet
@@ -220,21 +236,17 @@ function BottomSheet({title,onClose,children,height="70vh",fillHeight=false,head
           the wanted look for a short utility sheet (e.g. a quantity stepper) — forcing it tall would
           just add dead space below the control. */}
       <div ref={sheetRef} className={`vv-sheet${closing||dragging?"":" vv-sheet-in"}`}
-           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:`min(${height}, 100%)`,...(fillHeight?{height:`min(${height}, 100%)`}:{}),display:"flex",flexDirection:"column",overflow:"hidden",
+           style={{position:"relative",background:C.surface,borderRadius:"16px 16px 0 0",maxHeight:box,...(fillHeight?{height:box}:{}),display:"flex",flexDirection:"column",overflow:"hidden",
                    // Skip the home-indicator safe area while the keyboard is up: the keyboard already
                    // occupies that strip, so reserving it too just pads the footer away from the
                    // keyboard for no reason — the extra gap a footer search box reported feeling.
                    paddingBottom:vv?.keyboardOpen?0:"env(safe-area-inset-bottom, 0px)",
                    ...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-        {/* Status-bar clearance, and ONLY for a sheet that actually reaches the status bar. A
-            full-screen sheet sits with its top pinned at the physical top of the screen (see the
-            min(height,100%) note above) so its title needs the same inset AppHeader and the drawer
-            give theirs. Every other sheet stops well short of the top, and adding the inset there
-            just opened ~60px of dead space above the title — this was applied unconditionally once,
-            and it was every bottom sheet in the app that grew the gap, not the one it was written for. */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`,
-                     ...(fullScreen?{paddingTop:"calc(4px + env(safe-area-inset-top, 0px))"}:{})}}>
+        {/* No status-bar inset here for any sheet, including the full-height ones: `box` above already
+            subtracts it, so the sheet's own top edge starts below the status bar and the title clears
+            it by construction. Paying it twice put the inset's worth of dead space above the title. */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"4px 14px 10px",borderBottom:`1px solid ${C.border}`}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{title}</span>
           <button className="press" onClick={dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
@@ -747,13 +759,12 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   useSuppressAccessoryBar({focusRef:searchInputRef});
   return(
     <>
-    {/* height="100vh", not 88vh: with fillHeight, the sheet's box is min(height,100%) where 100% is
-        the keyboard-shrunk frame — so at 88vh it sits with a resting "peek gap" below the status bar
-        while frame.height>88vh, but the instant the keyboard's frame drops under 88vh (any real
-        keyboard does), it snaps to filling frame exactly, and frame is bottom-anchored, so the
-        sheet's TOP jumps upward by however much peek gap it had. 100vh makes min() always resolve to
-        100% (frame can never exceed 100vh), so the sheet always exactly fills frame — top pinned at
-        frame's own top with no keyboard-dependent snap, at rest or with the keyboard up alike. */}
+    {/* height="100vh", not 88vh: with fillHeight the sheet's box is min(height,100%) where 100% is the
+        keyboard-shrunk frame — so at 88vh it rests with a peek gap while frame.height>88vh, then snaps
+        to filling frame exactly the instant the keyboard pushes frame under 88vh, jumping the
+        bottom-anchored sheet's top upward. 100vh is how a caller asks for the full-height treatment
+        instead; BottomSheet gives that its own constant peek strip, measured off frame so no keyboard
+        transition can move it. */}
     <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="100vh" fillHeight dismissRequested={dismissRequested}
       headerExtra={
         // Header content, not scroller content: position:sticky here used to fight WebKit's handling
