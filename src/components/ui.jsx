@@ -1159,7 +1159,10 @@ export function ModifierBreakdown({attr, ex, bleed, fmt}) {
 // of the screen rather than stopping at that padding, so the band reads as a property of the row and
 // not as a box drawn inside it. It has to be passed because the four hosts do not agree (14 here and
 // in DroneMenu, 16 in ItemInfoSheet, 14+2 nested in ModuleMenu) and a row cannot see its own inset.
-function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
+// `hideName` is for the one host that already prints the name in a sheet header of its own
+// (ItemInfoSheet) — the icon, group and badges still earn their place, the name would just be the
+// same string twice at the same size, one line apart.
+function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName}) {
   const typeDescriptions = useTypeDescriptions();
   // Which rows are showing their modifier breakdown, and the traced twin of `item` that supplies it.
   // Both must be declared before the `!td` bail below — they are hooks.
@@ -1288,7 +1291,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
       <div style={{display:'flex',alignItems:'center',gap:12,paddingBottom:12,borderBottom:`1px solid ${C.border}`,marginBottom:12}}>
         {typeID && <img src={eveIcon(typeID,64)} width={48} height={48} style={{borderRadius:8,background:'#0d0d1a',flexShrink:0}} onError={e=>e.target.style.opacity='0'} alt=""/>}
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{td.n}</div>
+          {!hideName && <div style={{fontSize:14,fontWeight:700,color:C.text}}>{td.n}</div>}
           <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{td.gn}</div>
           <div style={{display:'flex',gap:5,flexWrap:'wrap',alignItems:'center',marginTop:3}}>
             {meta && <span style={{fontSize:10,color:META_COLORS[meta]??C.textMute,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700}}>{meta}</span>}
@@ -1391,18 +1394,25 @@ function TraitsPanel({typeID, empty="No trait data available."}){
 // Standalone bottom sheet for item info (triggered from browser or charge list)
 function ItemInfoSheet({typeID, onClose, item, overrides}) {
   const sheet=useSheetDrag(onClose);
+  const td=TYPES[String(typeID)]??TYPES[typeID];
   return (
     <div style={{position:'fixed',inset:0,zIndex:400,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={sheet.dismiss}>
       <div ref={sheet.sheetRef} style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
-        <div style={{position:'relative'}}>
-          <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-          {/* The letter x, at BottomSheet's size and colour. This used to be the multiplication sign
-              ×, which sits on the math axis and draws far smaller than a lowercase x at the same
-              font size — so this one sheet's close control looked shrunken next to every other. */}
-          <button className="press" onClick={sheet.dismiss} style={{position:'absolute',top:2,right:16,background:'none',border:'none',color:C.textMid,fontSize:20,cursor:'pointer',padding:'0 4px',lineHeight:1}}>x</button>
+        <SheetGrabber grabHandlers={sheet.grabHandlers}/>
+        {/* A real header row, the same one BottomSheet builds: grabber strip, then the title and the
+            close control on a line of their own. The button used to be absolutely positioned over the
+            grabber instead, which put it level with the drag pill and hard against the sheet's rounded
+            top edge — around 22px above where every other sheet in the app draws it, and outside any
+            row to be aligned with. It has to live out here rather than in the panel's own header for
+            the close control to survive scrolling: the panel is inside the scroller. */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,padding:'4px 14px 10px',borderBottom:`1px solid ${C.border}`}}>
+          <span style={{fontSize:14,fontWeight:700,color:C.text,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{td?.n}</span>
+          <button className="press" onClick={sheet.dismiss} style={{background:'none',border:'none',color:C.textMid,fontSize:20,cursor:'pointer',padding:'0 4px',lineHeight:1,flexShrink:0}}>x</button>
         </div>
-        <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
-          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16}/>
+        <div style={{flex:1,overflowY:'auto',padding:'12px 16px 20px'}}>
+          {/* hideName because the header above now carries it — the panel's own header would have
+              printed the same name at the same size directly underneath. */}
+          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16} hideName/>
         </div>
       </div>
     </div>
@@ -2315,16 +2325,27 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
                 </div>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:13,fontWeight:600,color:loaded?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.family}</div>
-                  {loaded&&<div style={{fontSize:10,color:C.textMute,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{loaded.name}</div>}
+                  {/* The subtitle names WHICH member of the family is loaded, so it has nothing to say
+                      when the family has one member — there it just printed the title twice. */}
+                  {loaded&&loaded.name!==g.family&&<div style={{fontSize:10,color:C.textMute,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{loaded.name}</div>}
                 </div>
                 {/* Only a lone-item family IS a charge; a multi-item family is a category, and its
                     members can differ in what they need (a T2 variant needs a specialization the
                     T1 next to it doesn't), so those get marked per-variant one level down. */}
                 {g.items.length===1&&<SkillMark typeID={rep?.typeID}/>}
                 {repMeta&&<span style={{fontSize:10,color:META_COLORS[repMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 7px",fontWeight:700,flexShrink:0}}>{repMeta}</span>}
+                {/* A multi-item family keeps its chevron and nothing else: the row stands for a
+                    category, so there is no one type an info button could describe, and every member
+                    carries its own one level down. A lone-item family has no level down — the row IS
+                    the charge — so without a button here the T2 ammo that never has meta variants
+                    (Javelin, Spike, Void, Gleam …) was the one class of charge with no way to read
+                    its stats at all. */}
                 {g.items.length>1
                   ?<span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
-                  :loaded&&<span style={{color:C.accent,fontSize:12,fontWeight:700,flexShrink:0}}>✓</span>}
+                  :<div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                     {loaded&&<span style={{color:C.accent,fontSize:12,fontWeight:700}}>✓</span>}
+                     {rep?.typeID&&<InfoButton onClick={e=>{e.stopPropagation();setChargeInfo(rep.typeID);}}/>}
+                   </div>}
               </div>);
             })}
           </div>);
