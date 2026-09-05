@@ -2230,8 +2230,30 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   // ── 5. Navigation ─────────────────────────────────────────────────────────
   // Engine now applies Navigation/Evasive Maneuvering skill boosts
   let maxVelocity = s.get('maxVelocity');
+  // ── Provenance for the hull stats this file finishes off the engine's work on ──────
+  // Seeded from the engine's own chain and extended with each multiplier applied below, so the
+  // breakdown reaches the number the attributes tab prints rather than the engine's intermediate.
+  // Same shape and same tracing gate as explain(); rides on the ship item for the same reason
+  // `_explainCharge` rides on the charge — the panel reaches the hull through `_retrace()` alone.
+  const shipEx = tracing() ? {} : null;
+  const exShip = (attr) => {
+    if (!shipEx) return null;
+    if (!shipEx[attr]) shipEx[attr] = s.attrs.explain(attr) ?? { base: s.get(attr), final: s.get(attr), rows: [], covered: true };
+    return shipEx[attr];
+  };
+  const exShipPush = (ex, source, mult) => {
+    if (!ex || !(Math.abs(mult - 1) > 1e-12)) return;
+    if (!source) ex.covered = false;
+    ex.rows.push({ source, mult });
+  };
+  const exVelShip = exShip('maxVelocity');
   // Projected stasis webs reduce velocity (caller supplies the combined stacking-penalised multiplier).
-  if (opts.projectedWebMult != null && opts.projectedWebMult < 1) maxVelocity *= opts.projectedWebMult;
+  if (opts.projectedWebMult != null && opts.projectedWebMult < 1) {
+    maxVelocity *= opts.projectedWebMult;
+    // The caller hands over one already-stacked multiplier for however many webs are on you, so
+    // there is no per-web name to give back — only the combined effect, honestly labelled.
+    exShipPush(exVelShip, { kind: 'projected', name: 'Stasis webifier' }, opts.projectedWebMult);
+  }
   // Immobilising super weapons: an active one boosts maxVelocity by its speedFactor of -100, i.e.
   // to a dead stop. eos implements each as boostItemAttr('maxVelocity', speedFactor).
   //
@@ -2246,7 +2268,10 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     if (!fitItem || !isActive(slot.state)) continue;
     if (!(fitItem.effectIDs ?? []).some(e => IMMOBILISING_SUPERWEAPON_EFFECTS.has(e))) continue;
     const sf = fitItem.get('speedFactor') ?? 0;
-    if (sf) maxVelocity *= Math.max(0, 1 + sf / 100);
+    if (sf) {
+      maxVelocity *= Math.max(0, 1 + sf / 100);
+      exShipPush(exVelShip, { kind: 'module', name: fitItem.name }, Math.max(0, 1 + sf / 100));
+    }
   }
   let agility     = s.get('agility');
   let mass        = s.get('mass');
@@ -2308,10 +2333,17 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         // by the engine against an overheated prop mod's overload speedFactor bonus.
         // Pyfa formula: boostItemAttr('maxVelocity', speedFactor * thrust / mass)
         // → maxVelocity *= (1 + speedFactor * thrust / mass / 100)
-        abMwdSpeed = maxVelocity * (1 + speedFactor_ * speedBoostFact_ / totalMass / 100);
+        const thrustMult = 1 + speedFactor_ * speedBoostFact_ / totalMass / 100;
+        abMwdSpeed = maxVelocity * thrustMult;
+        exShipPush(exVelShip, { kind: 'module', name: fitItem.name }, thrustMult);
       }
     }
   }
+  // The attributes tab prints the prop-inclusive speed, so that is the number the chain has to
+  // land on. Taken from the value rather than re-multiplied out of the rows, for the same reason
+  // the charge chains are — if the two disagree the rows are wrong, not the stat.
+  if (exVelShip) exVelShip.final = abMwdSpeed;
+  if (shipEx) s._explainShip = shipEx;
 
   // NOTE: shield extender signatureRadiusAdd is applied by the ENGINE (in the post-skill pass,
   // before the MWD sig bloom), so the engine's signatureRadius already includes it correctly,
@@ -2483,6 +2515,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
   const slotEngineStats = new Map();  // slot → { optimal, falloff, tracking, cycleMs, dmgMult }
   // slot id → effective CHARGE attributes, for the ones this file computes outside the engine.
   const fittedChargeStats = new Map();
+  // The same values' provenance, in explain()'s shape: slot id → attr → {base, final, rows, covered}.
+  // Only populated on a traced pass — see the recorder block down in the missile chain.
+  const fittedChargeExplain = new Map();
   // slot id → { dps, handDmg }, the raw material for effectiveWeaponMultipliers(). `handDmg` is the
   // part of the hull's damage bonus that the ENGINE cannot report — see the note on that function.
   const weaponHullShare = new Map();
@@ -2701,6 +2736,40 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const chName = (slot.ammo || '').replace(/\s*\(\d+\)$/, '');
         const chTid  = chName ? (typeIDByName(chName) ?? tidByName(chName)) : null;
         const chRs   = chTid ? (TYPES[chTid]?.rs ?? []) : [];
+        // ── Provenance for the hand-built missile chains ─────────────────────────────
+        // Damage, range and application are all computed HERE rather than by the engine (the
+        // APPLICATION block below says why that path stays closed), so the charge's info panel had
+        // a column of modified numbers and nothing behind them to open. These recorders mirror the
+        // arithmetic into explain()'s own shape, so ModifierBreakdown renders a loaded missile
+        // exactly as it renders a module.
+        //
+        // Tracing-gated for the same reason the engine's provenance is: this runs on every
+        // recalculation and a breakdown is read on a tap. Every row carries the multiplier the
+        // arithmetic ALREADY used — nothing is recomputed from its source — so instrumenting cannot
+        // move a pyfa-validated number. A term with no name to give records a null source, which
+        // flips `covered` and makes the panel say so, rather than passing off a partial chain as a
+        // complete one.
+        const chEx = tracing() ? {} : null;
+        const exFor = (attr, base) => {
+          if (!chEx) return null;
+          if (!chEx[attr]) chEx[attr] = { base, final: base, rows: [], covered: true };
+          return chEx[attr];
+        };
+        // `raw` is what a modifier claims before the stacking penalty and `factor` how much of it
+        // survived; an unpenalised row passes neither and prints as a plain multiplier.
+        const exPush = (ex, source, mult, raw, factor) => {
+          if (!ex || !(Math.abs(mult - 1) > 1e-12)) return;
+          if (!source) ex.covered = false;
+          ex.rows.push({ source, mult, raw, factor });
+        };
+        const DMG_KEY = { em:'emDamage', th:'thermalDamage', kin:'kineticDamage', exp:'explosiveDamage' };
+        // Almost every damage modifier hits all four types at once, and each type is its own row in
+        // the panel, so one call fans out across them.
+        const exDmg = (source, mult, types, raw, factor) => {
+          if (!chEx) return;
+          for (const t of (types ?? ['em','th','kin','exp']))
+            exPush(exFor(DMG_KEY[t], charge[t] ?? 0), source, mult, raw, factor);
+        };
         // (a) Charge damage skills: +5%/lvl per missile-size skill the charge requires
         //     (Light Missiles, Rockets, Heavy Missiles, Cruise Missiles, Torpedoes, HAMs, XL).
         // Each missile-size damage skill is a SEPARATE multiplier in eos (two +25% skills → ×1.5625,
@@ -2713,12 +2782,17 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           'Heavy Assault Missiles':'heavyAssaultMissiles', 'XL Cruise Missiles':'xlCruiseMissiles', 'XL Torpedoes':'xlTorpedoes',
         };
         for (const [skillName, camel] of Object.entries(MISSILE_DMG_SKILLS)) {
-          if (chRs.includes(skillName)) chargeSkillMult *= 1 + 0.05 * (sk[camel] ?? 0);
+          if (chRs.includes(skillName)) {
+            const lvl = sk[camel] ?? 0;
+            chargeSkillMult *= 1 + 0.05 * lvl;
+            exDmg({kind:'skill', name:skillName, level:lvl}, 1 + 0.05 * lvl);
+          }
         }
         // (b) Warhead Upgrades: +2%/lvl to missile damage. eos gates this on the charge requiring
         //     "Missile Launcher Operation" (effects 1595/1596/1597/1657), so Defender Missiles — which
         //     require only "Defender Missiles" — get NO warhead bonus.
         const warheadBonus = chRs.includes('Missile Launcher Operation') ? 0.02 * (sk.warheadUpgrades ?? 0) : 0;
+        exDmg({kind:'skill', name:'Warhead Upgrades', level:sk.warheadUpgrades ?? 0}, 1 + warheadBonus);
         // (c) BCS (Ballistic Control System): missileDamageMultiplierBonus, stacking-penalized.
         //     Read the module's RESOLVED value (fi2.get) so mutated/abyssal BCS are honored,
         //     falling back to raw type data.
@@ -2735,11 +2809,17 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           // has no weapon to boost.
           if ((TYPES[fi2.typeID]?.c ?? TYPES[fi2.typeID]?.category) === 66) continue;
           const b = fi2.get?.('missileDamageMultiplierBonus') ?? TYPES[fi2.typeID]?.attrs?.missileDamageMultiplierBonus;
-          if (b && b !== 1) bcsFactors.push(b);
+          // The entry carries its module alongside its value rather than in a parallel array, because
+          // the sort below reorders it and would tear any such array apart. Same reason as `penalize`.
+          if (b && b !== 1) bcsFactors.push({v:b, src:{kind:'module', name:fi2.name}});
         }
         const bcsMult = stackingPenalty
-          ? bcsFactors.sort((a,b)=>b-a).reduce((f,v,i)=>f*(1+(v-1)*Math.exp(-(i*i)/7.1289)),1)
-          : bcsFactors.reduce((f,v)=>f*v,1);
+          ? bcsFactors.sort((a,b)=>b.v-a.v).reduce((f,e,i)=>{
+              const factor = Math.exp(-(i*i)/7.1289), m = 1+(e.v-1)*factor;
+              exDmg(e.src, m, null, e.v, factor);
+              return f*m;
+            },1)
+          : bcsFactors.reduce((f,e)=>{ exDmg(e.src, e.v); return f*e.v; },1);
         // (d) Ship-hull missile damage bonuses — table-driven, per damage type, for ALL hulls
         //     (e.g. ONI shipBonusCC +100% EM/Th/Exp and shipBonusCC3 +125% kinetic, Caracal/Cerb
         //     /Orthrus/Jackdaw, etc.). fit.ship.get(attr) is already class-skill-prescaled. Applied
@@ -2757,6 +2837,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               const f = 1 + bonus / 100;
               const tys = spec[1] === 'all' ? ['em','th','kin','exp'] : (Array.isArray(spec[1]) ? spec[1] : [spec[1]]);
               for (const ty of tys) shipMd[ty] *= f;
+              exDmg({kind:'hull', name:fit.ship.name}, f, tys);
             }
           }
           // Sidewinder & kin (Effect12165, ATFrigDmgBonus): the rocket/light-missile CHARGE-damage
@@ -2765,7 +2846,11 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           if (shipEffs.includes(12165) && (chRs.includes('Rockets') || chRs.includes('Light Missiles'))) {
             const negSec = Math.max(-10, Math.min(0, fit._pilotSec ?? 0));
             const b = (fit.ship.get('ATFrigDmgBonus') ?? 0) * negSec;
-            if (b) { const f = 1 + b / 100; shipMd.em *= f; shipMd.th *= f; shipMd.kin *= f; shipMd.exp *= f; }
+            if (b) {
+              const f = 1 + b / 100;
+              shipMd.em *= f; shipMd.th *= f; shipMd.kin *= f; shipMd.exp *= f;
+              exDmg({kind:'hull', name:fit.ship.name}, f);
+            }
           }
           // T3C offensive subsystems carry a missile charge-damage bonus the engine can't apply
           // (OwnerRequiredSkillModifier → charge). Read the raw per-level bonus off the fitted
@@ -2779,8 +2864,11 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               if (!sp[2].some(sk => chRs.includes(sk))) continue;
               const bonus = si.get(sp[0]) ?? 0;
               if (bonus) {
-                if (sp[1] === 'all') { const f = 1 + bonus / 100; shipMd.em *= f; shipMd.th *= f; shipMd.kin *= f; shipMd.exp *= f; }
-                else shipMd[sp[1]] *= 1 + bonus / 100;
+                const f = 1 + bonus / 100;
+                if (sp[1] === 'all') { shipMd.em *= f; shipMd.th *= f; shipMd.kin *= f; shipMd.exp *= f; }
+                else shipMd[sp[1]] *= f;
+                exDmg({kind:'subsystem', name:si.name}, f,
+                      sp[1] === 'all' ? null : [sp[1]]);
               }
             }
           }
@@ -2796,13 +2884,13 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
             // damageMultiplierBonus present + booster has missile-damage effects (1595..1657)
             const dmgB = bA?.damageMultiplierBonus;
             const eff = bTid ? (TYPES[bTid]?.effectIDs ?? TYPES[bTid]?.e ?? []) : [];
-            if (dmgB && eff.includes(1595)) boosterDmgMult *= 1 + dmgB / 100;
+            if (dmgB && eff.includes(1595)) { boosterDmgMult *= 1 + dmgB / 100; exDmg({kind:'booster', name:b.name}, 1 + dmgB / 100); }
             // Seasonal "Hardpoint" boosters (State/Imperial/Republic/Federation) use a DIFFERENT attr
             // and effect: boosterMissileDamageBonusPostPercent (6125) via effect 12849, which CCP ships
             // with an empty modifier list. Without this a Praxis running a State Hardpoint Booster III
             // lost its +6% missile damage (87.6 vs pyfa's 92.5 missile DPS).
             const misB = bA?.boosterMissileDamageBonusPostPercent;
-            if (misB && eff.includes(12849)) boosterDmgMult *= 1 + misB / 100;
+            if (misB && eff.includes(12849)) { boosterDmgMult *= 1 + misB / 100; exDmg({kind:'booster', name:b.name}, 1 + misB / 100); }
           }
         }
         // (f) Engine-resolved charge-damage bonuses (ship/subsystem effects that target the charge
@@ -2820,6 +2908,11 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
             if (engTot > 0) engineChargeMult = engTot / baseTot;
           }
         }
+        // Deliberately unnamed. This is a RATIO of the engine's total charge damage to its base, so
+        // it is however many ship or subsystem effects the engine did reach, collapsed into one
+        // number — there is no honest single name to put on it. A null source is what flips the
+        // panel's "some modifiers aren't identified yet", which is exactly the right thing to say.
+        exDmg(null, engineChargeMult);
         // (g) Missile-damage hardwiring implants (e.g. Zainou 'Snapshot' HM-705, +5% heavy missile
         //     damage). Each carries an OwnerRequiredSkillModifier on the charge's em/th/kin/exp damage
         //     (attrs 114/116/117/118), filtered by a missile-type skill the charge requires — so, like
@@ -2847,7 +2940,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               if (impBonus) break outer;
             }
           }
-          if (impBonus) implantDmgMult *= 1 + impBonus / 100;
+          if (impBonus) { implantDmgMult *= 1 + impBonus / 100; exDmg({kind:'implant', name:imp.name}, 1 + impBonus / 100); }
         }
         const skillDmgMult = chargeSkillMult * (1 + warheadBonus) * bcsMult * boosterDmgMult * engineChargeMult * implantDmgMult;
         // T3D Sharpshooter mode charge-damage bonus is now applied by the engine to the loaded
@@ -2866,6 +2959,11 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const chTh  = charge.th  * (1 + chBoostTh  / 100) * shipMd.th;
         const chKin = charge.kin * (1 + chBoostKin / 100) * shipMd.kin;
         const chExp = charge.exp * (1 + chBoostExp / 100) * shipMd.exp;
+        // Unnamed for the same reason as engineChargeMult: __chargeDmg* is an accumulator the effect
+        // translation pours several skill and hull bonuses into, and by the time it is read here they
+        // are one number. The shipMd factors beside it are already listed by their own rows above.
+        for (const [ty, boost] of [['em',chBoostEm],['th',chBoostTh],['kin',chBoostKin],['exp',chBoostExp]])
+          exDmg(null, 1 + boost / 100, [ty]);
         const totalChargeHp = chEm + chTh + chKin + chExp;
         const totalDmg = totalChargeHp * engineDmgMult * skillDmgMult * modeDmgFactor;
         // Missile launchers don't expose numShots; the clip is launcher cargo capacity ÷ charge
@@ -2920,11 +3018,31 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         // Strongest first — by MAGNITUDE, because the explosion-radius pool below is made of
         // negative percentages (a Warhead Rigor Catalyst is −15%). A plain descending sort would
         // rank the weakest of those first and hand it the unpenalised slot.
-        const penalize = (arr) => arr.sort((a,b)=>Math.abs(b)-Math.abs(a)).reduce((f,v,i)=>f*(1+v/100*Math.exp(-(i*i)/7.1289)),1);
+        //
+        // Entries are {v, src}: `v` drives the arithmetic exactly as a bare number did, and `src`
+        // rides along inside the entry rather than in a parallel array because the sort below
+        // reorders the pool and would tear any such array apart. `ex`, when given, collects a named
+        // row per member — which is the whole point of showing this, since the stacking penalty is
+        // invisible in each module's own tooltip.
+        const penalize = (arr, ex) => arr.sort((a,b)=>Math.abs(b.v)-Math.abs(a.v))
+          .reduce((f,e,i) => {
+            const factor = Math.exp(-(i*i)/7.1289), m = 1 + e.v/100*factor;
+            exPush(ex, e.src, m, 1 + e.v/100, factor);
+            return f*m;
+          }, 1);
+        const exVel    = exFor('maxVelocity',    baseVel);
+        const exFlight = exFor('explosionDelay', baseFlight);
+        const exAoeVel = exFor('aoeVelocity',    baseAoeVel);
+        const exAoeRad = exFor('aoeCloudSize',   baseAoeRad);
+        // Every gated term below is neutralised by `gate()` for a charge that does not require
+        // Missile Launcher Operation (a Standup missile), so its row must not be listed either.
+        const exGated = (ex, source, mult) => { if (reqMLO) exPush(ex, source, mult); };
 
         // Skills — unpenalized
         const skillVel    = 1 + 0.10 * (sk.missileProjection ?? 0);
         const skillFlight = 1 + 0.10 * (sk.missileBombardment ?? 0);
+        exGated(exVel,    {kind:'skill', name:'Missile Projection',  level:sk.missileProjection ?? 0},  skillVel);
+        exGated(exFlight, {kind:'skill', name:'Missile Bombardment', level:sk.missileBombardment ?? 0}, skillFlight);
 
         // Build the shared penalized pools (MGC modules + rigs together).
         const velPool = [], flightPool = [];
@@ -2945,15 +3063,17 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           // at the base 5.5, so a heated MGC changed nothing at all — issue #46.
           const vB = fi2.get('missileVelocityBonus') ?? 0;
           const fB = fi2.get('explosionDelayBonus') ?? 0;
-          if (vB > 0) velPool.push(vB);
-          if (fB > 0) flightPool.push(fB);
+          const src2 = {kind:'module', name:fi2.name};
+          if (vB > 0) velPool.push({v:vB, src:src2});
+          if (fB > 0) flightPool.push({v:fB, src:src2});
         }
         for (const { slot: s3, fitItem: fi3 } of modItems) {
           if (!fi3 || !isOnline(s3.state)) continue;
           const a3 = TYPES[fi3.typeID]?.attrs ?? {};
           const e3 = TYPES[fi3.typeID]?.e ?? [];
-          if (e3.includes(1764) && a3.speedFactor)        velPool.push(a3.speedFactor);        // Hydraulic Bay Thrusters → velocity
-          if (e3.includes(784)  && a3.maxFlightTimeBonus) flightPool.push(a3.maxFlightTimeBonus); // Rocket Fuel Cache → flight
+          const src3 = {kind:'module', name:fi3.name};
+          if (e3.includes(1764) && a3.speedFactor)        velPool.push({v:a3.speedFactor, src:src3});        // Hydraulic Bay Thrusters → velocity
+          if (e3.includes(784)  && a3.maxFlightTimeBonus) flightPool.push({v:a3.maxFlightTimeBonus, src:src3}); // Rocket Fuel Cache → flight
         }
         // Siege module's siegeTorpedoVelocityBonus (+150%) targets charges requiring Torpedoes.
         // Pyfa applies it with stackingPenalties=True (filteredChargeBoost on maxVelocity), so it
@@ -2963,29 +3083,30 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           for (const { slot: s4, fitItem: fi4 } of modItems) {
             if (!fi4 || !isActive(s4.state)) continue;
             const tvb = TYPES[fi4.typeID]?.attrs?.siegeTorpedoVelocityBonus;
-            if (tvb) velPool.push(tvb);
+            if (tvb) velPool.push({v:tvb, src:{kind:'module', name:fi4.name}});
           }
         }
-        const poolVel    = penalize(velPool);
-        const poolFlight = penalize(flightPool);
+        const poolVel    = penalize(velPool,    reqMLO ? exVel    : null);
+        const poolFlight = penalize(flightPool, reqMLO ? exFlight : null);
 
         // Implants & boosters — unpenalized. Antipharmakon Toxot is a BOOSTER (category 20,
         // boosterDuration attr) giving +8% flight via maxFlightTimeBonus; other implants may give
         // missile velocity. Read flight/velocity bonuses from both sources.
         let implFlight = 1, implVel = 1;
-        const applyConsumable = (name, active) => {
+        const applyConsumable = (name, active, kind) => {
           if (!name || active === false) return;
           const cTid = typeIDByName(name) ?? tidByName(name);
           const cA = cTid ? (TYPES[cTid]?.attrs ?? {}) : {};
-          if (cA.maxFlightTimeBonus)  implFlight *= 1 + cA.maxFlightTimeBonus / 100;
-          if (cA.missileVelocityBonus) implVel   *= 1 + cA.missileVelocityBonus / 100;
+          const src = {kind, name};
+          if (cA.maxFlightTimeBonus)  { implFlight *= 1 + cA.maxFlightTimeBonus / 100;  exGated(exFlight, src, 1 + cA.maxFlightTimeBonus / 100); }
+          if (cA.missileVelocityBonus) { implVel   *= 1 + cA.missileVelocityBonus / 100; exGated(exVel, src, 1 + cA.missileVelocityBonus / 100); }
           // Missile Projection implants (e.g. Zainou 'Deadeye' MP-xxx) carry their velocity bonus as
           // speedFactor gated by Effect1764, not missileVelocityBonus.
           const cE = cTid ? (TYPES[cTid]?.e ?? TYPES[cTid]?.effectIDs ?? []) : [];
-          if (cE.includes(1764) && cA.speedFactor) implVel *= 1 + cA.speedFactor / 100;
+          if (cE.includes(1764) && cA.speedFactor) { implVel *= 1 + cA.speedFactor / 100; exGated(exVel, src, 1 + cA.speedFactor / 100); }
         };
-        for (const imp of implants) applyConsumable(imp?.name, true);
-        for (const bst of boosters) applyConsumable(bst?.name, bst?.active);
+        for (const imp of implants) applyConsumable(imp?.name, true, 'implant');
+        for (const bst of boosters) applyConsumable(bst?.name, bst?.active, 'booster');
         // Hydra implant set: set-amplified missile flight time (range). The engine applies this to the
         // charge's explosionDelay, but this range block recomputes flight from base × its own chain, so
         // mirror it here. Effective per-member bonus = raw × product(implantSetHydra), applied multiplicatively.
@@ -2994,13 +3115,16 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         let hydraProduct = 1;
         {
           const hydraA = implants
-            .map(i => TYPES[typeIDByName(i.name) ?? tidByName(i.name)]?.attrs)
-            .filter(a => a && a.implantSetHydra != null);
+            .map(i => ({name:i.name, a:TYPES[typeIDByName(i.name) ?? tidByName(i.name)]?.attrs}))
+            .filter(h => h.a && h.a.implantSetHydra != null);
           if (hydraA.length >= 2) {
-            hydraProduct = hydraA.reduce((p, a) => p * (a.implantSetHydra ?? 1), 1);
-            for (const a of hydraA) {
+            hydraProduct = hydraA.reduce((p, h) => p * (h.a.implantSetHydra ?? 1), 1);
+            for (const {name, a} of hydraA) {
               const raw = a.hydraMissileFlightTimeBonus ?? 0;
-              if (raw) implFlight *= 1 + raw * hydraProduct / 100;
+              if (raw) {
+                implFlight *= 1 + raw * hydraProduct / 100;
+                exGated(exFlight, {kind:'implant', name}, 1 + raw * hydraProduct / 100);
+              }
             }
           }
         }
@@ -3028,19 +3152,22 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const MODE_MISSILE_FLIGHT = [
           [12796, 'modeAnhingaMissileFlightTimePostDiv',           'Missile Launcher Operation'],
         ];
-        const modeDiv = (table) => {
+        const modeDiv = (table, ex) => {
           let mult = 1;
           if (!tacticalModeTid) return mult;
           const mA = TYPES[tacticalModeTid]?.attrs ?? {};
           const mE = TYPES[tacticalModeTid]?.e ?? [];
           for (const [eid, attr, skill] of table) {
             const v = mA[attr];
-            if (v && v !== 1 && mE.includes(eid) && chRs.includes(skill)) mult *= 1 / v;
+            if (v && v !== 1 && mE.includes(eid) && chRs.includes(skill)) {
+              mult *= 1 / v;
+              exPush(ex, {kind:'mode', name:TYPES[tacticalModeTid]?.n}, 1 / v);
+            }
           }
           return mult;
         };
-        const modeVel    = modeDiv(MODE_MISSILE_VEL);
-        const modeFlight = modeDiv(MODE_MISSILE_FLIGHT);
+        const modeVel    = modeDiv(MODE_MISSILE_VEL,    exVel);
+        const modeFlight = modeDiv(MODE_MISSILE_FLIGHT, exFlight);
 
         // T3 cruiser subsystem missile bonuses (e.g. Loki Offensive: +5%/lvl missile velocity via
         // subsystemBonus → maxVelocity, requiring the Missiles skill). Read the skill-scaled bonus
@@ -3055,7 +3182,10 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
                       ?? ssItem.get('subsystemBonusGallenteOffensive')
                       ?? ssItem.get('subsystemBonusAmarrOffensive');
             const ssEff = TYPES[ssItem.typeID]?.e ?? [];
-            if (velB && ssEff.includes(6923) && reqMLO) subsysVel *= 1 + velB / 100;
+            if (velB && ssEff.includes(6923) && reqMLO) {
+              subsysVel *= 1 + velB / 100;
+              exPush(exVel, {kind:'subsystem', name:ssItem.name}, 1 + velB / 100);
+            }
           }
         }
 
@@ -3069,7 +3199,12 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
             const spec = SHIP_MISSILE_RANGE[eid];
             if (!spec || !chRs.includes(SHIP_MR_SK[spec[2]])) continue;
             const bonus = fit.ship.get(spec[0]) ?? 0;
-            if (bonus) { if (spec[1] === 'vel') shipVel *= 1 + bonus / 100; else shipFlight *= 1 + bonus / 100; }
+            if (bonus) {
+              const f = 1 + bonus / 100;
+              const hullSrc = {kind:'hull', name:fit.ship.name};
+              if (spec[1] === 'vel') { shipVel *= f; exPush(exVel, hullSrc, f); }
+              else { shipFlight *= f; exPush(exFlight, hullSrc, f); }
+            }
           }
         }
 
@@ -3100,7 +3235,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         // `read` resolves the modifying attribute: engine-computed for a hull, subsystem or module
         // (skill-prescaled, script-doubled, heat-boosted), raw for an implant or booster, and
         // per-level for a skill. `ok` vets the effect's category against the module's state.
-        const collectAoe = (tid, read, penalized, ok) => {
+        const collectAoe = (tid, read, penalized, ok, src) => {
           for (const eid of (TYPES[tid]?.e ?? [])) {
             const mods = EFFECTS_DATA[eid]?.m;
             if (!mods || (ok && !ok(eid))) continue;
@@ -3121,9 +3256,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               if (!an || BOOSTER_PENALTY_INFO[an]) continue;
               const v = read(an) ?? 0;
               if (!v) continue;
-              if (penalized) (which === 'vel' ? aoeVelPool : aoeRadPool).push(v);
-              else if (which === 'vel') aoeVelFlat *= 1 + v / 100;
-              else aoeRadFlat *= 1 + v / 100;
+              if (penalized) (which === 'vel' ? aoeVelPool : aoeRadPool).push({v, src});
+              else if (which === 'vel') { aoeVelFlat *= 1 + v / 100; exPush(exAoeVel, src, 1 + v / 100); }
+              else { aoeRadFlat *= 1 + v / 100; exPush(exAoeRad, src, 1 + v / 100); }
             }
           }
         };
@@ -3133,22 +3268,27 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           // 4 = online, 0 = passive. Testing isActive() for all of them dropped the Guidance
           // ENHANCER, which is passive and is never offered a state above 'online'.
           collectAoe(fi5.typeID, an => fi5.get(an), true,
-            eid => EFFECTS_DATA[eid]?.c === 1 ? isActive(s5.state) : isOnline(s5.state));
+            eid => EFFECTS_DATA[eid]?.c === 1 ? isActive(s5.state) : isOnline(s5.state),
+            {kind:'module', name:fi5.name});
         }
-        collectAoe(fit.ship.typeID, an => fit.ship.get(an), false);
-        for (const ssItem of fit._subsystems ?? []) collectAoe(ssItem.typeID, an => ssItem.get(an), false);
+        collectAoe(fit.ship.typeID, an => fit.ship.get(an), false, null,
+                   {kind:'hull', name:fit.ship.name});
+        for (const ssItem of fit._subsystems ?? [])
+          collectAoe(ssItem.typeID, an => ssItem.get(an), false, null,
+                     {kind:'subsystem', name:ssItem.name});
         for (const sTid of AOE_SKILL_TIDS) {
           const lvl = fit.getSkillLevel(TYPES[sTid]?.n ?? '');
-          if (lvl > 0) collectAoe(sTid, an => (TYPES[sTid]?.attrs?.[an] ?? 0) * lvl, false);
+          if (lvl > 0) collectAoe(sTid, an => (TYPES[sTid]?.attrs?.[an] ?? 0) * lvl, false, null,
+                                  {kind:'skill', name:TYPES[sTid]?.n, level:lvl});
         }
-        for (const [cName, cOn] of [...implants.map(i => [i?.name, true]),
-                                    ...boosters.map(b => [b?.name, b?.active !== false])]) {
+        for (const [cName, cOn, cKind] of [...implants.map(i => [i?.name, true, 'implant']),
+                                           ...boosters.map(b => [b?.name, b?.active !== false, 'booster'])]) {
           if (!cName || !cOn) continue;
           const cTid = typeIDByName(cName) ?? tidByName(cName);
           // Hydra members carry an already-amplified bonus in pyfa, exactly as they do for flight
           // time above — the set multiplier is a filteredItemMultiply on the member's own attr.
           if (cTid) collectAoe(cTid, an => (TYPES[cTid]?.attrs?.[an] ?? 0)
-            * (an.startsWith('hydra') ? hydraProduct : 1), false);
+            * (an.startsWith('hydra') ? hydraProduct : 1), false, null, {kind:cKind, name:cName});
         }
         // The two application side effects the user can switch on. The general side-effect pass
         // above puts these on the LAUNCHER, which nothing reads for a missile — application lives
@@ -3161,8 +3301,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               if (!se?.enabled) continue;
               const v = (se.value ?? 0) * recovery;
               if (!v) continue;
-              if (se.key === 'boosterAOEVelocityPenalty') aoeVelFlat *= 1 + v / 100;
-              else if (se.key === 'boosterMissileAOECloudPenalty') aoeRadFlat *= 1 + v / 100;
+              const seSrc = {kind:'sideEffect', name:b.name};
+              if (se.key === 'boosterAOEVelocityPenalty') { aoeVelFlat *= 1 + v / 100; exPush(exAoeVel, seSrc, 1 + v / 100); }
+              else if (se.key === 'boosterMissileAOECloudPenalty') { aoeRadFlat *= 1 + v / 100; exPush(exAoeRad, seSrc, 1 + v / 100); }
             }
           }
         }
@@ -3187,15 +3328,21 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const flightMult = gate(skillFlight) * gate(poolFlight) * modeFlight * gate(implFlight) * subsysFlight * shipFlight;
         let finalVel    = baseVel * velMult;
         let finalFlight = baseFlight * flightMult; // ms
-        const aoeVelPre = baseAoeVel * penalize(aoeVelPool) * aoeVelFlat;
-        const aoeRadPre = baseAoeRad * penalize(aoeRadPool) * aoeRadFlat;
+        const aoeVelPre = baseAoeVel * penalize(aoeVelPool, exAoeVel) * aoeVelFlat;
+        const aoeRadPre = baseAoeRad * penalize(aoeRadPool, exAoeRad) * aoeRadFlat;
         let aoeVel = aoeVelPre, aoeRad = aoeRadPre;
         // Projected guidance disruptor: cut missile range (velocity + flight) and worsen application
         // (lower explosion velocity, larger explosion radius). Values pre-stacked by the caller.
         const gd = opts.projectedDebuffs;
         if (gd) {
-          if (gd.missileRange)   finalVel    *= (1 + gd.missileRange   / 100);
-          if (gd.explosionDelay) finalFlight *= (1 + gd.explosionDelay / 100);
+          // Only velocity and flight time get a row: aoeVel/aoeRad are debuffed into local variables
+          // the panel never sees — fittedChargeStats below publishes the PRE-disruptor application,
+          // deliberately, because that is a property of the missile rather than of who is shooting
+          // back. Listing a modifier the printed number does not contain would break the one contract
+          // the breakdown has: base × every row = the value beside it.
+          const gdSrc = {kind:'projected', name:'Guidance Disruptor'};
+          if (gd.missileRange)   { finalVel    *= (1 + gd.missileRange   / 100); exPush(exVel,    gdSrc, 1 + gd.missileRange   / 100); }
+          if (gd.explosionDelay) { finalFlight *= (1 + gd.explosionDelay / 100); exPush(exFlight, gdSrc, 1 + gd.explosionDelay / 100); }
           if (gd.aoeVel)         aoeVel      *= (1 + gd.aoeVel  / 100);
           if (gd.aoeCloud)       aoeRad      *= (1 + gd.aoeCloud / 100);
         }
@@ -3245,7 +3392,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         // the hull bonus and the implants. The chain above is rebuilt from base for exactly that
         // reason; these are its numbers, minus the projected-disruptor debuff, which is a hostile
         // effect on this fit rather than a property of the missile.
-        if (slot?.id != null) fittedChargeStats.set(slot.id, {
+        const chargeStatsOut = {
           emDamage:        chEm  * skillDmgMult * modeDmgFactor,
           thermalDamage:   chTh  * skillDmgMult * modeDmgFactor,
           kineticDamage:   chKin * skillDmgMult * modeDmgFactor,
@@ -3254,7 +3401,18 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           explosionDelay:  finalFlight,
           aoeVelocity:     aoeVelPre,
           aoeCloudSize:    aoeRadPre,
-        });
+        };
+        if (slot?.id != null) fittedChargeStats.set(slot.id, chargeStatsOut);
+        // `final` is taken from the published value rather than re-multiplied out of the rows, so the
+        // breakdown is answerable to the number on the row above it. If the two ever disagree the
+        // rows are wrong, not the stat — which is what section 12's product check pins.
+        // Carried ON the charge item as well as in the map, because the panel reaches a charge through
+        // `_retrace()`, which hands back the traced twin and nothing else.
+        if (chEx) {
+          for (const [attr, ex] of Object.entries(chEx)) ex.final = chargeStatsOut[attr] ?? ex.final;
+          if (slot?.id != null) fittedChargeExplain.set(slot.id, chEx);
+          if (fitItem._charge) fitItem._charge._explainCharge = chEx;
+        }
         // Per-weapon graph data (missile application + three-zone range). Volley split by damage type.
         if (firing && totalChargeHp > 0 && vol > 0) {
           graphWeapons.push({
@@ -4209,6 +4367,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     // These are that chain's own answers, keyed by the LAUNCHER's slot id and overlaid on the
     // charge panel. Only active launchers appear — an offline one never runs this branch.
     fittedChargeStats,
+    fittedChargeExplain,
 
     // Resources
     cpuUsed:  Math.round(cpuUsed  * 100) / 100,
@@ -4314,6 +4473,13 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     // Per-weapon hit-math data + ship geometry for the damage graph
     graphWeapons,
     shipRadius: s.get('radius') ?? 0,
+
+    // Hull attributes whose displayed value this file carries PAST the engine's, keyed by the engine
+    // attribute name. Always populated, unlike `_explainShip` — the attributes tab has to decide
+    // whether to offer a breakdown without paying for the traced pass, so it needs the final number
+    // on the ordinary one. Speed is here because an active prop mod's thrust is applied in this file:
+    // the engine hardcodes the rest of Effect 6730 (sig bloom, mass) but not the mass-dependent boost.
+    shipDerived: { maxVelocity: abMwdSpeed },
 
     // Navigation
     maxVelocity:   Math.round(maxVelocity),

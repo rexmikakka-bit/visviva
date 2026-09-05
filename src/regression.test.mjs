@@ -5544,6 +5544,251 @@ Agency 'Overclocker' SB7 Dose III
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 12ib. CHARGE PROVENANCE: the modifier breakdown behind a LOADED MISSILE.
+//
+// 12i sweeps the engine's own explain(), which every module row uses. A missile charge cannot use
+// it: 12j proved the engine leaves a charge's damage, flight time and application at base, because
+// `_applyEffect` never walks an OwnerRequiredSkillModifier onto a charge — so calc.js rebuilds all
+// eight attributes by hand and publishes them through `fittedChargeStats`. Those rows were the one
+// place in the panel with a modified number and nothing to open behind it, and the fix is a parallel
+// `_explainCharge` recorded at each accumulation site in that same chain.
+//
+// The contract is the same one the engine's breakdown keeps: base x product(rows) == the value
+// printed beside it. That is the gate below, and it has teeth in the direction that matters — the
+// rows are recorded from the multipliers the arithmetic ALREADY used, so a future edit that adds a
+// term to the chain and forgets to record it fails here rather than silently under-explaining.
+//
+// The named checks after it pin what the sweep cannot see: that the guidance modules and the rigs
+// land in ONE stacking pool (the single most useful thing this panel says, and invisible in every
+// module's own tooltip), that a per-damage-type hull bonus lists itself only against the type it
+// bonuses, and that a Standup missile — which requires no skills and is therefore gated out of every
+// personal bonus — lists nothing rather than listing rows it did not receive.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nCHARGE PROVENANCE (loaded missiles)');
+  const chargeEx = (eft) => {
+    const p = parseEFT(eft);
+    const ship = lookupShip(p.shipName);
+    const cs = calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {});
+    const launcher = cs.fittedItems.get('h0');
+    return { ex: launcher?._charge?._retrace()?._explainCharge, ov: cs.fittedChargeStats.get('h0') };
+  };
+
+  const CERB = `[Cerberus, prov]
+
+Ballistic Control System II
+Ballistic Control System II
+
+Missile Guidance Computer II
+Missile Guidance Computer II
+
+Heavy Missile Launcher II, Scourge Fury Heavy Missile
+
+Medium Warhead Rigor Catalyst II
+Medium Warhead Rigor Catalyst II
+`;
+  const cerb = chargeEx(CERB);
+  check('charge-prov', 'a loaded missile has a breakdown at all', cerb.ex ? 1 : 0, 1, 0);
+
+  // Both halves at once: the rows multiply out to `final`, AND `final` is the number the panel
+  // actually prints. Checking only the first would pass a chain that explains a value nobody sees.
+  let swept = 0, worstRow = 0, worstPub = 0;
+  for (const [attr, e] of Object.entries(cerb.ex ?? {})) {
+    if (!e.base) continue;                       // a damage type this missile does not deal
+    swept++;
+    const prod = e.rows.reduce((f, r) => f * r.mult, e.base);
+    worstRow = Math.max(worstRow, Math.abs(prod - e.final) / (Math.abs(e.final) || 1));
+    worstPub = Math.max(worstPub, Math.abs(cerb.ov[attr] - e.final) / (Math.abs(e.final) || 1));
+  }
+  console.log(`  (swept ${swept} charge attributes, worst row drift ${worstRow.toExponential(2)})`);
+  check('charge-prov', 'every published charge attribute is explained', swept, 5, 0);
+  check('charge-prov', 'base x product(rows) == final', worstRow < 1e-9 ? 1 : 0, 1, 0);
+  check('charge-prov', 'and final is what the panel prints', worstPub < 1e-9 ? 1 : 0, 1, 0);
+  check('charge-prov', 'nothing on a skills+rigs+modules fit is unattributed',
+    Object.values(cerb.ex).filter(e => e.base && !e.covered).length, 0, 0);
+
+  // THE stacking pool. Two Rigor Catalysts (-20% each) and two Guidance Computers (-8.25% each)
+  // compete for the same four slots on explosion radius, strongest first BY MAGNITUDE — pyfa
+  // penalises Effect1590/1472 in module context and leaves the skill unpenalised. Five rows: the
+  // skill, then the four pool members in descending magnitude.
+  const rad = cerb.ex.aoeCloudSize;
+  const P = i => Math.exp(-(i * i) / 7.1289);
+  check('charge-prov', 'explosion radius lists skill + four pool members', rad.rows.length, 5, 0);
+  check('charge-prov', 'Guided Missile Precision V is unpenalised', rad.rows[0].mult, 0.75, 1e-9);
+  check('charge-prov', 'and it is the skill, not a module', rad.rows[0].source.kind, 'skill');
+  check('charge-prov', 'first rig at full value',   rad.rows[1].mult, 1 - 0.20 * P(0), 1e-9);
+  check('charge-prov', 'second rig penalised',      rad.rows[2].mult, 1 - 0.20 * P(1), 1e-9);
+  // The point of the whole feature: the third and fourth slots are taken by MODULES a player would
+  // not expect to be competing with the rigs at all, at 57% and 28% of their printed bonus.
+  check('charge-prov', 'first MGC takes the third slot',  rad.rows[3].mult, 1 - 0.0825 * P(2), 1e-9);
+  check('charge-prov', 'second MGC takes the fourth',     rad.rows[4].mult, 1 - 0.0825 * P(3), 1e-9);
+  check('charge-prov', 'rigs and modules share one pool',
+    rad.rows.slice(1).every(r => r.source.kind === 'module') ? 1 : 0, 1, 0);
+  check('charge-prov', 'the penalty is reported, not just applied', rad.rows[2].factor, P(1), 1e-9);
+  check('charge-prov', 'and the unpenalised claim beside it',       rad.rows[2].raw, 0.80, 1e-9);
+
+  // A BCS is stacking-penalised too, in its own pool, and that pool is DAMAGE — a different code
+  // path from the four above (it sorts on the multiplier itself, not on a percentage).
+  const kin = cerb.ex.kineticDamage;
+  const bcs = kin.rows.filter(r => r.source?.name === 'Ballistic Control System II');
+  check('charge-prov', 'both BCS are listed', bcs.length, 2, 0);
+  check('charge-prov', 'second BCS penalised', bcs[1].mult, 1 + 0.10 * P(1), 1e-9);
+
+  // The Cerberus bonuses KINETIC only (shipBonusCC3). A hull row on all four damage types would be
+  // the easy mistake here, and it would be wrong on exactly the hulls people fly for the bonus.
+  check('charge-prov', 'the hull bonus lands on the type it bonuses',
+    kin.rows.filter(r => r.source?.kind === 'hull').length, 1, 0);
+  check('charge-prov', 'and nowhere else',
+    cerb.ex.emDamage.rows.filter(r => r.source?.kind === 'hull').length, 0, 0);
+
+  // A Standup missile declares NO required skills, so `gate()` neutralises every personal bonus —
+  // the skills, the rigs, the modules, the implants. The rows must vanish with the multipliers: a
+  // listed Missile Projection V beside an unchanged 10,500 m/s is worse than an empty list.
+  const azbel = chargeEx(`[Azbel, prov]
+
+Standup Multirole Missile Launcher I, Standup Heavy Missile
+`);
+  check('charge-prov', 'a structure missile is gated out of velocity', azbel.ex.maxVelocity.rows.length, 0, 0);
+  check('charge-prov', 'and out of flight time', azbel.ex.explosionDelay.rows.length, 0, 0);
+  check('charge-prov', 'and out of application', azbel.ex.aoeCloudSize.rows.length, 0, 0);
+  check('charge-prov', 'so its velocity is its base', azbel.ov.maxVelocity, azbel.ex.maxVelocity.base, 1e-9);
+
+  // engineChargeMult is a RATIO of the engine's charge damage to its base — however many effects the
+  // engine did reach, collapsed into one number with no name left in it. It must record a null
+  // source: `covered` is what draws the panel's "not identified yet" footer, and a chain that quietly
+  // omits the row would claim a complete list while the arithmetic disagreed with it.
+  const legion = chargeEx(`[Legion, prov]
+
+Heavy Missile Launcher II, Scourge Fury Heavy Missile
+
+Legion Core - Augmented Antimatter Reactor
+Legion Defensive - Adaptive Augmenter
+Legion Offensive - Assault Optimization
+Legion Propulsion - Intercalated Nanofibers
+`);
+  const lkin = legion.ex.kineticDamage;
+  check('charge-prov', 'the engine ratio is listed', lkin.rows.filter(r => !r.source).length, 1, 0);
+  check('charge-prov', 'as the subsystem +25% it is', lkin.rows.find(r => !r.source)?.mult, 1.25, 1e-9);
+  check('charge-prov', 'and it flips covered', lkin.covered ? 1 : 0, 0, 0);
+  check('charge-prov', 'while the chain still reconciles',
+    lkin.rows.reduce((f, r) => f * r.mult, lkin.base), legion.ov.kineticDamage, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12ic. THE HULL ATTRIBUTES TAB — two rows that were lying about themselves.
+//
+// Both faults are only visible through the breakdown, which is why neither surfaced until the
+// panel started offering one:
+//
+//  • A shield rig's drawback is applied by a HAND-WRITTEN branch in the engine (effect 2716 carries
+//    no modifier CCP would dispatch), and that branch passed no source. So a shield-rigged hull's
+//    signature radius listed an unexplained penalty — on the one attribute where a player is most
+//    likely to think something is wrong with the app rather than with their fit.
+//
+//  • The ship sheet offers a breakdown only to a row that REPRODUCES the engine's own value, which
+//    is a self-proving gate rather than a hand-kept allowlist of explainable rows. Lock range was
+//    fed from `cs.targetRange`, which is rounded to one decimal for the headline readout, and the
+//    row prints two — so every hull whose lock range is not a clean decimal both printed a wrong
+//    last digit and silently lost its dropdown. `cs.exact` exists for exactly this.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nHULL ATTRIBUTE ROWS (rig drawback provenance, exact lock range)');
+  const P = i => Math.exp(-(i * i) / 7.1289);
+  const p = parseEFT(`[Caracal, rows]
+
+Medium Core Defense Field Extender II
+Medium EM Shield Reinforcer II
+`);
+  const ship = lookupShip(p.shipName);
+  const cs = calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {});
+  const sig = cs.fittedShip._retrace().attrs.explain('signatureRadius');
+  check('hull-rows', 'both shield rigs are named on signature', sig.rows.length, 2, 0);
+  check('hull-rows', 'and named after the rig, not the hull', sig.rows[0].source?.kind, 'module');
+  check('hull-rows', 'no unattributed penalty is left', sig.covered ? 1 : 0, 1, 0);
+  // Two +5% drawbacks in one penalised pool, which is also the answer to "why is my sig 137 and not
+  // 137.8125" — the second rig's drawback is costing less than it claims.
+  check('hull-rows', 'first drawback at full value', sig.rows[0].mult, 1.05, 1e-9);
+  check('hull-rows', 'second drawback penalised', sig.rows[1].mult, 1 + 0.05 * P(1), 1e-9);
+  check('hull-rows', 'and the total is what the ship reads', 125 * sig.rows[0].mult * sig.rows[1].mult, sig.final, 1e-9);
+
+  // The row is fed cs.exact and the gate compares it against the engine, so the two must agree
+  // EXACTLY — not to the row's two printed decimals, which is a weaker claim that the rounded value
+  // passed on four of seven hulls by luck. A Rifter is the case that failed: 28.125 km.
+  let worst = 0;
+  for (const n of ['Rifter', 'Drake', 'Tengu', 'Caracal', 'Apocalypse', 'Merlin', 'Raven']) {
+    const c = calcFitStats(lookupShip(n), { high: [], mid: [], low: [], rigs: [] }, [], null, {});
+    worst = Math.max(worst, Math.abs(c.exact.targetRange * 1000 - c.fittedShip.get('maxTargetRange')));
+  }
+  check('hull-rows', 'exact lock range is the engine value, to the metre', worst, 0, 0);
+  // And the rounded one is NOT, on the hull that exposed this — so the check above has something to
+  // catch. Without this line a future edit could point the row back at cs.targetRange and pass.
+  const rifter = calcFitStats(lookupShip('Rifter'), { high: [], mid: [], low: [], rigs: [] }, [], null, {});
+  check('hull-rows', 'while the rounded one loses 25 m', rifter.targetRange * 1000, 28100, 0);
+  check('hull-rows', 'which is the digit the row was printing wrong', rifter.exact.targetRange, 28.125, 1e-9);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 12id. THE HULL'S SPEED CHAIN, with an active prop mod.
+//
+// Effect 6730 does three things to a hull: blooms signature, adds mass, and boosts velocity. The
+// engine hardcodes the first two, but the third is mass-dependent (speedFactor x thrust / mass) so
+// calc.js computes it — which left the attributes tab printing an engine maxVelocity that stopped
+// one modifier short of the truth, beside a signature and a mass that did not.
+//
+// The velocities themselves are already pyfa-validated elsewhere (praxis 'speed (MWD)', alligator
+// 'maxVelocityAB'); what is pinned here is that the PUBLISHED number, the number the tab decides
+// with, and the breakdown's chain are all the same number.
+{
+  console.log('\nHULL SPEED CHAIN (active prop mod)');
+  const velEx = (eft) => {
+    const p = parseEFT(eft);
+    const ship = lookupShip(p.shipName);
+    const cs = calcFitStats(ship, buildSlotsFromEFT(ship, p.mods, p.subsystems), [], null, {});
+    return { cs, ex: cs.fittedShip._retrace()._explainShip?.maxVelocity };
+  };
+  const mwd = velEx(`[Caracal, spd]
+
+50MN Cold-Gas Enduring Microwarpdrive
+`);
+  check('hull-speed', 'the chain reconciles', mwd.ex.base * mwd.ex.rows.reduce((f, r) => f * r.mult, 1),
+        mwd.ex.final, 1e-9);
+  check('hull-speed', 'and lands on the published prop speed', mwd.ex.final, mwd.cs.maxVelocityAB, 0.001);
+  check('hull-speed', 'every modifier is named', mwd.ex.covered ? 1 : 0, 1, 0);
+  check('hull-speed', 'the prop mod is one of them',
+        mwd.ex.rows.filter(r => /Microwarpdrive/.test(r.source?.name ?? '')).length, 1, 0);
+  check('hull-speed', 'Navigation V is the other', mwd.ex.rows[0].mult, 1.25, 1e-9);
+  // The gate the attributes tab gets its dropdown from. `shipDerived` must be the PROP speed, not
+  // the engine's — if it ever falls back to the engine attribute the row silently loses its ▶.
+  check('hull-speed', 'shipDerived carries the prop speed past the engine',
+        mwd.cs.shipDerived.maxVelocity, mwd.ex.final, 1e-9);
+  check('hull-speed', 'which the engine attribute is NOT',
+        Math.round(mwd.cs.fittedShip.get('maxVelocity')), 288, 0);
+
+  // Stacked nanofibers ahead of the prop mod: the boost multiplies an already-penalised speed, so a
+  // chain that reproduces this one is applying the thrust LAST, in the right place.
+  const nano = velEx(`[Caracal, spd]
+
+50MN Cold-Gas Enduring Microwarpdrive
+
+Nanofiber Internal Structure II
+Nanofiber Internal Structure II
+`);
+  check('hull-speed', 'nanofibers stack inside the chain', nano.ex.rows[1].mult, 1 + 0.095 * Math.exp(-1 / 7.1289), 1e-9);
+  check('hull-speed', 'and the whole chain still reconciles',
+        nano.ex.base * nano.ex.rows.reduce((f, r) => f * r.mult, 1), nano.ex.final, 1e-9);
+  check('hull-speed', 'with the prop mod applied last',
+        /Microwarpdrive/.test(nano.ex.rows[nano.ex.rows.length - 1].source?.name ?? '') ? 1 : 0, 1, 0);
+
+  // No prop mod: the row is the engine's own value and the chain has no thrust term, so the tab
+  // shows exactly what it always did.
+  const bare = velEx(`[Caracal, spd]
+
+`);
+  check('hull-speed', 'a bare hull is unchanged', bare.cs.shipDerived.maxVelocity, 287.5, 1e-9);
+  check('hull-speed', 'and has no prop row', bare.ex.rows.length, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 12j. CLIP DAMAGE: what a rapid launcher puts out before its long reload.
 //
 // An RLML's DPS and volley both read like an ordinary launcher's, and neither says the thing that

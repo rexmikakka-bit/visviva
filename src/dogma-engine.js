@@ -1809,7 +1809,10 @@ export class Fit {
       const effList = m._td?.e ?? m._td?.effectIDs ?? [];
       if (effList.includes(2716)) {
         const drawback = m.get('drawback');  // fully resolved: includes Shield/relevant Rigging reduction
-        if (drawback) this.ship.attrs.applyMod(AID.signatureRadius, 6, drawback, false);
+        // Named after the rig itself: this is the one modifier on a shield-rigged hull's signature,
+        // and unattributed it read as a penalty out of nowhere.
+        if (drawback) this.ship.attrs.applyMod(AID.signatureRadius, 6, drawback, false, null,
+                                               _trace ? this._sourceOf(m) : null);
       }
       // Effect6730: MWD/AB sig bloom + mass addition (hardcoded, only when active). Detect an active
       // prop by speedBoostFactor presence rather than group name (MWD/AB group names vary).

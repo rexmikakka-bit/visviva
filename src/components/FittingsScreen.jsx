@@ -448,7 +448,13 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       // cs.targetRange is KM and the hull record's is METRES. Feeding both to one formatter without
       // converting would have read a 68 km lock range as 68 m — wrong by a factor of a thousand, and
       // plausible enough on a row already full of small numbers to go unnoticed.
-      R('Max Target Range', ship?.targetRange, cs?.targetRange!=null?cs.targetRange*1000:null, F.km, 'maxTargetRange'),
+      //
+      // The EXACT km, because cs.targetRange is rounded to one decimal and this row prints two. A
+      // Rifter's 28.125 km arrived as 28.1 and printed "28.10 km", which is both a wrong last digit
+      // and — since the breakdown is offered only to a row that reproduces the engine's own value —
+      // the reason every hull not landing on a clean decimal had no dropdown at all.
+      R('Max Target Range', ship?.targetRange,
+        cs?.exact?.targetRange!=null?cs.exact.targetRange*1000:null, F.km, 'maxTargetRange'),
       R('Scan Resolution', ship?.scanRes, cs?.scanRes, F.mm, 'scanResolution'),
       R('Max Locked Targets', ship?.maxTargets, cs?.maxTargets, F.int, 'maxLockedTargets'),
       // CCP has four separate strength attributes, one per sensor type, so the key is the hull's own
@@ -458,7 +464,11 @@ export function ShipInfoSheet({ship, cs, onClose}) {
         ship?.sensorType ? `scan${ship.sensorType}Strength` : null),
     ],
     navigation: [
-      R('Max Velocity', ship?.maxVelocity, cs?.maxVelocity, F.ms, 'maxVelocity'),
+      // The prop-inclusive speed, which is what the fit actually does right now — an active MWD
+      // already blooms this tab's signature and raises its mass, and showing an unboosted speed
+      // beside them described a ship that does not exist. Matches what the stats tab has always
+      // printed. `maxVelocityAB` equals the passive speed whenever no prop mod is running.
+      R('Max Velocity', ship?.maxVelocity, cs?.maxVelocityAB ?? cs?.maxVelocity, F.ms, 'maxVelocity'),
       R('Agility', ship?.agility, cs?.agility, F.agi, 'agility'),
       R('Warp Speed', ship?.warpSpeed, cs?.warpSpeed, F.au, 'warpSpeedMultiplier'),
       R('Signature Radius', ship?.sigRadius, cs?.sigRadius, F.m, 'signatureRadius'),
@@ -491,10 +501,16 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   //
   // Note this reads the UNTRACED hull, which is already computed. Deciding whether to show the ▶
   // must not itself cost the traced recompute the whole design exists to defer.
+  //
+  // A row calc.js carries PAST the engine (speed, once a prop mod is running) is compared against
+  // calc.js's own final value instead, published on `shipDerived` for this purpose. Without that
+  // the string test is what SUPPRESSES the dropdown: the engine's unboosted 288 m/s would never
+  // render as the 1,897 m/s beside it, so the row would silently lose its breakdown — the same
+  // fault the lock-range row had, arriving from the other direction.
   const shipEng = cs?.fittedShip ?? null;
   const explainable = (r, changed) => {
     if (!changed || !r.attr || !shipEng?._retrace) return false;
-    const eng = shipEng.attrs?.get?.(r.attr);
+    const eng = cs?.shipDerived?.[r.attr] ?? shipEng.attrs?.get?.(r.attr);
     if (typeof eng !== 'number' || !isFinite(eng)) return false;
     try { return r.fmt(eng) === r.fmt(r.cur); } catch { return false; }
   };
@@ -502,6 +518,9 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   // object, so this costs one recompute however many rows are open, and it re-derives for free if a
   // new `cs` arrives while the sheet is up.
   const traced = openAttrs.size && shipEng?._retrace ? shipEng._retrace() : null;
+  // The chain that produced the printed number: calc.js's extended one where it has it, the
+  // engine's own otherwise.
+  const shipAttrExplain = (attr) => traced?._explainShip?.[attr] ?? traced?.attrs?.explain(attr);
   const toggleAttr = (k) =>
     setOpenAttrs(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
@@ -662,7 +681,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                     </div>
                     {/* The row's own formatter, so the breakdown states mass in the millions of kg
                         the row above it uses rather than the info panel's default rendering. */}
-                    {isOpen&&<ModifierBreakdown attr={r.attr} ex={traced?.attrs?.explain(r.attr)}
+                    {isOpen&&<ModifierBreakdown attr={r.attr} ex={shipAttrExplain(r.attr)}
                                                 bleed={16} fmt={r.fmt}/>}
                     </div>);
                   })}
