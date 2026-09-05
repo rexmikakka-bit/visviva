@@ -560,7 +560,7 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70vh",background:C.bg,borderTopLeftRadius:16,borderTopRightRadius:16,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <span style={{fontSize:14,fontWeight:700,color:C.text}}>{group} Subsystem</span>
-          <button onClick={onClose} style={{background:"none",border:"none",color:C.textMute,fontSize:18,cursor:"pointer"}}>×</button>
+          <button className="press" onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:12}}>
           {options.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No subsystems found</div>}
@@ -877,6 +877,9 @@ const ATTR_LABEL = {
   maxTargetRange:'Target Range', warpScrambleRange:'Warp Disrupt Range',
   stasisWebifierRange:'Web Range', signatureRadius:'Signature Radius',
   requiredThermoDynamicsSkill:'Required Thermodynamics Skill',
+  // The camelCase splitter makes these "Armor H P" and "Hp". `hp` is the third layer, which EVE
+  // itself calls Structure everywhere except this attribute's internal name.
+  armorHP:'Armor HP', hp:'Structure HP',
   // "Scan X Strength" is what the generic camelCase splitter would produce (and what pyfa itself
   // calls it) — "X Sensor Strength" reads clearer next to a ship's own sensor TYPE and matches the
   // label the ship attributes tab builds for the same attribute.
@@ -1225,10 +1228,8 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
     // come out darker than the ends.
     // Only a CHANGED row has anything to explain, so the changed band doubles as the affordance —
     // the set of rows worth tapping is already the set of rows that are highlighted, and no separate
-    // "tap for detail" cue has to be taught. `overrides` rows are excluded: their value comes from
-    // calc.js's own chain rather than the engine, so the engine's breakdown would explain a number
-    // other than the one printed beside it.
-    const tappable = changed && canExplain && !(ov && k in ov);
+    // "tap for detail" cue has to be taught.
+    const tappable = changed && canExplain;
     const isOpen = openAttrs.has(k);
     return (
       <>
@@ -1255,7 +1256,12 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14}) {
         {eng&&<span style={{fontSize:12,textAlign:'right',fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap',
                             color:changed?C.textMid:C.textMute}}>{fmtInfoVal(k, base)}</span>}
       </div>
-      {isOpen&&<ModifierBreakdown attr={k} ex={traced?.attrs?.explain(k)} bleed={bleed}/>}
+      {/* An `overrides` row has to be explained by the chain that PRODUCED it. Its value comes from
+          calc.js rather than the engine, so the engine's own explain() would describe a different
+          number than the one printed beside it — see `_explainCharge` there, which rides along on
+          the traced charge for exactly this. */}
+      {isOpen&&<ModifierBreakdown attr={k} bleed={bleed}
+        ex={(ov && k in ov) ? traced?._explainCharge?.[k] : traced?.attrs?.explain(k)}/>}
       </>
     );
   };
@@ -1379,7 +1385,10 @@ function ItemInfoSheet({typeID, onClose, item, overrides}) {
       <div ref={sheet.sheetRef} style={{background:C.surface,borderRadius:'16px 16px 0 0',maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
         <div style={{position:'relative'}}>
           <SheetGrabber grabHandlers={sheet.grabHandlers}/>
-          <button onClick={sheet.dismiss} style={{position:'absolute',top:2,right:16,background:'none',border:'none',color:C.textMute,fontSize:22,cursor:'pointer',lineHeight:1}}>×</button>
+          {/* The letter x, at BottomSheet's size and colour. This used to be the multiplication sign
+              ×, which sits on the math axis and draws far smaller than a lowercase x at the same
+              font size — so this one sheet's close control looked shrunken next to every other. */}
+          <button className="press" onClick={sheet.dismiss} style={{position:'absolute',top:2,right:16,background:'none',border:'none',color:C.textMid,fontSize:20,cursor:'pointer',padding:'0 4px',lineHeight:1}}>x</button>
         </div>
         <div style={{flex:1,overflowY:'auto',padding:'4px 16px 20px'}}>
           <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16}/>
