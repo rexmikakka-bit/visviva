@@ -6,7 +6,7 @@ import { fetchPrices } from "./prices.js";
 import { C, THEMES, setTheme } from "./theme.js";
 import { ImportFitSheet, initKeyboardTracking } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
-import { ActiveFitBar, FittingsScreen, ShipInfoSheet } from "./components/FittingsScreen.jsx";
+import { ActiveFitBar, FittingsScreen, ShipInfoSheet, FIT_SUBTABS } from "./components/FittingsScreen.jsx";
 import { CargoScreen } from "./components/cargo.jsx";
 import { DronesScreen } from "./components/drones.jsx";
 import { ImplantsScreen } from "./components/implants.jsx";
@@ -29,6 +29,7 @@ const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
 const OPEN_TABS_KEY = 'axis_open_tabs';
 const NEW_TAB_PREF_KEY = 'axis_open_in_new_tab';
 const RECENT_FITS_KEY = 'axis_recent_fits';
+const FIT_SUBTAB_KEY = 'axis_fit_subtab';
 const SKILL_PROFILES_KEY = 'pyfa-skill-profiles';
 const THEME_PREF_KEY = 'axis_theme_pref';
 const AUTOFILL_HARDPOINTS_KEY = 'axis_autofill_hardpoints';
@@ -153,6 +154,15 @@ export default function App(){
   // rename/delete handlers.
   const[openTabs,setOpenTabs]=useState(()=>{try{const s=localStorage.getItem(OPEN_TABS_KEY);if(s)return JSON.parse(s);}catch{}return [];});
   useEffect(()=>{try{localStorage.setItem(OPEN_TABS_KEY,JSON.stringify(openTabs));}catch{}},[openTabs]);
+  // Which of Modules/Stats/Graph the fitting screen is on. Persisted because leaving the Fitting
+  // tab unmounts that screen, and it lives up here rather than inside it because the screens that
+  // open ANOTHER fit — Effects, and the graph's target chip — have to be able to say which page it
+  // should land on, and Effects is not even mounted at the same time as the fitting screen.
+  const[fitSubTab,setFitSubTab]=useState(()=>{
+    try{const s=localStorage.getItem(FIT_SUBTAB_KEY);if(s&&FIT_SUBTABS.includes(s))return s;}catch{}
+    return "Fit";
+  });
+  useEffect(()=>{try{localStorage.setItem(FIT_SUBTAB_KEY,fitSubTab);}catch{}},[fitSubTab]);
   // Most-recently-OPENED fits, newest first. Separate from openTabs: a tab can be closed while the
   // fit stays recent, and the strip is capped at MAX_OPEN_TABS for layout reasons rather than
   // history. Stored as {ship,id,name} like the tabs, so a rename still resolves by id.
@@ -602,7 +612,11 @@ export default function App(){
   // the fit you are editing is the reason you are looking at the other one, so replacing it loses
   // the comparison you opened this for. Shared by every screen that names another fit, so they
   // cannot drift into meaning different things by "Open".
-  const openFitInNewTab=(ship,fitName)=>{wantNewTab.current=true;loadFit(ship,fitName);};
+  // Always lands on Modules. The sub-tab otherwise persists across fits, which is right when YOU
+  // change fits, but every one of these buttons is reached by asking what some other ship is
+  // carrying — and answering that with the graph or stats page you happened to leave open is
+  // answering a question nobody asked.
+  const openFitInNewTab=(ship,fitName)=>{wantNewTab.current=true;setFitSubTab("Fit");loadFit(ship,fitName);};
   // Closing the tab you are looking at moves to its neighbour, the way a browser does; closing any
   // other tab leaves the current fit alone. Closing the last tab just empties the strip -- the fit
   // stays loaded, since the strip is a shortcut rather than the thing holding the fit open.
@@ -715,7 +729,7 @@ export default function App(){
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent} newTabIntent={newTabIntent} autoFillHardpoints={autoFillHardpoints} onOpenFit={openFitInNewTab}/>}
+        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent} newTabIntent={newTabIntent} autoFillHardpoints={autoFillHardpoints} onOpenFit={openFitInNewTab} fitSubTab={fitSubTab} setFitSubTab={setFitSubTab}/>}
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
