@@ -696,7 +696,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   );
 }
 
-export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints,onOpenFit}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -1188,7 +1188,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
-      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
       </div>
     </div>
     {tagSheetEl}
