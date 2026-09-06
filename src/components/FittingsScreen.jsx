@@ -713,6 +713,12 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     return "Fit";
   });
   useEffect(()=>{try{localStorage.setItem('axis_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
+  // Opening the graph's target fit lands on Modules, not on the graph you came from. The sub-tab
+  // normally persists across fits, which is right everywhere else — but here the question that made
+  // you open the fit is "what is it actually fitted with", and arriving on a second graph answers a
+  // question nobody asked. Scoped to this one button by only being passed to GraphTab; Effects'
+  // Open still leaves the sub-tab wherever it was.
+  const openFitOnModules=onOpenFit&&((ship,fitName)=>{onOpenFit(ship,fitName);setFitSubTab("Fit");});
   // Fetch the hero render for every hull you have a fit open on, so its info sheet opens sharp instead
   // of upscaling the 64px bundled copy while the network catches up. These are the hulls most likely to
   // be asked about, and openFitTabs is a handful of entries.
@@ -1188,7 +1194,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
-      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={openFitOnModules}/>}
       </div>
     </div>
     {tagSheetEl}
