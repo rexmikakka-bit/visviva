@@ -20,7 +20,9 @@ import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
 // on first render, and no-undef cannot see it.
-const _SUBTABS=["Fit","Stats","Graph"];
+// Exported because App owns the selected sub-tab (it outlives this screen) and validates what it
+// restored from storage against this list.
+export const FIT_SUBTABS=["Fit","Stats","Graph"];
 // Display only. These strings are also the persisted value of `axis_fit_subtab` and the keys
 // useScrollMemory files each tab's scroll position under, so renaming them would silently reset
 // both for everyone already using the app. The label is the only part that should ever move.
@@ -696,7 +698,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   );
 }
 
-export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints,onOpenFit,fitSubTab,setFitSubTab}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -706,13 +708,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   // render time because shipsByClass rows are only {name,typeID} — ShipInfoSheet's Attributes tab
   // needs the full record (cpu/pg/slots/hardpoints).
   const[infoShip,setInfoShip]=useState(null);
-  // Persisted: leaving the fittings tab unmounts this screen, so a plain useState reset you to
-  // "Fit" every time you checked Drones or Effects and came back.
-  const[fitSubTab,setFitSubTab]=useState(()=>{
-    try{const s=localStorage.getItem('axis_fit_subtab');if(s&&_SUBTABS.includes(s))return s;}catch{}
-    return "Fit";
-  });
-  useEffect(()=>{try{localStorage.setItem('axis_fit_subtab',fitSubTab);}catch{}},[fitSubTab]);
+  // fitSubTab is App's, not ours: it has to survive this screen unmounting, and the Open buttons
+  // that force it to "Fit" live on screens that are not mounted at the same time as this one.
   // Fetch the hero render for every hull you have a fit open on, so its info sheet opens sharp instead
   // of upscaling the 64px bundled copy while the network catches up. These are the hulls most likely to
   // be asked about, and openFitTabs is a handful of entries.
@@ -728,7 +725,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   },[openFitTabs]);
   // Sub-tab swipe — see lib/use-tab-swipe.js. Shared with the Effects screen's four sections rather
   // than duplicated, so the horizontal-scroller escape and the axis lock only exist once.
-  const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SUBTABS,fitSubTab,setFitSubTab);
+  const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(FIT_SUBTABS,fitSubTab,setFitSubTab);
   const[search,setSearch]=useState("");
   // Non-finite ids are FILTERED, not just defaulted. One fit with no `id` used to make this
   // `Math.max(m, undefined + 1)` -> NaN, and NaN is sticky: every fit created afterwards got
@@ -1174,7 +1171,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           })()}
         </div>
       </div>
-      <div style={{display:"flex"}}><div style={{width:60}}/>{_SUBTABS.map(t=><button key={t} onClick={()=>{const to=_SUBTABS.indexOf(t),from=_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===t?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{_SUBTAB_LABEL[t]}</button>)}</div>
+      <div style={{display:"flex"}}><div style={{width:60}}/>{FIT_SUBTABS.map(t=><button key={t} onClick={()=>{const to=FIT_SUBTABS.indexOf(t),from=FIT_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===t?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{_SUBTAB_LABEL[t]}</button>)}</div>
     </div>
     <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
       {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
@@ -1188,7 +1185,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
-      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
       </div>
     </div>
     {tagSheetEl}

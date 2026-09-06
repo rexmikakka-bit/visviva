@@ -777,7 +777,7 @@ function ScrubField({value,display,placeholder,anchor,onType,onScrub,style,title
   );
 }
 
-function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,angularSpeed,angularDistM,showTransversal,setShowTransversal,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj,targetFit,targetFitStats,onPickFit,onClearFit}){
+function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,setTargetMwd,targetAngle,setTargetAngle,selfAngle,setSelfAngle,targetVel,setTargetVel,selfVel,setSelfVel,transversalSpeed,angularSpeed,angularDistM,showTransversal,setShowTransversal,tgtSig,setTgtSig,targetVelMax,setTargetVelMax,selfMaxVel,ship,ownProj,targetFit,targetFitStats,onPickFit,onClearFit,onOpenFit}){
   // Same test the Stats tab's Firepower header uses, so the two agree on what counts as "active".
   const resistsOn=!!(tgtProfile?.r&&tgtProfile.r.some(v=>v>0.001));
   const fitActive=targetProfile===TARGET_FIT;
@@ -885,6 +885,14 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
           {targetFit&&!targetFitStats&&<span style={{color:C.warning,fontWeight:400}}> · not found</span>}
         </span>
       </button>
+      {/* Jump to the ship you are shooting at. Reading a curve against another fit invites the
+          obvious follow-up — why is its sig that big, what is it actually tanked for — and without
+          this the only way over there was to remember the name and go find it in the library.
+          Gated on targetFitStats, not on targetFit: when the reference no longer resolves the chip
+          already says "not found", and there is nothing to open. */}
+      {onOpenFit&&targetFit&&targetFitStats&&
+        <button onClick={()=>onOpenFit(targetFit.ship,targetFit.name)} title="Open this fit in a new tab"
+          style={{padding:"6px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid,flexShrink:0}}>Open</button>}
       {targetFit&&<button onClick={onClearFit} title="Stop using a fit as the target"
         style={{padding:"6px 9px",borderRadius:6,fontSize:12,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.danger,flexShrink:0}}>&#10005;</button>}
     </div>
@@ -997,7 +1005,7 @@ function interpCurveAt(pts,xVal,col=1){
 // tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
 // set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
 // two views from disagreeing about which resist profile is in force.
-function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,fitsDB,sourceSkills,openFitTabs}){
+function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,fitsDB,sourceSkills,openFitTabs,onOpenFit}){
   const _scroll=useScrollMemory("Graph");
   // Lazy, once per mount — see loadGraphPrefs. A ref rather than useMemo because these feed useState
   // initialisers, and a discarded memo would silently hand back defaults.
@@ -1313,7 +1321,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
     <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={catColor} cursorX={cursorX} onCursorXChange={setCursorX}
       marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
-    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} angularSpeed={angularSpeed} angularDistM={angularDistM} showTransversal={showTransversal} setShowTransversal={setShowTransversal} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}}/></div>}
+    {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} angularSpeed={angularSpeed} angularDistM={angularDistM} showTransversal={showTransversal} setShowTransversal={setShowTransversal} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}} onOpenFit={onOpenFit}/></div>}
     {showFitPicker&&<FitPickerSheet title="Target Fit" fitsDB={fitsDB??{}} pinned={openTabFits}
       onSelect={(shipName,fit)=>{setTargetFit({ship:shipName,name:fit.name});setTargetProfile(TARGET_FIT);}}
       onClose={()=>setShowFitPicker(false)}/>}
