@@ -4,6 +4,7 @@ import { eveIcon } from "../lib/icons.js";
 import { ItemDetailSheet, BottomSheet, InfoButton, SheetSearchBar } from "./ui.jsx";
 import { haptic, implantSetMembers, applyImplantSet, implantData, searchImplants } from "../lib/core.js";
 import { dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
+import { nameMatchesQuery } from "../lib/jargon.js";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
@@ -117,8 +118,9 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   const drillItems=drill?groups[drill]??[]:[];
 
   const allItems=Object.values(groups).flat();
+  // Same matcher the cross-slot search uses, so "eo 601" finds an EO-601 in both places.
   const results=search.trim().length>1
-    ? allItems.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()))
+    ? allItems.filter(i=>nameMatchesQuery(i.name,search))
     : null;
 
   const fit=it=>{onSelect({name:it.name,typeID:it.typeID,slot,bonus:""});onClose();};
