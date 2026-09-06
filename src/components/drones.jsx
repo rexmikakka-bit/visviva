@@ -6,12 +6,15 @@ import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, droneAddQty } from "../lib/core.js
 import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { abyssalGrade, mutaplasmidName } from "../lib/eft-export.js";
+import { nameMatchesQuery } from "../lib/jargon.js";
 
 export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   const[search,setSearch]=useState("");
   const[drillSub,setDrillSub]=useState(null);
   const allDrones=REAL_DRONE_BROWSER.flatMap(g=>g.subGroups?g.subGroups.flatMap(s=>s.drones):(g.drones??[]));
-  const searchResults=search.trim().length>1?allDrones.filter(d=>d.name.toLowerCase().includes(search.toLowerCase())).slice(0,40):null;
+  // Per-token, not a raw substring: "ec 300" has to find a Hornet EC-300, and a plain includes()
+  // only matches the punctuation as typed.
+  const searchResults=search.trim().length>1?allDrones.filter(d=>nameMatchesQuery(d.name,search)).slice(0,40):null;
   const drilledGroup=drillSub?REAL_DRONE_BROWSER.find(g=>g.topGroup===drillSub):null;
 
   function DroneRow({d}){
@@ -69,7 +72,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
   const races=FIGHTER_CATALOG[cls]||{};
   const RACE_ORDER=["Amarr","Caldari","Gallente","Minmatar","Faction"];
   const ql=q.trim().toLowerCase();
-  const anyMatch=RACE_ORDER.some(r=>races[r]?.some(f=>!ql||f.name.toLowerCase().includes(ql)));
+  const anyMatch=RACE_ORDER.some(r=>races[r]?.some(f=>!ql||nameMatchesQuery(f.name,ql)));
   return(<BottomSheet title="Add Fighter" onClose={onClose} height="82vh" fillHeight>
     <div style={{display:"flex",gap:6,padding:"10px 12px 8px"}}>
       {["Light","Heavy","Support"].map(c=>(
@@ -81,7 +84,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
       <SheetSearchBar value={q} onChange={setQ} placeholder={`Search ${cls.toLowerCase()} fighters…`}/>
     </div>
     {RACE_ORDER.filter(r=>races[r]).map(r=>{
-      const list=races[r].filter(f=>!ql||f.name.toLowerCase().includes(ql));
+      const list=races[r].filter(f=>!ql||nameMatchesQuery(f.name,ql));
       if(!list.length) return null;
       return(<div key={r}>
         <div style={{padding:"6px 16px",fontSize:10,fontWeight:800,color:C.textMute,textTransform:"uppercase",letterSpacing:0.5,background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>{r}</div>

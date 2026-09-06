@@ -5,6 +5,7 @@ import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressAccessoryBar } from "./ui.jsx";
 import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
+import { nameMatchesQuery } from "../lib/jargon.js";
 
 // Module scope, NOT nested inside CargoBrowserSheet — see the ModRow note in ui.jsx. A component
 // declared inside another component is a fresh function identity every render, so React rebuilds
@@ -51,8 +52,10 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   const cur=path.length?path[path.length-1]:null;
   const subGroups=cur==null?MT_ROOTS:(MT_CHILDREN[cur]??[]);
   const items=cur==null?[]:(MT_ITEMS[cur]??[]);
+  // Per-token, like the module browser: a raw substring needs the punctuation and word order typed
+  // exactly, so "navy antimatter s" and "ec 300" both found nothing.
   const searchResults=search.trim().length>1
-    ?MT_ALL_ITEMS.filter(i=>i.name.toLowerCase().includes(search.toLowerCase())).slice(0,60)
+    ?MT_ALL_ITEMS.filter(i=>nameMatchesQuery(i.name,search)).slice(0,60)
     :null;
   const crumb=path.map(g=>marketTreeData.g[g]?.n).filter(Boolean).join(" > ");
 
