@@ -298,10 +298,32 @@ function generateCurve(catKey,yKey,xKey,params={}){
         pts.push([TMAX,acc,gacc]);
         xMax=TMAX; yMax=acc*1.05||100;
       } else {
-        const [eff,effIdeal]=both(0,profSig,profVel);
+        const hasSpoolW = weapons.some(w => (w.spoolMax ?? 0) > 0 && (w.spoolPerCycle ?? 0) > 0);
         const tEnd=dom(120), tStep=tEnd/480;
-        for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff,effIdeal]);
-        xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
+        if (!hasSpoolW) {
+          const [eff,effIdeal]=both(0,profSig,profVel);
+          for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff,effIdeal]);
+          xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
+        } else {
+          // Entropic disintegrators ramp DPS each completed cycle (SpoolType.CYCLES): after n cycles
+          // the factor is 1 + min(spoolMax, n * spoolPerCycle). Matches damageEvents' cycle counting.
+          const [sig,vel]=effTarget(0,profSig,profVel,null);
+          const spoolDpsAt=(t,perfect)=>{
+            let total=0;
+            for(const w of weapons){
+              const _v=w.volleyEff??w.volley;
+              const vol=_v.em+_v.th+_v.kin+_v.exp;
+              const spools=(w.spoolMax??0)>0&&(w.spoolPerCycle??0)>0;
+              const n=spools?Math.floor(t/(w.cycleS+(w.delayS??0))):0;
+              const sp=spools?1+Math.min(w.spoolMax,n*w.spoolPerCycle):1;
+              const per=wantVolley?vol*sp:vol*sp/(w.cycleS+(w.delayS??0));
+              total+=per*weaponMult(w,0,sig,vel,perfect);
+            }
+            return total;
+          };
+          for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,spoolDpsAt(t,false),spoolDpsAt(t,true)]);
+          xMax=tEnd; yMax=(Math.max(...pts.map(p=>p[2]))||baseDps)*1.15;
+        }
       }
     }
     else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...both(engDist, profSig, v, "vel")]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
