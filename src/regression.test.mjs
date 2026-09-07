@@ -1978,6 +1978,39 @@ Loki Propulsion - Intercalated Nanofibers
   check('cmp', 'dearest first when descending', order('price', 'desc')[1] === ext[2] ? 1 : 0, 1, 0);
   check('cmp', 'meta sort keeps baseline pinned', order('meta', 'asc')[0] === ext[0] ? 1 : 0, 1, 0);
 
+  // ── The meta sort is pyfa's: meta TAB, then CCP's metaLevel, then name ────────────────────
+  // Ranking on the display tier alone (T1/T2/Faction/Deadspace/Officer, alphabetical inside each)
+  // read as arbitrary in exactly the two places a player looks hardest. It ran Centii A-Type,
+  // Centii B-Type, Centii C-Type — best-first within a name but worst-first across names — and it
+  // laid the officer modules out A to Z, hiding the four real tiers CCP gives them. metaLevel is
+  // the axis pyfa sorts on, and it is what blocks all the C-types, then all the B-types, then all
+  // the A-types, and what puts Brokara (11) above Ahremen (15).
+  const coatBase = tid('Thermal Coating I');
+  const coatOrder = sortCompareRows(compareRows(variantsOf(coatBase).map(v => v.typeID).filter(Boolean), coatBase),
+                                    { by: 'meta', dir: 'asc' }).map(r => TYPES[r.typeID].n);
+  // Every name below is a prefix of "<prefix> Thermal Coating"; -1 from a typo would silently pass
+  // a `<` comparison, so the members are asserted present first.
+  const at = p => coatOrder.indexOf(`${p} Thermal Coating`);
+  const allBefore = (as, bs) => (Math.min(...as.map(at), ...bs.map(at)) >= 0
+                                 && Math.max(...as.map(at)) < Math.min(...bs.map(at))) ? 1 : 0;
+  const [C, B, A] = [['Centii C-Type', 'Coreli C-Type', 'Corpii C-Type'],
+                     ['Centii B-Type', 'Coreli B-Type', 'Corpii B-Type'],
+                     ['Centii A-Type', 'Coreli A-Type', 'Corpii A-Type']];
+  check('cmp', 'the whole family is on the list', coatOrder.length, 36, 0);
+  check('cmp', 'T1 leads, then its named variant',
+        coatOrder.indexOf('Thermal Coating I') === 0 && coatOrder.indexOf('Upgraded Thermal Coating I') === 1 ? 1 : 0, 1, 0);
+  check('cmp', 'T2 sorts above faction',
+        coatOrder.indexOf('Thermal Coating II') < at('Imperial Navy') ? 1 : 0, 1, 0);
+  check('cmp', 'faction sorts above deadspace', allBefore(['Imperial Navy'], C), 1, 0);
+  check('cmp', 'every C-type precedes every B-type', allBefore(C, B), 1, 0);
+  check('cmp', 'every B-type precedes every A-type', allBefore(B, A), 1, 0);
+  // The officer block stays whole below the deadspace one — pyfa tabs them separately, so the two
+  // never interleave even though their metaLevels (10/12/14 vs 11/13/15/17) do.
+  check('cmp', 'deadspace stays whole above the officers', allBefore(A, ["Brokara's Modified"]), 1, 0);
+  check('cmp', 'officers run by meta level, not alphabetically',
+        allBefore(["Brokara's Modified", "Brynn's Modified", "Mizuro's Modified", "Tairei's Modified"],
+                  ["Ahremen's Modified", "Gotan's Modified", "Setele's Modified", "Vizan's Modified"]), 1, 0);
+
   // ── Direction DERIVED from the module's own effects ───────────────────────────────────────
   // The hand-kept lists could only ever be extended one reported bug at a time. This asks the
   // dogma data instead: the effect says which attribute the modifier changes, how, and on whom,

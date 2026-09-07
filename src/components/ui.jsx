@@ -1617,14 +1617,29 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
   return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
 }
 
+// Validated on read rather than trusted: this is the one setting written as a compound string, and a
+// stale or hand-edited value would otherwise reach sortCompareRows as an unknown `by` and silently
+// fall through to the price branch.
+const VAR_SORT_KEY='axis_varsort';
+function readSort(){
+  try{
+    const [by,dir]=String(localStorage.getItem(VAR_SORT_KEY)??'').split(':');
+    if((by==='price'||by==='meta')&&(dir==='asc'||dir==='desc')) return {by,dir};
+  }catch{/* private mode */}
+  return {by:'price',dir:'asc'};
+}
+
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
-  const [sortBy, setSortBy] = useState('price');
+  // Persisted: the tab is opened one module at a time, so a session-local choice meant re-picking
+  // "meta level, highest first" on every single module you looked at.
+  const [sortBy, setSortBy] = useState(()=>readSort().by);
   // Tapping the ACTIVE sort flips direction; tapping the other one switches to it at its natural
   // default (cheapest first, lowest meta first) rather than inheriting the previous direction,
   // which would otherwise silently hand you a reversed list you did not ask for.
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortDir, setSortDir] = useState(()=>readSort().dir);
+  useEffect(()=>{try{localStorage.setItem(VAR_SORT_KEY,`${sortBy}:${sortDir}`);}catch{/* private mode */}},[sortBy,sortDir]);
   const [prices, setPrices] = useState(null);
 
   // One batched request for the whole variant set — fetchPrices dedupes and serves from cache, so

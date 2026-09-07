@@ -341,7 +341,7 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 .vv-muta::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:none;background:${C.text}}
 `; }
 import { C, getTheme } from "../theme.js";
-import { metaOf, META_COLORS, META_ORDER, browserMetaRank } from "./meta.js";
+import { metaOf, META_COLORS, META_ORDER, compareForBrowser } from "./meta.js";
 import { nameMatchesQuery, searchScore } from "./jargon.js";
 import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";
 // #cbd5e1 (kin) and #60a5fa (em) read fine glowing on near-black but drop to ~1.5:1 and ~2.5:1
@@ -984,7 +984,6 @@ const MN_SIZE=/\b(\d+)MN\b/;
 
 function buildModuleBrowser(slotType){
   const mods=Object.values(modulesData).filter(m=>m.slot===slotType);
-  const metaOrder={T1:0,T2:1,Storyline:2,Faction:3,Deadspace:4,Officer:5,Abyssal:6};
   const byMG={};
   for(const m of mods){
     if(!byMG[m.marketGroupID])byMG[m.marketGroupID]=[];
@@ -997,8 +996,7 @@ function buildModuleBrowser(slotType){
   for(const k of Object.keys(byMG)){
     byMG[k].sort((a,b)=>
       (isAncillary(b)?1:0)-(isAncillary(a)?1:0)
-      ||browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)
-      ||a.name.localeCompare(b.name));
+      ||compareForBrowser(a,b));
   }
   function buildNode(mgId){
     if(MG_HIDDEN.has(mgId))return null;
@@ -1577,7 +1575,7 @@ function buildOffMarketModules(slotType){
     out.push({name:t.n,typeID:id,meta,cpu:a.cpu??a['50']??0,pg:a.power??a['30']??0,
               calib:a.upgradeCost??a['1153']??null});
   }
-  return out.sort((a,b)=>browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)||a.name.localeCompare(b.name));
+  return out.sort(compareForBrowser);
 }
 const OFF_MARKET_MODULES={high:buildOffMarketModules("high"),mid:buildOffMarketModules("mid"),
                           low:buildOffMarketModules("low"),rigs:buildOffMarketModules("rig")};
@@ -1604,7 +1602,7 @@ function buildStructureModuleBrowser(slotType){
   }
   return Object.entries(byGroup).sort(([a],[b])=>a.localeCompare(b)).map(([gn,mods])=>({
     id:gn,name:gn,children:[],
-    mods:mods.sort((a,b)=>browserMetaRank(a.typeID,a.meta)-browserMetaRank(b.typeID,b.meta)||a.name.localeCompare(b.name)),
+    mods:mods.sort(compareForBrowser),
   }));
 }
 const REAL_STRUCTURE_MODULE_BROWSER={high:buildStructureModuleBrowser("high"),mid:buildStructureModuleBrowser("mid"),low:buildStructureModuleBrowser("low"),rigs:buildStructureModuleBrowser("rig"),services:buildStructureModuleBrowser("service")};
