@@ -44,6 +44,7 @@ const CODES = new Set(LOCALES.map(l => l.code));
 //
 // Static rather than an import glob, so the bundler names each chunk and a typo is a build error.
 const LOADERS = {
+  de: () => import('../i18n/de.js'),
 };
 
 const catalogs = { en: {} };   // en is empty and stays empty: its keys already ARE its values

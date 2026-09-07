@@ -31,6 +31,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
 const CATALOG_DIR = join(SRC, 'i18n');
 const REPORT = process.argv.includes('--report');
+const KEYS = process.argv.includes('--keys');   // dump the key list, to start or top up a catalog
 
 function sources(dir, out = []) {
   for (const name of readdirSync(dir)) {
@@ -43,19 +44,27 @@ function sources(dir, out = []) {
   return out;
 }
 
-// t("...") and t('...'), plus the `other:` form of a plural t({one:"…",other:"…"}) — `other` is the
-// catalog key for a plural entry, so one pattern covers the lookup either way.
-const CALL = /\bt\(\s*(?:(['"])((?:\\.|(?!\1)[^\\])*)\1|\{[^}]*?other\s*:\s*(['"])((?:\\.|(?!\3)[^\\])*)\3)/g;
+// Two shapes, because a plural key cannot be matched by the plain one: `t({one:"{n} fit",other:
+// "{n} fits"})` contains braces INSIDE the strings, so nothing that stops at the first `}` works.
+// The second pattern reaches lazily from `t({` to the first `other:` string instead — `other` is the
+// catalog key for a plural entry, so that is the lookup either way.
+const CALL = /\bt\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
+const PLURAL = /\bt\(\s*\{[\s\S]*?other\s*:\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
 const unescape = s => s.replace(/\\(['"\\nt])/g, (m, c) => ({ n: '\n', t: '\t' }[c] ?? c));
 
 const keys = new Map();   // key -> the files that ask for it
 for (const file of sources(SRC)) {
   const text = readFileSync(file, 'utf8');
-  for (const m of text.matchAll(CALL)) {
-    const key = unescape(m[2] ?? m[4]);
+  for (const re of [CALL, PLURAL]) for (const m of text.matchAll(re)) {
+    const key = unescape(m[2]);
     if (!keys.has(key)) keys.set(key, []);
     keys.get(key).push(relative(ROOT, file));
   }
+}
+
+if (KEYS) {
+  for (const k of [...keys.keys()].sort()) console.log(JSON.stringify(k));
+  process.exit(0);
 }
 
 let catalogs = [];
