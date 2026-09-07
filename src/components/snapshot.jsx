@@ -6,6 +6,7 @@ import { WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
 import { useBackHandler } from "../lib/back-button.js";
+import { t } from "../lib/i18n.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
 // Renders a shareable image of the fit. Layout follows the approved fit-card mockup
@@ -25,6 +26,14 @@ import { useBackHandler } from "../lib/back-button.js";
 // `createFontStyle` filters the variant list down to `normal`/`small-caps` — so any figure is
 // PLACED at its DOM position but DRAWN with its proportional glyph. See the card root for what
 // that cost us. Anything typographic that canvas cannot reproduce belongs off this element.
+//
+// The card's own CAPTIONS follow the app's language — it is a picture of what the pilot is looking
+// at, and freezing it in English would make their own export the one screen they cannot read.
+// Everything ON it that names a thing in the game (module, ammo, implant, hull, warfare-link family,
+// module class) stays English, exactly as it does in the app, so a card stays legible to whoever it
+// is shared with. Note the layout constraint that comes with this: the racks, the KV rows and the
+// resist grid all size their label columns in fixed px, and a longer word wraps rather than
+// widening. Keep translated captions here short.
 
 const T = {
   outer: "#080b10", card: "#0d121a", panel: "#141a24",
@@ -174,13 +183,16 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
     const rf = (o, fo) => calcRangeFactor(o, fo, rangeM, true);
     const fx = [];
     const add = (name, e, hostile = true) => fx.push({ name, eff: e, hostile });
-    for (const w of (eff.webs || [])) { const f = rf(w.optimal, w.falloff); if (f > 0.01) add("Stasis Webifier", `\u2212${Math.abs(w.speedFactor * f).toFixed(0)}% speed`); }
-    for (const n of (eff.neuts || [])) { const f = rf(n.optimal, n.falloff); const v = n.gjPerSec * f; if (v > 0.1) add("Energy Neut", `\u2212${v.toFixed(0)} GJ/s`); }
-    for (const p of (eff.painters || [])) { const f = rf(p.optimal, p.falloff); const v = p.sigBonus * f; if (v > 0.1) add("Target Painter", `+${v.toFixed(0)}% sig`); }
-    for (const d of (eff.damps || [])) { const f = rf(d.optimal, d.falloff); if (d.lockBonus < 0) add("Sensor Damp", `${(d.lockBonus * f).toFixed(0)}% lock`); if (d.scanResBonus < 0) add("Sensor Damp", `${(d.scanResBonus * f).toFixed(0)}% scan`); }
-    for (const t of (eff.trackDisr || [])) { const f = rf(t.optimal, t.falloff); if (t.tracking < 0) add("Tracking Disr", `${(t.tracking * f).toFixed(0)}% track`); }
-    for (const g of (eff.guideDisr || [])) { const f = rf(g.optimal, g.falloff); if (g.missileRange < 0) add("Guidance Disr", `${(g.missileRange * f).toFixed(0)}% mis. rng`); }
-    for (const r of (eff.reps || [])) { const f = rf(r.optimal, r.falloff); const v = r.rawPS * f; if (v > 0.1) { remoteReps[r.kind] = (remoteReps[r.kind] ?? 0) + v; add(`Remote ${r.kind === "shield" ? "Shield" : r.kind === "armor" ? "Armor" : "Hull"} Rep`, `+${v.toFixed(0)} hp/s`, false); } }
+    // The chip's NAME is the module class that produced the effect and stays English; the value
+    // beside it names a stat the app translates everywhere else, so it goes through t(). The sign is
+    // inside the key on purpose \u2014 which side of the number it belongs on is a language's business.
+    for (const w of (eff.webs || [])) { const f = rf(w.optimal, w.falloff); if (f > 0.01) add("Stasis Webifier", t("\u2212{pct}% speed", { pct: Math.abs(w.speedFactor * f).toFixed(0) })); }
+    for (const n of (eff.neuts || [])) { const f = rf(n.optimal, n.falloff); const v = n.gjPerSec * f; if (v > 0.1) add("Energy Neut", t("\u2212{v} GJ/s", { v: v.toFixed(0) })); }
+    for (const p of (eff.painters || [])) { const f = rf(p.optimal, p.falloff); const v = p.sigBonus * f; if (v > 0.1) add("Target Painter", t("+{pct}% sig", { pct: v.toFixed(0) })); }
+    for (const d of (eff.damps || [])) { const f = rf(d.optimal, d.falloff); if (d.lockBonus < 0) add("Sensor Damp", t("{pct}% lock", { pct: (d.lockBonus * f).toFixed(0) })); if (d.scanResBonus < 0) add("Sensor Damp", t("{pct}% scan", { pct: (d.scanResBonus * f).toFixed(0) })); }
+    for (const td of (eff.trackDisr || [])) { const f = rf(td.optimal, td.falloff); if (td.tracking < 0) add("Tracking Disr", t("{pct}% track", { pct: (td.tracking * f).toFixed(0) })); }
+    for (const g of (eff.guideDisr || [])) { const f = rf(g.optimal, g.falloff); if (g.missileRange < 0) add("Guidance Disr", t("{pct}% mis. rng", { pct: (g.missileRange * f).toFixed(0) })); }
+    for (const r of (eff.reps || [])) { const f = rf(r.optimal, r.falloff); const v = r.rawPS * f; if (v > 0.1) { remoteReps[r.kind] = (remoteReps[r.kind] ?? 0) + v; add(`Remote ${r.kind === "shield" ? "Shield" : r.kind === "armor" ? "Armor" : "Hull"} Rep`, t("+{v} hp/s", { v: v.toFixed(0) }), false); } }
     if (fx.length) incoming.push({ fitName: pf.fitName || pf.ship, hull: pf.ship, rangeKm: pf.rangeKm ?? 30, effects: fx });
   }
   return { links, incoming, remoteReps };
@@ -212,7 +224,7 @@ function ModRow({ m, meta, n }) {
       {hasRight && (
         <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 9, flexShrink: 0 }}>
           {m.ammo && <span style={{ fontSize: 12, color: T.accent, fontWeight: 500, whiteSpace: "nowrap" }}>{m.ammo}</span>}
-          {meta.clip != null && <span style={{ fontSize: 11.5, color: T.faction, fontWeight: 600, whiteSpace: "nowrap" }}>{fmtK(meta.clip)} clip</span>}
+          {meta.clip != null && <span style={{ fontSize: 11.5, color: T.faction, fontWeight: 600, whiteSpace: "nowrap" }}>{t("{v} clip", { v: fmtK(meta.clip) })}</span>}
           {meta.rah && (
             <span style={{ display: "flex", alignItems: "center", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
               {meta.rah.map((v, i) => (
@@ -302,6 +314,15 @@ function Block({ title, children }) {
   );
 }
 
+// Splits a caption on its {placeholders} and bolds the values, so a caption like "Rep {v} ehp/s"
+// survives as ONE translatable sentence instead of three JSX fragments in fixed English order.
+// t() leaves a placeholder it was given no value for verbatim, which is what lets this find them.
+const boldNum = (text, values, color = T.text) =>
+  text.split(/(\{[a-zA-Z]+\})/).map((part, i) => {
+    const k = /^\{([a-zA-Z]+)\}$/.exec(part)?.[1];
+    return k && k in values ? <b key={i} style={{ color }}>{values[k]}</b> : part;
+  });
+
 function HeroStat({ cap, num, numColor, sub, bars }) {
   return (
     <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 11, padding: "13px 15px", textAlign: "left" }}>
@@ -324,7 +345,7 @@ function Ptag({ kind }) {
       fontSize: 9.5, letterSpacing: ".4px", fontWeight: 700, padding: "3px 7px", borderRadius: 5, textTransform: "uppercase", flexShrink: 0,
       background: link ? "rgba(58,166,216,.13)" : "rgba(224,168,60,.11)", color: link ? T.accent : T.warn,
       border: `1px solid ${link ? "rgba(58,166,216,.28)" : "rgba(224,168,60,.26)"}`,
-    }}>{link ? "Links" : "Incoming"}</span>
+    }}>{link ? t("Links") : t("Incoming")}</span>
   );
 }
 function SrcLine({ fitName, hull, tail }) {
@@ -363,7 +384,7 @@ function Projected({ links, incoming }) {
       ))}
       {incoming.length === 0 && links.length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Ptag kind="inc" /><span style={{ fontSize: 12.5, color: T.dim, fontWeight: 500 }}>No hostile effects projected</span>
+          <Ptag kind="inc" /><span style={{ fontSize: 12.5, color: T.dim, fontWeight: 500 }}>{t("No hostile effects projected")}</span>
         </div>
       )}
     </div>
@@ -487,23 +508,27 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           <div style={{ flex: 1, minWidth: 0, textAlign: "left" }}>
             <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.accent, fontWeight: 600, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{eyebrow}</div>
             <div style={{ fontWeight: 700, fontSize: 27, lineHeight: 1.1, letterSpacing: "-.01em", textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{shipName}</div>
-            <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fitName || "Untitled Fit"}</div>
+            <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fitName || t("Untitled Fit")}</div>
+            {/* The mode is a CCP name ("Sharpshooter") and stays English, so it rides in as a
+                placeholder rather than being concatenated ahead of a translated word. */}
             {tacticalMode && (
-              <span style={{ display: "inline-block", marginTop: 5, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>{tacticalMode} Mode</span>
+              <span style={{ display: "inline-block", marginTop: 5, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>{t("{mode} Mode", { mode: tacticalMode })}</span>
             )}
             {showPilotSec && (
-              <span style={{ display: "inline-block", marginTop: 5, marginLeft: tacticalMode ? 6 : 0, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>Sec {pilotSecVal.toFixed(1)}</span>
+              <span style={{ display: "inline-block", marginTop: 5, marginLeft: tacticalMode ? 6 : 0, fontSize: 10, letterSpacing: ".4px", fontWeight: 700, textTransform: "uppercase", color: T.accent, background: "rgba(58,166,216,.13)", border: "1px solid rgba(58,166,216,.28)", borderRadius: 5, padding: "2px 7px" }}>{t("Sec {v}", { v: pilotSecVal.toFixed(1) })}</span>
             )}
           </div>
           {priceBreakdown != null && (
             <div style={{ flexShrink: 0, textAlign: "right" }}>
-              <div style={{ fontSize: 10, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }}>Est. Value</div>
+              <div style={{ fontSize: 10, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }}>{t("Est. Value")}</div>
               <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}</div>
-              <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>Ship: {priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : "N/A"}</div>
-              <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>Fit: {fmtISKShort(priceBreakdown.fit)}</div>
+              <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>{t("Ship: {v}", { v: priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : t("N/A") })}</div>
+              <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>{t("Fit: {v}", { v: fmtISKShort(priceBreakdown.fit) })}</div>
+              {/* "(excl.)" is dimmed rather than being part of the sentence, so it stays its own key
+                  and the parenthesis cannot be lost in translation. */}
               {priceBreakdown.character > 0 && (
                 <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>
-                  Implants: {fmtISKShort(priceBreakdown.character)} <span style={{ opacity: 0.65 }}>(excl.)</span>
+                  {t("Implants: {v}", { v: fmtISKShort(priceBreakdown.character) })} <span style={{ opacity: 0.65 }}>{t("(excl.)")}</span>
                 </div>
               )}
             </div>
@@ -514,8 +539,10 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             under-claimed: it advertised Overheated on fits with nothing overheated, and never listed
             Offline at all — so a deliberately offline module showed a colour the key did not explain. */}
         <div style={{ display: "flex", gap: 14, fontSize: 11, color: T.muted, fontWeight: 500, marginBottom: 14, flexWrap: "wrap" }}>
-          {[["active", "Active", T.good], ["overheated", "Overheated", T.overheat],
-            ["online", "Online", T.onl], ["offline", "Offline", T.dim]]
+          {/* The state key is separate from its label so the filter still matches what ModRow wrote
+              into statesUsed, whatever the language. */}
+          {[["active", t("Active"), T.good], ["overheated", t("Overheated"), T.overheat],
+            ["online", t("Online"), T.onl], ["offline", t("Offline"), T.dim]]
             .filter(([st]) => statesUsed.has(st))
             .map(([, l, c]) => (
               <span key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 8, height: 8, borderRadius: 2, background: c }} />{l}</span>
@@ -527,16 +554,16 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               cruiser they are not accessories — they decide the slot layout, the bonuses and half
               the fit's identity, so a card that omitted them was describing a different ship. Rack
               renders nothing when the array is empty, so every non-T3 hull is unaffected. */}
-          <Rack label="Subsystems" mods={slots?.subsystems} cs={cs} />
-          <Rack label="High" mods={slots?.high} cs={cs} />
-          <Rack label="Mid" mods={slots?.mid} cs={cs} />
-          <Rack label="Low" mods={slots?.low} cs={cs} />
-          <Rack label="Rigs" mods={slots?.rigs} cs={cs} />
+          <Rack label={t("Subsystems")} mods={slots?.subsystems} cs={cs} />
+          <Rack label={t("High")} mods={slots?.high} cs={cs} />
+          <Rack label={t("Mid")} mods={slots?.mid} cs={cs} />
+          <Rack label={t("Low")} mods={slots?.low} cs={cs} />
+          <Rack label={t("Rigs")} mods={slots?.rigs} cs={cs} />
         </div>
 
         <div style={{ marginTop: 14, paddingTop: 13, borderTop: `1px solid ${T.line}`, display: "flex", flexDirection: "column", gap: 8 }}>
           {activeDrones.length > 0 && (
-            <LoadoutRow k="Drones">
+            <LoadoutRow k={t("Drones")}>
               {activeDrones.map((d, i) => (
                 <span key={i}>{i > 0 && " · "}
                   {d.active ? <b style={{ color: T.text, fontWeight: 600 }}>{d.qty}× {d.name}</b> : <span style={{ color: T.bad, opacity: 0.75 }}>{d.qty}× {d.name}</span>}
@@ -545,7 +572,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             </LoadoutRow>
           )}
           {activeFighters.length > 0 && (
-            <LoadoutRow k="Fighters">
+            <LoadoutRow k={t("Fighters")}>
               {activeFighters.map((f, i) => (
                 <span key={i}>{i > 0 && " · "}
                   {f.active !== false ? <b style={{ color: T.text, fontWeight: 600 }}>{f.qty ?? 1}× {f.name}</b> : <span style={{ color: T.bad, opacity: 0.75 }}>{f.qty ?? 1}× {f.name}</span>}
@@ -554,7 +581,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             </LoadoutRow>
           )}
           {(imp.sets.length > 0 || imp.singles.length > 0) && (
-            <LoadoutRow k="Implants">
+            <LoadoutRow k={t("Implants")}>
               {imp.sets.map((st, i) => (
                 <span key={`s${i}`}>{i > 0 && " · "}{st.grade} <b style={{ color: T.text, fontWeight: 600 }}>{st.nick}</b> ×{st.n}</span>
               ))}
@@ -562,7 +589,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
             </LoadoutRow>
           )}
           {bst.length > 0 && (
-            <LoadoutRow k="Boosters">
+            <LoadoutRow k={t("Boosters")}>
               {bst.map((b, i) => {
                 const parts = boosterParts(b.name);
                 return <span key={i}>{i > 0 && " · "}{parts.map((p, j) => j % 2 ? <b key={j} style={{ color: T.text, fontWeight: 600 }}>{p}</b> : p)}</span>;
@@ -575,15 +602,19 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
       {/* ── RIGHT: stats ── */}
       <div style={{ flex: 1, minWidth: 0, padding: "22px 22px 18px", display: "flex", flexDirection: "column", gap: 13 }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <HeroStat cap="Total DPS" num={fmt(s.totalDps?.total)} numColor={T.accent}
-            sub={<><span>Volley <b style={{ color: T.text }}>{fmtK(s.totalVolley?.total)}</b></span><span>Drone DPS <b style={{ color: T.text }}>{fmt((s.droneDps?.total ?? 0) + (s.fighterDps?.total ?? 0))}</b></span></>}
+          {/* Each sub-figure is BOLD inside its caption, so the caption is one key with the number as
+              a placeholder and boldNum puts the <b> back — fragmenting the JSX around the number
+              would hand a translator English word order and nothing else. Same reasoning, and the
+              same t()-leaves-unfilled-placeholders trick, as backup.jsx's boldFill. */}
+          <HeroStat cap={t("Total DPS")} num={fmt(s.totalDps?.total)} numColor={T.accent}
+            sub={<><span>{boldNum(t("Volley {v}"), { v: fmtK(s.totalVolley?.total) })}</span><span>{boldNum(t("Drone DPS {v}"), { v: fmt((s.droneDps?.total ?? 0) + (s.fighterDps?.total ?? 0)) })}</span></>}
             bars={dmgTotal > 0 ? ["em", "th", "kin", "exp"].map((k) => ({ w: ((dmg[k] ?? 0) / dmgTotal) * 100, c: DMG[k] })) : []} />
-          <HeroStat cap="Effective HP" numColor="#fff"
+          <HeroStat cap={t("Effective HP")} numColor="#fff"
             num={<>{fmtK(ehp)}{clip > 0 && <span style={{ fontSize: 21, color: T.good, letterSpacing: 0, marginLeft: 7 }}>+{fmtK(clip)}</span>}</>}
-            sub={<><span>Rep <b style={{ color: T.good }}>{fmt(rep)}</b> ehp/s</span>
+            sub={<><span>{boldNum(t("Rep {v} ehp/s"), { v: fmt(rep) }, T.good)}</span>
               {clip > 0
-                ? <span>w/ ancil. <b style={{ color: T.text }}>{fmtK(ehp + clip)}</b></span>
-                : <span>Sust <b style={{ color: T.text }}>{fmt(sust)}</b></span>}</>}
+                ? <span>{boldNum(t("w/ ancil. {v}"), { v: fmtK(ehp + clip) })}</span>
+                : <span>{boldNum(t("Sust {v}"), { v: fmt(sust) })}</span>}</>}
             bars={ehp > 0 ? [["shield", s.shieldEHP], ["armor", s.armorEHP], ["hull", s.hullEHP]].map(([k, v]) => ({ w: ((v ?? 0) / ehp) * 100, c: layerColor[k] })) : []} />
         </div>
 
@@ -591,38 +622,42 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           {/* Every other caption on the card — the hero panels, the three blocks, the racks — is 11px
               uppercase with letterspacing. These two were 12px sentence case and read as a different
               rank of heading than the panels they label. */}
-          <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>Resist Profile</div>
+          <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>{t("Resist Profile")}</div>
           <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 11, padding: "12px 14px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "50px repeat(4,1fr) 58px", gap: "6px 9px", alignItems: "center" }}>
               <div />
               {[["EM", T.em], ["TH", T.th], ["KIN", T.kin], ["EXP", T.exp]].map(([l, c]) => (
                 <div key={l} style={{ fontSize: 10.5, letterSpacing: ".3px", fontWeight: 600, textAlign: "center", color: c }}>{l}</div>
               ))}
-              <div style={{ fontSize: 10.5, fontWeight: 600, textAlign: "center", color: T.dim }}>EHP</div>
-              <ResistRow name="Shield" ehp={s.shieldEHP} res={s.resists?.shield} />
-              <ResistRow name="Armor" ehp={s.armorEHP} res={s.resists?.armor} />
-              <ResistRow name="Hull" ehp={s.hullEHP} res={s.resists?.hull} />
+              {/* EM/TH/KIN/EXP are CCP's damage-type abbreviations and stay as they are, like the
+                  colour legend they head. EHP is the app's own term and translates. */}
+              <div style={{ fontSize: 10.5, fontWeight: 600, textAlign: "center", color: T.dim }}>{t("EHP")}</div>
+              <ResistRow name={t("Shield")} ehp={s.shieldEHP} res={s.resists?.shield} />
+              <ResistRow name={t("Armor")} ehp={s.armorEHP} res={s.resists?.armor} />
+              <ResistRow name={t("Hull")} ehp={s.hullEHP} res={s.resists?.hull} />
             </div>
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
-          <Block title="Mobility">
-            <KV k="Speed" v={fmt(s.maxVelocityAB ?? s.maxVelocity)} unit="m/s" />
-            <KV k="Align" v={fmt(s.alignTime, 2)} unit="s" />
-            <KV k="Sig" v={fmt(s.sigRadius)} unit="m" />
-            <KV k="Warp" v={fmt(s.warpSpeed, 2)} unit="au/s" />
+          {/* The unit symbols are left alone — m/s, au/s, GJ and mm are the same in every locale the
+              app ships, and each sits in a fixed-width right-aligned column. */}
+          <Block title={t("Mobility")}>
+            <KV k={t("Speed")} v={fmt(s.maxVelocityAB ?? s.maxVelocity)} unit="m/s" />
+            <KV k={t("Align")} v={fmt(s.alignTime, 2)} unit="s" />
+            <KV k={t("Sig")} v={fmt(s.sigRadius)} unit="m" />
+            <KV k={t("Warp")} v={fmt(s.warpSpeed, 2)} unit="au/s" />
           </Block>
-          <Block title="Targeting">
-            <KV k="Range" v={fmt(s.targetRange, 1)} unit="km" />
-            <KV k="Scan res" v={fmt(s.scanRes)} unit="mm" />
-            <KV k="Sensor" v={`${fmt(s.sensorStrength, 1)}${s.jamChance > 0 ? ` (${s.jamChance}%)` : ""}`} />
-            <KV k="Targets" v={fmt(s.maxTargets)} />
+          <Block title={t("Targeting")}>
+            <KV k={t("Range")} v={fmt(s.targetRange, 1)} unit="km" />
+            <KV k={t("Scan res")} v={fmt(s.scanRes)} unit="mm" />
+            <KV k={t("Sensor")} v={`${fmt(s.sensorStrength, 1)}${s.jamChance > 0 ? ` (${s.jamChance}%)` : ""}`} />
+            <KV k={t("Targets")} v={fmt(s.maxTargets)} />
           </Block>
-          <Block title="Capacitor">
-            <KV k="Capacity" v={fmtK(s.capCapacity)} unit="GJ" />
-            <KV k="Delta" v={`${capD >= 0 ? "+" : ""}${fmt(capD, 2)}`} color={capD >= 0 ? T.good : T.bad} />
-            <KV k={s.capStable ? "Stable at" : "Unstable"} kColor={s.capStable ? T.good : T.bad}
+          <Block title={t("Capacitor")}>
+            <KV k={t("Capacity")} v={fmtK(s.capCapacity)} unit="GJ" />
+            <KV k={t("Delta")} v={`${capD >= 0 ? "+" : ""}${fmt(capD, 2)}`} color={capD >= 0 ? T.good : T.bad} />
+            <KV k={s.capStable ? t("Stable at") : t("Unstable")} kColor={s.capStable ? T.good : T.bad}
                 v={s.capStable ? `${((s.capLevel ?? 1) * 100).toFixed(0)}%` : mmss(s.capTime)}
                 color={s.capStable ? T.good : T.bad} />
           </Block>
@@ -630,7 +665,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
 
         {showProj && (
           <div>
-            <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>Projected</div>
+            <div style={{ fontSize: 11, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 7 }}>{t("Projected")}</div>
             <Projected links={proj.links} incoming={proj.incoming} />
           </div>
         )}
@@ -644,8 +679,11 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               real character — the card is the one place these numbers travel without their app. */}
           <div style={{ fontSize: 11, fontWeight: 500, display: "flex", alignItems: "baseline", gap: 6, minWidth: 0 }}>
             <span style={{ color: T.text, fontWeight: 700, letterSpacing: ".02em", flexShrink: 0 }}>
-              {skillLabel === "Custom" ? "Custom skills" : (skillLabel ?? "All Skills V")}
+              {/* skillLabel arrives as a stored value ("Custom", or a character name), so it is
+                  compared in English and translated here rather than at the source. */}
+              {skillLabel === "Custom" ? t("Custom skills") : (skillLabel ?? t("All Skills V"))}
             </span>
+            {/* The trademark line is a legal notice and stays in the language it was granted in. */}
             <span style={{ color: T.dim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>EVE Online is a trademark of Fenris Creations.</span>
           </div>
           <div style={{ fontWeight: 700, letterSpacing: ".04em", fontSize: 13, color: T.accent }}>AXIS</div>
@@ -697,7 +735,9 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
       try {
         const canvas = await render();
         if (!dead) setPreview(canvas.toDataURL("image/png"));
-      } catch (e) { if (!dead) setStatus({ ok: false, msg: `Couldn't render: ${e.message}` }); }
+      // The rasteriser's own message rides in as a placeholder: it arrives in English from
+      // html2canvas and the browser, and is diagnostic rather than prose.
+      } catch (e) { if (!dead) setStatus({ ok: false, msg: t("Couldn't render: {err}", { err: e.message }) }); }
     })();
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -715,12 +755,15 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
   const copyImage = async () => {
     setBusy(true);
     try {
-      if (!navigator.clipboard?.write) throw new Error("clipboard images aren't supported here");
+      // Ours, not the browser's, and it is shown verbatim inside the catch's message below.
+      if (!navigator.clipboard?.write) throw new Error(t("clipboard images aren't supported here"));
       const png = render().then((canvas) => new Promise((r) => canvas.toBlob(r, "image/png")));
       await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
-      setStatus({ ok: true, msg: "Image copied." });
+      setStatus({ ok: true, msg: t("Image copied.") });
     } catch (e) {
-      setStatus({ ok: false, msg: `Couldn't copy: ${e.message}. Use Save image instead.` });
+      // The button it points at is translated too, so it rides in as a placeholder and the two
+      // cannot drift apart.
+      setStatus({ ok: false, msg: t("Couldn't copy: {err}. Use {button} instead.", { err: e.message, button: t("Save image") }) });
     }
     setBusy(false);
   };
@@ -739,17 +782,17 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
       const file = new File([blob], filename, { type: "image/png" });
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file] });
-        setStatus({ ok: true, msg: "Shared." });
+        setStatus({ ok: true, msg: t("Shared.") });
       } else {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        setStatus({ ok: true, msg: `Saved ${filename}` });
+        setStatus({ ok: true, msg: t("Saved {file}", { file: filename }) });
       }
     } catch (e) {
-      setStatus({ ok: false, msg: `Failed: ${e.message}. Long-press the preview to save it instead.` });
+      setStatus({ ok: false, msg: t("Failed: {err}. Long-press the preview to save it instead.", { err: e.message }) });
     }
     setBusy(false);
   };
@@ -768,24 +811,31 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "100%", maxHeight: "100%", overflow: "auto",
                                                           display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
         {preview
-          ? <img src={preview} alt="Fit snapshot" style={{ maxWidth: "100%", borderRadius: 10, border: `1px solid ${C.border}` }} />
-          : <div style={{ color: C.textMute, fontSize: 13, padding: 40 }}>Rendering…</div>}
+          ? <img src={preview} alt={t("Fit snapshot")} style={{ maxWidth: "100%", borderRadius: 10, border: `1px solid ${C.border}` }} />
+          : <div style={{ color: C.textMute, fontSize: 13, padding: 40 }}>{t("Rendering…")}</div>}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
           <button onClick={save} disabled={busy || !preview} style={{ ...btn(C.accent, C.accent, "#0e0e10"), opacity: busy || !preview ? .5 : 1 }}>
-            {busy ? "Working…" : (navigator.canShare ? "Save image" : "Save PNG")}
+            {busy ? t("Working…") : (navigator.canShare ? t("Save image") : t("Save PNG"))}
           </button>
           {navigator.clipboard?.write && (
             <button onClick={copyImage} disabled={busy || !preview} style={{ ...btn(C.surface, C.border, C.text), opacity: busy || !preview ? .5 : 1 }}>
-              Copy image
+              {t("Copy image")}
             </button>
           )}
-          <button onClick={onClose} style={btn(C.surface, C.border, C.textMid)}>Close</button>
+          <button onClick={onClose} style={btn(C.surface, C.border, C.textMid)}>{t("Close")}</button>
         </div>
         {status && <div style={{ fontSize: 11, color: status.ok ? C.accent : C.danger }}>{status.msg}</div>}
+        {/* Two placeholders doing different jobs. {button} names the button above and is substituted
+            by t() itself, so the two cannot drift apart. {action} is left verbatim for boldNum to
+            turn into the bold run — it is iOS's OWN share-sheet action, which iOS localises, so it
+            is its own key rather than a literal: a translator should set it to whatever their iOS
+            actually says, not to a translation of ours. */}
         <div style={{ fontSize: 10, color: C.textMute, textAlign: "center", maxWidth: 320 }}>
-          Save image opens the share sheet — pick <strong>Save Image</strong> to put it in your camera roll.
-          You can also long-press the preview.
+          {boldNum(
+            t("{button} opens the share sheet — pick {action} to put it in your camera roll. You can also long-press the preview.",
+              { button: t("Save image") }),
+            { action: t("Save Image") }, C.textMute)}
         </div>
       </div>
 
