@@ -24,6 +24,7 @@ import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
 import { initBackButton, useBackHandler, BACK_APP } from "./lib/back-button.js";
+import { LOCALE_KEY, LOCALES, applyLocale, loadLocale } from "./lib/i18n.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
@@ -57,6 +58,16 @@ export default function App(){
     return()=>mq.removeEventListener?.('change',onChange);
   },[]);
   const resolvedTheme=themePref==="system"?systemTheme:themePref;
+  // Language: English unless explicitly chosen. main.jsx has already resolved and loaded the stored
+  // pref before this component existed, so the FIRST render is already in the right language; this
+  // effect only covers switching it afterwards, where the catalog chunk has to be fetched and the
+  // tick is what re-renders the tree once it arrives.
+  const[locale,setLocale]=useState(()=>{try{const v=localStorage.getItem(LOCALE_KEY);return LOCALES.some(l=>l.code===v)?v:"en";}catch{return"en";}});
+  useEffect(()=>{try{localStorage.setItem(LOCALE_KEY,locale);}catch{}},[locale]);
+  useEffect(()=>{let dead=false;loadLocale(locale).then(()=>{if(!dead)_setTick(t=>t+1);});return()=>{dead=true;};},[locale]);
+  // Same synchronous-in-render placement as setTheme below, and for the same reason: t() reads this
+  // during the render it is called in, so applying it in an effect would paint one frame late.
+  applyLocale(locale);
   // Mutating theme.js's module-level palette selector synchronously, in the same render pass that
   // reads it below (via C.xxx in the JSX), same precedent as _tick above: a plain useEffect would
   // apply the switch one render late, showing a frame of the old palette.
@@ -784,7 +795,7 @@ export default function App(){
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints} locale={locale} setLocale={setLocale}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} projFits={projFits} cmdFits={cmdFits} fitsDB={fitsDB} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}

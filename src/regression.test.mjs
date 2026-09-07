@@ -35,6 +35,7 @@ import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
+import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
@@ -2055,6 +2056,45 @@ Loki Propulsion - Intercalated Nanofibers
     check('back', 'a remounted screen stays below an open sheet', (runBackHandler(), fired.pop()), 'sheet-again', 0);
     for (const f of unreg) f();
     check('back', 'unregistering empties the stack', _backStackDepth(), 0, 0);
+  }
+
+  // ── Translation lookup ────────────────────────────────────────────────────────────────────
+  // The key IS the English string, so the failure mode this guards is not "wrong translation" but
+  // "the English stopped coming through" — a lookup that returns a raw key, an empty string or
+  // [object Object] is user-visible on EVERY locale including the default one.
+  {
+    _resetI18n();
+    check('i18n', 'English is the key itself, uncatalogued', t('Fit Tabs'), 'Fit Tabs', 0);
+    check('i18n', 'placeholders are filled', t('{n} trained skills', { n: 5 }), '5 trained skills', 0);
+    // Left verbatim rather than blanked: a mistyped param name should show itself in the UI instead
+    // of quietly rendering a gap that nobody notices until a user reports it.
+    check('i18n', 'an unsupplied placeholder stays visible', t('{n} trained skills', {}), '{n} trained skills', 0);
+    const fits = { one: '{n} fit', other: '{n} fits' };
+    check('i18n', 'English plural picks one', t(fits, { n: 1 }), '1 fit', 0);
+    check('i18n', 'English plural picks other', t(fits, { n: 3 }), '3 fits', 0);
+
+    registerCatalog('de', { 'Fit Tabs': 'Fit-Tabs' });
+    applyLocale('de');
+    check('i18n', 'a catalogued string is translated', t('Fit Tabs'), 'Fit-Tabs', 0);
+    // The whole reason English needs no catalog of its own: anything a translator has not reached
+    // yet still reads as correct English rather than as a missing entry.
+    check('i18n', 'an untranslated string falls back to English', t('Auto-fill hardpoints'), 'Auto-fill hardpoints', 0);
+
+    // Russian takes four plural forms where English takes two, which is why a catalog entry is
+    // allowed to answer with a form MAP: the shape of the plural belongs to the target language.
+    registerCatalog('ru', { '{n} fits': { one: '{n} фит', few: '{n} фита', many: '{n} фитов', other: '{n} фита' } });
+    applyLocale('ru');
+    check('i18n', 'ru plural: 1 takes the one form', t(fits, { n: 1 }), '1 фит', 0);
+    check('i18n', 'ru plural: 3 takes the few form', t(fits, { n: 3 }), '3 фита', 0);
+    check('i18n', 'ru plural: 5 takes the many form', t(fits, { n: 5 }), '5 фитов', 0);
+
+    // A pref for a locale whose chunk never arrived, and a pref that is simply not a locale, are
+    // the same case and both have to leave a WORKING app rather than a blank or half-broken one.
+    applyLocale('ja');
+    check('i18n', 'an unloaded locale stays English', t('Fit Tabs'), 'Fit Tabs', 0);
+    applyLocale('klingon');
+    check('i18n', 'an unknown locale stays English', t('Fit Tabs'), 'Fit Tabs', 0);
+    _resetI18n();
   }
 
   // ── Direction DERIVED from the module's own effects ───────────────────────────────────────

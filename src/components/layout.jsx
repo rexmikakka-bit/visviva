@@ -7,6 +7,7 @@ import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, profilePilot, describeSkillSheet } 
 import { SKILL_CATALOG } from "../calc.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { useBackHandler } from "../lib/back-button.js";
+import { t } from "../lib/i18n.js";
 import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
@@ -36,7 +37,7 @@ export function ChooserSheet({title, options, onClose}) {
           </button>
         ))}
         <button onClick={sheet.dismiss} style={{width:'100%',marginTop:4,padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>
@@ -90,22 +91,23 @@ export function ExportFitModal({activeFit, slots, implants, boosters, drones, fi
     <div style={{position:'fixed',inset:0,zIndex:200,display:'flex',alignItems:'flex-end'}} onClick={sheet.dismiss}>
       <div ref={sheet.sheetRef} style={{width:'100%',boxSizing:'border-box',background:C.surface,borderRadius:'16px 16px 0 0',padding:'4px 20px 20px',boxShadow:'0 -8px 32px rgba(0,0,0,.5)',...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers} style={{margin:'0 -20px'}}/>
-        <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Export EFT Fit</div>
-        <div style={{fontSize:11,color:C.textMute,marginBottom:16}}>Select what to include in the exported fit text</div>
-        <CheckRow label="Loaded Charges (e.g. Hail L)" val={incCharges} setVal={setIncCharges}/>
-        <CheckRow label="Implants" val={incImplants} setVal={setIncImplants}/>
-        <CheckRow label="Boosters" val={incBoosters} setVal={setIncBoosters}/>
-        <CheckRow label="Cargo" val={incCargo} setVal={setIncCargo}/>
-        <CheckRow label="Abyssal Rolls (mutated modules)" val={incMutations} setVal={setIncMutations}/>
+        <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>{t("Export EFT Fit")}</div>
+        <div style={{fontSize:11,color:C.textMute,marginBottom:16}}>{t("Select what to include in the exported fit text")}</div>
+        {/* "Hail L" is an item name and stays English everywhere — see lib/i18n.js. */}
+        <CheckRow label={t("Loaded Charges (e.g. Hail L)")} val={incCharges} setVal={setIncCharges}/>
+        <CheckRow label={t("Implants")} val={incImplants} setVal={setIncImplants}/>
+        <CheckRow label={t("Boosters")} val={incBoosters} setVal={setIncBoosters}/>
+        <CheckRow label={t("Cargo")} val={incCargo} setVal={setIncCargo}/>
+        <CheckRow label={t("Abyssal Rolls (mutated modules)")} val={incMutations} setVal={setIncMutations}/>
         {/* Separated from the five above because it is not the same kind of choice: those pick what
             goes in the fit, this changes how the text is wrapped for one destination. */}
-        <div style={{fontSize:11,color:C.textMute,margin:'16px 0 0'}}>Formatting</div>
-        <CheckRow label="Wrap in a code block (for Discord)" val={codeBlock} setVal={setCodeBlock}/>
+        <div style={{fontSize:11,color:C.textMute,margin:'16px 0 0'}}>{t("Formatting")}</div>
+        <CheckRow label={t("Wrap in a code block (for Discord)")} val={codeBlock} setVal={setCodeBlock}/>
         <button onClick={doExport} style={{width:'100%',marginTop:16,padding:'14px',borderRadius:10,border:'none',background:copied?C.rig:C.accent,color:'#fff',fontSize:14,fontWeight:700,cursor:'pointer'}}>
-          {copied ? '✓ Copied to clipboard!' : 'Copy EFT to Clipboard'}
+          {copied ? `✓ ${t("Copied to clipboard!")}` : t("Copy EFT to Clipboard")}
         </button>
         <button onClick={sheet.dismiss} style={{width:'100%',marginTop:8,padding:'10px',borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </div>
@@ -142,12 +144,12 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
       {/* Same treatment as AppHeader: the drawer's surface runs to the physical top of the screen,
           but its title is inset past the status bar. Without this the wordmark sat under the iOS
           clock. env() is 0 on Android and the web, so the 20px is what those still get. */}
-      <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{...DISPLAY,fontSize:19,fontWeight:700,letterSpacing:"1.6px",textTransform:"uppercase",color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>EVE Online Fitting Tool</div></div>
+      <div style={{padding:"20px 16px 12px",paddingTop:"calc(20px + env(safe-area-inset-top, 0px))",borderBottom:`1px solid ${C.border}`}}><div style={{...DISPLAY,fontSize:19,fontWeight:700,letterSpacing:"1.6px",textTransform:"uppercase",color:C.text,marginBottom:2}}>Axis</div><div style={{fontSize:11,color:C.textMute}}>{t("EVE Online Fitting Tool")}</div></div>
       <button onClick={()=>dismiss(onNewFit)} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:C.accentLight,border:"none",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",width:"100%"}}>
         <span style={{display:"flex",color:C.accent,flexShrink:0}}><IconPlus size={21}/></span>
-        <div><div style={{...MENU_LABEL,fontWeight:700,color:C.accent}}>New Fit</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>Choose a hull</div></div>
+        <div><div style={{...MENU_LABEL,fontWeight:700,color:C.accent}}>{t("New Fit")}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{t("Choose a hull")}</div></div>
       </button>
-      {[{icon:IconImport,label:"Import Fit",sub:"From EFT or an EVE character",action:"import"},{icon:IconExport,label:"Export Fit",sub:"To clipboard or an EVE character",action:"export"},{icon:IconSnapshot,label:"Export Snapshot",sub:"Shareable image of the fit",action:"snapshot"},{icon:IconPrice,label:"Optimize Fit Price",sub:"Swap modules to reduce cost",action:"optimizePrice"},{icon:IconFeedback,label:"Send Feedback",sub:"Report a bug or suggest something",action:"feedback"},{icon:IconSettings,label:"Settings",sub:"ESI, market, overrides",action:"settings"}].map(item=>(<button key={item.label} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{...MENU_LABEL,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:IconImport,label:t("Import Fit"),sub:t("From EFT or an EVE character"),action:"import"},{icon:IconExport,label:t("Export Fit"),sub:t("To clipboard or an EVE character"),action:"export"},{icon:IconSnapshot,label:t("Export Snapshot"),sub:t("Shareable image of the fit"),action:"snapshot"},{icon:IconPrice,label:t("Optimize Fit Price"),sub:t("Swap modules to reduce cost"),action:"optimizePrice"},{icon:IconFeedback,label:t("Send Feedback"),sub:t("Report a bug or suggest something"),action:"feedback"},{icon:IconSettings,label:t("Settings"),sub:t("ESI, market, overrides"),action:"settings"}].map(item=>(<button key={item.action} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{...MENU_LABEL,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }
@@ -162,8 +164,10 @@ function SkillBook({ok,count,onClick,custom}){
   const col=ok?C.success:C.danger;
   return(
     <button onClick={onClick}
-      title={ok?"All skill requirements met — tap to change pilot":`${count} skill${count===1?"":"s"} insufficient — tap for details`}
-      aria-label={ok?"Pilot: all skill requirements met":`Pilot: ${count} skills insufficient`}
+      title={ok?t("All skill requirements met — tap to change pilot")
+               :t({one:"{n} skill insufficient — tap for details",other:"{n} skills insufficient — tap for details"},{n:count})}
+      aria-label={ok?t("Pilot: all skill requirements met")
+                    :t({one:"Pilot: {n} skill insufficient",other:"Pilot: {n} skills insufficient"},{n:count})}
       style={{position:"relative",width:34,height:34,borderRadius:9,background:`${col}1a`,
               border:`1px solid ${col}66`,display:"flex",alignItems:"center",justifyContent:"center",
               padding:0,cursor:"pointer",flexShrink:0}}>
@@ -198,18 +202,18 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
     // "Your Skills" is the only option that doesn't say what you'd be flying with — the other rows
     // name a character or a ceiling. Naming the sheet here saves a trip to Settings to find out
     // whether it is still all V, still aligned to a pilot, or something you edited by hand.
-    {id:null,label:`Your Skills (${describeSkillSheet(appSkills,{esiSkills:cached,characters:chars,profiles:skillProfiles})})`,
-     sub:"The sheet in Settings → Skills"},
-    {id:PILOT_ALL_V,label:"All V",sub:"Every skill trained to V"},
-    {id:PILOT_ALPHA,label:"Alpha",sub:"CCP's alpha clone ceiling"},
+    {id:null,label:t("Your Skills ({sheet})",{sheet:describeSkillSheet(appSkills,{esiSkills:cached,characters:chars,profiles:skillProfiles})}),
+     sub:t("The sheet in Settings → Skills")},
+    {id:PILOT_ALL_V,label:t("All V"),sub:t("Every skill trained to V")},
+    {id:PILOT_ALPHA,label:t("Alpha"),sub:t("CCP's alpha clone ceiling")},
     ...chars.map(c=>({
       id:esiPilot(c.characterId),
       label:c.characterName,
       // An ESI pilot that has never been synced has no sheet to fly with and falls back, so say so
       // rather than showing a character whose numbers are silently someone else's.
       sub:cached[String(c.characterId)]
-        ? `${Object.values(cached[String(c.characterId)]).filter(v=>v>0).length} trained skills`
-        : "Not synced — sync in Settings → ESI",
+        ? t({one:"{n} trained skill",other:"{n} trained skills"},{n:Object.values(cached[String(c.characterId)]).filter(v=>v>0).length})
+        : t("Not synced — sync in Settings → ESI"),
       stale:!cached[String(c.characterId)],
     })),
     // Saved sheets last: the rows above are ceilings and real characters, which are the answers most
@@ -217,7 +221,7 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
     ...skillProfiles.map(p=>({
       id:profilePilot(p.id),
       label:p.name,
-      sub:`Saved profile — ${SKILL_CATALOG.filter(e=>(p.skills?.[e.key]??5)>0).length} trained skills`,
+      sub:t({one:"Saved profile — {n} trained skill",other:"Saved profile — {n} trained skills"},{n:SKILL_CATALOG.filter(e=>(p.skills?.[e.key]??5)>0).length}),
     })),
   ];
   const cur=pilot??null;
@@ -231,7 +235,7 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
            paddingBottom:"env(safe-area-inset-bottom, 0px)",...sheetTransform(sheet)}}>
         <SheetGrabber grabHandlers={sheet.grabHandlers} style={{padding:"10px 0 0"}}/>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 16px 12px",borderBottom:`1px solid ${C.border}`}}>
-          <span style={{fontSize:15,fontWeight:700,color:C.text}}>Pilot</span>
+          <span style={{fontSize:15,fontWeight:700,color:C.text}}>{t("Pilot")}</span>
           {/* Letter x, not ×: the multiplication sign sits on the math axis and draws visibly smaller
               at the same font size, which is what made one sheet's close control look shrunken. */}
           <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>x</button>
@@ -251,9 +255,15 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
           })}
           <div style={{padding:"10px 16px 4px",fontSize:11,fontWeight:700,letterSpacing:.5,textTransform:"uppercase",
                        color:missing.length?C.danger:C.success}}>
-            {missing.length?`${missing.length} skill${missing.length===1?"":"s"} insufficient`:"All skill requirements met"}
+            {missing.length?t({one:"{n} skill insufficient",other:"{n} skills insufficient"},{n:missing.length}):t("All skill requirements met")}
           </div>
-          {missing.map(m=>(
+          {missing.map(m=>{
+          // Built as one sentence with the item list substituted in, rather than concatenated in
+          // the JSX: "needed by" lands in a different place in the sentence in half these languages,
+          // and a translator can only move it if the whole line is one key. The item NAMES inside it
+          // stay English, as does m.group — both come from the dogma data.
+          const shown=[m.items.slice(0,3).join(", "),m.items.length>3?t("+{n} more",{n:m.items.length-3}):""].filter(Boolean).join(" ");
+          return(
             <div key={m.key} style={{padding:"9px 16px",borderBottom:`1px solid ${C.border}`}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
                 <span style={{fontSize:13,fontWeight:600,color:C.text}}>{m.name}</span>
@@ -263,14 +273,14 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
                 </span>
               </div>
               <div style={{fontSize:10,color:C.textMute,marginTop:2}}>
-                {m.group} · needed by {m.items.slice(0,3).join(", ")}{m.items.length>3?` +${m.items.length-3} more`:""}
+                {t("{group} · needed by {items}",{group:m.group,items:shown})}
               </div>
             </div>
-          ))}
+          );})}
           <div style={{height:10}}/>
         </div>
         <div style={{padding:"10px 16px 16px",borderTop:`1px solid ${C.border}`,fontSize:10,color:C.textMute}}>
-          The pilot is saved with this fit. Skills you have never set count as level V.
+          {t("The pilot is saved with this fit. Skills you have never set count as level V.")}
         </div>
       </div>
     </div>
@@ -280,7 +290,8 @@ export function PilotSheet({pilot,setPilot,missing,appSkills,skillProfiles=[],on
 export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGaps,pilot,collapsed}){
   const ship=activeFit?.ship?lookupShip(activeFit.ship):{};
   const shipName=activeFit?.ship??"Axis";
-  const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():"EVE Online Fitting Tool";
+  // The race and hull class are dogma data and stay English with the ship name above them.
+  const subLabel=ship.hullClass?`${ship.race??""} ${ship.hullClass}`.trim():t("EVE Online Fitting Tool");
   // Restored to its original proportions -- the condensed version saved pixels but read as cramped
   // next to comparable apps. The space is reclaimed by COLLAPSING instead: `collapsed` is driven by
   // scrolling in App.jsx, and shrinks the header to a single compact line rather than shortening it
@@ -356,11 +367,11 @@ const BOOSTER_ICON=eveIcon(59633,64);
 export function BottomNav({active,onChange,badges}){
   const tabs=[
     // `key` stays "fittings" — App.jsx switches on it and it is persisted as the last bottom tab.
-    {key:"fittings",label:"Fitting",navKey:"fit"},
-    {key:"cargo",   label:"Cargo",   navKey:"cargo"},
-    {key:"drones",  label:"Drones",  navKey:"drones"},
-    {key:"implants",label:"Implants",navKey:"implants"},
-    {key:"effects", label:"Effects", navKey:"effects"},
+    {key:"fittings",label:t("Fitting"), navKey:"fit"},
+    {key:"cargo",   label:t("Cargo"),   navKey:"cargo"},
+    {key:"drones",  label:t("Drones"),  navKey:"drones"},
+    {key:"implants",label:t("Implants"),navKey:"implants"},
+    {key:"effects", label:t("Effects"), navKey:"effects"},
   ];
   const NAV_ICON_TYPEIDS={fit:1353,cargo:1317,drones:24395,implants:10216};
   // Two devices read this expression very differently. A notched iPhone reports a 34px inset, of which
@@ -371,18 +382,19 @@ export function BottomNav({active,onChange,badges}){
   // against the WebView edge. 10px floor, and the buttons carry a little more of their own padding so
   // the row is not relying on the inset for its internal spacing at all.
   return(<div style={{display:"flex",background:C.surface,borderTop:`1px solid ${C.border}`,paddingBottom:"max(10px, calc(env(safe-area-inset-bottom, 0px) - 12px))"}}>
-    {tabs.map(t=>{const ovTid=NAV_ICON_TYPEIDS[t.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[t.navKey]??'');const dim=active===t.key?1:0.5;
-      const count=badges?.[t.key];
-      return(<button key={t.key} onClick={()=>{haptic("selection");onChange(t.key);}} style={{flex:1,padding:"8px 0 6px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+    {/* `nav`, not `t` — the map parameter would shadow the translate function imported above. */}
+    {tabs.map(nav=>{const ovTid=NAV_ICON_TYPEIDS[nav.navKey];const src=ovTid?eveIcon(ovTid,64):(navIcons?.[nav.navKey]??'');const dim=active===nav.key?1:0.5;
+      const count=badges?.[nav.key];
+      return(<button key={nav.key} onClick={()=>{haptic("selection");onChange(nav.key);}} style={{flex:1,padding:"8px 0 6px",background:"none",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
       <div style={{position:"relative"}}>
-        <img src={t.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
+        <img src={nav.navKey==="effects"?BOOSTER_ICON:src} width={22} height={22} alt="" style={{objectFit:"contain",opacity:dim}} onError={e=>{e.target.style.visibility="hidden";}}/>
         {/* Pyfa-style: a count only shows for things currently switched ON (or, for cargo/implants,
             simply present — neither has an on/off state to filter by). Zero hides the badge rather
             than showing "0", so an idle tab stays visually quiet. */}
         {count>0&&<span style={{position:"absolute",top:-4,right:-8,minWidth:14,height:14,padding:"0 3px",borderRadius:99,background:C.textMute,border:"none",color:C.surface,fontSize:9,fontWeight:800,lineHeight:"14px",textAlign:"center",boxSizing:"border-box"}}>{count>99?"99+":count}</span>}
       </div>
-      <span style={{fontSize:9,fontWeight:700,color:active===t.key?C.accent:C.textMute,letterSpacing:.3}}>{t.label}</span>
-      {active===t.key&&<div style={{width:20,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}
+      <span style={{fontSize:9,fontWeight:700,color:active===nav.key?C.accent:C.textMute,letterSpacing:.3}}>{nav.label}</span>
+      {active===nav.key&&<div style={{width:20,height:2,background:C.accent,borderRadius:99,marginTop:1}}/>}
     </button>);})}
   </div>);
 }
