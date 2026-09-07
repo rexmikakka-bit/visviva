@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
 import { C } from "../theme.js";
 import { itemSkillGap } from "../calc.js";
+import { t } from "../lib/i18n.js";
 
 // The pilot's skills, for the item browsers only. They sit several components below the fit views
 // that already receive `skills` as a prop (module browser -> module menu -> charge picker, drone
@@ -25,11 +26,15 @@ export function SkillMark({ typeID, size = 13 }) {
   const skills = useContext(SkillsContext);
   const gap = useMemo(() => (typeID ? itemSkillGap(typeID, skills) : []), [typeID, skills]);
   if (!gap.length) return null;
-  const detail = gap.map(g => `${g.name} ${ROMAN[g.required] ?? g.required} (you have ${ROMAN[g.have] ?? g.have})`).join(", ");
+  // The skill name is a CCP item name and stays English; the level is a Roman numeral, which is how
+  // every EVE client writes it. Only the clause around them has a key.
+  const detail = gap.map(g => t("{skill} {level} (you have {have})", {
+    skill: g.name, level: ROMAN[g.required] ?? g.required, have: ROMAN[g.have] ?? g.have,
+  })).join(", ");
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" role="img" aria-label={`Missing skills: ${detail}`}
-         style={{ flexShrink: 0 }}>
-      <title>{`Requires ${detail}`}</title>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" role="img"
+         aria-label={t("Missing skills: {detail}", { detail })} style={{ flexShrink: 0 }}>
+      <title>{t("Requires {detail}", { detail })}</title>
       <path d="M12 6.5C10.4 5.2 8.3 4.6 5.8 4.6c-.7 0-1.3.05-1.8.13v13c.5-.08 1.1-.13 1.8-.13 2.5 0 4.6.6 6.2 1.9"
             stroke={C.danger} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/>
       <path d="M12 6.5c1.6-1.3 3.7-1.9 6.2-1.9.7 0 1.3.05 1.8.13v13c-.5-.08-1.1-.13-1.8-.13-2.5 0-4.6.6-6.2 1.9"

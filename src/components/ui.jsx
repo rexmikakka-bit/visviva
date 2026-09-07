@@ -991,9 +991,16 @@ const SRC_NOTE = {hull:()=>t('hull bonus'), charge:()=>t('ammo'), env:()=>t('env
                   // apart from that same drug's intended bonus so one row is not mistaken for both.
                   burst:()=>t('command burst'), projected:()=>t('projected'), sideEffect:()=>t('booster side effect')};
 const ROMAN = ['0','I','II','III','IV','V'];
-// `s.name` is a CCP item or skill name and stays English; only the no-source fallback has a key.
+// Four sources calc.js names generically rather than after an item, because by the time the trace
+// reaches here there is no per-source identity left to recover. Translated HERE, not there, so the
+// English name stays the stable identity the engine and the regression suite key on — the rule that
+// a label doubling as a key must not move with the locale. Thunks for the module-scope reason.
+const GENERIC_SRC = {'Command burst':()=>t('Command burst'), 'Stasis webifier':()=>t('Stasis webifier'),
+                     'Sensor dampening':()=>t('Sensor dampening'), 'Tracking disruption':()=>t('Tracking disruption')};
+// Otherwise `s.name` is a CCP item or skill name and stays English.
 const srcLabel = (s) => !s ? t('Other')
-  : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}` : s.name;
+  : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}`
+  : GENERIC_SRC[s.name]?.() ?? s.name;
 // Modifiers read as percentages everywhere in EVE, so a multiplier is shown as the change it makes
 // rather than as a bare factor. Two decimals under 10% — the difference between a second hardener at
 // +4.34% and a third at +2.51% is the entire point of showing this, and one decimal blurs it.

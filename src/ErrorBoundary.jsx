@@ -1,5 +1,10 @@
 import { Component } from "react";
 import { buildBackup } from "./lib/backup-io.js";
+// i18n.js imports nothing and t() is total — it falls back to the English key on any miss and its
+// one throwing call (Intl.PluralRules) is already caught. So this does not weaken the
+// dependency-light rule below, and the recovery screen is the one place a reader most needs to
+// understand what happened. The error report itself stays English: it is read by whoever triages it.
+import { t } from "./lib/i18n.js";
 
 // A render crash used to leave a blank white page (see CLAUDE.md: "A blank page in the app is almost
 // always a React crash"). This boundary catches it and shows a recovery screen instead, so a user's
@@ -85,7 +90,7 @@ class ErrorBoundary extends Component {
     try {
       const file = new File([json], name, { type: "application/json" });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Axis backup" });
+        await navigator.share({ files: [file], title: t("Axis backup") });
         done();
         return;
       }
@@ -112,33 +117,32 @@ class ErrorBoundary extends Component {
     return (
       <div style={S.wrap}>
         <div style={S.card}>
-          <h1 style={S.h}>Something went wrong</h1>
+          <h1 style={S.h}>{t("Something went wrong")}</h1>
           <p style={S.p}>
-            Axis hit an error and couldn't finish drawing. Your saved fits are still in this
-            browser's storage — nothing was deleted. Back them up below before reloading, just in case.
+            {t("Axis hit an error and couldn't finish drawing. Your saved fits are still in this browser's storage — nothing was deleted. Back them up below before reloading, just in case.")}
           </p>
 
           <div style={S.row}>
+            {/* The tick stays outside the key so a translator cannot drop it. */}
             <button style={S.btn(true)} onClick={() => this.saveFits()}>
-              {saved ? "✓ Fits saved" : "Download my fits"}
+              {saved ? <>✓ {t("Fits saved")}</> : t("Download my fits")}
             </button>
             <button style={S.btn(false)} onClick={() => window.location.reload()}>
-              Reload app
+              {t("Reload app")}
             </button>
           </div>
 
           <div style={S.row}>
             <button style={S.btn(false)} onClick={() => this.copyReport()}>
-              {copied ? "✓ Report copied" : "Copy error report"}
+              {copied ? <>✓ {t("Report copied")}</> : t("Copy error report")}
             </button>
           </div>
           <div style={S.note}>
-            Copy the error report and send it to the developer so this can be fixed. It contains the
-            error message and your device/browser — no fit data.
+            {t("Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.")}
           </div>
 
           <details style={S.det}>
-            <summary style={{ cursor: "pointer" }}>Technical details</summary>
+            <summary style={{ cursor: "pointer" }}>{t("Technical details")}</summary>
             <div style={S.pre}>
               {(error?.name ?? "Error") + ": " + (error?.message ?? String(error))}
               {info?.componentStack ? "\n" + info.componentStack : ""}
