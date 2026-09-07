@@ -10,6 +10,7 @@ import { nameMatchesQuery } from "../lib/jargon.js";
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
 import { tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
+import { t } from "../lib/i18n.js";
 
 // "Deadeye (Missile Bombardment)" -> "Missile Bombardment". The leading word is the hardwiring's
 // brand nickname (Deadeye, Snapshot, Squire, ...), which tells you nothing about what the implant
@@ -49,7 +50,28 @@ const HARDWIRING_BUCKET_OF=(()=>{const m=new Map();
 const HARDWIRING_BUCKET_ORDER=HARDWIRING_BUCKETS.map(([b])=>b).concat(["Other Hardwirings"]);
 
 const IMPLANT_GROUP_NICKNAME=/^[A-Z][A-Za-z'-]*\s*\((.+)\)$/;
-const implantGroupLabel=n=>IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n;
+
+// The bucket names above are OURS, not CCP's — the 96 per-skill hardwiring groups are rolled up into
+// them here — so unlike a market group name they are ordinary UI text and get translated. Spelled out
+// one literal key per bucket rather than t(bucketName): a computed key is invisible to the catalog
+// audit, which would report every translation of one as an orphan. The English stays the map key, so
+// bucket lookup, ordering and storage are all untouched by the locale.
+const bucketLabel=n=>({
+  "Missiles":t("Missiles"),
+  "Turrets":t("Turrets"),
+  "Shields":t("Shields"),
+  "Armor & Hull":t("Armor & Hull"),
+  "Capacitor & Engineering":t("Capacitor & Engineering"),
+  "Navigation":t("Navigation"),
+  "Targeting & EWAR":t("Targeting & EWAR"),
+  "Drones":t("Drones"),
+  "Scanning & Exploration":t("Scanning & Exploration"),
+  "Industry & Science":t("Industry & Science"),
+  "Other Hardwirings":t("Other Hardwirings"),
+}[n]??n);
+// A group is either one of those buckets, a skill name pulled out of "Deadeye (Missile Bombardment)",
+// or a CCP market group. Only the first is translated; the other two are game data.
+const implantGroupLabel=n=>bucketLabel(IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n);
 
 // One implant, as a tappable row. Shared by the per-slot picker and the cross-slot search, which
 // want the same affordances (art, skill mark, fit-the-whole-set) and differ only in whether the slot
@@ -57,7 +79,7 @@ const implantGroupLabel=n=>IMPLANT_GROUP_NICKNAME.exec(String(n??""))?.[1]??n;
 function ImplantRow({item,fitted,badge,onPick,onPickSet,onInfo}){
   // Set implants get a second action: fit the whole set at once. Six slots for one intent.
   const set=implantSetMembers(item.name);
-  const sub=[badge,item.metaGroupID>0?`Meta ${item.metaLevel??0}`:null].filter(Boolean);
+  const sub=[badge,item.metaGroupID>0?t("Meta {n}",{n:item.metaLevel??0}):null].filter(Boolean);
   return(
   <div onClick={()=>{haptic();onPick(item);}}
     style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"12px 16px",
@@ -76,16 +98,16 @@ function ImplantRow({item,fitted,badge,onPick,onPickSet,onInfo}){
     <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
       <SkillMark typeID={item.typeID}/>
       {set&&<button onClick={e=>{e.stopPropagation();haptic();onPickSet(set);}}
-        title={`Fit all ${set.members.length} ${set.setName} implants`}
+        title={t("Fit all {n} {set} implants",{n:set.members.length,set:set.setName})}
         style={{padding:"4px 9px",borderRadius:99,fontSize:10,fontWeight:700,cursor:"pointer",
-                background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Set</button>}
+                background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ {t("Set")}</button>}
       {/* Reading an implant's description used to require FITTING it first — the row's only action
           was to fit, and the trailing "+" said so without offering anything else. It is replaced
           rather than joined by the info button because the row itself is still the fit affordance,
           so the "+" was never doing any work the tap target wasn't already doing. The ✓ stays: it
           is state, not an action, and it is the only thing marking what you already have. */}
       {fitted&&<span style={{color:C.accent}}>✓</span>}
-      {item.typeID&&<InfoButton onClick={e=>{e.stopPropagation();haptic();onInfo(item);}} title={`About ${item.name}`}/>}
+      {item.typeID&&<InfoButton onClick={e=>{e.stopPropagation();haptic();onInfo(item);}} title={t("About {name}",{name:item.name})}/>}
     </div>
   </div>);
 }
@@ -136,10 +158,10 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
   // of a group the sheet stayed translated off-screen while its full-screen overlay kept eating every
   // tap, which reads as the whole app freezing.
   return(<>
-    <BottomSheet title={drill?`Slot ${slot} › ${implantGroupLabel(drill)}`:`Slot ${slot} Implants`} onClose={onClose} height="82vh" fillHeight>
+    <BottomSheet title={drill?`${t("Slot {n}",{n:slot})} › ${implantGroupLabel(drill)}`:t("Slot {n} Implants",{n:slot})} onClose={onClose} height="82vh" fillHeight>
     {drill&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>{haptic();setDrill(null);}} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
+        <button onClick={()=>{haptic();setDrill(null);}} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; {t("Back")}</button>
         <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{implantGroupLabel(drill)}</span>
       </div>
     )}
@@ -149,14 +171,14 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
     {current&&current!=="[Empty]"&&(
       <div style={{padding:"10px 14px 0"}}>
         <div style={{padding:"9px 12px",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,marginBottom:4}}>
-          <div style={{fontSize:10,color:C.textMute}}>Fitted</div>
+          <div style={{fontSize:10,color:C.textMute}}>{t("Fitted")}</div>
           <div style={{fontSize:12,fontWeight:600,color:C.accent}}>{current}</div>
         </div>
-        <button onClick={()=>{onClear();onClose();}} style={{width:"100%",padding:"8px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>Remove implant</button>
+        <button onClick={()=>{onClear();onClose();}} style={{width:"100%",padding:"8px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:8}}>{t("Remove implant")}</button>
       </div>
     )}
     <div style={{padding:"10px 14px 4px"}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search implants..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search implants...")}/>
     </div>
     {results
       ? results.map(item=><ItemRow key={item.typeID} item={item}/>)
@@ -177,7 +199,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
         would put a second sheet inside the one being scrolled, and the browser stays mounted
         underneath so closing the info card returns you to where you were in the list. */}
     {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name}
-      actions={[{label:"Fit implant",primary:true,onClick:()=>fit(infoItem)}]}
+      actions={[{label:t("Fit implant"),primary:true,onClick:()=>fit(infoItem)}]}
       onSwap={v=>fit(v)} onClose={()=>setInfoItem(null)}/>}
   </>);
 }
@@ -190,11 +212,11 @@ function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
   const[draft,setDraft]=useState("");
   const term=q.trim().toLowerCase();
   const shown=term?loadouts.filter(l=>l.name.toLowerCase().includes(term)):loadouts;
-  return(<BottomSheet title="Implant Loadouts" onClose={onClose} height="70vh" fillHeight>
+  return(<BottomSheet title={t("Implant Loadouts")} onClose={onClose} height="70vh" fillHeight>
     {loadouts.length>6&&<div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={q} onChange={setQ} placeholder="Search loadouts..."/>
+      <SheetSearchBar value={q} onChange={setQ} placeholder={t("Search loadouts...")}/>
     </div>}
-    {!shown.length&&<div style={{textAlign:"center",color:C.textMute,padding:"28px 0",fontSize:13}}>No loadouts match "{q}"</div>}
+    {!shown.length&&<div style={{textAlign:"center",color:C.textMute,padding:"28px 0",fontSize:13}}>{t('No loadouts match "{q}"',{q})}</div>}
     {shown.map(l=>(
       <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",borderBottom:`1px solid ${C.border}`}}>
         {editing===l.id
@@ -204,11 +226,11 @@ function ImplantLoadoutSheet({loadouts,onLoad,onRename,onDelete,onClose}){
              style={{flex:1,padding:"5px 9px",background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.text,fontSize:12}}/>
           :<div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>{onLoad(l);onClose();}}>
              <div style={{fontSize:13,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name}</div>
-             <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{l.implants?.filter(i=>i.name!=="[Empty]").length??0} implants</div>
+             <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{t({one:"{n} implant",other:"{n} implants"},{n:l.implants?.filter(i=>i.name!=="[Empty]").length??0})}</div>
            </div>}
-        <button title="Rename" onClick={()=>{setEditing(l.id);setDraft(l.name);}}
+        <button title={t("Rename")} onClick={()=>{setEditing(l.id);setDraft(l.name);}}
           style={{width:26,height:26,borderRadius:5,background:"none",border:`1px solid ${C.border}`,cursor:"pointer",fontSize:11,color:C.textMute,flexShrink:0}}>&#9998;</button>
-        <button title="Delete this loadout" onClick={()=>onDelete(l.id)}
+        <button title={t("Delete this loadout")} onClick={()=>onDelete(l.id)}
           style={{width:26,height:26,borderRadius:5,background:"none",border:`1px solid ${C.border}`,cursor:"pointer",fontSize:12,color:C.danger,flexShrink:0}}>x</button>
       </div>
     ))}
@@ -246,7 +268,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     setNewLoadoutName("");setSavingName(false);
   }
   function loadLoadout(lo){
-    if(!lo.implants?.length){alert(`"${lo.name}" has no implants saved.`);return;}
+    if(!lo.implants?.length){alert(t('"{name}" has no implants saved.',{name:lo.name}));return;}
     setImplants(lo.implants.map(i=>({...i})));
   }
   function renameLoadout(id,name){
@@ -258,16 +280,16 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
   return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     <div style={{padding:"10px 12px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-        <span style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.6,textTransform:"uppercase"}}>{filled}/10 fitted</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.6,textTransform:"uppercase"}}>{t("{n}/10 fitted",{n:filled})}</span>
         {savingName
           ?<div style={{display:"flex",alignItems:"center",gap:6}}>
             <input autoFocus value={newLoadoutName} onChange={e=>setNewLoadoutName(e.target.value)}
               onKeyDown={e=>{if(e.key==="Enter")saveLoadout();if(e.key==="Escape")setSavingName(false);}}
-              placeholder="Loadout name..." style={{width:130,padding:"4px 8px",background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.text,fontSize:11}}/>
-            <button onClick={saveLoadout} style={{padding:"4px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>Save</button>
+              placeholder={t("Loadout name...")} style={{width:130,padding:"4px 8px",background:C.surface,border:`1px solid ${C.accentBorder}`,borderRadius:6,color:C.text,fontSize:11}}/>
+            <button onClick={saveLoadout} style={{padding:"4px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,cursor:"pointer"}}>{t("Save")}</button>
             <button onClick={()=>setSavingName(false)} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,padding:0}}>x</button>
           </div>
-          :<button onClick={()=>setSavingName(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ Save Loadout</button>
+          :<button onClick={()=>setSavingName(true)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",background:C.accentLight,border:`1px solid ${C.accentBorder}`,color:C.accent}}>+ {t("Save Loadout")}</button>
         }
       </div>
       {/* Was a horizontal chip strip: three buttons per loadout, scrolling sideways forever once you
@@ -278,11 +300,11 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
         <button className="press" onClick={()=>setShowLoadouts(true)} disabled={!loadouts.length}
           style={{flex:1,padding:"7px 0",borderRadius:7,fontSize:11,fontWeight:700,cursor:loadouts.length?"pointer":"default",
                   background:loadouts.length?C.surface:"transparent",border:`1px solid ${C.border}`,color:loadouts.length?C.textMid:C.textMute}}>
-          {loadouts.length?`Implant Loadouts (${loadouts.length})`:"No saved loadouts"}
+          {loadouts.length?t("Implant Loadouts ({n})",{n:loadouts.length}):t("No saved loadouts")}
         </button>
         {filled>0&&<button onClick={()=>setImplants(Array.from({length:10},(_,i)=>({slot:i+1,name:"[Empty]",bonus:null})))}
-          title="Clear every implant from this fit"
-          style={{padding:"7px 12px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",background:"none",border:`1px solid ${C.border}`,color:C.danger}}>Clear</button>}
+          title={t("Clear every implant from this fit")}
+          style={{padding:"7px 12px",borderRadius:7,fontSize:11,fontWeight:700,cursor:"pointer",background:"none",border:`1px solid ${C.border}`,color:C.danger}}>{t("Clear")}</button>}
       </div>
       {/* The x is the way OUT, not a convenience. Emptying this box is the only thing that brings the
           slot list back, so a query matching nothing left you on a bare "no implants match" page with
@@ -290,7 +312,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
       <div style={{marginTop:6}}>
         {/* Haptic on the emptying transition rather than only on the x, so backspacing the last
             character — which is the same escape hatch — confirms itself the same way. */}
-        <SheetSearchBar value={query} onChange={v=>{if(query&&!v)haptic();setQuery(v);}} placeholder="Search all implants..."/>
+        <SheetSearchBar value={query} onChange={v=>{if(query&&!v)haptic();setQuery(v);}} placeholder={t("Search all implants...")}/>
       </div>
     </div>
     {/* While searching, the results REPLACE the slot list rather than sitting above it: a result is
@@ -299,12 +321,14 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
     <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto",padding:results?0:12}}>
       {results
         ? (results.length
-            ? results.map(item=><ImplantRow key={item.typeID} item={item} badge={`Slot ${item.slot}`}
+            ? results.map(item=><ImplantRow key={item.typeID} item={item} badge={t("Slot {n}",{n:item.slot})}
                 fitted={implants.find(i=>i.slot===item.slot)?.name===item.name}
                 onPick={fitInto} onPickSet={fitSet} onInfo={it=>setDetail({...it,typeID:it.typeID??tidByName(it.name)})}/>)
-            : <div style={{padding:"24px 16px",textAlign:"center",fontSize:12,color:C.textMute}}>No implants match "{query.trim()}"</div>)
-        : [{label:"Attribute Enhancers",slots:[1,2,3,4,5],color:C.accent},{label:"Hardwirings",slots:[6,7,8,9,10],color:C.high}].map(grp=>(
-        <div key={grp.label} style={{marginBottom:14}}>
+            : <div style={{padding:"24px 16px",textAlign:"center",fontSize:12,color:C.textMute}}>{t('No implants match "{q}"',{q:query.trim()})}</div>)
+        /* Keyed by `id`, not by the label: the label now changes with the locale, and keying on it
+           would throw away and rebuild both sections on every language switch. */
+        : [{id:"attrs",label:t("Attribute Enhancers"),slots:[1,2,3,4,5],color:C.accent},{id:"hardwirings",label:t("Hardwirings"),slots:[6,7,8,9,10],color:C.high}].map(grp=>(
+        <div key={grp.id} style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,padding:"0 2px"}}>
             <div style={{width:8,height:8,borderRadius:99,background:grp.color}}/>
             <span style={{fontSize:11,fontWeight:700,color:grp.color,letterSpacing:.4}}>{grp.label.toUpperCase()}</span>
@@ -320,7 +344,7 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
                 <span style={{fontSize:10,fontWeight:800,color:empty?C.textMute:grp.color}}>{slotNum}</span>
               </div>
               <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:12,fontWeight:empty?400:600,color:empty?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{empty?"Empty":imp.name}</div>
+                <div style={{fontSize:12,fontWeight:empty?400:600,color:empty?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{empty?t("Empty"):imp.name}</div>
                 {!empty&&imp.bonus&&<div style={{fontSize:10,color:C.rig,marginTop:1}}>{imp.bonus}</div>}
               </div>
               <span style={{fontSize:14,color:C.textMute}}>{">"}</span>
@@ -336,16 +360,16 @@ export function ImplantsScreen({implants,setImplants,loadouts,setLoadouts}){
       // slot rather than how the sheet was opened.
       const fitted=implants.find(i=>i.slot===detail.slot)?.name===detail.name;
       const acts=[];
-      if(set)acts.push({label:`+ ${set.setName} set`,primary:true,
-        title:`Fit all ${set.members.length} ${set.setName} implants`,
+      if(set)acts.push({label:t("+ {set} set",{set:set.setName}),primary:true,
+        title:t("Fit all {n} {set} implants",{n:set.members.length,set:set.setName}),
         onClick:()=>fitSet(set)});
-      if(!fitted)acts.push({label:"Fit implant",primary:!set,onClick:()=>fitInto(detail)});
+      if(!fitted)acts.push({label:t("Fit implant"),primary:!set,onClick:()=>fitInto(detail)});
       else{
-        acts.push({label:"Change implant",onClick:()=>setPicker({slot:detail.slot,name:detail.name})});
+        acts.push({label:t("Change implant"),onClick:()=>setPicker({slot:detail.slot,name:detail.name})});
         // Removing an implant used to live one level DOWN, inside the picker you reached via Change
         // implant — so taking something off meant opening a browser you had no intention of
         // browsing, and reading as if the only way to empty a slot was to replace it.
-        acts.push({label:"Remove implant",danger:true,
+        acts.push({label:t("Remove implant"),danger:true,
           onClick:()=>setImplants(prev=>prev.map(i=>i.slot===detail.slot?{...i,name:"[Empty]",bonus:null}:i))});
       }
       return<ItemDetailSheet typeID={detail.typeID} name={detail.name} actions={acts}

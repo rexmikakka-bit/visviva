@@ -2,6 +2,7 @@ import { useState } from "react";
 import { C } from "../theme.js";
 import { useSheetDrag, sheetTransform, SheetGrabber } from "../lib/use-sheet-drag.jsx";
 import { fitToEFT } from "../lib/eft-export.js";
+import { t } from "../lib/i18n.js";
 
 const REPO_URL = "https://github.com/rexmikakka-bit/visviva";
 
@@ -25,10 +26,13 @@ function effectsContext(slots, projFits, cmdFits) {
     ...(projFits ?? []).map(p => ({ ...p, kind: "Projected" })),
   ];
   const nLink = (cmdFits ?? []).length, nProj = (projFits ?? []).length;
+  // Only `summary` is translated. `kind` above is not: it labels a section of the REPORT, which is
+  // read by whoever triages the issue, and a German heading over an English EFT dump helps nobody.
+  // The summary is the opposite — it is shown to the reporter and never reaches the issue.
   const summary = [
-    slots?.environment ? "environment" : null,
-    nLink ? `${nLink} link${nLink > 1 ? "s" : ""}` : null,
-    nProj ? `${nProj} projected` : null,
+    slots?.environment ? t("environment") : null,
+    nLink ? t({ one: "{n} link", other: "{n} links" }, { n: nLink }) : null,
+    nProj ? t("{n} projected", { n: nProj }) : null,
   ].filter(Boolean).join(", ");
   return { environment: slots?.environment ?? null, entries, summary };
 }
@@ -111,8 +115,9 @@ export function FeedbackModal({activeFit, slots, implants, boosters, drones, fig
     const full = buildBody();
     let body = full;
     if (issueURL(full).length > MAX_URL) {
-      body = `${buildBody({attachments: false})}\n\n(The fit and effects context were too long to`
-           + ` prefill here. They are on your clipboard — paste them below.)`;
+      // The one translated line in the body: everything else here is diagnostic data for triage,
+      // but this is an instruction TO THE REPORTER, and it is useless if they cannot read it.
+      body = `${buildBody({attachments: false})}\n\n(${t("The fit and effects context were too long to prefill here. They are on your clipboard — paste them below.")})`;
       writeClipboard(full, flagCopied);
     }
     const win = window.open(issueURL(body), "_blank", "noopener,noreferrer");
@@ -124,15 +129,17 @@ export function FeedbackModal({activeFit, slots, implants, boosters, drones, fig
       <div ref={sheet.sheetRef} style={{width:"100%",maxHeight:"88vh",boxSizing:"border-box",background:C.surface,borderRadius:"16px 16px 0 0",display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 -8px 32px rgba(0,0,0,.5)",...sheetTransform(sheet)}} onClick={e=>e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div style={{overflowY:"auto",padding:"6px 20px 20px"}}>
-        <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>Send Feedback</div>
+        <div style={{fontSize:15,fontWeight:700,color:C.text,marginBottom:4}}>{t("Send Feedback")}</div>
         <div style={{fontSize:11,color:C.textMute,marginBottom:14,lineHeight:1.5}}>
-          Opens a pre-filled GitHub issue on Axis's repo. You review it there before it's submitted — nothing is sent automatically.
+          {t("Opens a pre-filled GitHub issue on Axis's repo. You review it there before it's submitted — nothing is sent automatically.")}
         </div>
 
-        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder='Short summary, e.g. "RAH split wrong on Astarte"'
+        {/* The example inside the placeholder keeps its item names in English, like every other
+            item name in the app — it is a hint about the shape of a good title, not prose. */}
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder={t('Short summary, e.g. "RAH split wrong on Astarte"')}
           style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,marginBottom:8}}/>
 
-        <textarea value={details} onChange={e=>setDetails(e.target.value)} placeholder="What happened, and what did you expect instead? Ideas and requests are welcome here too." rows={5}
+        <textarea value={details} onChange={e=>setDetails(e.target.value)} placeholder={t("What happened, and what did you expect instead? Ideas and requests are welcome here too.")} rows={5}
           style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"10px 12px",color:C.text,fontSize:13,fontFamily:"inherit",resize:"vertical",marginBottom:10}}/>
 
         {/* Opt-in, and it names everything it will attach: this posts saved fits verbatim into a
@@ -142,21 +149,22 @@ export function FeedbackModal({activeFit, slots, implants, boosters, drones, fig
             <div style={{width:20,height:20,borderRadius:4,border:`2px solid ${include?C.accent:C.border}`,background:include?C.accent:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,color:"#fff",fontSize:12,fontWeight:700}}>{include?"✓":""}</div>
             <div style={{minWidth:0}}>
               <div style={{fontSize:12,color:C.text}}>
-                {activeFit?.ship?<>Include current fit ({activeFit.ship} — {activeFit.fitName})</>:"Include effects context"}
+                {activeFit?.ship?t("Include current fit ({ship} — {name})",{ship:activeFit.ship,name:activeFit.fitName}):t("Include effects context")}
               </div>
-              {!!ctx.summary&&activeFit?.ship&&<div style={{fontSize:11,color:C.textMute,marginTop:2}}>with {ctx.summary}</div>}
+              {!!ctx.summary&&activeFit?.ship&&<div style={{fontSize:11,color:C.textMute,marginTop:2}}>{t("with {summary}",{summary:ctx.summary})}</div>}
             </div>
           </div>
         )}
 
         <button onClick={openIssue} style={{width:"100%",marginTop:14,padding:14,borderRadius:10,border:"none",background:C.accent,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>
-          Open GitHub Issue
+          {t("Open GitHub Issue")}
         </button>
         <button onClick={copyDetails} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",color:C.textMid,fontSize:12,cursor:"pointer"}}>
-          {copied ? "✓ Copied — paste anywhere" : "Copy report to clipboard instead"}
+          {/* The tick stays outside the key so a translator cannot drop it. */}
+          {copied ? <>✓ {t("Copied — paste anywhere")}</> : t("Copy report to clipboard instead")}
         </button>
         <button onClick={sheet.dismiss} style={{width:"100%",marginTop:8,padding:10,borderRadius:10,border:"none",background:"transparent",color:C.textMute,fontSize:12,cursor:"pointer"}}>
-          Cancel
+          {t("Cancel")}
         </button>
         </div>
       </div>

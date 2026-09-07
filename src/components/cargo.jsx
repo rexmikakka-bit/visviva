@@ -6,6 +6,7 @@ import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressA
 import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
+import { t } from "../lib/i18n.js";
 
 // Module scope, NOT nested inside CargoBrowserSheet — see the ModRow note in ui.jsx. A component
 // declared inside another component is a fresh function identity every render, so React rebuilds
@@ -20,9 +21,9 @@ function ItemRow({item,onAdd}){
     </div>
     <div style={{flex:1,minWidth:0}}>
       <div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div>
-      <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{item.vol!=null?`${item.vol} m3`:""}{item.forMod?` - fits ${item.forMod}`:""}</div>
+      <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{item.vol!=null?`${item.vol} m3`:""}{item.forMod?` - ${t("fits {mod}",{mod:item.forMod})}`:""}</div>
     </div>
-    <span style={{fontSize:11,color:C.accent,fontWeight:700,flexShrink:0}}>+ Add</span>
+    <span style={{fontSize:11,color:C.accent,fontWeight:700,flexShrink:0}}>+ {t("Add")}</span>
   </div>);
 }
 function GroupRow({gid,onOpen}){
@@ -34,7 +35,7 @@ function GroupRow({gid,onOpen}){
     </div>
     <div style={{flex:1,minWidth:0}}>
       <div style={{fontSize:13,fontWeight:600,color:C.text}}>{g.n}</div>
-      <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{nSub>0?`${nSub} groups`:`${nItems} items`}</div>
+      <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{nSub>0?t({one:"{n} group",other:"{n} groups"},{n:nSub}):t({one:"{n} item",other:"{n} items"},{n:nItems})}</div>
     </div>
     <span style={{fontSize:18,color:C.textMute,flexShrink:0}}>{">"}</span>
   </div>);
@@ -82,7 +83,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   // box is min(height,100%) where 100% is the keyboard-shrunk frame, so at 86vh the sheet rests
   // with a peek gap below the status bar and then snaps its TOP upward the instant the keyboard
   // pushes the frame under 86vh. 100vh asks BottomSheet for a peek that no keyboard can move.
-  return(<BottomSheet title="Add Cargo" onClose={onClose} height="100vh" fillHeight
+  return(<BottomSheet title={t("Add Cargo")} onClose={onClose} height="100vh" fillHeight
     headerExtra={
       // height:0 so this overlays the top of the list instead of reserving a strip that is empty
       // almost all the time. Header rather than inside the scroller for the same reason the module
@@ -97,7 +98,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
       // the whole tall half of the sheet above a short result list. Drone and fighter browsers
       // close on the first pick and deliberately keep their search at the top instead.
       <div style={{padding:"8px 14px",borderTop:`1px solid ${C.border}`}}>
-        <SheetSearchBar value={search} onChange={setSearch} placeholder="Search market..."
+        <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search market...")}
           inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
           inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}/>
       </div>
@@ -107,19 +108,19 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
         never fired here and scrolling the cargo list could not dismiss the keyboard at all. */}
     {!searchResults&&!fitCharges&&path.length===0&&(
       <div style={{position:"sticky",top:0,zIndex:3,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-        <button onClick={()=>setFitCharges(true)} style={{width:"100%",padding:"10px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>Charges for Active Fit</button>
+        <button onClick={()=>setFitCharges(true)} style={{width:"100%",padding:"10px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Charges for Active Fit")}</button>
       </div>
     )}
     {!searchResults&&(fitCharges||path.length>0)&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>fitCharges?setFitCharges(false):setPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; Back</button>
-        <span style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fitCharges?"Charges for Active Fit":crumb}</span>
+        <button onClick={()=>fitCharges?setFitCharges(false):setPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
+        <span style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fitCharges?t("Charges for Active Fit"):crumb}</span>
       </div>
     )}
     {searchResults?(
-      <div>{searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No items found</div>}{searchResults.map(item=><ItemRow key={item.typeID} item={item} onAdd={onAdd}/>)}</div>
+      <div>{searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>{t("No items found")}</div>}{searchResults.map(item=><ItemRow key={item.typeID} item={item} onAdd={onAdd}/>)}</div>
     ):fitCharges?(
-      <div>{(fitChargeList??[]).length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:12}}>No charge-compatible modules fitted</div>}{(fitChargeList??[]).map(item=><ItemRow key={item.typeID??item.name} item={item} onAdd={onAdd}/>)}</div>
+      <div>{(fitChargeList??[]).length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:12}}>{t("No charge-compatible modules fitted")}</div>}{(fitChargeList??[]).map(item=><ItemRow key={item.typeID??item.name} item={item} onAdd={onAdd}/>)}</div>
     ):(
       <div>
         {subGroups.map(gid=><GroupRow key={gid} gid={gid} onOpen={openGroup}/>)}
@@ -140,16 +141,16 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   const[justAdded,setJustAdded]=useState(null);
   useEffect(()=>{
     if(!justAdded)return;
-    const t=setTimeout(()=>setJustAdded(null),1100);
-    return ()=>clearTimeout(t);
+    const timer=setTimeout(()=>setJustAdded(null),1100);
+    return ()=>clearTimeout(timer);
   },[justAdded]);
   // NumpadModal's Confirm calls onConfirm and then onClose in the same handler, so onClose cannot
   // read the new quantity out of `items` yet — this carries it across those two calls. Null when
   // the numpad was dismissed without confirming, in which case the quantity addItem set still stands.
   const confirmedQty=useRef(null);
   const volOf=it=>{
-    const t=it.typeID??tidByName(it.name);
-    const typeVol=t?(TYPES[t]?.attrs?.volume??TYPES[t]?.a?.['161']):undefined;
+    const tid=it.typeID??tidByName(it.name);
+    const typeVol=tid?(TYPES[tid]?.attrs?.volume??TYPES[tid]?.a?.['161']):undefined;
     return typeVol??(it.vol>0?it.vol:0);
   };
   const totalVol=items.reduce((s,i)=>s+i.qty*volOf(i),0).toFixed(1);
@@ -173,17 +174,17 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
           over. This was 11px at textMute, which is the figure you are actually watching while
           loading cargo. The capacity is a fixed property of the hull — it is context for the number
           that moves, so it should not compete with it at the same size. */}
-      <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>Cargo Bay</span>
+      <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>{t("Cargo Bay")}</span>
         <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
           <span style={{fontWeight:700,color:totalVol>cap?C.danger:C.text}}>{totalVol}</span>
           <span style={{fontSize:10,color:C.textMid}}>/{cap.toLocaleString()} m³</span>
         </span>
       </div>
-      <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>
+      <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ {t("Add")}</button>
     </div>
     <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((parseFloat(totalVol)/cap)*100,100):0}%`,height:"100%",background:parseFloat(totalVol)>cap?C.danger:C.accent}}/></div>
     <div style={{flex:1,overflowY:"auto",padding:12}}>
-      {items.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>Cargo bay is empty</div>}
+      {items.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>{t("Cargo bay is empty")}</div>}
       {items.map(item=>{
         // Resolved once for the row: the icon needs it, and so does the info sheet, which the card
         // won't open without one — an item whose name we can't resolve has nothing to show.
@@ -197,10 +198,10 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
           <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{(item.qty*volOf(item)).toFixed(1)} m3</div></div>
           <button className="press" onClick={e=>{e.stopPropagation();haptic();setNumpad(item);}} style={{display:"flex",flexDirection:"column",alignItems:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",cursor:"pointer"}}>
             <span style={{fontSize:14,fontWeight:800,color:C.text}}>{item.qty.toLocaleString()}</span>
-            <span style={{fontSize:8,color:C.textMute,marginTop:1}}>tap to edit</span>
+            <span style={{fontSize:8,color:C.textMute,marginTop:1}}>{t("tap to edit")}</span>
           </button>
           {/* There was no way to take anything back OUT of the cargo bay. */}
-          <button className="press" onClick={e=>{e.stopPropagation();haptic("heavy");setItems(items.filter(i=>i.id!==item.id));}} aria-label={`Remove ${item.name}`} title="Remove from cargo"
+          <button className="press" onClick={e=>{e.stopPropagation();haptic("heavy");setItems(items.filter(i=>i.id!==item.id));}} aria-label={t("Remove {name}",{name:item.name})} title={t("Remove from cargo")}
             style={{width:28,height:28,flexShrink:0,borderRadius:7,background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:C.danger,fontSize:16,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>&times;</button>
         </div>);
       })}
