@@ -17,6 +17,7 @@ import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { useBackHandler, BACK_SCREEN } from "../lib/back-button.js";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
+import { t } from "../lib/i18n.js";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
 // BEFORE a const declared later in the component body exists — the temporal dead zone would throw
@@ -24,10 +25,13 @@ import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 // Exported because App owns the selected sub-tab (it outlives this screen) and validates what it
 // restored from storage against this list.
 export const FIT_SUBTABS=["Fit","Stats","Graph"];
-// Display only. These strings are also the persisted value of `axis_fit_subtab` and the keys
+// Display only. FIT_SUBTABS' strings are also the persisted value of `axis_fit_subtab` and the keys
 // useScrollMemory files each tab's scroll position under, so renaming them would silently reset
-// both for everyone already using the app. The label is the only part that should ever move.
-const _SUBTAB_LABEL={Fit:"Modules",Stats:"Stats",Graph:"Graph"};
+// both for everyone already using the app. The label is the only part that should ever move — which
+// is why this is a FUNCTION over literal keys rather than a module-level object of t() calls: a
+// module body runs before main.jsx has resolved the stored locale, and the labels have to be read at
+// render. See lib/i18n.js.
+const _subTabLabel=k=>({Fit:t("Modules"),Stats:t("Stats"),Graph:t("Graph")}[k]??k);
 
 // Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
 // player) because the shapes read as "back" and "back to the start" without a label to explain them.
@@ -53,7 +57,7 @@ export function ActiveFitBar({activeFit,onReturn}){
       {ship.typeID&&<img className="eve-icon" src={eveRender(ship.typeID,32)} width={28} height={28} alt="" style={{borderRadius:4}} onError={e=>{e.target.style.display="none";}}/>}
       <div><div style={{fontSize:11,fontWeight:700,color:C.accent,lineHeight:1.2}}>{activeFit.ship}</div><div style={{fontSize:10,color:C.textMid,marginTop:1}}>{activeFit.fitName}</div></div>
     </div>
-    <div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,fontWeight:600,color:C.accent}}>Return to Fit</span><span style={{fontSize:16,color:C.accent}}>{">"}</span></div>
+    <div style={{display:"flex",alignItems:"center",gap:4}}><span style={{fontSize:11,fontWeight:600,color:C.accent}}>{t("Return to Fit")}</span><span style={{fontSize:16,color:C.accent}}>{">"}</span></div>
   </div>);
 }
 
@@ -82,7 +86,7 @@ export function RecentFitsList({fitsDB, activeFit, loadFit, recents, act, tagCol
   return (
     <div style={{marginBottom:12}}>
       <div onClick={toggle} style={{display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer',padding:'4px 0',marginBottom:open?6:0}}>
-        <span style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5}}>Recent Fits</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5}}>{t("Recent Fits")}</span>
         <span style={{fontSize:11,color:C.textMute}}>{open ? '▲' : '▼'}</span>
       </div>
       {open && recentFits.map(({ship, fit}) => (
@@ -113,7 +117,7 @@ export function TagChip({name, color, count, onClick, onRemove, dim}) {
       {count!=null&&<span style={{fontSize:9,fontWeight:700,lineHeight:1.4,opacity:.8,padding:"0 5px",borderRadius:99,
         // The right padding is trimmed back because the chip's own 8px already sits outside this.
         marginRight:-3,background:dim?C.border:`${color}3d`}}>{count}</span>}
-      {onRemove&&<span onClick={e=>{e.stopPropagation();onRemove();}} aria-label={`Remove tag ${name}`}
+      {onRemove&&<span onClick={e=>{e.stopPropagation();onRemove();}} aria-label={t("Remove tag {name}",{name})}
         style={{fontSize:12,lineHeight:1,opacity:.7,cursor:"pointer",paddingLeft:1}}>&times;</span>}
     </span>
   );
@@ -127,10 +131,10 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
   const [draft, setDraft] = useState("");
   const mine = tagsOf(fit);
   const n = normalizeTag(draft);
-  const others = allNames.filter(t=>!hasTag(fit,t)&&(!n||t.toLowerCase().includes(n.toLowerCase())));
+  const others = allNames.filter(tag=>!hasTag(fit,tag)&&(!n||tag.toLowerCase().includes(n.toLowerCase())));
   // Only offer to CREATE when the typed name isn't already a tag — otherwise the same name would
   // appear twice, once as "add existing" and once as "create new".
-  const canCreate = !!n && !allNames.some(t=>tagKey(t)===tagKey(n));
+  const canCreate = !!n && !allNames.some(tag=>tagKey(tag)===tagKey(n));
   const commit = () => { if(canCreate){onToggle(n);setDraft("");} };
   // Sit in the strip the keyboard leaves visible, not on the layout viewport the keyboard does not
   // shrink — otherwise this sheet's whole point (a text field) opens underneath it. maxHeight goes
@@ -146,35 +150,36 @@ function TagSheet({fit, tagColors, allNames, onToggle, onClose}) {
         <SheetGrabber grabHandlers={sheet.grabHandlers} style={{margin:"0 -16px",padding:"8px 0 10px"}}/>
         <div style={{display:"flex",alignItems:"center",marginBottom:2}}>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:15,fontWeight:700,color:C.text}}>Tags</div>
+            <div style={{fontSize:15,fontWeight:700,color:C.text}}>{t("Tags")}</div>
             <div style={{fontSize:11,color:C.textMute,marginTop:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{fit?.name}</div>
           </div>
           <button onClick={sheet.dismiss} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px"}}>&times;</button>
         </div>
 
         <div style={{display:"flex",flexWrap:"wrap",gap:6,margin:"12px 0"}}>
-          {mine.length===0&&<span style={{fontSize:11,color:C.textMute}}>No tags yet</span>}
-          {mine.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)} onRemove={()=>onToggle(t)}/>)}
+          {mine.length===0&&<span style={{fontSize:11,color:C.textMute}}>{t("No tags yet")}</span>}
+          {/* A tag NAME is the pilot's own text and is never translated, here or anywhere else. */}
+          {mine.map(tag=><TagChip key={tag} name={tag} color={colorForTag(tag,tagColors)} onRemove={()=>onToggle(tag)}/>)}
         </div>
 
         <input value={draft} onChange={e=>setDraft(e.target.value)} maxLength={MAX_TAG_LEN}
           onKeyDown={e=>{if(e.key==="Enter")commit();if(e.key==="Escape")setDraft("");}}
           autoCapitalize="words" autoCorrect="off" spellCheck={false} enterKeyHint="done"
-          placeholder="Find or create a tag..."
+          placeholder={t("Find or create a tag...")}
           style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,
                   borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13}}/>
 
         {canCreate&&(
           <button onClick={commit} className="press" style={{marginTop:8,width:"100%",padding:"9px 0",background:C.accent,
             border:"none",borderRadius:8,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>
-            Create "{n}"
+            {t('Create "{name}"',{name:n})}
           </button>
         )}
 
         {others.length>0&&(<>
-          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,margin:"14px 0 7px"}}>Add existing</div>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,margin:"14px 0 7px"}}>{t("Add existing")}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {others.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)} onClick={()=>onToggle(t)} dim/>)}
+            {others.map(tag=><TagChip key={tag} name={tag} color={colorForTag(tag,tagColors)} onClick={()=>onToggle(tag)} dim/>)}
           </div>
         </>)}
       </div>
@@ -197,7 +202,7 @@ function FitRow({ship, fit, active, act, tagColors, showShip, hideTag, onOpen}){
   const btn=(border,color,bg)=>({width:36,height:36,borderRadius:6,background:bg??C.surfaceAlt,border,color,
     cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,flexShrink:0,lineHeight:1});
   // A tag's own list already says which tag you are in; repeating it on all 30 rows is noise.
-  const tags=tagsOf(fit).filter(t=>!hideTag||tagKey(t)!==tagKey(hideTag));
+  const tags=tagsOf(fit).filter(tag=>!hideTag||tagKey(tag)!==tagKey(hideTag));
   return(<div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 14px",background:active?C.accentLight:C.surface,
                       border:`1px solid ${active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8}}>
     {showShip&&<img src={eveIcon(Object.values(shipsByClass||{}).flat().find(s=>s.name===ship)?.typeID,64)}
@@ -215,29 +220,32 @@ function FitRow({ship, fit, active, act, tagColors, showShip, hideTag, onOpen}){
       {/* One subtitle line, not two: a cross-hull list needs to name the ship, but a fourth line on
           top of name/modified/tags turns an 18-result search into a scroll. */}
       <div style={{fontSize:11,color:C.textMute,marginTop:2,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-        {showShip?`${ship} · Modified ${fit.modified}`:`Modified ${fit.modified}`}</div>
+        {/* `fit.modified` is a display STRING baked at save time ("Aug 6, 2026") and stored on the
+            fit, so it stays in whatever language it was written in — reformatting it here would
+            need a real date, which the record does not carry. */}
+        {showShip?`${ship} · ${t("Modified {date}",{date:fit.modified})}`:t("Modified {date}",{date:fit.modified})}</div>
       {/* Only the `+`/`+ Tag` chip opens the tag sheet — the row itself used to carry that onClick,
           which (being a block-level flex container) covered the row's full width, not just the chips
           in it, and ate taps meant for opening the fit. An existing tag is not itself clickable. */}
       <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:6}}>
-        {tags.map(t=><TagChip key={t} name={t} color={colorForTag(t,tagColors)}/>)}
-        <TagChip name={tags.length?"+":"+ Tag"} color={C.textMid} dim
+        {tags.map(tag=><TagChip key={tag} name={tag} color={colorForTag(tag,tagColors)}/>)}
+        <TagChip name={tags.length?"+":`+ ${t("Tag")}`} color={C.textMid} dim
           onClick={e=>{e.stopPropagation();act.setTagSheet({ship,fitId:fit.id});}}/>
       </div>
     </div>
     <button onClick={e=>{e.stopPropagation();act.setEditingFitId(fit.id);act.setEditName(fit.name);}}
-      title="Rename fit" aria-label={`Rename ${fit.name}`}
+      title={t("Rename fit")} aria-label={t("Rename {name}",{name:fit.name})}
       style={btn(`1px solid ${editing?C.accentBorder:C.border}`,editing?C.accent:C.textMid,editing?C.accentLight:C.surfaceAlt)}>
       <IconPencil size={17}/></button>
     <button onClick={e=>{e.stopPropagation();act.openCopyOfFit(ship,fit.name);}}
-      title="Open a copy" aria-label={`Open a copy of ${fit.name}`}
+      title={t("Open a copy")} aria-label={t("Open a copy of {name}",{name:fit.name})}
       style={btn(`1px solid ${C.border}`,C.textMid)}>
       <IconCopy size={17}/></button>
     {/* Deleting a fit is NOT undoable — the undo stack holds a fit's CONTENTS and is dropped the
         moment the active fit changes — so the confirm is the safety, and it stays even though the
         row now sits in lists you scroll past rather than navigate to deliberately. */}
-    <button onClick={e=>{e.stopPropagation();if(window.confirm(`Delete fit "${fit.name}"?`)){haptic("medium");act.deleteFit(ship,fit);}}}
-      title="Delete fit" aria-label={`Delete ${fit.name}`}
+    <button onClick={e=>{e.stopPropagation();if(window.confirm(t('Delete fit "{name}"?',{name:fit.name}))){haptic("medium");act.deleteFit(ship,fit);}}}
+      title={t("Delete fit")} aria-label={t("Delete {name}",{name:fit.name})}
       style={btn("1px solid rgba(239,68,68,.25)",C.danger,"rgba(239,68,68,.08)")}>
       <IconClose size={17}/></button>
   </div>);
@@ -370,13 +378,17 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   const heroH = heroMax - (heroMax - HERO_MIN) * collapse;
 
   const traits = ship?.typeID ? ((shipTraits??{})[String(ship.typeID)] ?? {}) : {};
-  const tabs = ['traits','description','attributes'];
+  // The id stays English — it is the `tab` state and the key each panel is selected by. The label is
+  // spelled out one literal per tab because a computed t(id) is invisible to the catalog audit.
+  const tabs = [['traits',t("Traits")],['description',t("Description")],['attributes',t("Attributes")]];
 
   // lookupShip already computes these (ships.json for a listed hull, shipFromDogma's `rz` for one
   // that isn't) — BASE resonances, matching ItemInfoPanel's ResistBars and the ask to show the hull's
   // own numbers rather than whatever cs's skills/rigs currently do to them.
-  const resistLayers = ship?.resists ? ['shield','armor','hull']
-    .map(k => ({label:k[0].toUpperCase()+k.slice(1), ...ship.resists[k]})) : [];
+  // Spelled out rather than capitalising the key, so each label is a literal the catalog audit can
+  // see — and so the three match the snapshot card's resist rows word for word.
+  const resistLayers = ship?.resists ? [['shield',t("Shield")],['armor',t("Armor")],['hull',t("Hull")]]
+    .map(([k,label]) => ({label, ...ship.resists[k]})) : [];
 
   const _fmtKm = m => m >= 1000 ? `${(m/1000).toFixed(2)} km` : `${Math.round(m)} m`;
   // Two value columns when opened from a fit: what the hull actually IS right now, beside the bare
@@ -429,23 +441,26 @@ export function ShipInfoSheet({ship, cs, onClose}) {
     const on = mult != null && mult !== 1 && hardpoints > 0;
     return R(label, on ? hardpoints : null, on ? hardpoints * mult : null, F.eff, attr);
   };
+  // The unit suffixes in F above are deliberately NOT translated: they are SI or CCP symbols (tf, MW,
+  // GJ, m³, AU/s) that read the same in every EVE client, and the two columns they sit in are sized
+  // for them.
   const attrs = {
     fitting: [
-      R('CPU Output', ship?.cpu, cs?.cpuTotal, F.tf, 'cpuOutput'),
-      R('Powergrid Output', ship?.pg, cs?.pgTotal, F.mw, 'powerOutput'),
-      R('Calibration', ship?.calibration, cs?.calTotal, F.pts, 'upgradeCapacity'),
-      R('High Slots', ship?.hiSlots ?? ship?.highSlots, null, F.int),
-      R('Mid Slots', ship?.medSlots ?? ship?.midSlots, null, F.int),
-      R('Low Slots', ship?.lowSlots, null, F.int),
-      R('Rig Slots', ship?.rigSlots, null, F.int),
-      R('Turret Hardpoints', ship?.turrets, null, F.int),
-      effRow('Effective Turrets', effWeapons.turret, ship?.turrets, 'turretSlotsLeft'),
-      R('Launcher Hardpoints', ship?.launchers, null, F.int),
-      effRow('Effective Launchers', effWeapons.launcher, ship?.launchers, 'launcherSlotsLeft'),
+      R(t('CPU Output'), ship?.cpu, cs?.cpuTotal, F.tf, 'cpuOutput'),
+      R(t('Powergrid Output'), ship?.pg, cs?.pgTotal, F.mw, 'powerOutput'),
+      R(t('Calibration'), ship?.calibration, cs?.calTotal, F.pts, 'upgradeCapacity'),
+      R(t('High Slots'), ship?.hiSlots ?? ship?.highSlots, null, F.int),
+      R(t('Mid Slots'), ship?.medSlots ?? ship?.midSlots, null, F.int),
+      R(t('Low Slots'), ship?.lowSlots, null, F.int),
+      R(t('Rig Slots'), ship?.rigSlots, null, F.int),
+      R(t('Turret Hardpoints'), ship?.turrets, null, F.int),
+      effRow(t('Effective Turrets'), effWeapons.turret, ship?.turrets, 'turretSlotsLeft'),
+      R(t('Launcher Hardpoints'), ship?.launchers, null, F.int),
+      effRow(t('Effective Launchers'), effWeapons.launcher, ship?.launchers, 'launcherSlotsLeft'),
     ],
     capacitor: [
-      R('Capacitor Capacity', ship?.capCapacity, cs?.capCapacity, F.gj, 'capacitorCapacity'),
-      R('Recharge Time', ship?.capRechargeRate, cs?.capRechargeMs, F.sec, 'rechargeRate'),
+      R(t('Capacitor Capacity'), ship?.capCapacity, cs?.capCapacity, F.gj, 'capacitorCapacity'),
+      R(t('Recharge Time'), ship?.capRechargeRate, cs?.capRechargeMs, F.sec, 'rechargeRate'),
     ],
     targeting: [
       // cs.targetRange is KM and the hull record's is METRES. Feeding both to one formatter without
@@ -456,14 +471,16 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       // Rifter's 28.125 km arrived as 28.1 and printed "28.10 km", which is both a wrong last digit
       // and — since the breakdown is offered only to a row that reproduces the engine's own value —
       // the reason every hull not landing on a clean decimal had no dropdown at all.
-      R('Max Target Range', ship?.targetRange,
+      R(t('Max Target Range'), ship?.targetRange,
         cs?.exact?.targetRange!=null?cs.exact.targetRange*1000:null, F.km, 'maxTargetRange'),
-      R('Scan Resolution', ship?.scanRes, cs?.scanRes, F.mm, 'scanResolution'),
-      R('Max Locked Targets', ship?.maxTargets, cs?.maxTargets, F.int, 'maxLockedTargets'),
+      R(t('Scan Resolution'), ship?.scanRes, cs?.scanRes, F.mm, 'scanResolution'),
+      R(t('Max Locked Targets'), ship?.maxTargets, cs?.maxTargets, F.int, 'maxLockedTargets'),
       // CCP has four separate strength attributes, one per sensor type, so the key is the hull's own
       // sensor rather than a fixed one. They all flag the same way, but a Radar hull asking about
       // scanGravimetricStrength is the kind of thing that silently starts returning null later.
-      R(`${ship?.sensorType||'Sensor'} Sensor Strength`, ship?.sensorStrength, cs?.sensorStrength, F.pt,
+      // The sensor TYPE is CCP taxonomy (Radar, Ladar, Magnetometric, Gravimetric) and stays English,
+      // like every other game term in the app.
+      R(t('{type} Sensor Strength',{type:ship?.sensorType||'Sensor'}), ship?.sensorStrength, cs?.sensorStrength, F.pt,
         ship?.sensorType ? `scan${ship.sensorType}Strength` : null),
     ],
     navigation: [
@@ -471,20 +488,24 @@ export function ShipInfoSheet({ship, cs, onClose}) {
       // already blooms this tab's signature and raises its mass, and showing an unboosted speed
       // beside them described a ship that does not exist. Matches what the stats tab has always
       // printed. `maxVelocityAB` equals the passive speed whenever no prop mod is running.
-      R('Max Velocity', ship?.maxVelocity, cs?.maxVelocityAB ?? cs?.maxVelocity, F.ms, 'maxVelocity'),
-      R('Agility', ship?.agility, cs?.agility, F.agi, 'agility'),
-      R('Warp Speed', ship?.warpSpeed, cs?.warpSpeed, F.au, 'warpSpeedMultiplier'),
-      R('Signature Radius', ship?.sigRadius, cs?.sigRadius, F.m, 'signatureRadius'),
-      R('Mass', ship?.mass, cs?.mass, F.mkg, 'mass'),
+      R(t('Max Velocity'), ship?.maxVelocity, cs?.maxVelocityAB ?? cs?.maxVelocity, F.ms, 'maxVelocity'),
+      R(t('Agility'), ship?.agility, cs?.agility, F.agi, 'agility'),
+      R(t('Warp Speed'), ship?.warpSpeed, cs?.warpSpeed, F.au, 'warpSpeedMultiplier'),
+      R(t('Signature Radius'), ship?.sigRadius, cs?.sigRadius, F.m, 'signatureRadius'),
+      R(t('Mass'), ship?.mass, cs?.mass, F.mkg, 'mass'),
     ],
     structure: [
-      R('Shield HP', ship?.shieldHP, cs?.shieldHP, F.hp, 'shieldCapacity'),
-      R('Armor HP', ship?.armorHP, cs?.armorHP, F.hp, 'armorHP'),
-      R('Hull HP', ship?.hullHP, cs?.hullHP, F.hp, 'hp'),
-      R('Drone Bay', ship?.droneBay, cs?.droneBay, F.m3, 'droneCapacity'),
-      R('Drone Bandwidth', ship?.droneBandwidth ?? ship?.droneBW, cs?.droneBandwidth, F.mbit, 'droneBandwidth'),
+      R(t('Shield HP'), ship?.shieldHP, cs?.shieldHP, F.hp, 'shieldCapacity'),
+      R(t('Armor HP'), ship?.armorHP, cs?.armorHP, F.hp, 'armorHP'),
+      R(t('Hull HP'), ship?.hullHP, cs?.hullHP, F.hp, 'hp'),
+      R(t('Drone Bay'), ship?.droneBay, cs?.droneBay, F.m3, 'droneCapacity'),
+      R(t('Drone Bandwidth'), ship?.droneBandwidth ?? ship?.droneBW, cs?.droneBandwidth, F.mbit, 'droneBandwidth'),
     ],
   };
+  // The `attrs` keys are the section ORDER and the React keys; the heading is looked up separately so
+  // the two cannot be confused, and so each heading is a literal the catalog audit can find.
+  const sectionLabel=k=>({fitting:t("Fitting"),capacitor:t("Capacitor"),targeting:t("Targeting"),
+    navigation:t("Navigation"),structure:t("Structure")}[k]??k);
   const twoCol = !!cs;
   const GRID = twoCol ? '1fr auto auto' : '1fr auto';
 
@@ -547,7 +568,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
           <SheetGrabber grabHandlers={sheet.grabHandlers} onArt
                         style={{position:'absolute',top:0,left:0,right:0,padding:'8px 0 16px',pointerEvents:'auto'}}/>
           {/* Close sits on its own scrim: over a bright nebula a bare glyph disappears. */}
-          <button onClick={sheet.dismiss} aria-label="Close"
+          <button onClick={sheet.dismiss} aria-label={t("Close")}
             style={{position:'absolute',top:10,right:10,width:30,height:30,borderRadius:15,border:'none',
                     cursor:'pointer',color:'#fff',fontSize:18,lineHeight:1,pointerEvents:'auto',
                     background:'rgba(0,0,0,.42)',backdropFilter:'blur(6px)'}}>×</button>
@@ -587,13 +608,12 @@ export function ShipInfoSheet({ship, cs, onClose}) {
               travelling on the same pixel the art stops shrinking. */}
           <div style={{position:'sticky',top:HERO_MIN,zIndex:2,display:'flex',background:C.surface,
                        borderBottom:`1px solid ${C.border}`}}>
-            {tabs.map(t => (
-              <button key={t} onClick={()=>setTab(t)}
+            {tabs.map(([id,label]) => (
+              <button key={id} onClick={()=>setTab(id)}
                 style={{flex:1,padding:'9px 4px',background:'none',border:'none',cursor:'pointer',
-                        fontSize:12,fontWeight:600,color:tab===t?C.accent:C.textMute,
-                        borderBottom:tab===t?`2px solid ${C.accent}`:'2px solid transparent',
-                        textTransform:'capitalize'}}>
-                {t}
+                        fontSize:12,fontWeight:600,color:tab===id?C.accent:C.textMute,
+                        borderBottom:tab===id?`2px solid ${C.accent}`:'2px solid transparent'}}>
+                {label}
               </button>
             ))}
           </div>
@@ -607,7 +627,8 @@ export function ShipInfoSheet({ship, cs, onClose}) {
               it they collapse into one undifferentiated wall of text. */}
           {tab==='description' && (
             <div style={{fontSize:13,color:C.textMid,lineHeight:1.6,whiteSpace:'pre-wrap'}}>
-              {traits.desc || 'No description available.'}
+              {/* CCP's own flavour text, which the bundle ships in English only. */}
+              {traits.desc || t('No description available.')}
             </div>
           )}
           {tab==='attributes' && (
@@ -616,14 +637,14 @@ export function ShipInfoSheet({ship, cs, onClose}) {
               {resistLayers.length>0 && (
                 <div style={{marginBottom:16}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',
-                    letterSpacing:.5,marginBottom:8}}>Base Resistances</div>
+                    letterSpacing:.5,marginBottom:8}}>{t("Base Resistances")}</div>
                   <ResistBars layers={resistLayers}/>
                 </div>
               )}
               {twoCol && (
                 <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,paddingBottom:6}}>
                   <span/>
-                  {['Current','Base'].map(h=>(<span key={h} style={{fontSize:10,fontWeight:700,color:C.textMute,
+                  {[t('Current'),t('Base')].map(h=>(<span key={h} style={{fontSize:10,fontWeight:700,color:C.textMute,
                     textAlign:'right',textTransform:'uppercase',letterSpacing:.5}}>{h}</span>))}
                 </div>
               )}
@@ -633,7 +654,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                 return (
                 <div key={section} style={{marginBottom:16}}>
                   <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:'uppercase',
-                    letterSpacing:.5,marginBottom:8}}>{section}</div>
+                    letterSpacing:.5,marginBottom:8}}>{sectionLabel(section)}</div>
                   {shown.map(r => {
                     const val = r.cur ?? r.base;
                     // Relative, for the reason ItemInfoPanel gives: the engine multiplies through
@@ -718,10 +739,10 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   // lookupShip scans the whole ship list, so without this the scan would run on every keystroke.
   const _warmedHulls=useRef(new Set());
   useEffect(()=>{
-    for(const t of openFitTabs??[]){
-      if(!t?.ship||_warmedHulls.current.has(t.ship))continue;
-      _warmedHulls.current.add(t.ship);
-      prefetchRenderHi(lookupShip(t.ship)?.typeID);
+    for(const tb of openFitTabs??[]){
+      if(!tb?.ship||_warmedHulls.current.has(tb.ship))continue;
+      _warmedHulls.current.add(tb.ship);
+      prefetchRenderHi(lookupShip(tb.ship)?.typeID);
     }
   },[openFitTabs]);
   // Sub-tab swipe — see lib/use-tab-swipe.js. Shared with the Effects screen's four sections rather
@@ -757,7 +778,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const[tagRename,setTagRename]=useState("");
 
   const tagList=useMemo(()=>allTags(fitsDB),[fitsDB]);
-  const tagNames=useMemo(()=>tagList.map(t=>t.name),[tagList]);
+  const tagNames=useMemo(()=>tagList.map(tag=>tag.name),[tagList]);
 
   const applyTagToggle=(ship,fitId,name)=>{
     setFitsDB(prev=>({...prev,[ship]:(prev[ship]||[]).map(f=>f.id===fitId?toggleTag(f,name):f)}));
@@ -769,7 +790,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const commitTagRename=()=>{
     const next=normalizeTag(tagRename);
     if(!next||!selectedTag||tagKey(next)===tagKey(selectedTag)){setTagEditing(false);return;}
-    const merging=tagNames.some(t=>tagKey(t)===tagKey(next));
+    const merging=tagNames.some(tag=>tagKey(tag)===tagKey(next));
     setFitsDB(prev=>renameTag(prev,selectedTag,next));
     setTagColors(prev=>{
       const {[tagKey(selectedTag)]:old,...rest}=prev??{};
@@ -838,6 +859,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     // Names are the app's identity for a fit, so a second "New Fit" on the same hull would collide
     // with the first and both would resolve to whichever came back from the lookup.
     const taken=new Set((fitsDB[ship]||[]).map(f=>f.name));
+    // Stays an English literal, unlike the identically-worded BUTTON: this is saved onto the fit and
+    // travels out through EFT export and backups, where a localised default would be noise.
     let name="New Fit", n=2;
     while(taken.has(name))name=`New Fit ${n++}`;
     const nf={id:nextId,name,modified:now,tags:[],slots:generateEmptySlots(lookupShip(ship))};
@@ -871,7 +894,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         // having to go via the tag list first.
         (fitsDB[s.name]||[]).forEach(fit=>{
           const tags=tagsOf(fit);
-          if(fit.name.toLowerCase().includes(q)||tags.some(t=>t.toLowerCase().includes(q)))
+          if(fit.name.toLowerCase().includes(q)||tags.some(tag=>tag.toLowerCase().includes(q)))
             // fitId, not just the name: a result row can rename and DELETE now, and both match on
             // id. Names are not unique — "New Fit" is the default, which is exactly the pile
             // someone opens this list to clear out — so acting by name would take the wrong one.
@@ -946,7 +969,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const newTabHint=newTabIntent?(
     <div style={{padding:"6px 12px",background:C.accent,color:"#fff",fontSize:10,fontWeight:700,
                  textAlign:"center",textTransform:"uppercase",letterSpacing:.7,flexShrink:0}}>
-      Select a fit to open in a new tab
+      {t("Select a fit to open in a new tab")}
     </div>
   ):null;
 
@@ -957,9 +980,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {/* pyfa's order, back-to-start first. One level down it would do exactly what Back does,
             so it only earns its space deeper in. */}
         {browsePath.length>1&&(
-          <button onClick={resetNode} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
+          <button onClick={resetNode} className="press" aria-label={t("Back to all ships")} title={t("All ships")} style={_navBtn()}><BackToStartArrow/></button>
         )}
-        <button onClick={leaveNode} className="press" aria-label="Back one level" title="Back one level" style={_navBtn()}><BackArrow/></button>
+        <button onClick={leaveNode} className="press" aria-label={t("Back one level")} title={t("Back one level")} style={_navBtn()}><BackArrow/></button>
         <img src={(raceIcons??{})[String(browseNode?.raceID)]??shipSmallIcon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{browsePath[browsePath.length-1]}</div>
@@ -968,7 +991,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       </div>
     )}
     <div style={{padding:"8px 10px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search ships or fit names..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search ships or fit names...")}/>
     </div>
     <div onScroll={dismissKeyboardOnScroll} style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
       {!search&&browsePath.length===0&&<RecentFitsList fitsDB={fitsDB} activeFit={activeFit} loadFit={loadFit} recents={recents} act={fitRowAct} tagColors={tagColors}/>}
@@ -977,11 +1000,11 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           Hidden entirely until something is tagged — an empty section is just chrome. */}
       {!search&&browsePath.length===0&&tagList.length>0&&(
         <div style={{marginBottom:12}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,padding:"4px 0",marginBottom:6}}>Tags</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:.5,padding:"4px 0",marginBottom:6}}>{t("Tags")}</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {tagList.map(t=>(
-              <TagChip key={t.key} name={t.name} count={t.count} color={colorForTag(t.name,tagColors)}
-                onClick={()=>{setSelectedTag(t.name);setTagEditing(false);haptic("light");setView("tag");}}/>
+            {tagList.map(tag=>(
+              <TagChip key={tag.key} name={tag.name} count={tag.count} color={colorForTag(tag.name,tagColors)}
+                onClick={()=>{setSelectedTag(tag.name);setTagEditing(false);haptic("light");setView("tag");}}/>
             ))}
           </div>
         </div>
@@ -989,13 +1012,23 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       {!search&&browsePath.length===0&&Object.keys(fitsDB).length===0&&(
         <div style={{textAlign:"center",padding:"28px 16px 20px"}}>
           <img src={shipSmallIcon} style={{width:44,height:44,opacity:0.25,marginBottom:14}} alt=""/>
-          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>Welcome to Axis</div>
-          <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>Select a ship class below, choose a hull, then tap <strong style={{color:C.accent}}>+ New Fit</strong> to get started</div>
+          <div style={{fontSize:16,fontWeight:700,color:C.text,marginBottom:8}}>{t("Welcome to Axis")}</div>
+          {/* One translatable sentence, split on {action} at render so the accented button name can
+              sit wherever the target language puts it. t() leaves a placeholder it was given no
+              value for verbatim, which is what lets this find it — and the name itself comes from
+              the same key the button below uses, so the two cannot drift apart. */}
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.6}}>
+            {t("Select a ship class below, choose a hull, then tap {action} to get started")
+              .split(/(\{action\})/)
+              .map((part,i)=>part==="{action}"
+                ?<strong key={i} style={{color:C.accent}}>+ {t("New Fit")}</strong>
+                :part)}
+          </div>
         </div>
       )}
       {searchResults&&(<>
-        <div style={{fontSize:11,color:C.textMute,marginBottom:8}}>{searchResults.length} result{searchResults.length!==1?"s":""} for "{search}"</div>
-        {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No ships or fits found</div>}
+        <div style={{fontSize:11,color:C.textMute,marginBottom:8}}>{t({one:'{n} result for "{q}"',other:'{n} results for "{q}"'},{n:searchResults.length,q:search})}</div>
+        {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>{t("No ships or fits found")}</div>}
         {searchResults.map((rr,i)=>{
           // A fit result IS a fit, so it gets the fit row — the whole point of searching across
           // hulls is to act on what you find without navigating to it first. Resolved from fitsDB
@@ -1014,8 +1047,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           return(<div key={`ship:${rr.ship}:${i}`} onClick={()=>{if(newFitIntent){setNewFitIntent?.(false);createNewFit(rr.ship);return;}setSelectedShip(rr.ship);setView("fits");}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
             <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.hull}</div></div>
-            <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>ship</span>
-            <InfoButton title={`${rr.ship} info`} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>
+            <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>{t("ship")}</span>
+            <InfoButton title={t("{name} info",{name:rr.ship})} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>
           </div>);
         })}
       </>)}
@@ -1030,7 +1063,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
             <img src={icon} style={{width:18,height:18,flexShrink:0,objectFit:"contain"}} alt=""/>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:C.text}}>{n.label}</div>
-              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{ships.length} ship{ships.length!==1?"s":""}{fitCount>0?` · ${fitCount} fit${fitCount!==1?"s":""}`:""}</div>
+              {/* Two keys with the separator between them, because only one plural form can be
+                  selected per key and both counts have to select their own. */}
+              <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{t({one:"{n} ship",other:"{n} ships"},{n:ships.length})}{fitCount>0?` · ${t({one:"{n} fit",other:"{n} fits"},{n:fitCount})}`:""}</div>
             </div>
             <span style={{color:C.textMute,fontSize:16}}>{">"}</span>
           </div>
@@ -1045,9 +1080,9 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
               {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
               <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
             </div>
-            <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?`${sfits.length} fit${sfits.length!==1?'s':''}`:'No fits'}</div>
+            <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?t({one:"{n} fit",other:"{n} fits"},{n:sfits.length}):t("No fits")}</div>
           </div>
-          <InfoButton title={`${s.name} info`} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
+          <InfoButton title={t("{name} info",{name:s.name})} onClick={e=>{e.stopPropagation();setInfoShip(s.name);}}/>
         </div>);
       })}
     </div>
@@ -1066,15 +1101,15 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* A tag cuts across the hull tree rather than sitting in it, so there is no "one level up"
             to offer — only the way out. */}
-        <button onClick={()=>{setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
+        <button onClick={()=>{setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label={t("Back to all ships")} title={t("All ships")} style={_navBtn()}><BackToStartArrow/></button>
         <span style={{width:9,height:9,borderRadius:99,background:color,flexShrink:0}}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedTag}</div>
-          <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{tagged.length} fit{tagged.length!==1?"s":""}</div>
+          <div style={{fontSize:10,color:C.textMute,marginTop:1}}>{t({one:"{n} fit",other:"{n} fits"},{n:tagged.length})}</div>
         </div>
         <button onClick={()=>{setTagRename(selectedTag??"");setTagEditing(v=>!v);}} className="press"
           style={{padding:"6px 11px",background:tagEditing?C.accentLight:C.surface,border:`1px solid ${tagEditing?C.accentBorder:C.border}`,
-                  borderRadius:7,color:tagEditing?C.accent:C.textMid,fontSize:12,fontWeight:700,cursor:"pointer"}}>Edit</button>
+                  borderRadius:7,color:tagEditing?C.accent:C.textMid,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Edit")}</button>
       </div>
 
       {tagEditing&&(
@@ -1085,24 +1120,26 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
             style={{width:"100%",boxSizing:"border-box",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"8px 10px",color:C.text,fontSize:13,fontWeight:600}}/>
           <div style={{display:"flex",flexWrap:"wrap",gap:8,margin:"12px 0 4px"}}>
             {TAG_PALETTE.map(p=>(
-              <button key={p} onClick={()=>{setTagColors(prev=>setTagColor(prev,selectedTag,p));haptic("light");}} aria-label={`Colour ${p}`}
+              <button key={p} onClick={()=>{setTagColors(prev=>setTagColor(prev,selectedTag,p));haptic("light");}} aria-label={t("Colour {hex}",{hex:p})}
                 style={{width:26,height:26,borderRadius:99,background:p,cursor:"pointer",
                         border:p.toLowerCase()===color.toLowerCase()?`2px solid ${C.text}`:"2px solid transparent"}}/>
             ))}
           </div>
           <button onClick={()=>{
-              if(!window.confirm(`Remove the tag "${selectedTag}" from ${tagged.length} fit${tagged.length!==1?"s":""}? The fits themselves are kept.`))return;
+              if(!window.confirm(t({one:'Remove the tag "{tag}" from {n} fit? The fits themselves are kept.',
+                                    other:'Remove the tag "{tag}" from {n} fits? The fits themselves are kept.'},
+                                   {tag:selectedTag,n:tagged.length})))return;
               setFitsDB(prev=>removeTagEverywhere(prev,selectedTag));
               setTagColors(prev=>{const{[tagKey(selectedTag)]:_gone,...rest}=prev??{};return rest;});
               setTagEditing(false);setSelectedTag(null);setView("browse");
             }} className="press"
             style={{marginTop:10,width:"100%",padding:"9px 0",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",
-                    borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Delete tag</button>
+                    borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Delete tag")}</button>
         </div>
       )}
 
       <div style={{flex:1,overflowY:"auto",padding:12}}>
-        {tagged.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>No fits carry this tag</div>}
+        {tagged.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>{t("No fits carry this tag")}</div>}
         {tagged.map(({ship,fit})=>(
           <FitRow key={`${ship}:${fit.id}`} ship={ship} fit={fit} act={fitRowAct} tagColors={tagColors}
             showShip hideTag={selectedTag}
@@ -1122,14 +1159,16 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         {/* The ship's fit list is one more level of the browse hierarchy, so it gets the same two
             arrows. Back keeps browsePath, landing you among this hull's siblings. */}
         {browsePath.length>0&&(
-          <button onClick={()=>{setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label="Back to all ships" title="All ships" style={_navBtn()}><BackToStartArrow/></button>
+          <button onClick={()=>{setBrowsePath([]);setView("browse");haptic("light");}} className="press" aria-label={t("Back to all ships")} title={t("All ships")} style={_navBtn()}><BackToStartArrow/></button>
         )}
-        <button onClick={()=>{setView("browse");haptic("light");}} className="press" aria-label="Back one level" title="Back one level" style={_navBtn()}><BackArrow/></button>
+        <button onClick={()=>{setView("browse");haptic("light");}} className="press" aria-label={t("Back one level")} title={t("Back one level")} style={_navBtn()}><BackArrow/></button>
         <span style={{fontSize:14,fontWeight:700,color:C.text,flex:1,minWidth:0,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{selectedShip}</span>
-        <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ New Fit</button>
+        <button className="press" onClick={()=>{haptic("medium");createNewFit(selectedShip);}} style={{padding:"6px 12px",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer"}}>+ {t("New Fit")}</button>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:12}}>
-        {fits.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>No saved fits - tap + New Fit to start</div>}
+        {/* The button's own label is substituted by t() itself, so the instruction cannot come to
+            name a button that says something else. */}
+        {fits.length===0&&<div style={{textAlign:"center",color:C.textMute,marginTop:40,fontSize:13}}>{t("No saved fits — tap + {action} to start",{action:t("New Fit")})}</div>}
         {fits.map(fit=>(
           <FitRow key={fit.id} ship={selectedShip} fit={fit} act={fitRowAct} tagColors={tagColors}
             active={activeFit?.fitName===fit.name&&activeFit?.ship===selectedShip}
@@ -1155,13 +1194,13 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
         <button onClick={()=>{haptic();setSelectedShip(activeFit?.ship??null);setView("fits");}} className="press"
           style={{background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:12,fontWeight:700,
                   cursor:"pointer",padding:"5px 11px",flexShrink:0,display:"flex",alignItems:"center",gap:4,lineHeight:1}}>
-          <span style={{fontSize:13,lineHeight:1}}>&#8249;</span>Fits
+          <span style={{fontSize:13,lineHeight:1}}>&#8249;</span>{t("Fits")}
         </button>
         <div style={{flex:1,minWidth:0}}>
           {renamingFit
             ?<input autoFocus value={newFitName} onChange={e=>setNewFitName(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")commitRename();if(e.key==="Escape")setRenamingFit(false);}} onBlur={commitRename} style={{width:"100%",background:C.surfaceAlt,border:`1px solid ${C.accentBorder}`,borderRadius:6,padding:"3px 8px",color:C.text,fontSize:12,fontWeight:700,boxSizing:"border-box",textAlign:"center"}}/>
             :<button onClick={()=>{setNewFitName(activeFit?.fitName||"");setRenamingFit(true);}} style={{background:"none",border:"none",cursor:"pointer",textAlign:"center",padding:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6,width:"100%"}}>
-              <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||"Unnamed Fit"}</span>
+              <span style={{fontSize:12,fontWeight:700,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{activeFit?.fitName||t("Unnamed Fit")}</span>
               <span style={{display:"flex",color:C.textMid,flexShrink:0}}><IconPencil size={14}/></span>
             </button>
           }
@@ -1175,8 +1214,8 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           {activeFitRecord&&(()=>{
             const tint=activeFitTags.length?colorForTag(activeFitTags[0],tagColors):null;
             return(<button onClick={()=>{haptic("light");setTagSheet({ship:activeFit.ship,fitId:activeFitRecord.id});}}
-              className="press" title={activeFitTags.length?`Tags: ${activeFitTags.join(", ")}`:"Tag this fit"}
-              aria-label={activeFitTags.length?`Edit tags (${activeFitTags.length})`:"Tag this fit"}
+              className="press" title={activeFitTags.length?t("Tags: {list}",{list:activeFitTags.join(", ")}):t("Tag this fit")}
+              aria-label={activeFitTags.length?t("Edit tags ({n})",{n:activeFitTags.length}):t("Tag this fit")}
               style={{display:"flex",alignItems:"center",gap:3,padding:"4px 7px",lineHeight:1,cursor:"pointer",
                       borderRadius:7,background:tint?`${tint}1f`:C.surfaceAlt,
                       border:`1px solid ${tint?`${tint}66`:C.border}`,color:tint??C.textMid}}>
@@ -1186,7 +1225,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           })()}
         </div>
       </div>
-      <div style={{display:"flex"}}><div style={{width:60}}/>{FIT_SUBTABS.map(t=><button key={t} onClick={()=>{const to=FIT_SUBTABS.indexOf(t),from=FIT_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===t?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===t?C.accent:C.textMute,borderBottom:fitSubTab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{_SUBTAB_LABEL[t]}</button>)}</div>
+      <div style={{display:"flex"}}><div style={{width:60}}/>{FIT_SUBTABS.map(sub=><button key={sub} onClick={()=>{const to=FIT_SUBTABS.indexOf(sub),from=FIT_SUBTABS.indexOf(fitSubTab);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"7px 0",fontSize:12,fontWeight:fitSubTab===sub?700:600,letterSpacing:"1px",textTransform:"uppercase",background:"none",border:"none",cursor:"pointer",color:fitSubTab===sub?C.accent:C.textMute,borderBottom:fitSubTab===sub?`2px solid ${C.accent}`:"2px solid transparent"}}>{_subTabLabel(sub)}</button>)}</div>
     </div>
     <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
       {/* Keyed on the tab so the incoming panel remounts and replays the slide-in. That costs
