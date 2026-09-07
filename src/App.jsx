@@ -23,6 +23,7 @@ import { getLoadedFitsDB, persistFitsDB } from "./lib/fits-store.js";
 import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
+import { initBackButton, useBackHandler, BACK_APP } from "./lib/back-button.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
@@ -123,6 +124,10 @@ export default function App(){
     })();
     return()=>{try{sub?.remove?.();}catch(e){}};
   },[]);
+  // The one Android Back listener. Every sheet, drill-down level and screen registers with
+  // lib/back-button.js; this just turns the button on. See that file — once a listener exists,
+  // Capacitor stops exiting the app for us, so an unhandled press has to be handled below.
+  useEffect(()=>initBackButton(),[]);
   const[bottomTab,setBottomTab]=useState("fittings");
   const[showHamburger,setShowHamburger]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
@@ -704,6 +709,16 @@ export default function App(){
     if(bottomTab!=="fittings"||fittingsView!=="browse")setNewFitIntent(false);
   },[bottomTab,fittingsView]);
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
+  // The floor of the back stack: everything above has declined, so all that's left is the expanded
+  // tab strip and the bottom nav. Material's rule for a bottom nav is that Back returns to the start
+  // destination rather than exiting from wherever you happen to be, and Fittings is ours.
+  //
+  // Declining from there is deliberate — the fit screen is the root, and Back at the root exits.
+  useBackHandler(()=>{
+    if(tabsOpen){setTabsOpen(false);return;}
+    if(bottomTab!=="fittings"){setBottomTab("fittings");haptic("light");return;}
+    return false;
+  },true,BACK_APP);
   // `height`, not `minHeight`: the shell is exactly one viewport tall and clips, so the flex
   // children below finally have a bounded height and each screen's own overflowY:auto region takes
   // over. With minHeight the column just grew and the DOCUMENT scrolled, which is what dragged the

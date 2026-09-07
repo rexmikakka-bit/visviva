@@ -17,6 +17,7 @@ import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
+import { useBackHandler } from "../lib/back-button.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -567,6 +568,8 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   const group=current?.subGroup??order[slotIdx]??"Core";
   const byGroup=subsystemsForHull(ship?.name);
   const options=byGroup[group]??[];
+  // The one picker still built as a bare overlay rather than on BottomSheet, so Back is wired here.
+  useBackHandler(onClose);
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70vh",background:C.bg,borderTopLeftRadius:16,borderTopRightRadius:16,overflow:"hidden",display:"flex",flexDirection:"column"}}>
@@ -662,6 +665,10 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
   const goBack=()=>{if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
+  // Back climbs the market tree before it closes the sheet, matching the header's ‹ and the
+  // left-to-right swipe below. Registered by THIS component rather than the <BottomSheet> it renders,
+  // which is what puts it above the sheet's own dismiss — see back-button.js on layering.
+  useBackHandler(goBack,navPath.length>0);
   const goInto=id=>{setNavDir(1);setNavPath([...navPath,id]);};
   // Swipe left-to-right to go up a level, the way iOS back-swipe works. Axis-locked on the first
   // meaningful movement so scrolling a long module list never triggers it.

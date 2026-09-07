@@ -5,6 +5,7 @@ import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName,
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
+import { useBackHandler } from "../lib/back-button.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
 // Renders a shareable image of the fit. Layout follows the approved fit-card mockup
@@ -755,6 +756,10 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
 
   const btn = (bg, bd, col) => ({ padding: "10px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
     cursor: "pointer", background: bg, border: `1px solid ${bd}`, color: col });
+
+  // Not while a render/share is in flight: closing mid-html2canvas leaves the off-screen card
+  // unmounted under a promise that still resolves against it.
+  useBackHandler(onClose, !busy);
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 9999,

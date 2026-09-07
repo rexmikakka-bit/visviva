@@ -6,6 +6,7 @@ import { fitToEFT } from "../lib/eft-export.js";
 import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, profilePilot, describeSkillSheet } from "../lib/pilot.js";
 import { SKILL_CATALOG } from "../calc.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
+import { useBackHandler } from "../lib/back-button.js";
 import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
@@ -125,6 +126,10 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
   // drawer that is still moving.
   const [closing,setClosing]=useState(false);
   const dismiss=(then)=>{ if(closing)return; setClosing(true); setTimeout(()=>{then?.();onClose();},DRAWER_MS); };
+  // The drawer slides rather than drags, so it is the one overlay that isn't on useSheetDrag and has
+  // to ask for Back itself. Arity matters: the handler is called with the press, and `dismiss` reads
+  // its first argument as the deferred action.
+  useBackHandler(()=>dismiss());
   return(<div style={{position:"fixed",inset:0,zIndex:90}} onClick={()=>dismiss()}>
     {/* The drawer used to slide over undimmed content, which left the app behind it looking live
         and tappable when it isn't. The scrim also gives the exit something to do besides the panel

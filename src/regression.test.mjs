@@ -34,6 +34,7 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
+import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
@@ -2010,6 +2011,51 @@ Loki Propulsion - Intercalated Nanofibers
   check('cmp', 'officers run by meta level, not alphabetically',
         allBefore(["Brokara's Modified", "Brynn's Modified", "Mizuro's Modified", "Tairei's Modified"],
                   ["Ahremen's Modified", "Gotan's Modified", "Setele's Modified", "Vizan's Modified"]), 1, 0);
+
+  // ── Android Back: which layer the press is handed to ─────────────────────────────────────
+  // Registering a Capacitor backButton listener SUPPRESSES its default (history.back, then exit),
+  // so from here on the button is entirely ours and every wrong answer is user-visible: the wrong
+  // layer closing, or nothing closing and the app quitting out from under an open sheet.
+  //
+  // React's effect order is what the overlay layer relies on — a sheet mounts after the screen
+  // beneath it, and a PARENT's effect runs after its own children's, which is what lets
+  // ModuleBrowserSheet's drill-down outrank the <BottomSheet> it renders. Screens are pinned below
+  // with an explicit layer instead, because App's effect runs last of all and would otherwise sit
+  // above every sheet its children had already mounted.
+  {
+    const fired = [], unreg = [];
+    const reg = (name, layer, fn) => {
+      const h = { current: () => { fired.push(name); return fn?.(); } };
+      unreg.push(pushBackHandler(h, layer));
+      return h;
+    };
+    const app = reg('app', BACK_APP, () => false);      // declines: nothing left to close
+    const screen = reg('screen', BACK_SCREEN);
+    const sheet = reg('sheet', 0);
+    const drill = reg('drill', 0);                      // the sheet's own inner level, mounted after
+
+    check('back', 'the newest overlay takes the press', (runBackHandler(), fired.pop()), 'drill', 0);
+    // Parked, not unregistered: a drill-down that runs out of levels must keep its PLACE, or
+    // re-registering later would put it above a sheet opened on top of it in the meantime.
+    drill.current = null;
+    check('back', 'a parked handler falls through to the sheet', (runBackHandler(), fired.pop()), 'sheet', 0);
+    sheet.current = null;
+    check('back', 'sheets sit above screens', (runBackHandler(), fired.pop()), 'screen', 0);
+    screen.current = null;
+    // Only an explicit `false` declines — a handler that merely closes something returns undefined,
+    // and that has to count as handled or Back would close the sheet AND exit the app.
+    fired.length = 0;
+    check('back', 'an all-declining stack goes unhandled', runBackHandler() ? 1 : 0, 0, 0);
+    check('back', 'the app-level handler was still asked', fired.length, 1, 0);
+    // A screen remounting (its tab was switched away and back) must not jump above an open sheet.
+    app.current = null;
+    sheet.current = () => { fired.push('sheet-again'); };
+    reg('late-screen', BACK_SCREEN);
+    fired.length = 0;
+    check('back', 'a remounted screen stays below an open sheet', (runBackHandler(), fired.pop()), 'sheet-again', 0);
+    for (const f of unreg) f();
+    check('back', 'unregistering empties the stack', _backStackDepth(), 0, 0);
+  }
 
   // ── Direction DERIVED from the module's own effects ───────────────────────────────────────
   // The hand-kept lists could only ever be extended one reported bug at a time. This asks the

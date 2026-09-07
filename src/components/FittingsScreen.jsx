@@ -15,6 +15,7 @@ import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, ItemPrice, ModifierBreakdown, ResistBars, SheetSearchBar, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
+import { useBackHandler, BACK_SCREEN } from "../lib/back-button.js";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 
 // Module scope on purpose: FittingsScreen reads this inside a useState initializer, which runs
@@ -918,6 +919,20 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
   const enterNode=label=>{setBrowsePath(p=>[...p,label]);haptic("light");};
   const leaveNode=()=>{setBrowsePath(p=>p.slice(0,-1));haptic("light");};
   const resetNode=()=>{setBrowsePath([]);haptic("light");};
+  // Android Back unwinds this screen one level at a time, in the same order the header's arrows do:
+  // down the taxonomy path, then out of the ship's fit list, then back to the fit you came from.
+  // The active fit is the root — declining there hands Back to App, which exits.
+  useBackHandler(()=>{
+    if(view==="tag"){setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");return;}
+    if(view==="fits"){setView("browse");haptic("light");return;}
+    if(view==="browse"){
+      if(browsePath.length){leaveNode();return;}
+      // Only when there IS somewhere to go back TO. With no fit open the library is the root, and
+      // swallowing Back there would leave the button doing nothing at all.
+      if(activeFit?.ship){setView("active");haptic("light");return;}
+    }
+    return false;
+  },true,BACK_SCREEN);
 
   // The + on the tab strip drops you here with the next open already destined for a new tab, which
   // is invisible until it happens. Rendered on all three list views because any of them can be where
