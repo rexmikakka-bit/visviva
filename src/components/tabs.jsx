@@ -241,9 +241,10 @@ function StateDot({row,states,onSet}){
          onPointerCancel={()=>clearTimeout(gest.current.timer)}
          onClick={e=>e.stopPropagation()}
          onContextMenu={e=>e.preventDefault()}   // long-press on touch otherwise raises the OS menu
-         // STATE_LABELS is a fixed English map in lib/core.js; the gesture legend around it is ours.
-         title={`${STATE_LABELS[row.state]??"—"} — ${t("tap to run/stop, double-tap to overheat, hold to offline")}`}
-         aria-label={t("Module state: {state}",{state:STATE_LABELS[row.state]??t("unknown")})}
+         // STATE_LABELS holds thunks — it is built at module scope in lib/core.js, before the locale
+         // is resolved. Calling it here means the label follows a locale switch.
+         title={`${STATE_LABELS[row.state]?.()??"—"} — ${t("tap to run/stop, double-tap to overheat, hold to offline")}`}
+         aria-label={t("Module state: {state}",{state:STATE_LABELS[row.state]?.()??t("unknown")})}
          className="no-select"
          // The dot is 6px and the finger is not. Padding gives it a ~28px target without moving the
          // dot or changing the row's height; the negative margin takes back the space it borrows so

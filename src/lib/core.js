@@ -17,6 +17,7 @@ import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace, fitCostClassOf } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { classifyHull } from "./ship-taxonomy.js";
+import { t } from "./i18n.js";
 
 
 // Name -> module record. Every caller used to write `Object.values(modulesData).find(m=>m.name===n)`,
@@ -32,7 +33,7 @@ const MUTA_BY_TYPE = {};   // baseTypeID -> [mutaTypeID]
 const MUTA_BY_NAME = {};   // lowercased mutaplasmid name -> mutaTypeID
 for (const [mid, m] of Object.entries(mutaplasmidData ?? {})) {
   if (m.n) MUTA_BY_NAME[m.n.toLowerCase()] = mid;
-  for (const t of (m.t ?? [])) (MUTA_BY_TYPE[t] ??= []).push(mid);
+  for (const base of (m.t ?? [])) (MUTA_BY_TYPE[base] ??= []).push(mid);
 }
 // Resolve the affected attributes for a (mutaplasmid, baseTypeID) as [{attrID, name, base, min, max}].
 function mutaAttrRanges(mutaID, baseTypeID) {
@@ -122,8 +123,8 @@ function implantFamilyKey(name) {
 }
 /** Category 20 is Implant — which covers hardwirings and boosters too. */
 function isImplantLike(typeID) {
-  const t = TYPES[typeID] ?? TYPES[String(typeID)];
-  return (t?.c ?? t?.category) === 20;
+  const ty = TYPES[typeID] ?? TYPES[String(typeID)];
+  return (ty?.c ?? ty?.category) === 20;
 }
 // Family -> members, built once over every category-20 type.
 //
@@ -135,12 +136,12 @@ let _implantFamilies = null;
 function implantFamilyIndex() {
   if (_implantFamilies) return _implantFamilies;
   _implantFamilies = new Map();
-  for (const [tid, t] of Object.entries(TYPES)) {
-    if ((t?.c ?? t?.category) !== 20 || !t?.n) continue;
-    const k = implantFamilyKey(t.n);
+  for (const [tid, ty] of Object.entries(TYPES)) {
+    if ((ty?.c ?? ty?.category) !== 20 || !ty?.n) continue;
+    const k = implantFamilyKey(ty.n);
     if (!k) continue;
     if (!_implantFamilies.has(k)) _implantFamilies.set(k, []);
-    _implantFamilies.get(k).push({ typeID: Number(tid), name: t.n });
+    _implantFamilies.get(k).push({ typeID: Number(tid), name: ty.n });
   }
   return _implantFamilies;
 }
@@ -216,12 +217,12 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
   // lowSlots/rigSlots/serviceSlots. lookupShip()'s shipFromDogma() fallback already derives correct
   // stats+slot-counts for these from TYPES alone; this just makes them appear in the browse list.
   const STRUCTURE_HULL_GROUPS=new Set(["Citadel","Engineering Complex","Refinery"]);
-  for(const[tid,t] of Object.entries(TYPES)){
-    if((t.c??t.category)!==65 || !STRUCTURE_HULL_GROUPS.has(t.gn) || !t.n) continue;
+  for(const[tid,ty] of Object.entries(TYPES)){
+    if((ty.c??ty.category)!==65 || !STRUCTURE_HULL_GROUPS.has(ty.gn) || !ty.n) continue;
     const ntid=Number(tid);
     if(_listedTypeIDs.has(ntid)) continue;
-    if(!shipsByClass[t.gn]) shipsByClass[t.gn]=[];
-    if(!shipsByClass[t.gn].some(x=>x.name===t.n||x.typeID===ntid)) shipsByClass[t.gn].push({name:t.n,typeID:ntid});
+    if(!shipsByClass[ty.gn]) shipsByClass[ty.gn]=[];
+    if(!shipsByClass[ty.gn].some(x=>x.name===ty.n||x.typeID===ntid)) shipsByClass[ty.gn].push({name:ty.n,typeID:ntid});
   }
   // Traits + descriptions for every hull, generated from eve.db by scripts/build-bundle.py.
   // These OVERRIDE the bundle's precomputed shipTraits rather than merely filling gaps. The
@@ -379,7 +380,10 @@ const STATE_COLORS=new Proxy({},{ get(_,s){ return {offline:C.offline,online:C.o
 // same colour). A glow radius (px, 0 = none) separates the running states from the idle ones on
 // something other than colour, without changing the dot's footprint.
 const STATE_GLOW={offline:0,online:0,active:7,overheated:9};
-const STATE_LABELS={offline:"Offline",online:"Online",active:"Active",overheated:"Overheat"};
+// Each value is a THUNK: this table is built at module scope, which runs before main.jsx has
+// resolved the stored locale — see lib/i18n.js. The read sites call it. "Overheat" rather than
+// "Overheated" because it labels a button in the state picker, where the others are states.
+const STATE_LABELS={offline:()=>t("Offline"),online:()=>t("Online"),active:()=>t("Active"),overheated:()=>t("Overheat")};
 const MODULE_STATES=["offline","online","active","overheated"];
 // Which states this module can legally hold, low to high. Lives here rather than in the state picker
 // because the dot in the fit row and the picker in the module menu both have to answer it, and two
@@ -735,15 +739,17 @@ function parseEFT(text){
   // of demanding it come first. Searching also means surrounding chat prose no longer has to be
   // deleted by hand. No EFT line legitimately begins or ends with a backtick.
   const allLines=_srcLines.map(l=>l.replace(/^`+|`+$/g,"").trim());
-  if(!allLines.some(l=>l))return{error:"Empty text"};
+  // These three reach the user, in ImportFitSheet's error line. The literal `[Ship Name, Fit Name]`
+  // is EFT syntax, not prose, and stays as it is inside the translated sentence.
+  if(!allLines.some(l=>l))return{error:t("Empty text")};
   const HEADER=/^\[(.+?),\s*(.+)\]$/;
   const hdrAt=allLines.findIndex(l=>HEADER.test(l));
-  if(hdrAt<0)return{error:"Invalid EFT header — expected [Ship Name, Fit Name]"};
+  if(hdrAt<0)return{error:t("Invalid EFT header — expected [Ship Name, Fit Name]")};
   const rawLines=allLines.slice(hdrAt);
   const hm=rawLines[0].match(HEADER);
   const shipName=hm[1].trim(),fitName=hm[2].trim();
   const ship=Object.values(shipsData).find(s=>s.name===shipName)??shipFromDogma(shipName);
-  if(!ship)return{error:`Unknown ship: "${shipName}"`};
+  if(!ship)return{error:t('Unknown ship: "{name}"',{name:shipName})};
 
   const mods=[],drones=[],fighters=[],cargo=[],implantNames=[],boosterNames=[],subsystems=[];
   // ── Abyssal pre-pass: extract mutation blocks (appear at the bottom of pyfa exports) ──
@@ -917,8 +923,8 @@ const AGENCY_BOOSTER_RE=/^Agency '/;
 const BOOSTER_GROUP_ID=303;
 const isBoosterName=n=>{
   if(BOOSTER_NAME_SET.has(n)||AGENCY_BOOSTER_RE.test(n))return true;
-  const t=tidByName(n);
-  const g=t?(TYPES[t]?.g??TYPES[t]?.group??TYPES[t]?.groupID):null;
+  const tid=tidByName(n);
+  const g=tid?(TYPES[tid]?.g??TYPES[tid]?.group??TYPES[tid]?.groupID):null;
   return g===BOOSTER_GROUP_ID;
 };
 const IMPLANT_NAME_TO_SLOT=(()=>{const m=new Map();
@@ -1059,12 +1065,12 @@ function buildChargeBrowser(){
 // T2/faction/script charges, so we index the authoritative dogma data instead: groupID → [charges].
 const CHARGES_BY_GROUP=(()=>{
   const m=new Map();
-  for(const[tid,t]of Object.entries(TYPES)){
-    if((t.c??t.category)!==8)continue; // Charge category
-    const gid=t.g??t.groupID;
+  for(const[tid,ty]of Object.entries(TYPES)){
+    if((ty.c??ty.category)!==8)continue; // Charge category
+    const gid=ty.g??ty.groupID;
     if(gid==null)continue;
-    const a=t.attrs??t.a??{};
-    const entry={typeID:Number(tid),name:t.n??t.name,groupID:gid,
+    const a=ty.attrs??ty.a??{};
+    const entry={typeID:Number(tid),name:ty.n??ty.name,groupID:gid,
       chargeSize:(a.chargeSize??a['128']??null),
       volume:(a.volume??a['161']??null),
       meta:(a.metaLevel??a['633']??0),
@@ -1082,7 +1088,7 @@ const CHARGES_BY_GROUP=(()=>{
 function getCompatibleCharges(mod){
   // Read charge groups from authoritative TYPES dogma data (chargeGroup1-6, attrs 604-606/609/610/1389).
   const td=mod.typeID?(TYPES[mod.typeID]??TYPES[String(mod.typeID)]):
-    Object.entries(TYPES).find(([,t])=>(t.n??t.name)===mod.name)?.[1];
+    Object.entries(TYPES).find(([,ty])=>(ty.n??ty.name)===mod.name)?.[1];
   if(!td)return [];
   const a=td.attrs??td.a??{};
   const CG_KEYS=[['604','chargeGroup1'],['605','chargeGroup2'],['606','chargeGroup3'],
@@ -1285,8 +1291,8 @@ function chargeTierRank(c){
 // 1.2 on Infrared, and so on. Missiles and scripts have no such attribute — those families fall
 // back to alphabetical, after everything that can be ordered by range.
 function chargeRangeMult(c){
-  const t=c.typeID!=null?TYPES[c.typeID]:null;
-  const a=t?.a??t?.attrs??{};
+  const ty=c.typeID!=null?TYPES[c.typeID]:null;
+  const a=ty?.a??ty?.attrs??{};
   const v=a["120"]??a.weaponRangeMultiplier;
   return typeof v==="number"?v:null;
 }
@@ -1370,10 +1376,10 @@ function groupChargesForBrowser(charges){
 // so the name is tested too, anchored at the end to keep out the "Micro Jump Drive Operation" skill
 // and the "Mobile Micro Jump Unit" deployable, neither of which is ever fitted to a slot.
 export function isMicroJumpDrive(typeID){
-  const t=TYPES[typeID]??TYPES[String(typeID)];
-  if(!t)return false;
-  return /Micro Jump (Drive|Field Generator)/i.test(t.gn??t.groupName??'')
-      || /Micro Jump (Drive|Field Generator)$/i.test(t.n??t.name??'');
+  const ty=TYPES[typeID]??TYPES[String(typeID)];
+  if(!ty)return false;
+  return /Micro Jump (Drive|Field Generator)/i.test(ty.gn??ty.groupName??'')
+      || /Micro Jump (Drive|Field Generator)$/i.test(ty.n??ty.name??'');
 }
 
 // Same reasoning as the MJD above, for the same "anything that cycles starts active" default:
@@ -1385,10 +1391,10 @@ export function isMicroJumpDrive(typeID){
 // is covered without a name list to maintain — the passive Damage Control in the same group has no
 // `duration` attribute at all and so never matches.
 export function isAssaultDamageControl(typeID){
-  const t=TYPES[typeID]??TYPES[String(typeID)];
-  if(!t)return false;
-  if((t.gn??t.groupName)!=='Damage Control')return false;
-  return ((t.attrs??t.a)?.duration??0)>0;
+  const ty=TYPES[typeID]??TYPES[String(typeID)];
+  if(!ty)return false;
+  if((ty.gn??ty.groupName)!=='Damage Control')return false;
+  return ((ty.attrs??ty.a)?.duration??0)>0;
 }
 
 // ── Fitting go/no-go ─────────────────────────────────────────────────────────
@@ -1428,7 +1434,7 @@ export function fitCostFits(hr,val,base=0,m=1){
 // Used for module classification and charge-tab gating so any chargeable module works going forward.
 function moduleTakesCharges(typeID,name){
   const td=typeID?(TYPES[typeID]??TYPES[String(typeID)]):
-    Object.entries(TYPES).find(([,t])=>(t.n??t.name)===name)?.[1];
+    Object.entries(TYPES).find(([,ty])=>(ty.n??ty.name)===name)?.[1];
   if(!td)return false;
   const a=td.attrs??td.a??{};
   return [['604','chargeGroup1'],['605','chargeGroup2'],['606','chargeGroup3'],
@@ -1558,21 +1564,21 @@ const SLOT_EFFECT_IDS=[2663,6306,12,13,11];
 const IN_MODULE_TREE=(()=>{
   const seen=new Set();
   const walk=ns=>{for(const n of ns){for(const m of (n.mods??[]))seen.add(m.typeID);walk(n.children??[]);}};
-  for(const t of Object.values(REAL_MODULE_BROWSER))walk(t);
+  for(const branch of Object.values(REAL_MODULE_BROWSER))walk(branch);
   return seen;
 })();
 function buildOffMarketModules(slotType){
   const out=[];
-  for(const[tid,t]of Object.entries(TYPES)){
+  for(const[tid,ty]of Object.entries(TYPES)){
     const id=Number(tid);
-    if((t.c??t.category)!==7||!t.n||IN_MODULE_TREE.has(id))continue;
-    const e=t.e??t.effectIDs??[];
+    if((ty.c??ty.category)!==7||!ty.n||IN_MODULE_TREE.has(id))continue;
+    const e=ty.e??ty.effectIDs??[];
     if(!SLOT_EFFECT_IDS.some(x=>e.includes(x)))continue;
     if(guessSlotFromDogma(id)!==slotType)continue;
     const meta=metaOf(id,null);
     if(meta==='Abyssal')continue;
-    const a=t.attrs??t.a??{};
-    out.push({name:t.n,typeID:id,meta,cpu:a.cpu??a['50']??0,pg:a.power??a['30']??0,
+    const a=ty.attrs??ty.a??{};
+    out.push({name:ty.n,typeID:id,meta,cpu:a.cpu??a['50']??0,pg:a.power??a['30']??0,
               calib:a.upgradeCost??a['1153']??null});
   }
   return out.sort(compareForBrowser);
@@ -1591,13 +1597,13 @@ const OFF_MARKET_MODULES={high:buildOffMarketModules("high"),mid:buildOffMarketM
 // effect-based detection (guessSlotFromDogma) used for any module not in modulesData.
 function buildStructureModuleBrowser(slotType){
   const byGroup={};
-  for(const[tid,t] of Object.entries(TYPES)){
-    if((t.c??t.category)!==66 || !t.n || !t.gn) continue;
+  for(const[tid,ty] of Object.entries(TYPES)){
+    if((ty.c??ty.category)!==66 || !ty.n || !ty.gn) continue;
     if(guessSlotFromDogma(Number(tid))!==slotType) continue;
     // Same fitting-cost subtext as the ship module browser. These rows are built straight from
     // TYPES (structures are not in modules.json at all), so the attributes are read here.
-    const a=t.attrs??t.a??{};
-    (byGroup[t.gn]??=[]).push({name:t.n,typeID:Number(tid),meta:metaOf(Number(tid)),
+    const a=ty.attrs??ty.a??{};
+    (byGroup[ty.gn]??=[]).push({name:ty.n,typeID:Number(tid),meta:metaOf(Number(tid)),
       cpu:a.cpu??a['50']??0, pg:a.power??a['30']??0, calib:a.upgradeCost??a['1153']??null});
   }
   return Object.entries(byGroup).sort(([a],[b])=>a.localeCompare(b)).map(([gn,mods])=>({
