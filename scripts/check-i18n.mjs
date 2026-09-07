@@ -50,7 +50,11 @@ function sources(dir, out = []) {
 // catalog key for a plural entry, so that is the lookup either way.
 const CALL = /\bt\(\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
 const PLURAL = /\bt\(\s*\{[\s\S]*?other\s*:\s*(['"])((?:\\.|(?!\1)[^\\])*)\1/g;
-const unescape = s => s.replace(/\\(['"\\nt])/g, (m, c) => ({ n: '\n', t: '\t' }[c] ?? c));
+// \uXXXX has to be decoded too, not just the one-character escapes: t("−{v} GJ/s") passes a real
+// U+2212 at runtime, so a key left as the six literal characters would match nothing and quietly make
+// every translation of that line look orphaned.
+const unescape = s => s.replace(/\\u([0-9a-fA-F]{4})|\\(['"\\nt])/g,
+  (m, hex, c) => hex ? String.fromCharCode(parseInt(hex, 16)) : ({ n: '\n', t: '\t' }[c] ?? c));
 
 const keys = new Map();   // key -> the files that ask for it
 for (const file of sources(SRC)) {
