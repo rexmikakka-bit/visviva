@@ -35,6 +35,7 @@
 import { TYPES, tidByName } from "../calc.js";
 import { lookupShip, moduleByName, guessSlotFromDogma, getCompatibleCharges, moduleTakesCharges } from "./core.js";
 import { buildFitEntry } from "./fit-entry.js";
+import { t } from "./i18n.js";
 import dronesData from "../data/drones.json" with { type: "json" };
 import mutaplasmidData from "../data/mutaplasmids.json" with { type: "json" };
 
@@ -124,9 +125,9 @@ export function reloadCargoCharges(mods, cargo) {
 // `raw` is {name, shipType, hardware:[{slot, type, qty, baseType, mutaplasmid, mutatedAttrs}]}.
 export function xmlFittingToImportShape(raw) {
   const shipName = officialName(raw?.shipType);
-  if (!shipName) return { error: "Fitting has no ship type" };
+  if (!shipName) return { error: t("Fitting has no ship type") };
   const ship = lookupShip(shipName);
-  if (!ship?.typeID) return { error: `Unknown ship: "${shipName}"`, shipName };
+  if (!ship?.typeID) return { error: t('Unknown ship: "{name}"', { name: shipName }), shipName };
 
   const placed = [], drones = [], fighters = [], cargo = [], subsystems = [], unresolved = [];
 
@@ -216,14 +217,18 @@ function mutationOf(hw) {
 // modules, which is the one failure this importer must not have. Everything with actual logic in it
 // lives above this line, in plain functions the regression suite can drive without a DOM.
 export function parsePyfaXml(text) {
-  if (typeof DOMParser === "undefined") return { error: "XML import needs a browser", fittings: [] };
+  if (typeof DOMParser === "undefined") return { error: t("XML import needs a browser"), fittings: [] };
   let doc;
   try { doc = new DOMParser().parseFromString(String(text ?? ""), "text/xml"); }
-  catch (e) { return { error: `Couldn't read that file: ${e.message}`, fittings: [] }; }
-  if (doc.getElementsByTagName("parsererror").length) return { error: "That isn't valid XML.", fittings: [] };
+  // The browser's own parse message rides in a placeholder rather than being spliced onto the end
+  // of a translated sentence — it arrives in the browser's language, not the app's.
+  catch (e) { return { error: t("Couldn't read that file: {why}", { why: e.message }), fittings: [] }; }
+  if (doc.getElementsByTagName("parsererror").length) return { error: t("That isn't valid XML."), fittings: [] };
 
   const nodes = doc.getElementsByTagName("fitting");
-  if (!nodes.length) return { error: "No fittings in that file — expected a pyfa 'Backup All Fittings' XML.", fittings: [] };
+  // "Backup All Fittings" is the label on pyfa's own menu item and stays English, so the reader can
+  // find it in a UI this app does not translate.
+  if (!nodes.length) return { error: t("No fittings in that file — expected a pyfa 'Backup All Fittings' XML."), fittings: [] };
 
   const fittings = [];
   for (const f of nodes) {

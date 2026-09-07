@@ -3,6 +3,8 @@
 // React-free on purpose so `regression.test.mjs` (Node, which cannot import .jsx) can pin the
 // examples below directly.
 
+import { t } from './i18n.js';
+
 const UNITS = [['', 1], ['k', 1e3], ['M', 1e6], ['B', 1e9]];
 
 /**
@@ -61,7 +63,11 @@ export function sig3(v) {
 export function missileRangeTip(e) {
   if (!e?.isMissile || e.higherChance == null) return null;
   const p = +(e.higherChance * 100).toFixed(1);
-  if (!(p > 0)) return 'Missile flight range';
-  return `Missile flight range\n${sig3(100 - p)}% chance to fly ${sig3(e.lowerRange / 1000)}km`
-       + `\n${sig3(p)}% chance to fly ${sig3(e.higherRange / 1000)}km`;
+  const heading = t('Missile flight range');
+  if (!(p > 0)) return heading;
+  // One key per outcome line rather than a shared "{pct}% chance to fly" fragment plus a number:
+  // the two lines are the same sentence, and splitting the distance out of it leaves a translator
+  // no way to reorder the clause.
+  const outcome = (pct, m) => t('{pct}% chance to fly {km}km', { pct: sig3(pct), km: sig3(m / 1000) });
+  return `${heading}\n${outcome(100 - p, e.lowerRange)}\n${outcome(p, e.higherRange)}`;
 }
