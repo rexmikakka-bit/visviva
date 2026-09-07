@@ -5,6 +5,7 @@ import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { FitPickerSheet } from "./effects.jsx";
 import { targetFitProfile } from "../lib/graph-target.js";
+import { t } from "../lib/i18n.js";
 import {
   TYPES, tidByName, calcFitStats, computeProjectedReps,
   calcRangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, calcAngularSpeed,
@@ -46,11 +47,15 @@ const IDEAL_SIG=1e15;
 // The non-MWD `sig`/`vel` values are deliberately left alone: they are a "typical engagement" figure
 // rather than a hull's flat-out maximum, which is why e.g. the frigate's 350 m/s is below the 444
 // m/s median top speed. Only the MWD variants claim to be derived.
+//
+// Only "Ideal" is a word of ours; the other three are CCP hull classes and stay English, like every
+// other game term in the app. `label` is a THUNK because this object is built at module scope, which
+// runs before main.jsx has resolved the stored locale — see lib/i18n.js.
 const TARGET_PROFILES={
-  ideal:   {label:"Ideal",   sig:IDEAL_SIG, vel:0,   dist:0,     desc:"Stationary, infinite sig"},
-  frigate: {label:"Frigate", sig:40,      vel:350,   dist:10000, desc:"40m sig / 350 m/s",   mwdSig:200,  mwdVel:3050},
-  cruiser: {label:"Cruiser", sig:130,     vel:200,   dist:20000, desc:"130m sig / 200 m/s",  mwdSig:690,  mwdVel:1870},
-  battleship:{label:"Battleship",sig:380, vel:100,   dist:30000, desc:"380m sig / 100 m/s",  mwdSig:2300, mwdVel:1040},
+  ideal:   {label:()=>t("Ideal"), sig:IDEAL_SIG, vel:0, dist:0,   desc:"Stationary, infinite sig"},
+  frigate: {label:()=>"Frigate", sig:40,      vel:350,   dist:10000, desc:"40m sig / 350 m/s",   mwdSig:200,  mwdVel:3050},
+  cruiser: {label:()=>"Cruiser", sig:130,     vel:200,   dist:20000, desc:"130m sig / 200 m/s",  mwdSig:690,  mwdVel:1870},
+  battleship:{label:()=>"Battleship",sig:380, vel:100,   dist:30000, desc:"380m sig / 100 m/s",  mwdSig:2300, mwdVel:1040},
 };
 // A saved fit used as the target is `targetProfile === TARGET_FIT`, which is deliberately NOT an
 // entry above: those are static sig/speed pairs, and a fit's are computed from the fit. There used
@@ -67,17 +72,25 @@ const profileTarget=(key,mwd)=>{
 // `color` is a KEY into theme.js's C, not a resolved hex string — GRAPH_CONFIG is built once at
 // import time, so baking in a real color there would freeze it at whatever palette was loaded
 // first and never follow a theme switch. Every read site does `C[cfg.color]` instead.
+//
+// Every `label` is a THUNK for the same reason one step further: this array is built at module
+// scope, which runs before main.jsx has resolved the stored locale, so a t() called here would bake
+// in English permanently. Read sites call it — `cfg.label()`. The `key`s are untouched: they are
+// what the persisted graph setup stores and what the curve generator switches on.
+//
+// The unit suffixes stay as they are inside the translated string (km, s, m/s, GJ, HP, EHP, AU):
+// SI or CCP symbols that read the same in every EVE client.
 const GRAPH_CONFIG=[
-  {key:"damage",label:"Damage",icon:"sword",color:"danger",showTargetControls:true,
-   yAxes:[{key:"dps",label:"DPS"},{key:"volley",label:"Volley"},{key:"inflicted",label:"Damage inflicted"}],
-   xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"},{key:"tgtSpeedMs",label:"Target speed, m/s"},{key:"tgtSpeedPct",label:"Target speed, %"},{key:"tgtSigM",label:"Target sig. radius, m"},{key:"tgtSigPct",label:"Target sig. radius, %"}]},
-  {key:"ewar",label:"Ewar",icon:"radar",color:"high",yAxes:[{key:"neutsCap",label:"Neuts: cap/s"},{key:"webSpeed",label:"Webs: speed red., %"},{key:"ecmStr",label:"ECM: combined strength"},{key:"dampLock",label:"Damps: lock range red., %"},{key:"tdRange",label:"Tracking disr: range red., %"},{key:"gdRange",label:"Guidance disr: range red., %"},{key:"tpSig",label:"Target paint: sig incr., %"}],xAxes:[{key:"dist",label:"Distance, km"}]},
-  {key:"reps",label:"Reps",icon:"heart",color:"rig",yAxes:[{key:"repSpeed",label:"Repair speed, HP/s"},{key:"repTotal",label:"Total repaired, HP"}],xAxes:[{key:"dist",label:"Distance, km"},{key:"time",label:"Time, s"}]},
-  {key:"shieldRegen",label:"Shield",icon:"shield",color:"mid",yAxes:[{key:"shieldAmt",label:"Shield, EHP"},{key:"shieldRegen",label:"Shield regen, EHP/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"shieldPct",label:"Shield, %"}]},
-  {key:"cap",label:"Capacitor",icon:"bolt",color:"warning",yAxes:[{key:"capAmt",label:"Cap, GJ"},{key:"capRegen",label:"Cap regen, GJ/s"}],xAxes:[{key:"time",label:"Time, s"},{key:"capPct",label:"Cap, %"}]},
-  {key:"mobility",label:"Mobility",icon:"rocket",color:"low",yAxes:[{key:"speed",label:"Speed, m/s"},{key:"distance",label:"Distance, km"}],xAxes:[{key:"time",label:"Time, s"}]},
-  {key:"warp",label:"Warp",icon:"warp",color:"high",yAxes:[{key:"warpTime",label:"Warp time, s"}],xAxes:[{key:"distAU",label:"Distance, AU"},{key:"distKm",label:"Distance, km"}]},
-  {key:"lock",label:"Lock",icon:"target",color:"danger",yAxes:[{key:"lockTime",label:"Lock time, s"}],xAxes:[{key:"tgtSig",label:"Target sig. radius, m"}]},
+  {key:"damage",label:()=>t("Damage"),icon:"sword",color:"danger",showTargetControls:true,
+   yAxes:[{key:"dps",label:()=>t("DPS")},{key:"volley",label:()=>t("Volley")},{key:"inflicted",label:()=>t("Damage inflicted")}],
+   xAxes:[{key:"dist",label:()=>t("Distance, km")},{key:"time",label:()=>t("Time, s")},{key:"tgtSpeedMs",label:()=>t("Target speed, m/s")},{key:"tgtSpeedPct",label:()=>t("Target speed, %")},{key:"tgtSigM",label:()=>t("Target sig. radius, m")},{key:"tgtSigPct",label:()=>t("Target sig. radius, %")}]},
+  {key:"ewar",label:()=>t("Ewar"),icon:"radar",color:"high",yAxes:[{key:"neutsCap",label:()=>t("Neuts: cap/s")},{key:"webSpeed",label:()=>t("Webs: speed red., %")},{key:"ecmStr",label:()=>t("ECM: combined strength")},{key:"dampLock",label:()=>t("Damps: lock range red., %")},{key:"tdRange",label:()=>t("Tracking disr: range red., %")},{key:"gdRange",label:()=>t("Guidance disr: range red., %")},{key:"tpSig",label:()=>t("Target paint: sig incr., %")}],xAxes:[{key:"dist",label:()=>t("Distance, km")}]},
+  {key:"reps",label:()=>t("Reps"),icon:"heart",color:"rig",yAxes:[{key:"repSpeed",label:()=>t("Repair speed, HP/s")},{key:"repTotal",label:()=>t("Total repaired, HP")}],xAxes:[{key:"dist",label:()=>t("Distance, km")},{key:"time",label:()=>t("Time, s")}]},
+  {key:"shieldRegen",label:()=>t("Shield"),icon:"shield",color:"mid",yAxes:[{key:"shieldAmt",label:()=>t("Shield, EHP")},{key:"shieldRegen",label:()=>t("Shield regen, EHP/s")}],xAxes:[{key:"time",label:()=>t("Time, s")},{key:"shieldPct",label:()=>t("Shield, %")}]},
+  {key:"cap",label:()=>t("Capacitor"),icon:"bolt",color:"warning",yAxes:[{key:"capAmt",label:()=>t("Cap, GJ")},{key:"capRegen",label:()=>t("Cap regen, GJ/s")}],xAxes:[{key:"time",label:()=>t("Time, s")},{key:"capPct",label:()=>t("Cap, %")}]},
+  {key:"mobility",label:()=>t("Mobility"),icon:"rocket",color:"low",yAxes:[{key:"speed",label:()=>t("Speed, m/s")},{key:"distance",label:()=>t("Distance, km")}],xAxes:[{key:"time",label:()=>t("Time, s")}]},
+  {key:"warp",label:()=>t("Warp"),icon:"warp",color:"high",yAxes:[{key:"warpTime",label:()=>t("Warp time, s")}],xAxes:[{key:"distAU",label:()=>t("Distance, AU")},{key:"distKm",label:()=>t("Distance, km")}]},
+  {key:"lock",label:()=>t("Lock"),icon:"target",color:"danger",yAxes:[{key:"lockTime",label:()=>t("Lock time, s")}],xAxes:[{key:"tgtSig",label:()=>t("Target sig. radius, m")}]},
 ];
 
 // The plotted curve and the headline's tap-to-expand both evaluate lock time, the latter AGAIN at the
@@ -256,16 +269,16 @@ function generateCurve(catKey,yKey,xKey,params={}){
         // 500 rounds, ~33 minutes of firing) so no reload occurs inside the graph's window. If a
         // short-clip spooling weapon is ever added, reset `cycles` to 0 in the reload branch below.
         const spools=w.spoolMax>0&&w.spoolPerCycle>0;
-        let t=0, shots=0, cycles=0, guard=0;
-        while (t<=TMAX+1e-9 && guard++<100000){
+        let tSec=0, shots=0, cycles=0, guard=0;
+        while (tSec<=TMAX+1e-9 && guard++<100000){
           const sp=spools?1+Math.min(w.spoolMax,cycles*w.spoolPerCycle):1;
-          evts.push([t, base*sp, ideal*sp]);
+          evts.push([tSec, base*sp, ideal*sp]);
           shots++; cycles++;
           // The forced idle runs concurrently with the reload, so a clip boundary costs whichever is
           // longer rather than both — a bomb launcher reloads inside its 67.5 s delay for free.
           const idle = w.delayS ?? 0;
-          if (w.numShots>0 && shots>=w.numShots){ shots=0; t += w.cycleS + Math.max(w.reloadS, idle); }
-          else t += w.cycleS + idle;
+          if (w.numShots>0 && shots>=w.numShots){ shots=0; tSec += w.cycleS + Math.max(w.reloadS, idle); }
+          else tSec += w.cycleS + idle;
         }
       }
       evts.sort((a,b)=>a[0]-b[0]);
@@ -294,7 +307,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
         const TMAX=dom(120);
         const evts = damageEvents(TMAX, 0, profSig, profVel);
         let acc=0, gacc=0; pts.push([0,0,0]);
-        for (const [t,d,g] of evts){ pts.push([t,acc,gacc]); acc+=d; gacc+=g; pts.push([t,acc,gacc]); }   // step then jump
+        for (const [tSec,d,g] of evts){ pts.push([tSec,acc,gacc]); acc+=d; gacc+=g; pts.push([tSec,acc,gacc]); }   // step then jump
         pts.push([TMAX,acc,gacc]);
         xMax=TMAX; yMax=acc*1.05||100;
       } else {
@@ -302,26 +315,26 @@ function generateCurve(catKey,yKey,xKey,params={}){
         const tEnd=dom(120), tStep=tEnd/480;
         if (!hasSpoolW) {
           const [eff,effIdeal]=both(0,profSig,profVel);
-          for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,eff,effIdeal]);
+          for(let tSec=0;tSec<=tEnd+1e-9;tSec+=tStep) pts.push([tSec,eff,effIdeal]);
           xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
         } else {
           // Entropic disintegrators ramp DPS each completed cycle (SpoolType.CYCLES): after n cycles
           // the factor is 1 + min(spoolMax, n * spoolPerCycle). Matches damageEvents' cycle counting.
           const [sig,vel]=effTarget(0,profSig,profVel,null);
-          const spoolDpsAt=(t,perfect)=>{
+          const spoolDpsAt=(tSec,perfect)=>{
             let total=0;
             for(const w of weapons){
               const _v=w.volleyEff??w.volley;
               const vol=_v.em+_v.th+_v.kin+_v.exp;
               const spools=(w.spoolMax??0)>0&&(w.spoolPerCycle??0)>0;
-              const n=spools?Math.floor(t/(w.cycleS+(w.delayS??0))):0;
+              const n=spools?Math.floor(tSec/(w.cycleS+(w.delayS??0))):0;
               const sp=spools?1+Math.min(w.spoolMax,n*w.spoolPerCycle):1;
               const per=wantVolley?vol*sp:vol*sp/(w.cycleS+(w.delayS??0));
               total+=per*weaponMult(w,0,sig,vel,perfect);
             }
             return total;
           };
-          for(let t=0;t<=tEnd+1e-9;t+=tStep) pts.push([t,spoolDpsAt(t,false),spoolDpsAt(t,true)]);
+          for(let tSec=0;tSec<=tEnd+1e-9;tSec+=tStep) pts.push([tSec,spoolDpsAt(tSec,false),spoolDpsAt(tSec,true)]);
           xMax=tEnd; yMax=(Math.max(...pts.map(p=>p[2]))||baseDps)*1.15;
         }
       }
@@ -342,7 +355,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
       if(yKey==="neutsCap") return (P.neuts||[]).reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff,dM),0);
       if(yKey==="ecmStr")   return (P.ecm||[]).reduce((s,e)=>s+Math.max(0,...Object.values(e.byType||{}))*rf(e.optimal,e.falloff,dM),0);
       if(yKey==="webSpeed"){const ms=(P.webs||[]).map(w=>1+(w.speedFactor*rf(w.optimal,w.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
-      if(yKey==="tdRange"){const ms=(P.trackDisr||[]).map(t=>1+((t.optimalBonus||0)*rf(t.optimal,t.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
+      if(yKey==="tdRange"){const ms=(P.trackDisr||[]).map(td=>1+((td.optimalBonus||0)*rf(td.optimal,td.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
       if(yKey==="gdRange"){const gd=(P.guideDisr||[]);if(!gd.length)return 0;
         // Missile range = velocity × flight time; both are disrupted (stacking-penalized per attr).
         const vp=gd.map(g=>1+((g.missileRange||0)*rf(g.optimal,g.falloff,dM))/100);
@@ -375,22 +388,22 @@ function generateCurve(catKey,yKey,xKey,params={}){
       const evts=[];
       for(const r of src){
         const spools=r.spoolMax>0&&r.spoolPerCycle>0;
-        let t=r.cycleS, cycles=0, guard=0;   // a repairer delivers at the END of its cycle
-        while(t<=tEnd+1e-9&&guard++<100000){
-          evts.push([t, r.amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1), r.cycleS]);
-          cycles++; t+=r.cycleS;
+        let tSec=r.cycleS, cycles=0, guard=0;   // a repairer delivers at the END of its cycle
+        while(tSec<=tEnd+1e-9&&guard++<100000){
+          evts.push([tSec, r.amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1), r.cycleS]);
+          cycles++; tSec+=r.cycleS;
         }
       }
       evts.sort((a,b)=>a[0]-b[0]);
       if(yKey==="repTotal"){
         let acc=0; pts.push([0,0]);
-        for(const [t,hp] of evts){ pts.push([t,acc]); acc+=hp; pts.push([t,acc]); }   // step then jump
+        for(const [tSec,hp] of evts){ pts.push([tSec,acc]); acc+=hp; pts.push([tSec,acc]); }   // step then jump
         pts.push([tEnd,acc]);
         xMax=tEnd; yMax=acc*1.05||1;
       }else{
         // Repair speed: the rate that cycle delivered (hp / cycleS), held until the next landing.
         let cur=0; pts.push([0,0]); let peak=0;
-        for(const [t,hp,cyc] of evts){ pts.push([t,cur]); cur=hp/cyc; peak=Math.max(peak,cur); pts.push([t,cur]); }
+        for(const [tSec,hp,cyc] of evts){ pts.push([tSec,cur]); cur=hp/cyc; peak=Math.max(peak,cur); pts.push([tSec,cur]); }
         pts.push([tEnd,cur]);
         xMax=tEnd; yMax=(peak||1)*1.15;
       }
@@ -407,8 +420,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
         const cyc=r.cycleS||1;
         if(!(amt>0)||!(cyc>0))return sum;
         const spools=r.spoolMax>0&&r.spoolPerCycle>0;
-        let t=cyc,cycles=0,acc=0,guard=0;
-        while(t<=tEnd+1e-9&&guard++<100000){ acc+=amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1); cycles++; t+=cyc; }
+        let tSec=cyc,cycles=0,acc=0,guard=0;
+        while(tSec<=tEnd+1e-9&&guard++<100000){ acc+=amt*(spools?1+Math.min(r.spoolMax,cycles*r.spoolPerCycle):1); cycles++; tSec+=cyc; }
         return sum+acc;
       },0);
       for(let km=0;km<=dmax+1e-9;km+=step){pts.push([km,yKey==="repTotal"?totalAt(km*1000):rateAt(km*1000)]);}
@@ -426,8 +439,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
       const tau=(cs?.shieldRechargeMs??2500000)/1000;
       const tEnd=dom(Math.max(120,tau*1.5)), dt=Math.max(tEnd/480,tau/1200);
       let frac=0;  // start from an empty shield → Y=0 at t=0
-      for(let t=0;t<=tEnd+1e-9;t+=dt){
-        pts.push([t,yKey==="shieldRegen"?regenEhp(frac):maxEHP*frac]);
+      for(let tSec=0;tSec<=tEnd+1e-9;tSec+=dt){
+        pts.push([tSec,yKey==="shieldRegen"?regenEhp(frac):maxEHP*frac]);
         const fr=Math.max(frac,1e-3);  // seed past the 0%-rate singularity so it charges from empty
         frac=Math.min(1,frac+(peakRaw*4*(Math.sqrt(fr)-fr)/Math.max(1,maxHP))*dt);
       }
@@ -447,7 +460,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
       const capTime=cs?.capTime; // seconds to cap-out, or null when stable
       const tMaxSec=dom(capTime?Math.min(Math.max(capTime*2.5,60),600):180);
       const trace=simulateCapTrace(cs?.capModules??[],maxC,(cs?.capRechargeMs??250000),{tMaxSec,sampleDt:0.5});
-      if(trace.length){for(const [t,c] of trace)pts.push([t,yKey==="capAmt"?c:cr(c)]);xMax=Math.max(1,trace[trace.length-1][0]);}
+      if(trace.length){for(const [tSec,c] of trace)pts.push([tSec,yKey==="capAmt"?c:cr(c)]);xMax=Math.max(1,trace[trace.length-1][0]);}
       else{const tE=dom(180);pts=[[0,maxC],[tE,maxC]];xMax=tE;}
       yMax=yKey==="capAmt"?maxC*1.05:cr(maxC*0.25)*1.25;
     }
@@ -457,7 +470,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const mass=cs?.mass??ship.mass??1e7, ag=cs?.agility??ship.agility??0.5;
     const tau=ag*mass/1e6; let dist=0;
     const tEnd=dom(Math.max(30,tau*3)), dt=Math.max(.05,tEnd/400);
-    for(let t=0;t<=tEnd+1e-9;t+=dt){const v=vmax*(1-Math.exp(-t/tau));dist+=v*dt/1000;pts.push([t,yKey==="speed"?v:dist]);}
+    for(let tSec=0;tSec<=tEnd+1e-9;tSec+=dt){const v=vmax*(1-Math.exp(-tSec/tau));dist+=v*dt/1000;pts.push([tSec,yKey==="speed"?v:dist]);}
     xMax=tEnd;yMax=yKey==="speed"?vmax*1.1:dist*1.15;
   }
   else if(catKey==="warp"){
@@ -572,6 +585,9 @@ function LineChart({pts,xMax,yMax,xLabel,yLabel,color,cursorX,onCursorXChange,ma
 // The enemy markers stay where they are (East on Your Ship, West on Target) and are now purely
 // positional — you on the left, the target on the right, which is exactly the frame the formula wants.
 // So heading 0 closes on the target and, on the Target wheel, is the target running from you.
+// Untranslated on purpose: these are one- and two-glyph markers drawn into a fixed 90px SVG and
+// repeated as its ring labels, and they read as compass points in any language the way N/S/E/W on a
+// map does. A localised set (German O for east) would also have to fit the same box.
 const COMPASS_DIRS=["N","NE","E","SE","S","SW","W","NW"];
 
 function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChange,enemyPos}){
@@ -671,7 +687,7 @@ function VectorCompass({label,value,velocity,maxVelocity,onChange,onVelocityChan
     </svg>
     <div style={{textAlign:"center"}}>
       <div style={{fontSize:11,fontWeight:700,color:immobile?C.textMute:C.text}}>{immobile?"—":`${value}deg ${cardinal}`}</div>
-      <div style={{fontSize:10,color:C.textMute}}>{immobile?"immobilised":`${velocity??0} m/s (${Math.round(velFrac*100)}%)`}</div>
+      <div style={{fontSize:10,color:C.textMute}}>{immobile?t("immobilised"):`${velocity??0} m/s (${Math.round(velFrac*100)}%)`}</div>
     </div>
   </div>);
 }
@@ -812,9 +828,9 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   const nScram=customTarget?(ownProj?.scrams||[]).length:0;
   // Selecting a profile sets sig + speed and re-anchors the wheel's 100% reference to that speed.
   const applyTarget=(key,mwd)=>{
-    const t=profileTarget(key,mwd); if(!t) return;
-    setTgtSig(t.sig);
-    if(t.vel!=null){setTargetVel(t.vel);setTargetVelMax(Math.max(t.vel,100));}
+    const tgt=profileTarget(key,mwd); if(!tgt) return;
+    setTgtSig(tgt.sig);
+    if(tgt.vel!=null){setTargetVel(tgt.vel);setTargetVelMax(Math.max(tgt.vel,100));}
   };
   // A fit target's numbers are pushed by GraphTab's effect, not from here — applyTarget only knows
   // the static presets, and profileTarget returns null for anything else, so this is a no-op for it.
@@ -830,7 +846,7 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   // drags a whole target FIT onto the graph and can just switch its prop mod off, whereas a
   // hand-typed 200 m could be a hull that size or a 40 m frigate blooming under an MWD, and nothing
   // here can tell which — so the scrambler has nothing to cut.
-  const scramNote = nScram ? "not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom" : null;
+  const scramNote = nScram ? t("not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom") : null;
   // Editing the speed field sets the exact speed AND re-anchors the wheel's 100% to it.
   const setSpeed=(v)=>{const n=Math.max(0,Number(v)||0);setTargetVel(n);if(n>0)setTargetVelMax(n);setTargetProfile("custom");};
   // The scrub's numeric path into the same two writes typing does. It cannot produce the empty string
@@ -860,10 +876,10 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
   const fmtRangeKm = m => { const km=m/1000; return km>=10?String(Math.round(km)):km.toFixed(1); };
   const inputStyle={width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${C.border}`,color:C.text};
   return(<div style={{background:C.surfaceAlt,borderRadius:10,border:`1px solid ${C.border}`,padding:12,marginBottom:14}}>
-    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Target Profile</div>
+    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>{t("Target Profile")}</div>
     <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
       {Object.entries(TARGET_PROFILES).filter(([k])=>k!=="fit").map(([key,p])=>(
-        <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label}</button>
+        <button key={key} onClick={()=>pickProfile(key)} style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",background:targetProfile===key?C.accentLight:C.surface,border:`1px solid ${targetProfile===key?C.accentBorder:C.border}`,color:targetProfile===key?C.accent:C.textMid}}>{p.label()}</button>
       ))}
       {/* A TOGGLE, not another profile — hence the separator, so it doesn't read as a fifth
           mutually-exclusive option. Dimmed (not disabled) where the current profile has no MWD
@@ -876,9 +892,9 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
       <span style={{width:1,alignSelf:"stretch",background:C.border,margin:"0 2px"}}/>
       <button onClick={toggleMwd} aria-pressed={targetMwd}
         title={mwdApplies
-          ? "Target has its microwarpdrive running: much larger signature (easier to hit and to apply full missile damage) but much faster (harder for turrets to track)"
-          : fitActive?"This fit carries no propulsion module"
-                     :"No MWD variant for this profile — applies to Frigate / Cruiser / Battleship"}
+          ? t("Target has its microwarpdrive running: much larger signature (easier to hit and to apply full missile damage) but much faster (harder for turrets to track)")
+          : fitActive?t("This fit carries no propulsion module")
+                     :t("No MWD variant for this profile — applies to Frigate / Cruiser / Battleship")}
         style={{padding:"5px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",
                 opacity:mwdApplies?1:0.45,
                 background:targetMwd?C.accentLight:C.surface,border:`1px solid ${targetMwd?C.accentBorder:C.border}`,
@@ -895,16 +911,16 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         reason about, not easier. */}
     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
       <button onClick={()=>{if(targetFit&&!fitActive)setTargetProfile(TARGET_FIT);else onPickFit();}}
-        title={targetFit?"Tap to use this fit's signature and speed, or pick a different fit":"Use a saved fit's signature and speed as the target"}
+        title={targetFit?t("Tap to use this fit's signature and speed, or pick a different fit"):t("Use a saved fit's signature and speed as the target")}
         style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:6,padding:"6px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",textAlign:"left",
                 background:fitActive?C.accentLight:C.surface,border:`1px solid ${fitActive?C.accentBorder:C.border}`,
                 color:targetFit?(fitActive?C.accent:C.textMid):C.textMute}}>
         <span style={{flexShrink:0}}>&#8982;</span>
         <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-          {targetFit?`${targetFit.ship} · ${targetFit.name}`:"Choose target fit…"}
+          {targetFit?`${targetFit.ship} · ${targetFit.name}`:t("Choose target fit…")}
           {/* The reference outlived the fit. Say so rather than clearing it: the sig and speed it
               last supplied are still on screen and still a real target. */}
-          {targetFit&&!targetFitStats&&<span style={{color:C.warning,fontWeight:400}}> · not found</span>}
+          {targetFit&&!targetFitStats&&<span style={{color:C.warning,fontWeight:400}}> · {t("not found")}</span>}
         </span>
       </button>
       {/* Jump to the ship you are shooting at. Reading a curve against another fit invites the
@@ -913,9 +929,9 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
           Gated on targetFitStats, not on targetFit: when the reference no longer resolves the chip
           already says "not found", and there is nothing to open. */}
       {onOpenFit&&targetFit&&targetFitStats&&
-        <button onClick={()=>onOpenFit(targetFit.ship,targetFit.name)} title="Open this fit in a new tab"
-          style={{padding:"6px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid,flexShrink:0}}>Open</button>}
-      {targetFit&&<button onClick={onClearFit} title="Stop using a fit as the target"
+        <button onClick={()=>onOpenFit(targetFit.ship,targetFit.name)} title={t("Open this fit in a new tab")}
+          style={{padding:"6px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid,flexShrink:0}}>{t("Open")}</button>}
+      {targetFit&&<button onClick={onClearFit} title={t("Stop using a fit as the target")}
         style={{padding:"6px 9px",borderRadius:6,fontSize:12,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.danger,flexShrink:0}}>&#10005;</button>}
     </div>
     {/* Target RESISTS — how much of your damage actually lands — are chosen ONCE, in Stats >
@@ -926,40 +942,42 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
         Distinct from the sig/speed presets above, which govern APPLICATION (tracking), not
         mitigation — those stay local to the graph. */}
     {resistsOn&&<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
-      <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
+      <span style={{fontSize:10,color:C.textMute}}>{t("Target resists")}</span>
+      {/* `tgtProfile.n` is a damage-profile NAME from data/damage-profiles.js — data, not UI copy. */}
       <span style={{fontSize:11,fontWeight:700,color:C.textMid}}>{tgtProfile?.n}
-        <span style={{fontSize:10,fontWeight:400,color:C.textMute}}> · set in Stats › Firepower</span>
+        <span style={{fontSize:10,fontWeight:400,color:C.textMute}}> · {t("set in Stats › Firepower")}</span>
       </span>
     </div>}
     {scramNote&&<div style={{padding:"6px 8px",marginBottom:10,background:C.surface,border:`1px solid ${C.border}`,borderRadius:7}}>
-      <div style={{fontSize:11,color:C.textMid}}>Scrambler: <span style={{color:C.textMute}}>{scramNote}</span></div>
+      <div style={{fontSize:11,color:C.textMid}}>{t("Scrambler")}: <span style={{color:C.textMute}}>{scramNote}</span></div>
     </div>}
     {/* Editable sig + speed */}
     <div style={{display:"flex",gap:14,marginBottom:12,alignItems:"center"}}>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
-        Sig radius
+        {t("Sig radius")}
         {/* Anchored at 1000 m when the field reads ∞: a scrub has to start from a real number, and the
-            top of the sensible range is where a drag downward into ship-sized signatures begins. */}
+            top of the sensible range is where a drag downward into ship-sized signatures begins.
+            The ∞ placeholder is a symbol, not a word. */}
         <ScrubField value={tgtSig>=IDEAL_SIG?null:tgtSig} display={sigVal} placeholder="∞" anchor={1000}
-          title="Type a signature, or press and slide sideways to sweep it"
+          title={t("Type a signature, or press and slide sideways to sweep it")}
           onType={e=>{const v=e.target.value;setTgtSig(v===""?IDEAL_SIG:Math.max(0,Number(v)));setTargetProfile("custom");}}
           onScrub={n=>setSig(n)} style={inputStyle}/>
         <span style={{fontSize:10,color:C.textMute}}>m</span>
       </label>
       <label style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:C.textMid}}>
-        Speed
+        {t("Speed")}
         <ScrubField value={targetVel} display={Math.round(targetVel)} anchor={0}
-          title="Type a speed, or press and slide sideways to sweep it"
+          title={t("Type a speed, or press and slide sideways to sweep it")}
           onType={e=>setSpeed(e.target.value)} onScrub={setSpeed} style={inputStyle}/>
         <span style={{fontSize:10,color:C.textMute}}>m/s</span>
       </label>
     </div>
-    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>Flight Vectors</div>
+    <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:8}}>{t("Flight Vectors")}</div>
     <div style={{display:"flex",justifyContent:"space-around",alignItems:"center"}}>
       {/* NOT `selfMaxVel||500` — 0 is falsy, and 0 is exactly the value a sieged or bastioned hull
           reports. The caller already ends its own fallback chain with 500 for the genuinely-unknown
           case, so passing the number straight through is what lets 0 mean immobilised. */}
-      <VectorCompass label="Your Ship" value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel} enemyPos="E"/>
+      <VectorCompass label={t("Your Ship")} value={selfAngle} velocity={selfVel} maxVelocity={selfMaxVel} onChange={setSelfAngle} onVelocityChange={setSelfVel} enemyPos="E"/>
       {/* FIXED width, and the readout fills it. This column sits between the two wheels in a
           space-around row, so anything that changes its width moves BOTH wheels — and the two labels
           are different lengths ("m/s transversal" is wider than "°/s @ 25km"), so merely toggling the
@@ -971,16 +989,16 @@ function TargetControls({tgtProfile,targetProfile,setTargetProfile,targetMwd,set
             what a turret is judged against — shown in deg/s to match EVE's own overview column — but
             it only exists at a range, so its label names the one it was taken at. Which of the two
             you think in is a habit rather than a per-visit whim, so the choice sticks. */}
-        <div onClick={()=>setShowTransversal(v=>!v)} title={showTransversal?"Transversal — tap for angular velocity":"Angular velocity — tap for transversal"}
+        <div onClick={()=>setShowTransversal(v=>!v)} title={showTransversal?t("Transversal — tap for angular velocity"):t("Angular velocity — tap for transversal")}
              style={{width:"100%",boxSizing:"border-box",background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"4px 4px",textAlign:"center",cursor:"pointer"}}>
           <div style={{fontSize:14,fontWeight:800,color:transColor,fontVariantNumeric:"tabular-nums",whiteSpace:"nowrap"}}>
             {showTransversal?trans:fmtAngular(angularSpeedDeg)}</div>
           <div style={{fontSize:8,color:C.textMute,whiteSpace:"nowrap"}}>
-            {showTransversal?"m/s transversal":`°/s @ ${fmtRangeKm(angularDistM)}km`}</div>
+            {showTransversal?t("m/s transversal"):`°/s @ ${fmtRangeKm(angularDistM)}km`}</div>
         </div>
         <div style={{width:1,height:18,background:C.border}}/>
       </div>
-      <VectorCompass label="Target" value={targetAngle} velocity={targetVel} maxVelocity={Math.max(targetVelMax,1)} onChange={setTargetAngle} onVelocityChange={setTargetVel} enemyPos="W"/>
+      <VectorCompass label={t("Target")} value={targetAngle} velocity={targetVel} maxVelocity={Math.max(targetVelMax,1)} onChange={setTargetAngle} onVelocityChange={setTargetVel} enemyPos="W"/>
     </div>
   </div>);
 }
@@ -1138,7 +1156,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // question people genuinely ask of a graph like this. The tabs arrive already reconciled against
   // fitsDB by resolveTabs, so a pointer here always names a fit that exists.
   const openTabFits=useMemo(()=>(openFitTabs??[])
-    .map(t=>{const f=fitsDB?.[t.ship]?.find(x=>x.name===t.name);return f?{ship:t.ship,fit:f}:null;})
+    .map(tb=>{const f=fitsDB?.[tb.ship]?.find(x=>x.name===tb.name);return f?{ship:tb.ship,fit:f}:null;})
     .filter(Boolean),[openFitTabs,fitsDB]);
   // The chosen target fit's two sig/speed pairs, or null when nothing is chosen — and ALSO null when
   // the reference no longer resolves (the fit was renamed or deleted). That case deliberately leaves
@@ -1158,8 +1176,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // field sets targetProfile to "custom", which is what detaches it from here.
   useEffect(()=>{
     if(targetProfile!==TARGET_FIT||!targetFitStats)return;
-    const t=(targetMwd&&targetFitStats.hasProp)?targetFitStats.mwd:targetFitStats.noMwd;
-    setTgtSig(t.sig);setTargetVel(t.vel);setTargetVelMax(Math.max(t.vel,100));
+    const tgt=(targetMwd&&targetFitStats.hasProp)?targetFitStats.mwd:targetFitStats.noMwd;
+    setTgtSig(tgt.sig);setTargetVel(tgt.vel);setTargetVelMax(Math.max(tgt.vel,100));
   },[targetProfile,targetFitStats,targetMwd]);
   const tgtNoMwd=useMemo(()=>{
     // A fit target is the case a scrambler was always missing: its prop mod can simply be switched
@@ -1236,12 +1254,12 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   return(<div ref={_scroll} style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column"}}>
     <div style={{borderBottom:`1px solid ${C.border}`,padding:"8px 10px"}}>
       <div className="hs" style={{overflowX:"auto",display:"flex",gap:5,paddingBottom:2}}>
-        {GRAPH_CONFIG.map(c=><button key={c.key} onClick={()=>handleCatChange(c.key)} style={{flexShrink:0,padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:catKey===c.key?`${C[c.color]}22`:C.surface,border:`1px solid ${catKey===c.key?C[c.color]:C.border}`,color:catKey===c.key?C[c.color]:C.textMid}}>{c.label}</button>)}
+        {GRAPH_CONFIG.map(c=><button key={c.key} onClick={()=>handleCatChange(c.key)} style={{flexShrink:0,padding:"4px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:catKey===c.key?`${C[c.color]}22`:C.surface,border:`1px solid ${catKey===c.key?C[c.color]:C.border}`,color:catKey===c.key?C[c.color]:C.textMid}}>{c.label()}</button>)}
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis Y</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>Axis X</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("Axis Y")}</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("Axis X")}</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
       {/* Axis scale (zoom): − shrinks the displayed max, + grows it — the naive, "smaller number"
           reading of the sign, not the zoom-level's own (max=autoMax/zoom, so shrinking the number
           means INCREASING zoom). The readout between them is a continuous scrub: press and drag
@@ -1300,7 +1318,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
             onTouchStart={swallowTouch} onTouchMove={swallowTouch} onTouchEnd={swallowTouch}
             onDragStart={e=>e.preventDefault()}
             onClick={()=>{ if(zoomSuppressClick.current[z.ax]){zoomSuppressClick.current[z.ax]=false;return;} z.setZoom(1); }}
-            title="Drag to scrub, tap to reset to auto-fit"
+            title={t("Drag to scrub, tap to reset to auto-fit")}
             style={{flex:1,padding:"4px 0",borderRadius:6,fontSize:10,fontWeight:700,cursor:"ew-resize",touchAction:"pan-y",
               background:isAuto?C.surface:`${catColor}22`,
               border:`1px solid ${scrubbing?C.accent:(isAuto?C.border:catColor)}`,color:scrubbing?C.accent:(isAuto?C.textMute:catColor),whiteSpace:"nowrap",overflow:"hidden"}}>
@@ -1317,14 +1335,18 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
           The extra digits appearing are the whole signal, so the swapped value keeps the same size,
           weight and colour as the rounded one. */}
       <div onClick={canExact?()=>setExactHeadline(v=>!v):undefined}
-           title={canExact?`${exactStr} ${yAxis?.label??""}`:undefined}
+           title={canExact?`${exactStr} ${yAxis?.label?.()??""}`:undefined}
            style={{cursor:canExact?"pointer":"default"}}>
         <span style={{fontSize:22,fontWeight:800,color:catColor,fontVariantNumeric:"tabular-nums"}}>{showingExact?exactStr:fmt(displayVal)}</span>
-        <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label}</span>
+        <span style={{fontSize:11,color:C.textMute,marginLeft:5}}>{yAxis?.label?.()}</span>
         {hasIdeal&&<div style={{fontSize:10,color:C.textMute,marginTop:1}}>{appliedPct!=null?`${appliedPct}%`:"--"}</div>}
       </div>
       <div style={{textAlign:"right"}}>
-        {displayX!=null&&<div style={{fontSize:11,color:C.textMute}}>@ <span style={{color:C.text,fontWeight:600}}>{fmt(displayX)}</span> {xAxis?.label?.split(",")[0]}</div>}
+        {/* The axis label minus its unit — the number is right there, so "@ 12.4 Distance" reads
+            better than "@ 12.4 Distance, km". Splitting on the comma rather than storing the two
+            halves separately: a translation with no comma simply keeps the whole label, which is
+            still correct, just longer. */}
+        {displayX!=null&&<div style={{fontSize:11,color:C.textMute}}>@ <span style={{color:C.text,fontWeight:600}}>{fmt(displayX)}</span> {xAxis?.label?.().split(",")[0]}</div>}
         {(()=>{ if(catKey!=="ewar"&&catKey!=="reps") return null;
           const P=ownProj||{};
           const has = catKey==="reps" ? (P.reps?.length>0)
@@ -1335,16 +1357,16 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
             : yKey==="gdRange"  ? (P.guideDisr?.length>0)
             : yKey==="tpSig"    ? (P.painters?.length>0)
             : (P.damps?.length>0);
-          return has ? null : <span style={{fontSize:11,color:C.textMute,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 8px"}}>No modules fitted</span>;
+          return has ? null : <span style={{fontSize:11,color:C.textMute,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:"3px 8px"}}>{t("No modules fitted")}</span>;
         })()}
       </div>
     </div>}
     {/* Only the `dist` axis, which is km of separation from a target you have to be holding: damage,
         ewar and reps. Warp's own distance axes are not a projection and get no line. */}
-    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label} yLabel={yAxis?.label} color={catColor} cursorX={cursorX} onCursorXChange={setCursorX}
-      marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:"lock range"}:null}/></div>
+    <div style={{padding:"4px 10px 0"}}><LineChart pts={pts} xMax={xMax} yMax={yMax} xLabel={xAxis?.label?.()} yLabel={yAxis?.label?.()} color={catColor} cursorX={cursorX} onCursorXChange={setCursorX}
+      marker={xAxis?.key==="dist"&&(cs.targetRange>0)?{x:cs.exact?.targetRange??cs.targetRange,label:t("lock range")}:null}/></div>
     {cat.showTargetControls&&<div style={{padding:"0 10px 12px"}}><TargetControls tgtProfile={tgtProfile} targetProfile={targetProfile} setTargetProfile={setTargetProfile} targetMwd={targetMwd} setTargetMwd={setTargetMwd} targetAngle={targetAngle} setTargetAngle={setTargetAngle} selfAngle={selfAngle} setSelfAngle={setSelfAngle} targetVel={targetVel} setTargetVel={setTargetVel} selfVel={selfVelEff} setSelfVel={setSelfVel} transversalSpeed={transversalSpeed} angularSpeed={angularSpeed} angularDistM={angularDistM} showTransversal={showTransversal} setShowTransversal={setShowTransversal} tgtSig={tgtSig} setTgtSig={setTgtSig} targetVelMax={targetVelMax} setTargetVelMax={setTargetVelMax} selfMaxVel={selfMaxVel} ship={ship} ownProj={ownProj} targetFit={targetFit} targetFitStats={targetFitStats} onPickFit={()=>setShowFitPicker(true)} onClearFit={()=>{setTargetFit(null);setTargetProfile("custom");}} onOpenFit={onOpenFit}/></div>}
-    {showFitPicker&&<FitPickerSheet title="Target Fit" fitsDB={fitsDB??{}} pinned={openTabFits}
+    {showFitPicker&&<FitPickerSheet title={t("Target Fit")} fitsDB={fitsDB??{}} pinned={openTabFits}
       onSelect={(shipName,fit)=>{setTargetFit({ship:shipName,name:fit.name});setTargetProfile(TARGET_FIT);}}
       onClose={()=>setShowFitPicker(false)}/>}
   </div>);
