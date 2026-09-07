@@ -6,6 +6,22 @@ import { mergeTagColors } from "../lib/fit-tags.js";
 import { FITS_KEY, exportFitsBlob, getLoadedFitsDB, replaceFitsDB, isFallbackMode,
          saveUndoSnapshot, readUndoMeta, restoreUndoSnapshot } from "../lib/fits-store.js";
 import { parsePyfaXml, convertFitting } from "../lib/pyfa-xml.js";
+import { t } from "../lib/i18n.js";
+
+// Almost every sentence in this panel counts something and BOLDS the count. Splitting the JSX into
+// fragments either side of each number would hand the translator English clause order and nothing
+// else, so the sentence stays one key and its {placeholders} become <b> spans here — t() leaves a
+// placeholder it was given no value for verbatim, which is what lets this find them afterwards.
+//
+// So a counting key names its number something readable (`{fits}`) and is passed `n` SEPARATELY, as
+// the plural selector only. `{n}` as the visible token would be substituted by t() before this ran.
+// Two counts in one sentence get one key each and are composed by a third: English picks a plural
+// form per noun, and only one form can be selected per key.
+const boldFill = (text, values, style) =>
+  text.split(/(\{[a-zA-Z]+\})/).map((part, i) => {
+    const k = /^\{([a-zA-Z]+)\}$/.exec(part)?.[1];
+    return k && k in values ? <b key={i} style={style}>{values[k]}</b> : part;
+  });
 
 // How many fittings to convert between yields to the event loop. A full pyfa library is ~1,700 fits
 // and converts in well under a second, but on a phone that is still long enough to drop the progress
@@ -65,12 +81,12 @@ function BackupPanel() {
   const download = async () => {
     const json = buildBackup(await exportFitsBlob());
     const name = `axis-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    const okMsg = `Exported ${mine.fits} fit${mine.fits === 1 ? "" : "s"}.`;
+    const okMsg = t({ one: "Exported {n} fit.", other: "Exported {n} fits." }, { n: mine.fits });
 
     try {
       const file = new File([json], name, { type: "application/json" });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: "Axis backup" });
+        await navigator.share({ files: [file], title: t("Axis backup") });
         setStatus({ ok: true, msg: okMsg });
         return;
       }
@@ -92,29 +108,29 @@ function BackupPanel() {
         setStatus({ ok: true, msg: okMsg });
         return;
       } catch (e) {
-        setStatus({ ok: false, msg: `Export failed: ${e.message}` });
+        setStatus({ ok: false, msg: t("Export failed: {err}", { err: e.message }) });
         return;
       }
     }
-    setStatus({ ok: false, msg: "This device can't save files from the app — use Copy JSON instead." });
+    setStatus({ ok: false, msg: t("This device can't save files from the app — use Copy JSON instead.") });
   };
 
   // Blob downloads are unreliable inside a native webview, so always offer the clipboard too.
   const copyJson = async () => {
     try {
       await navigator.clipboard.writeText(buildBackup(await exportFitsBlob()));
-      setStatus({ ok: true, msg: "Backup JSON copied to clipboard." });
+      setStatus({ ok: true, msg: t("Backup JSON copied to clipboard.") });
     } catch {
-      setStatus({ ok: false, msg: "Couldn't copy — use Download instead." });
+      setStatus({ ok: false, msg: t("Couldn't copy — use Download instead.") });
     }
   };
 
   const parseBackup = (text) => {
     let obj;
     try { obj = JSON.parse(text); }
-    catch { setStatus({ ok: false, msg: "That isn't valid JSON." }); return; }
+    catch { setStatus({ ok: false, msg: t("That isn't valid JSON.") }); return; }
     if (!isBackupApp(obj?.app) || !obj?.data) {
-      setStatus({ ok: false, msg: "Not an Axis backup file." });
+      setStatus({ ok: false, msg: t("Not an Axis backup file.") });
       return;
     }
     const c = countFits(obj.data["pyfa-fitsdb"]);
@@ -127,7 +143,7 @@ function BackupPanel() {
     if (!f) return;
     const r = new FileReader();
     r.onload = () => parseBackup(String(r.result));
-    r.onerror = () => setStatus({ ok: false, msg: "Couldn't read that file." });
+    r.onerror = () => setStatus({ ok: false, msg: t("Couldn't read that file.") });
     r.readAsText(f);
     e.target.value = "";
   };
@@ -138,7 +154,7 @@ function BackupPanel() {
   const apply = async (mode) => {
     const { obj } = pending;
     try {
-      await runBulk(mode === "replace" ? "Restoring backup…" : "Merging backup…", async () => {
+      await runBulk(mode === "replace" ? t("Restoring backup…") : t("Merging backup…"), async () => {
         await saveUndoSnapshot(mode === "replace" ? "backup restore" : "backup merge");
         if (mode === "replace") {
           for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -167,7 +183,7 @@ function BackupPanel() {
         }
       });
     } catch (e) {
-      setStatus({ ok: false, msg: `Import failed: ${e.message}` });
+      setStatus({ ok: false, msg: t("Import failed: {err}", { err: e.message }) });
       setPending(null);
     }
   };
@@ -181,7 +197,7 @@ function BackupPanel() {
     e.target.value = "";
     if (!f) return;
     const r = new FileReader();
-    r.onerror = () => setStatus({ ok: false, msg: "Couldn't read that file." });
+    r.onerror = () => setStatus({ ok: false, msg: t("Couldn't read that file.") });
     r.onload = () => convertXml(String(r.result));
     r.readAsText(f);
   };
@@ -209,7 +225,7 @@ function BackupPanel() {
     setXmlBusy(null);
 
     const fits = Object.values(db).reduce((n, a) => n + a.length, 0);
-    if (!fits) { setStatus({ ok: false, msg: "Nothing importable in that file." }); return; }
+    if (!fits) { setStatus({ ok: false, msg: t("Nothing importable in that file.") }); return; }
     setXmlPending({ db, fits, ships: Object.keys(db).length, reloaded, skipped,
                     unresolved: [...unresolved].sort() });
   };
@@ -219,13 +235,14 @@ function BackupPanel() {
   // inside a single pyfa export are separated too rather than collapsing onto one another.
   const applyXml = async () => {
     try {
-      await runBulk(`Importing ${xmlPending.fits.toLocaleString()} fits…`, async () => {
+      await runBulk(t({ one: "Importing {fits} fit…", other: "Importing {fits} fits…" },
+                      { n: xmlPending.fits, fits: xmlPending.fits.toLocaleString() }), async () => {
         await saveUndoSnapshot("pyfa import");
         const merged = mergeFitsDB(await exportFitsBlob(), JSON.stringify(xmlPending.db));
         await replaceFitsDB(JSON.parse(merged));
       });
     } catch (e) {
-      setStatus({ ok: false, msg: `Import failed: ${e.message}` });
+      setStatus({ ok: false, msg: t("Import failed: {err}", { err: e.message }) });
       setXmlPending(null);
     }
   };
@@ -235,29 +252,41 @@ function BackupPanel() {
   // reversible — which is what makes offering it at all reasonable.
   const clearLibrary = async () => {
     const undoable = !isFallbackMode();
-    const warn = `Delete all ${mine.fits.toLocaleString()} fit${mine.fits === 1 ? "" : "s"}?\n\n`
-      + `Your skills, settings and tag colours are kept.\n`
-      + (undoable ? `You can undo this from here until the next import or reset.`
-                  : `This device can't store an undo copy, so this CANNOT be undone. Export a backup first.`);
+    const warn = t({ one: "Delete all {fits} fit?", other: "Delete all {fits} fits?" },
+                   { n: mine.fits, fits: mine.fits.toLocaleString() })
+      + `\n\n${t("Your skills, settings and tag colours are kept.")}\n`
+      + (undoable ? t("You can undo this from here until the next import or reset.")
+                  : t("This device can't store an undo copy, so this CANNOT be undone. Export a backup first."));
     if (!window.confirm(warn)) return;
     try {
-      await runBulk("Clearing library…", async () => {
+      await runBulk(t("Clearing library…"), async () => {
         await saveUndoSnapshot("clear library");
         await replaceFitsDB({});
       });
-    } catch (e) { setStatus({ ok: false, msg: `Couldn't clear: ${e.message}` }); }
+    } catch (e) { setStatus({ ok: false, msg: t("Couldn't clear: {err}", { err: e.message }) }); }
   };
 
   const doUndo = async () => {
     try {
-      await runBulk("Restoring your fits…", async () => {
+      await runBulk(t("Restoring your fits…"), async () => {
         if (!(await restoreUndoSnapshot())) {
           setUndo(null);
-          throw new Error("That undo copy is no longer available.");
+          throw new Error(t("That undo copy is no longer available."));
         }
       });
     } catch (e) { setStatus({ ok: false, msg: e.message }); }
   };
+
+  // The snapshot's label was written to IndexedDB by whichever operation took it, so it is stored in
+  // English and translated here — translating at save time would freeze an undo copy in whatever
+  // language it was taken in. One literal key per label, never t(undo.label): a computed key is
+  // invisible to the catalog audit, which would then report every translation of one as an orphan.
+  const undoLabel = (l) => ({
+    "backup restore": t("backup restore"),
+    "backup merge": t("backup merge"),
+    "pyfa import": t("pyfa import"),
+    "clear library": t("clear library"),
+  }[l] ?? t("last change"));
 
   const btn = (bg, border, color) => ({
     padding: "9px 14px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -279,41 +308,43 @@ function BackupPanel() {
           <span className="vv-spin" style={{ width: 30, height: 30, borderRadius: "50%",
                                              border: `3px solid ${C.border}`, borderTopColor: C.accent }} />
           <div style={{ fontSize: 12, color: C.textMid }}>{busy}</div>
-          <div style={{ fontSize: 10, color: C.textMute }}>Don't close the app.</div>
+          <div style={{ fontSize: 10, color: C.textMute }}>{t("Don't close the app.")}</div>
         </div>, document.body)}
 
-      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>Backup &amp; Restore</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 6 }}>{t("Backup & Restore")}</div>
       <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12, lineHeight: 1.5 }}>
-        Your fits live only in this browser's storage. Clearing site data, switching browsers, or
-        opening the app on a different port will lose them. Export a file to keep them safe or move
-        them to another device.
+        {t("Your fits live only in this browser's storage. Clearing site data, switching browsers, or opening the app on a different port will lose them. Export a file to keep them safe or move them to another device.")}
       </div>
 
       <div style={{ padding: "10px 12px", background: C.surfaceAlt, border: `1px solid ${C.border}`,
                     borderRadius: 10, marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: C.textMid }}>
-          <b style={{ color: C.text }}>{mine.fits}</b> fit{mine.fits === 1 ? "" : "s"} across{" "}
-          <b style={{ color: C.text }}>{mine.ships}</b> ship{mine.ships === 1 ? "" : "s"} stored here.
+          {boldFill(
+            t("{fitCount} across {shipCount} stored here.", {
+              fitCount: t({ one: "{fits} fit", other: "{fits} fits" }, { n: mine.fits }),
+              shipCount: t({ one: "{ships} ship", other: "{ships} ships" }, { n: mine.ships }),
+            }),
+            { fits: mine.fits, ships: mine.ships }, { color: C.text })}
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-        <button onClick={download} style={btn(C.accent, C.accent, "#0e0e10")}>Download backup</button>
-        <button onClick={copyJson} style={btn(C.surface, C.border, C.textMid)}>Copy as JSON</button>
+        <button onClick={download} style={btn(C.accent, C.accent, "#0e0e10")}>{t("Download backup")}</button>
+        <button onClick={copyJson} style={btn(C.surface, C.border, C.textMid)}>{t("Copy as JSON")}</button>
       </div>
 
       <div style={{ height: 1, background: C.border, margin: "4px 0 16px" }} />
 
-      <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>Restore</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 8 }}>{t("Restore")}</div>
 
       {!pending && (
         <>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={onFile}
                  style={{ display: "none" }} />
           <button onClick={() => fileRef.current?.click()} style={{ ...btn(C.surface, C.border, C.textMid), marginBottom: 10 }}>
-            Choose backup file…
+            {t("Choose backup file…")}
           </button>
-          <div style={{ fontSize: 10, color: C.textMute, marginBottom: 6 }}>…or paste the JSON:</div>
+          <div style={{ fontSize: 10, color: C.textMute, marginBottom: 6 }}>{t("…or paste the JSON:")}</div>
           <textarea
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
@@ -325,7 +356,7 @@ function BackupPanel() {
           <button onClick={() => parseBackup(pasted)} disabled={!pasted.trim()}
                   style={{ ...btn(C.surface, C.border, C.textMid), marginTop: 8,
                            opacity: pasted.trim() ? 1 : 0.4 }}>
-            Load pasted backup
+            {t("Load pasted backup")}
           </button>
         </>
       )}
@@ -334,30 +365,38 @@ function BackupPanel() {
         <div style={{ padding: "12px 14px", background: C.surfaceAlt,
                       border: `1px solid ${C.accentBorder ?? C.border}`, borderRadius: 10 }}>
           <div style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>
-            Backup contains <b>{pending.count.fits}</b> fit{pending.count.fits === 1 ? "" : "s"} across{" "}
-            <b>{pending.count.ships}</b> ship{pending.count.ships === 1 ? "" : "s"}.
+            {boldFill(
+              t("Backup contains {fitCount} across {shipCount}.", {
+                fitCount: t({ one: "{fits} fit", other: "{fits} fits" }, { n: pending.count.fits }),
+                shipCount: t({ one: "{ships} ship", other: "{ships} ships" }, { n: pending.count.ships }),
+              }),
+              { fits: pending.count.fits, ships: pending.count.ships })}
           </div>
           {pending.obj.exportedAt && (
             <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10 }}>
-              Exported {new Date(pending.obj.exportedAt).toLocaleString()}
+              {t("Exported {when}", { when: new Date(pending.obj.exportedAt).toLocaleString() })}
             </div>
           )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={() => apply("merge")} style={btn(C.accent, C.accent, "#0e0e10")}>
-              Merge (keep mine)
+              {t("Merge (keep mine)")}
             </button>
             <button
-              onClick={() => { if (window.confirm(`Replace ALL ${mine.fits} local fit(s) and settings with this backup? This cannot be undone.`)) apply("replace"); }}
+              onClick={() => { if (window.confirm(t({ one: "Replace ALL {n} local fit and your settings with this backup? This cannot be undone.", other: "Replace ALL {n} local fits and your settings with this backup? This cannot be undone." }, { n: mine.fits }))) apply("replace"); }}
               style={btn(C.surface, C.danger, C.danger)}>
-              Replace everything
+              {t("Replace everything")}
             </button>
             <button onClick={() => { setPending(null); setPasted(""); }} style={btn(C.surface, C.border, C.textMute)}>
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
           <div style={{ fontSize: 10, color: C.textMute, marginTop: 8, lineHeight: 1.5 }}>
-            <b>Merge</b> adds the imported fits alongside yours (duplicates get renamed, your skills
-            and settings are untouched). <b>Replace</b> wipes everything here first.
+            {/* The two bolded words name the buttons above, so they ride in as placeholders rather
+                than being spelled out in the sentence — they have to keep matching the buttons, and
+                a translator needs them wherever their clause order puts them. */}
+            {boldFill(
+              t("{merge} adds the imported fits alongside yours (duplicates get renamed, your skills and settings are untouched). {replace} wipes everything here first."),
+              { merge: t("Merge"), replace: t("Replace") })}
           </div>
         </div>
       )}
@@ -365,24 +404,27 @@ function BackupPanel() {
       {!pending && (
         <>
           <div style={{ height: 1, background: C.border, margin: "16px 0" }} />
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>Import from pyfa</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>{t("Import from pyfa")}</div>
           <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
-            In pyfa, use <b>File &rarr; Backup All Fittings</b> to write an XML file, then choose it
-            here. Your existing fits are kept — imported ones are added alongside them.
+            {/* pyfa's own menu path is quoted verbatim and stays English: the reader is looking for
+                it in pyfa's window, which has no translation to match. */}
+            {boldFill(
+              t("In pyfa, use {menu} to write an XML file, then choose it here. Your existing fits are kept — imported ones are added alongside them."),
+              { menu: "File → Backup All Fittings" })}
           </div>
 
           <input ref={xmlRef} type="file" accept=".xml,text/xml,application/xml" onChange={onXmlFile}
                  style={{ display: "none" }} />
           {!xmlPending && !xmlBusy && (
             <button onClick={() => xmlRef.current?.click()} style={btn(C.surface, C.border, C.textMid)}>
-              Choose pyfa XML file…
+              {t("Choose pyfa XML file…")}
             </button>
           )}
 
           {xmlBusy && (
             <div>
               <div style={{ fontSize: 11, color: C.textMid, marginBottom: 6 }}>
-                Converting {xmlBusy.done.toLocaleString()} / {xmlBusy.total.toLocaleString()} fits…
+                {t("Converting {done} / {total} fits…", { done: xmlBusy.done.toLocaleString(), total: xmlBusy.total.toLocaleString() })}
               </div>
               <div style={{ height: 4, borderRadius: 2, background: C.surfaceAlt, overflow: "hidden" }}>
                 <div style={{ height: "100%", background: C.accent,
@@ -395,23 +437,28 @@ function BackupPanel() {
             <div style={{ padding: "12px 14px", background: C.surfaceAlt,
                           border: `1px solid ${C.accentBorder ?? C.border}`, borderRadius: 10 }}>
               <div style={{ fontSize: 12, color: C.text, marginBottom: 8 }}>
-                Ready to import <b>{xmlPending.fits.toLocaleString()}</b> fit{xmlPending.fits === 1 ? "" : "s"} across{" "}
-                <b>{xmlPending.ships.toLocaleString()}</b> ship{xmlPending.ships === 1 ? "" : "s"}.
+                {boldFill(
+                  t("Ready to import {fitCount} across {shipCount}.", {
+                    fitCount: t({ one: "{fits} fit", other: "{fits} fits" }, { n: xmlPending.fits }),
+                    shipCount: t({ one: "{ships} ship", other: "{ships} ships" }, { n: xmlPending.ships }),
+                  }),
+                  { fits: xmlPending.fits.toLocaleString(), ships: xmlPending.ships.toLocaleString() })}
               </div>
               <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.6 }}>
-                A pyfa XML backup doesn't record implants, boosters, or which module each charge was
-                loaded into — it lists all ammo together in the cargo hold. Ammo was put back into{" "}
-                <b>{xmlPending.reloaded.toLocaleString()}</b> module{xmlPending.reloaded === 1 ? "" : "s"};
-                anything left over stays in cargo.
-                {xmlPending.skipped > 0 && <> {xmlPending.skipped} fitting{xmlPending.skipped === 1 ? "" : "s"} couldn't be read and {xmlPending.skipped === 1 ? "was" : "were"} skipped.</>}
-                {xmlPending.unresolved.length > 0 && <> {xmlPending.unresolved.length} item name{xmlPending.unresolved.length === 1 ? "" : "s"} weren't recognised (e.g. {xmlPending.unresolved.slice(0, 3).join(", ")}) and were left out.</>}
+                {boldFill(
+                  t("A pyfa XML backup doesn't record implants, boosters, or which module each charge was loaded into — it lists all ammo together in the cargo hold. Ammo was put back into {modCount}; anything left over stays in cargo.", {
+                    modCount: t({ one: "{mods} module", other: "{mods} modules" }, { n: xmlPending.reloaded }),
+                  }),
+                  { mods: xmlPending.reloaded.toLocaleString() })}
+                {xmlPending.skipped > 0 && <> {t({ one: "{n} fitting couldn't be read and was skipped.", other: "{n} fittings couldn't be read and were skipped." }, { n: xmlPending.skipped })}</>}
+                {xmlPending.unresolved.length > 0 && <> {t({ one: "{n} item name wasn't recognised (e.g. {names}) and was left out.", other: "{n} item names weren't recognised (e.g. {names}) and were left out." }, { n: xmlPending.unresolved.length, names: xmlPending.unresolved.slice(0, 3).join(", ") })}</>}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={applyXml} style={btn(C.accent, C.accent, "#0e0e10")}>
-                  Add {xmlPending.fits.toLocaleString()} fit{xmlPending.fits === 1 ? "" : "s"}
+                  {t({ one: "Add {fits} fit", other: "Add {fits} fits" }, { n: xmlPending.fits, fits: xmlPending.fits.toLocaleString() })}
                 </button>
                 <button onClick={() => setXmlPending(null)} style={btn(C.surface, C.border, C.textMute)}>
-                  Cancel
+                  {t("Cancel")}
                 </button>
               </div>
             </div>
@@ -426,30 +473,33 @@ function BackupPanel() {
             <div style={{ padding: "12px 14px", background: C.surfaceAlt, border: `1px solid ${C.border}`,
                           borderRadius: 10, marginBottom: 12 }}>
               <div style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>
-                Undo available — restores the <b>{undo.fits.toLocaleString()}</b> fit{undo.fits === 1 ? "" : "s"}{" "}
-                you had before the {undo.label ?? "last change"}.
+                {boldFill(
+                  t({ one: "Undo available — restores the {fits} fit you had before the {what}.",
+                      other: "Undo available — restores the {fits} fits you had before the {what}." },
+                    { n: undo.fits, what: undoLabel(undo.label) }),
+                  { fits: undo.fits.toLocaleString() })}
               </div>
               {/* The copy holds fits and nothing else, so undoing a "Replace everything" restore puts
                   the fits back but leaves the settings that restore overwrote. Said plainly here
                   rather than letting the button imply it reverses the whole operation. */}
               <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
-                Taken {undo.at ? new Date(undo.at).toLocaleString() : "earlier"}. Saved fits only —
-                skills and settings aren't part of the copy. Replaced by the next import or reset.
+                {t("Taken {when}. Saved fits only — skills and settings aren't part of the copy. Replaced by the next import or reset.",
+                   { when: undo.at ? new Date(undo.at).toLocaleString() : t("earlier") })}
               </div>
               <button onClick={doUndo} style={btn(C.surface, C.accent, C.accent)}>
-                Undo {undo.label ?? "last change"}
+                {t("Undo {what}", { what: undoLabel(undo.label) })}
               </button>
             </div>
           )}
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>Clear fit library</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>{t("Clear fit library")}</div>
           <div style={{ fontSize: 10, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
-            Deletes every saved fit on this device. Skills, settings and tag colours are kept.
-            {!isFallbackMode() && " A copy is kept so you can undo it."}
+            {t("Deletes every saved fit on this device. Skills, settings and tag colours are kept.")}
+            {!isFallbackMode() && ` ${t("A copy is kept so you can undo it.")}`}
           </div>
           <button onClick={clearLibrary} disabled={mine.fits === 0}
                   style={{ ...btn(C.surface, C.danger, C.danger), opacity: mine.fits === 0 ? 0.4 : 1 }}>
-            Delete all {mine.fits.toLocaleString()} fit{mine.fits === 1 ? "" : "s"}
+            {t({ one: "Delete all {fits} fit", other: "Delete all {fits} fits" }, { n: mine.fits, fits: mine.fits.toLocaleString() })}
           </button>
         </>
       )}

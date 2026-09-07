@@ -7,6 +7,13 @@ import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { abyssalGrade, mutaplasmidName } from "../lib/eft-export.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
+import { t } from "../lib/i18n.js";
+
+// Drone sizes (Light/Medium/Heavy/Sentry), fighter classes (Light/Heavy/Support) and race names are
+// CCP TAXONOMY and stay English, on the same rule as item names: they come out of the dogma bundle,
+// they double as data keys here, and "Light" as a fighter class wants a different German word from
+// "Light" as a theme — which the key-is-the-English-string design cannot express. Leaving game
+// taxonomy alone avoids inventing a second vocabulary for it. See lib/i18n.js.
 
 export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   const[search,setSearch]=useState("");
@@ -30,36 +37,36 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
         <div style={{display:"flex",gap:10,fontSize:11,color:C.textMute}}>
           {d.dps>0&&<span>DPS <span style={{color:C.danger,fontWeight:600}}>{d.dps}</span></span>}
           {d.dps===0&&d.dmgType&&<span style={{color:C.high}}>{d.dmgType}</span>}
-          {d.range>0&&<span>Range {d.range}km</span>}
-          {d.tracking&&d.tracking>0&&<span>Tr {d.tracking.toFixed(3)}</span>}
+          {d.range>0&&<span>{t("Range")} {d.range}km</span>}
+          {d.tracking&&d.tracking>0&&<span>{t("Tr")} {d.tracking.toFixed(3)}</span>}
           {d.hp>0&&<span>HP {d.hp.toLocaleString()}</span>}
         </div>
       </div>
-      {already?<span style={{color:C.accent,fontSize:12,fontWeight:700,marginLeft:10,flexShrink:0}}>+Add</span>:<span style={{color:C.textMute,fontSize:20,marginLeft:10,flexShrink:0}}>+</span>}
+      {already?<span style={{color:C.accent,fontSize:12,fontWeight:700,marginLeft:10,flexShrink:0}}>+{t("Add")}</span>:<span style={{color:C.textMute,fontSize:20,marginLeft:10,flexShrink:0}}>+</span>}
     </div>);
   }
 
   function renderBody(){
-    if(searchResults){if(searchResults.length===0)return(<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No drones found</div>);return searchResults.map(d=><DroneRow key={d.typeID??d.name} d={d}/>);}
+    if(searchResults){if(searchResults.length===0)return(<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>{t("No drones found")}</div>);return searchResults.map(d=><DroneRow key={d.typeID??d.name} d={d}/>);}
     if(drillSub&&drilledGroup){
       if(drilledGroup.subGroups)return drilledGroup.subGroups.map(sub=>(<AccordionSection key={sub.name} title={`${sub.name} (${sub.drones.length})`}>{sub.drones.map(d=><DroneRow key={d.typeID??d.name} d={d}/>)}</AccordionSection>));
       return (drilledGroup.drones??[]).map(d=><DroneRow key={d.typeID??d.name} d={d}/>);
     }
     return REAL_DRONE_BROWSER.map(group=>{
       const count=group.subGroups?group.subGroups.reduce((s,sg)=>s+sg.drones.length,0):(group.drones?.length??0);
-      if(group.subGroups?.length)return(<div key={group.topGroup} onClick={()=>setDrillSub(group.topGroup)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}><div><div style={{fontSize:14,fontWeight:600,color:C.text}}>{group.topGroup}</div><div style={{fontSize:11,color:C.textMute,marginTop:2}}>{count} drones</div></div><span style={{fontSize:20,color:C.textMute}}>{">"}</span></div>);
+      if(group.subGroups?.length)return(<div key={group.topGroup} onClick={()=>setDrillSub(group.topGroup)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}><div><div style={{fontSize:14,fontWeight:600,color:C.text}}>{group.topGroup}</div><div style={{fontSize:11,color:C.textMute,marginTop:2}}>{t({one:"{n} drone",other:"{n} drones"},{n:count})}</div></div><span style={{fontSize:20,color:C.textMute}}>{">"}</span></div>);
       return(<AccordionSection key={group.topGroup} title={`${group.topGroup} (${count})`}>{(group.drones??[]).map(d=><DroneRow key={d.typeID??d.name} d={d}/>)}</AccordionSection>);
     });
   }
 
-  return(<BottomSheet title="Add Drone" onClose={onClose} height="88vh" fillHeight>
+  return(<BottomSheet title={t("Add Drone")} onClose={onClose} height="88vh" fillHeight>
     {/* Search stays at the TOP here, unlike the module browser's footer bar: this sheet closes on
         the first pick, so there is no "keep searching with the keyboard up" flow for a footer to
         serve. Only the multi-add browsers (modules, cargo) put it above the keyboard. */}
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search drones..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search drones...")}/>
     </div>
-    {!searchResults&&drillSub&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={()=>setDrillSub(null)} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>Back</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
+    {!searchResults&&drillSub&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={()=>setDrillSub(null)} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>{t("Back")}</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
     <div>{renderBody()}</div>
   </BottomSheet>);
 }
@@ -73,7 +80,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
   const RACE_ORDER=["Amarr","Caldari","Gallente","Minmatar","Faction"];
   const ql=q.trim().toLowerCase();
   const anyMatch=RACE_ORDER.some(r=>races[r]?.some(f=>!ql||nameMatchesQuery(f.name,ql)));
-  return(<BottomSheet title="Add Fighter" onClose={onClose} height="82vh" fillHeight>
+  return(<BottomSheet title={t("Add Fighter")} onClose={onClose} height="82vh" fillHeight>
     <div style={{display:"flex",gap:6,padding:"10px 12px 8px"}}>
       {["Light","Heavy","Support"].map(c=>(
         <button key={c} onClick={()=>setCls(c)} style={{flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",
@@ -81,7 +88,9 @@ export function FighterBrowserSheet({onAdd,onClose}){
       ))}
     </div>
     <div style={{padding:"0 12px 8px"}}>
-      <SheetSearchBar value={q} onChange={setQ} placeholder={`Search ${cls.toLowerCase()} fighters…`}/>
+      {/* The class rides in as a placeholder rather than being concatenated: it stays English (CCP
+          taxonomy) but a translator still needs to put it wherever their grammar wants it. */}
+      <SheetSearchBar value={q} onChange={setQ} placeholder={t("Search {cls} fighters…",{cls:cls.toLowerCase()})}/>
     </div>
     {RACE_ORDER.filter(r=>races[r]).map(r=>{
       const list=races[r].filter(f=>!ql||nameMatchesQuery(f.name,ql));
@@ -94,7 +103,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
               <img className="eve-icon" src={eveIcon(f.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>
               <div>
                 <div style={{fontSize:13,fontWeight:600,color:C.text}}>{f.name}</div>
-                <span style={{fontSize:9,fontWeight:800,color:classColor[cls],textTransform:"uppercase",letterSpacing:0.3}}>{cls} fighter</span>
+                <span style={{fontSize:9,fontWeight:800,color:classColor[cls],textTransform:"uppercase",letterSpacing:0.3}}>{t("{cls} fighter",{cls})}</span>
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -106,7 +115,7 @@ export function FighterBrowserSheet({onAdd,onClose}){
         ))}
       </div>);
     })}
-    {!anyMatch&&<div style={{textAlign:"center",padding:"36px 20px",color:C.textMute,fontSize:13}}>No {cls.toLowerCase()} fighters match "{q}".</div>}
+    {!anyMatch&&<div style={{textAlign:"center",padding:"36px 20px",color:C.textMute,fontSize:13}}>{t('No {cls} fighters match "{q}".',{cls:cls.toLowerCase(),q})}</div>}
   </BottomSheet>);
 }
 
@@ -119,8 +128,8 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     if(tid==null) return null;
     return TYPES[tid] ?? TYPES[String(tid)] ?? null;
   };
-  const getDroneVol=(d)=>{const t=_droneTypeRec(d);return t?.attrs?.volume ?? d.volume ?? 5;};
-  const getDroneBW=(d)=>{const t=_droneTypeRec(d);return t?.attrs?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
+  const getDroneVol=(d)=>{const rec=_droneTypeRec(d);return rec?.attrs?.volume ?? d.volume ?? 5;};
+  const getDroneBW=(d)=>{const rec=_droneTypeRec(d);return rec?.attrs?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
   const bayUsed=drones.reduce((s,d)=>s+d.qty*getDroneVol(d),0);
   // Bandwidth counts only ACTIVE drones — the bay holds spares, the bandwidth flies them.
   const bwUsed=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty*getDroneBW(d),0);
@@ -165,9 +174,9 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
   const setFighterQty=(id,delta)=>setFighters(fighters.map(f=>f.id===id?{...f,qty:Math.max(1,(f.qty??1)+delta)}:f));
   const sizeColor=s=>s==="Light"?C.rig:s==="Medium"?C.accent:s==="Heavy"?C.warning:s==="Sentry"?C.high:C.textMid;
   const usesFighters = (shipFighter?.tubes ?? 0) > 0;
-  const _ftrVol=(name)=>{const t=name?tidByName(name):null;const a=t!=null?(TYPES[t]?.attrs??TYPES[String(t)]?.attrs):null;return a?.volume??0;};
-  const fighterBayUsed = fighters.reduce((s,f,i)=>{const sz=fighterInfo[i]?.sqSize ?? (()=>{const t=f.name?tidByName(f.name):null;return (t!=null?TYPES[t]?.attrs?.fighterSquadronMaxSize:0)??0;})();return s+(f.qty??1)*sz*_ftrVol(f.name);},0);
-  const classOf=(f,i)=>fighterInfo[i]?.class ?? (()=>{const t=f.name?tidByName(f.name):null;const a=t!=null?TYPES[t]?.attrs:null;return a?.fighterSquadronIsHeavy?"Heavy":a?.fighterSquadronIsSupport?"Support":"Light";})();
+  const _ftrVol=(name)=>{const tid=name?tidByName(name):null;const a=tid!=null?(TYPES[tid]?.attrs??TYPES[String(tid)]?.attrs):null;return a?.volume??0;};
+  const fighterBayUsed = fighters.reduce((s,f,i)=>{const sz=fighterInfo[i]?.sqSize ?? (()=>{const tid=f.name?tidByName(f.name):null;return (tid!=null?TYPES[tid]?.attrs?.fighterSquadronMaxSize:0)??0;})();return s+(f.qty??1)*sz*_ftrVol(f.name);},0);
+  const classOf=(f,i)=>fighterInfo[i]?.class ?? (()=>{const tid=f.name?tidByName(f.name):null;const a=tid!=null?TYPES[tid]?.attrs:null;return a?.fighterSquadronIsHeavy?"Heavy":a?.fighterSquadronIsSupport?"Support":"Light";})();
   const squadTotals={Light:0,Heavy:0,Support:0}, squadActive={Light:0,Heavy:0,Support:0};
   fighters.forEach((f,i)=>{const c=classOf(f,i);const q=f.qty??1;if(squadTotals[c]!=null){squadTotals[c]+=q;if(f.active!==false)squadActive[c]+=q;}});
   const totalSquads = fighters.reduce((s,f)=>s+(f.qty??1),0);
@@ -181,7 +190,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     <div style={{padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
         <div>
-        <span style={{fontSize:12,fontWeight:700,color:C.text}}>Drone Bay</span>
+        <span style={{fontSize:12,fontWeight:700,color:C.text}}>{t("Drone Bay")}</span>
         {/* These two are what you check on every change here, and they were 11px at textMute —
             about 2.4:1 on this surface, below any sensible floor for small text. Used value at full
             text colour and 12px, the ship's total one step back at textMid AND 10px rather than
@@ -207,9 +216,9 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:11,fontWeight:600,fontVariantNumeric:"tabular-nums",
                         color:activeCount>maxActiveDrones?C.danger:C.textMid}}>
-            Active: <span style={{fontSize:12,color:activeCount>maxActiveDrones?C.danger:C.text,fontWeight:700}}>{activeCount}</span><span style={{fontSize:10}}>/{maxActiveDrones}</span>
+            {t("Active:")} <span style={{fontSize:12,color:activeCount>maxActiveDrones?C.danger:C.text,fontWeight:700}}>{activeCount}</span><span style={{fontSize:10}}>/{maxActiveDrones}</span>
           </span>
-          <button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button></div>
+          <button onClick={()=>setShowDronePicker(true)} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ {t("Add")}</button></div>
       </div>
       <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${shipDroneBay>0?Math.min((bayUsed/shipDroneBay)*100,100):0}%`,height:"100%",background:bayUsed>shipDroneBay?C.danger:C.rig,borderRadius:99}}/></div>
     </div>
@@ -217,7 +226,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     <div style={{padding:"10px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-          <span style={{fontSize:12,fontWeight:700,color:C.text}}>Fighter Bay</span>
+          <span style={{fontSize:12,fontWeight:700,color:C.text}}>{t("Fighter Bay")}</span>
           {/* Same treatment as the drone bay readout above — see the contrast note there. */}
           <span style={{fontSize:12,fontVariantNumeric:"tabular-nums"}}>
             <span style={{fontWeight:700,color:fighterBayUsed>shipFighter.cap?C.danger:C.text}}>{fmtM3(fighterBayUsed)}</span>
@@ -226,16 +235,19 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
         </div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <span style={{fontSize:11,color:C.high,fontWeight:700}}>{fighterDpsActive.toLocaleString()} DPS</span>
-          <button onClick={()=>setShowFighterPicker(true)} style={{padding:"5px 10px",background:C.high+"22",border:`1px solid ${C.high}55`,borderRadius:6,color:C.high,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ Add</button>
+          <button onClick={()=>setShowFighterPicker(true)} style={{padding:"5px 10px",background:C.high+"22",border:`1px solid ${C.high}55`,borderRadius:6,color:C.high,fontSize:11,fontWeight:700,cursor:"pointer"}}>+ {t("Add")}</button>
         </div>
       </div>
       <div style={{height:4,background:C.border,borderRadius:99,overflow:"hidden",marginBottom:9}}><div style={{width:`${shipFighter.cap>0?Math.min((fighterBayUsed/shipFighter.cap)*100,100):0}%`,height:"100%",background:fighterBayUsed>shipFighter.cap?C.danger:C.high,borderRadius:99}}/></div>
       <div style={{display:"flex",gap:6}}>
-        {[{label:"Tubes",used:activeSquads,cap:shipFighter.tubes,col:C.high},
-          ...CLASS_META.filter(c=>c.cap>0).map(c=>({label:c.k,used:squadTotals[c.k],cap:c.cap,col:c.col}))
+        {/* `id` is separate from `label` because only "Tubes" is translated — the three class chips
+            are CCP taxonomy and stay English — and keying on the label would rebuild the row on
+            every language switch. */}
+        {[{id:"tubes",label:t("Tubes"),used:activeSquads,cap:shipFighter.tubes,col:C.high},
+          ...CLASS_META.filter(c=>c.cap>0).map(c=>({id:c.k,label:c.k,used:squadTotals[c.k],cap:c.cap,col:c.col}))
          ].map(chip=>{
           const over=chip.used>chip.cap, n=Math.max(chip.cap,chip.used,1);
-          return(<div key={chip.label} style={{flex:1,minWidth:0,background:C.surface,border:`1px solid ${over?C.danger:C.border}`,borderRadius:8,padding:"6px 8px"}}>
+          return(<div key={chip.id} style={{flex:1,minWidth:0,background:C.surface,border:`1px solid ${over?C.danger:C.border}`,borderRadius:8,padding:"6px 8px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
               <span style={{fontSize:8.5,fontWeight:800,letterSpacing:0.4,color:chip.col,textTransform:"uppercase"}}>{chip.label}</span>
               <span style={{fontSize:10,fontWeight:700,color:over?C.danger:C.text}}>{chip.used}/{chip.cap}</span>
@@ -251,9 +263,9 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
     <div style={{flex:1,overflowY:"auto"}}>
       {!usesFighters&&(<>
       <div style={{display:"grid",gridTemplateColumns:"36px 1fr 60px 50px 50px 50px",gap:4,padding:"5px 23px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-        {["","Name","Range","Track","Speed","EHP"].map((h,i)=><span key={i} style={{fontSize:9,fontWeight:700,color:C.textMute,textAlign:i>1?"center":"left"}}>{h}</span>)}
+        {["",t("Name"),t("Range"),t("Track"),t("Speed"),"EHP"].map((h,i)=><span key={i} style={{fontSize:9,fontWeight:700,color:C.textMute,textAlign:i>1?"center":"left"}}>{h}</span>)}
       </div>
-      {drones.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No drones - tap + Add</div>}
+      {drones.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>{t("No drones — tap + Add")}</div>}
       <div style={{padding:"8px 10px"}}>
         {drones.map(drone=>(<div key={drone.id} style={{background:C.surface,border:`1px solid ${drone.active?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,overflow:"hidden"}}>
           <div style={{cursor:"pointer"}} onClick={()=>setInfoItem({typeID:drone.typeID??tidByName(drone.name),name:drone.name,droneId:drone.id})}>
@@ -292,18 +304,18 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
             )}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px 8px",borderTop:`1px solid ${C.border}`}}>
-            <span style={{fontSize:10,color:C.textMute}}>Qty:</span>
+            <span style={{fontSize:10,color:C.textMute}}>{t("Qty:")}</span>
             <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,qty:Math.max(0,d.qty-1)}:d))} style={{width:22,height:22,borderRadius:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>-</button>
             <span style={{fontSize:12,fontWeight:700,color:C.text,minWidth:24,textAlign:"center"}}>{drone.qty}</span>
             <button onClick={()=>setDrones(drones.map(d=>d.id===drone.id?{...d,qty:d.qty+1}:d))} style={{width:22,height:22,borderRadius:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-            {drone.active&&<span style={{fontSize:10,color:C.accent,marginLeft:4}}>Active</span>}
-            <button onClick={()=>setDrones(drones.filter(d=>d.id!==drone.id))} style={{marginLeft:"auto",background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:13}}>x</button>
+            {drone.active&&<span style={{fontSize:10,color:C.accent,marginLeft:4}}>{t("Active")}</span>}
+            <button aria-label={t("Remove {name}",{name:drone.name})} onClick={()=>setDrones(drones.filter(d=>d.id!==drone.id))} style={{marginLeft:"auto",background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:13}}>x</button>
           </div>
         </div>))}
       </div>
       </>)}
       {usesFighters&&(<div style={{padding:"10px 10px 4px"}}>
-        {fighters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"40px 0",fontSize:13}}>No fighter squadrons — tap + Add</div>}
+        {fighters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"40px 0",fontSize:13}}>{t("No fighter squadrons — tap + Add")}</div>}
         {fighters.map((f,i)=>{
           const info=fighterInfo[i]||{};
           const abils=info.abilities||[];
@@ -312,23 +324,23 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
           return(<div key={f.id} style={{background:C.surface,border:`1px solid ${isActive?C.accentBorder:C.border}`,borderRadius:10,marginBottom:8,padding:"10px 12px",opacity:isActive?1:0.55}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
               <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}>
-                <button onClick={()=>toggleFighterActive(f.id)} title={isActive?"Active squadron (in space)":"Inactive (in tube)"}
+                <button onClick={()=>toggleFighterActive(f.id)} title={isActive?t("Active squadron (in space)"):t("Inactive (in tube)")}
                   style={{width:24,height:24,borderRadius:5,flexShrink:0,background:isActive?C.accentLight:"none",border:`1px solid ${isActive?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:isActive?C.accent:""}}>{isActive?"✓":""}</button>
                 <div style={{flex:1}}>
                   <div style={{fontSize:12,fontWeight:600,color:C.text}}>{f.name} <span style={{fontSize:10,color:C.textMute,fontWeight:400}}>{info.class||f.tier}</span></div>
                   <div style={{display:"flex",gap:12,marginTop:3,fontSize:10,color:C.textMid,flexWrap:"wrap"}}>
                     <span>DPS <b style={{color:info.dps?C.high:C.textMute}}>{info.dps??0}</b></span>
-                    <span>Speed <b style={{color:C.text}}>{info.speedActive??info.speed??0}</b>{info.burstFrom?<span style={{color:C.accent}}> m/s ({info.burstFrom})</span>:<span style={{color:C.textMute}}> m/s</span>}</span>
+                    <span>{t("Speed")} <b style={{color:C.text}}>{info.speedActive??info.speed??0}</b>{info.burstFrom?<span style={{color:C.accent}}> m/s ({info.burstFrom})</span>:<span style={{color:C.textMute}}> m/s</span>}</span>
                     <span>EHP <b style={{color:C.text}}>{info.ehp?(info.ehp>=1000?(info.ehp/1000).toFixed(1)+"k":info.ehp):0}</b></span>
-                    <span>Sqd <b style={{color:C.text}}>{info.sqSize||6}</b></span>
+                    <span>{t("Sqd")} <b style={{color:C.text}}>{info.sqSize||6}</b></span>
                   </div>
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:6}}>
                 <button onClick={()=>setFighterQty(f.id,-1)} style={{width:22,height:22,borderRadius:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,cursor:"pointer",fontSize:13}}>-</button>
-                <span style={{fontSize:11,color:C.text,minWidth:38,textAlign:"center"}}>×{f.qty??1} sq</span>
+                <span style={{fontSize:11,color:C.text,minWidth:38,textAlign:"center"}}>{t("×{n} sq",{n:f.qty??1})}</span>
                 <button onClick={()=>setFighterQty(f.id,1)} style={{width:22,height:22,borderRadius:5,background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text,cursor:"pointer",fontSize:13}}>+</button>
-                <button onClick={()=>setFighters(fighters.filter(x=>x.id!==f.id))} style={{marginLeft:4,background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>×</button>
+                <button aria-label={t("Remove {name}",{name:f.name})} onClick={()=>setFighters(fighters.filter(x=>x.id!==f.id))} style={{marginLeft:4,background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>×</button>
               </div>
             </div>
             {abils.length>0&&<div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap",paddingLeft:33}}>
