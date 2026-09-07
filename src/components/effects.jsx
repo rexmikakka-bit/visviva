@@ -7,6 +7,7 @@ import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { BOOSTER_DATA } from "../data/static-tables.js";
 import { byRecentlyModified } from "../lib/fit-order.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, jamChanceFrom, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
+import { t } from "../lib/i18n.js";
 
 const BOOSTER_SIDE_EFFECTS = {
   "Blue Pill":     [{attr:"Shield Capacity",penalty:"-22.5%"},{attr:"Turret Optimal Range",penalty:"-22.5%"},{attr:"Cap Capacity",penalty:"-22.5%"},{attr:"Missile Explosion Velocity",penalty:"-22.5%"}],
@@ -36,7 +37,7 @@ export function BoosterSideEffects({booster, onUpdate}) {
   return (
     <div style={{padding:'6px 12px 8px',borderTop:`1px solid ${C.border}`,background:'rgba(245,158,11,0.05)'}}>
       <div style={{fontSize:9,fontWeight:700,color:C.warning,textTransform:'uppercase',letterSpacing:.5,marginBottom:5}}>
-        Side effects ({chancePct}% chance each) - tap to simulate
+        {t("Side effects ({pct}% chance each) - tap to simulate",{pct:chancePct})}
       </div>
       <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
         {se.map((s,i)=>{
@@ -90,11 +91,24 @@ const ENV_GROUPS=[
   {cat:"Incursion",    test:n=>/Incursion|Sansha/i.test(n)},
   {cat:"Other",        test:()=>true},
 ];
+// These five headings are OUR groupings, not CCP market groups, so they translate — but the English
+// stays the map key, because `cat` doubles as the openCat Set key, the React key and the default
+// `new Set(["Wormhole"])`. Spelled out one literal key per heading rather than t(g.cat): a computed
+// key is invisible to the catalog audit, which would then report every translation of one as an
+// orphan. The BEACON names underneath are CCP item names and stay English, as do the "Class N" and
+// "Weak"/"Strong" sub-labels sliced out of them.
+const catLabel=(c)=>({
+  "Wormhole":t("Wormhole"),
+  "Metaliminal Storm":t("Metaliminal Storm"),
+  "Pochven / Triglavian":t("Pochven / Triglavian"),
+  "Incursion":t("Incursion"),
+  "Other":t("Other"),
+}[c]??c);
 function environmentList(){
   const out=ENV_GROUPS.map(g=>({cat:g.cat,items:[],subs:[]}));
   const seen=new Set();
-  for(const t of Object.values(TYPES)){
-    const gn=t.gn??t.groupName, n=t.n??t.name;
+  for(const rec of Object.values(TYPES)){
+    const gn=rec.gn??rec.groupName, n=rec.n??rec.name;
     if(gn!=="Effect Beacon"||!n||seen.has(n))continue;
     seen.add(n);
     const gi=ENV_GROUPS.findIndex(g=>g.test(n)), g=ENV_GROUPS[gi], grp=out[gi];
@@ -126,17 +140,17 @@ function EnvironmentPickerSheet({current,onSelect,onClose}){
     subs:g.subs.map(b=>({name:b.name,items:b.items.filter(it=>hit(it)||b.name.toLowerCase().includes(q))})).filter(b=>b.items.length),
   })).map(g=>({...g,count:g.items.length+g.subs.reduce((s,b)=>s+b.items.length,0)})).filter(g=>g.count);
   const toggle=(c)=>setOpenCat(s=>{const n=new Set(s);n.has(c)?n.delete(c):n.add(c);return n;});
-  return(<BottomSheet title="System Effects" onClose={onClose} height="80vh" fillHeight>
+  return(<BottomSheet title={t("System Effects")} onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search systems..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search systems...")}/>
     </div>
     <div onClick={()=>onSelect(null)} style={{padding:"10px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",background:!current?C.accentLight:"transparent"}}>
-      <span style={{fontSize:12,fontWeight:!current?700:500,color:!current?C.accent:C.text}}>Normal space (no effects)</span>
+      <span style={{fontSize:12,fontWeight:!current?700:500,color:!current?C.accent:C.text}}>{t("Normal space (no effects)")}</span>
     </div>
     {groups.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggle(g.cat)} className="press" style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
         <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",display:"inline-block",width:10}}>▶</span>
-        <span style={{fontSize:11,fontWeight:700,color:C.text}}>{g.cat}</span>
+        <span style={{fontSize:11,fontWeight:700,color:C.text}}>{catLabel(g.cat)}</span>
         <span style={{fontSize:10,color:C.textMute}}>({g.count})</span>
       </div>
       {open&&g.subs.map(b=>{
@@ -178,7 +192,9 @@ function BoosterPickerSheet({onAdd,onClose}){
   const searchResults=search.trim().length>1?allBoosters.filter(n=>n.toLowerCase().includes(search.toLowerCase())):null;
 
   const back=()=>{if(catDrill)setCatDrill(null);else if(slotDrill)setSlotDrill(null);};
-  const breadcrumb=[slotDrill?`Slot ${slotDrill}`:null,catDrill].filter(Boolean).join(' > ');
+  // The category half of the breadcrumb is a BOOSTER FAMILY name out of BOOSTER_DATA ("Blue Pill",
+  // "Exile") — an item name, so it stays English like every other one.
+  const breadcrumb=[slotDrill?t("Slot {n}",{n:slotDrill}):null,catDrill].filter(Boolean).join(' > ');
 
   const addDrug=(name)=>{
     const drugBase=name.replace(/^(Synth|Improved|Standard|Strong|Nugoehuvi Synth) /,'');
@@ -191,22 +207,23 @@ function BoosterPickerSheet({onAdd,onClose}){
   // tapping anywhere adds the booster. An info button in its place makes the description and the
   // grade family (Synth / Standard / Improved / Strong) readable BEFORE you commit, which is the one
   // thing the sheet could not do. Same swap, same reasoning, as the implant browser's rows.
-  const InfoBtn=({name})=>{const t=tidByName(name);return t?<InfoButton title={`About ${name}`}
-    onClick={e=>{e.stopPropagation();haptic();setInfoItem({typeID:t,name});}}/>:null;};
+  const InfoBtn=({name})=>{const tid=tidByName(name);return tid?<InfoButton title={t("About {name}",{name})}
+    onClick={e=>{e.stopPropagation();haptic();setInfoItem({typeID:tid,name});}}/>:null;};
 
   return(<>
-  <BottomSheet title="Add Booster Drug" onClose={onClose} height="82vh" fillHeight>
+  <BottomSheet title={t("Add Booster Drug")} onClose={onClose} height="82vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search boosters..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search boosters...")}/>
     </div>
     {breadcrumb&&(
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={back} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; Back</button>
+        {/* The guillemet stays outside the key so a translator cannot drop it. */}
+        <button onClick={back} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
         <span style={{fontSize:12,color:C.textMute}}>{breadcrumb}</span>
       </div>
     )}
     {searchResults&&<div style={{overflowY:"auto"}}>
-      {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>No boosters found</div>}
+      {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0"}}>{t("No boosters found")}</div>}
       {searchResults.map(n=>(
         <div key={n} onClick={()=>addDrug(n)}
           style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",gap:10}}>
@@ -220,7 +237,7 @@ function BoosterPickerSheet({onAdd,onClose}){
       <div key={slot} onClick={()=>setSlotDrill(slot)}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`,textAlign:"left"}}>
         <div>
-          <div style={{fontSize:14,fontWeight:700,color:C.text}}>Slot {slot}</div>
+          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{t("Slot {n}",{n:slot})}</div>
           <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{Object.keys(BOOSTER_DATA[slot]??{}).join(", ")}</div>
         </div>
         <span style={{color:C.textMute}}>{">"}</span>
@@ -231,8 +248,9 @@ function BoosterPickerSheet({onAdd,onClose}){
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`,textAlign:"left"}}>
         <div>
           <div style={{fontSize:14,fontWeight:600,color:C.text}}>{cat}</div>
-          <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{(slotData[cat]??[]).length} variant{(slotData[cat]??[]).length!==1?"s":""}</div>
-          {BOOSTER_SIDE_EFFECTS[cat]&&<div style={{fontSize:10,color:C.warning,marginTop:2}}>! {BOOSTER_SIDE_EFFECTS[cat].length} side effect{BOOSTER_SIDE_EFFECTS[cat].length>1?"s":""}</div>}
+          <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{t({one:"{n} variant",other:"{n} variants"},{n:(slotData[cat]??[]).length})}</div>
+          {/* The warning mark stays outside the key so a translator cannot drop it. */}
+          {BOOSTER_SIDE_EFFECTS[cat]&&<div style={{fontSize:10,color:C.warning,marginTop:2}}>! {t({one:"{n} side effect",other:"{n} side effects"},{n:BOOSTER_SIDE_EFFECTS[cat].length})}</div>}
         </div>
         <span style={{color:C.textMute}}>{">"}</span>
       </div>
@@ -248,9 +266,11 @@ function BoosterPickerSheet({onAdd,onClose}){
             // don't cover the Agency doses (which carry no side effects at all) and the hardcoded
             // per-grade table understated every real chance by a step.
             const se=boosterSideEffectsFor(drugName);
-            if(!se.length)return<div style={{fontSize:10,color:C.rig,marginTop:2}}>No side effects</div>;
+            if(!se.length)return<div style={{fontSize:10,color:C.rig,marginTop:2}}>{t("No side effects")}</div>;
             const chance=Math.max(...se.map(s=>s.chance??0));
-            return<div style={{fontSize:10,color:C.warning,marginTop:2}}>{se.length} side effect{se.length>1?"s":""} &middot; {Math.round(chance*100)}% chance</div>;
+            // Two keys with the separator between them rather than one sentence: only one plural
+            // form can be selected per key, and the count is the thing that has to select it.
+            return<div style={{fontSize:10,color:C.warning,marginTop:2}}>{t({one:"{n} side effect",other:"{n} side effects"},{n:se.length})} &middot; {t("{pct}% chance",{pct:Math.round(chance*100)})}</div>;
           })()}
         </div>
         <InfoBtn name={drugName}/>
@@ -261,7 +281,7 @@ function BoosterPickerSheet({onAdd,onClose}){
       being scrolled, and the picker stays mounted underneath so closing the card returns you to
       the same place in the list. Same shape as the implant and module browsers. */}
   {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name}
-    actions={[{label:"Add booster",primary:true,onClick:()=>addDrug(infoItem.name)}]}
+    actions={[{label:t("Add booster"),primary:true,onClick:()=>addDrug(infoItem.name)}]}
     onSwap={v=>addDrug(v.name)} onClose={()=>setInfoItem(null)}/>}
   </>);
 }
@@ -280,7 +300,10 @@ function buildAllFits(fitsDB,filterFn){
   return out.sort(byRecentlyModified);
 }
 
-export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pinnedLabel="Open fits"}){
+// The default `pinnedLabel` is safe as a t() call: a default parameter is evaluated per CALL, not
+// once at module load, so it re-reads the locale on every render. See the module-scope note in
+// lib/i18n.js for where that is NOT true.
+export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pinnedLabel=t("Open fits")}){
   const[search,setSearch]=useState("");
   // `filterFn` is expensive: the command picker passes hasCommandBursts, which runs a full
   // computeCommandBursts dogma pass PER FIT (~11 ms on a desktop, several times that on a phone) for
@@ -313,7 +336,7 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
   const filtered=allFits&&q?allFits.filter(({ship,fit})=>String(ship).toLowerCase().includes(q)||String(fit.name??"").toLowerCase().includes(q)):allFits;
   return(<BottomSheet title={title} onClose={onClose} height="75vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search fits..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search fits...")}/>
     </div>
     {!q&&pinned?.length>0&&<>
       <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"10px 14px 6px"}}>{pinnedLabel}</div>
@@ -323,13 +346,13 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
           <span style={{fontSize:14,color:C.textMute,flexShrink:0}}>{">"}</span>
         </div>
       ))}
-      <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"12px 14px 6px"}}>All fits</div>
+      <div style={{fontSize:10,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",padding:"12px 14px 6px"}}>{t("All fits")}</div>
     </>}
     {allFits===null&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"32px 0",fontSize:13,color:C.textMute}}>
       <span className="vv-spin" style={{display:"inline-block",width:14,height:14,border:`2px solid ${C.border}`,borderTopColor:C.accent,borderRadius:"50%"}}/>
-      Loading fits…
+      {t("Loading fits…")}
     </div>}
-    {allFits!==null&&filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>No fits found</div>}
+    {allFits!==null&&filtered.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>{t("No fits found")}</div>}
     {/* Keyed by POSITION, not by fit.id. This list is the one place in the app that flattens every
         ship's fits into a single list, and fit ids are only unique within a ship — a restored backup
         gives the first fit of every ship the id 1. Duplicate React keys meant the rows were not
@@ -337,7 +360,9 @@ export function FitPickerSheet({title,fitsDB,onSelect,onClose,filterFn,pinned,pi
         It only ever showed up on a device restored from a backup, never on a hand-built library. */}
     {allFits!==null&&filtered.map(({ship,fit},i)=>(
       <div key={`${ship}::${fit.name}::${i}`} onClick={()=>{onSelect(ship,fit);onClose();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
-        <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{ship} / Modified {fit.modified}</div></div>
+        {/* The hull is an item name and stays English; it rides in as a placeholder so a translator
+            can put it wherever their clause order wants it. */}
+        <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{fit.name}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{t("{ship} / Modified {date}",{ship,date:fit.modified})}</div></div>
         <span style={{fontSize:14,color:C.textMute,flexShrink:0}}>{">"}</span>
       </div>
     ))}
@@ -409,8 +434,8 @@ const BOOSTER_LABELS={rangeSkillBonus:"Optimal Range"};
 const boosterLabel=k=>(BOOSTER_LABELS[k]??mutaLabel(k)).replace(/ (Bonus\d?|Penalty)$/,"");
 
 function boosterBonuses(b){
-  const t=TYPES[tidByName(b?.name)];
-  const a=t?.attrs??t?.a??{};
+  const rec=TYPES[tidByName(b?.name)];
+  const a=rec?.attrs??rec?.a??{};
   return Object.entries(a)
     .filter(([k,v])=>typeof v==="number"&&v!==0&&!BOOSTER_NOISE.test(k)&&!/^booster/i.test(k))
     .map(([k,v])=>`${boosterLabel(k)} ${v>0?"+":"−"}${Math.abs(v)}%`);
@@ -419,14 +444,18 @@ function boosterBonuses(b){
 // A booster's slot is CCP's `boosterness` (attr 1087). Read from the type rather than the saved
 // booster record, because a record restored from an older fit may predate the field entirely.
 function boosterSlotOf(b){
-  const t=TYPES[tidByName(b?.name)];
-  const a=t?.attrs??t?.a??{};
+  const rec=TYPES[tidByName(b?.name)];
+  const a=rec?.attrs??rec?.a??{};
   const n=Number(a.boosterness??a['1087']);
   return Number.isFinite(n)?n:99;
 }
 
 // Order is the SWIPE order as well as the tab order, so the two cannot drift apart.
-const _SECTIONS=[{tabId:"boosters",label:"Boosters"},{tabId:"projected",label:"Projected"},{tabId:"command",label:"Command"},{tabId:"environment",label:"System"}];
+//
+// The labels are THUNKS because this array is built at module scope, which runs before main.jsx has
+// resolved the stored locale — a plain t() here would bake in English for the life of the process
+// and never re-evaluate on a language switch. Called at render instead. See lib/i18n.js.
+const _SECTIONS=[{tabId:"boosters",label:()=>t("Boosters")},{tabId:"projected",label:()=>t("Projected")},{tabId:"command",label:()=>t("Command")},{tabId:"environment",label:()=>t("System")}];
 const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
 
 // `sourceSkills(fit)` comes from App.jsx and is the SAME resolver it applies the effects with, so a
@@ -449,9 +478,9 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
   // Keyed on the tabs' names, NOT on the array: App calls resolveTabs in its render body, so
   // openFitTabs is a fresh array on every render and depending on its identity would defeat both
   // memos below.
-  const _tabKey=(openFitTabs??[]).map(t=>`${t.ship}::${t.name}`).join("|");
+  const _tabKey=(openFitTabs??[]).map(tab=>`${tab.ship}::${tab.name}`).join("|");
   const openTabFits=useMemo(()=>(openFitTabs??[])
-    .map(t=>{const f=fitsDB?.[t.ship]?.find(x=>x.name===t.name);return f?{ship:t.ship,fit:f}:null;})
+    .map(tab=>{const f=fitsDB?.[tab.ship]?.find(x=>x.name===tab.name);return f?{ship:tab.ship,fit:f}:null;})
     .filter(Boolean),[_tabKey,fitsDB]);   // eslint-disable-line react-hooks/exhaustive-deps
   // The command picker hides fits that run no burst, so its shortcut list has to hide them too, or
   // the one list in that sheet meant to be the fast path becomes the only place you can pick a fit
@@ -474,9 +503,9 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
     <div style={{display:"flex",background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       {/* Tapping a tab animates in the same direction a swipe to it would, so the two ways of
           moving between sections never disagree about which way the content lives. */}
-      {_SECTIONS.map(t=>{const count=_sectionBadges[t.tabId];return(
-        <button key={t.tabId} onClick={()=>{const to=_SECTION_IDS.indexOf(t.tabId),from=_SECTION_IDS.indexOf(section);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===t.tabId?C.accent:C.textMute,borderBottom:section===t.tabId?`2px solid ${C.accent}`:"2px solid transparent",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
-          {t.label}
+      {_SECTIONS.map(sec=>{const count=_sectionBadges[sec.tabId];return(
+        <button key={sec.tabId} onClick={()=>{const to=_SECTION_IDS.indexOf(sec.tabId),from=_SECTION_IDS.indexOf(section);if(to!==from)_goTo(to,to>from?1:-1);}} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:600,background:"none",border:"none",cursor:"pointer",color:section===sec.tabId?C.accent:C.textMute,borderBottom:section===sec.tabId?`2px solid ${C.accent}`:"2px solid transparent",display:"flex",alignItems:"center",justifyContent:"center",gap:5}}>
+          {sec.label()}
           {count>0&&<span style={{minWidth:15,height:15,padding:"0 4px",borderRadius:99,background:C.textMute,color:C.surface,fontSize:9,fontWeight:800,lineHeight:"15px",textAlign:"center",boxSizing:"border-box"}}>{count>99?"99+":count}</span>}
         </button>);})}
     </div>
@@ -485,20 +514,21 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
     <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
     <div ref={_panel} key={section} className={slideClass(_slideDir)} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
     {section==="environment"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
-      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>The system this fit is sitting in. Wormhole class effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.</div>
+      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t("The system this fit is sitting in. Wormhole class effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.")}</div>
       <div style={{background:C.surface,border:`1px solid ${environment?C.accentBorder:C.border}`,borderRadius:8,padding:"11px 12px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
         <div style={{flex:1}}>
-          <div style={{fontSize:10,color:C.textMute}}>Current system</div>
-          <div style={{fontSize:13,fontWeight:700,color:environment?C.accent:C.textMid,marginTop:2}}>{environment??"Normal space (no effects)"}</div>
+          <div style={{fontSize:10,color:C.textMute}}>{t("Current system")}</div>
+          {/* `environment` is a beacon name out of the bundle — an item name, so English. */}
+          <div style={{fontSize:13,fontWeight:700,color:environment?C.accent:C.textMid,marginTop:2}}>{environment??t("Normal space (no effects)")}</div>
         </div>
         {environment&&<button onClick={()=>setEnvironment(null)} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>}
       </div>
-      <button className="press" onClick={()=>{haptic();setShowEnvPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>{environment?"Change System":"+ Set System Effects"}</button>
+      <button className="press" onClick={()=>{haptic();setShowEnvPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>{environment?t("Change System"):t("+ Set System Effects")}</button>
       {showEnvPicker&&<EnvironmentPickerSheet current={environment} onSelect={n=>{setEnvironment(n);setShowEnvPicker(false);}} onClose={()=>setShowEnvPicker(false)}/>}
     </div>)}
     {section==="boosters"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
-      <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Toggle boosters to simulate their stat effects on this fit.</div>
-      {boosters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No boosters added</div>}
+      <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>{t("Toggle boosters to simulate their stat effects on this fit.")}</div>
+      {boosters.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>{t("No boosters added")}</div>}
       {/* Slot order, not the order they happened to be ADDED — a pilot reads a booster rack the way
           the game numbers it, and adding a slot-14 booster first used to park it above slot 1.
           Sorted for DISPLAY only: every setBoosters call below still writes the underlying array by
@@ -515,7 +545,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
             {/* `b.effect` was the drug name with its grade word stripped — "Exile" printed under
                 "Standard Exile Booster", the same word twice. Slot and actual bonuses instead. */}
             <div style={{fontSize:10,color:C.rig,marginTop:1}}>
-              <span style={{color:C.textMute}}>Slot {boosterSlotOf(b)}</span>
+              <span style={{color:C.textMute}}>{t("Slot {n}",{n:boosterSlotOf(b)})}</span>
               {(()=>{const bo=boosterBonuses(b);return bo.length?` · ${bo.join(" · ")}`:"";})()}
             </div>
           </div>
@@ -523,7 +553,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         </div>
         <BoosterSideEffects booster={b} onUpdate={nb=>setBoosters(boosters.map(x=>x.id===b.id?nb:x))}/>
       </div>))}
-      <button className="press" onClick={()=>{haptic();setShowBoosterPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Booster</button>
+      <button className="press" onClick={()=>{haptic();setShowBoosterPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>{t("+ Add Booster")}</button>
       {showBoosterPicker&&<BoosterPickerSheet onAdd={b=>setBoosters(prev=>[...prev,b])} onClose={()=>setShowBoosterPicker(false)}/>}
       {infoItem&&<ItemDetailSheet typeID={infoItem.typeID} name={infoItem.name} onClose={()=>setInfoItem(null)}
         onSwap={v=>setBoosters(bs=>bs.map(x=>x.id===infoItem.boosterId
@@ -531,8 +561,8 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
           : x))}/>}
     </div>)}
     {section==="projected"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
-      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>Project another fit's effects onto this ship. Remote reps and EWAR scale with range. Modules use the source fit's active/overheated state.</div>
-      {projFits.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No projected fits applied</div>}
+      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t("Project another fit's effects onto this ship. Remote reps and EWAR scale with range. Modules use the source fit's active/overheated state.")}</div>
+      {projFits.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>{t("No projected fits applied")}</div>}
       {projFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
         const rangeKm=f.rangeKm??30;
@@ -547,11 +577,11 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const stk=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
         const painterSig=stk((eff.painters||[]).map(p=>p.sigBonus*rf(p.optimal,p.falloff)));
         const dampLock=stk((eff.damps||[]).map(d=>d.lockBonus*rf(d.optimal,d.falloff)));
-        const tdTrack=stk((eff.trackDisr||[]).map(t=>t.tracking*rf(t.optimal,t.falloff)));
+        const tdTrack=stk((eff.trackDisr||[]).map(td=>td.tracking*rf(td.optimal,td.falloff)));
         // A range script zeroes trackingSpeedBonus and moves the whole effect onto optimal and
         // falloff, so reading `tracking` alone made a range-scripted disruptor look inert.
-        const tdOpt=stk((eff.trackDisr||[]).map(t=>(t.optimalBonus||0)*rf(t.optimal,t.falloff)));
-        const tdFall=stk((eff.trackDisr||[]).map(t=>(t.falloffBonus||0)*rf(t.optimal,t.falloff)));
+        const tdOpt=stk((eff.trackDisr||[]).map(td=>(td.optimalBonus||0)*rf(td.optimal,td.falloff)));
+        const tdFall=stk((eff.trackDisr||[]).map(td=>(td.falloffBonus||0)*rf(td.optimal,td.falloff)));
         const gdRange=stk((eff.guideDisr||[]).map(g=>g.missileRange*rf(g.optimal,g.falloff)));
         // Strength is the strongest of the jammer's four racial attrs, matching the MOD_STRENGTH badge
         // a locally fitted jammer gets. Jam CHANCE is target-relative and needs the edited fit's own
@@ -575,39 +605,39 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const on=f.active!==false;
         return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,opacity:on?1:0.55}}>
           <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:10}}>
-            <button title={on?"Applied to this fit":"Ignored"} onClick={()=>setProjFits(projFits.map((p,j)=>j===i?{...p,active:!on}:p))}
+            <button title={on?t("Applied to this fit"):t("Ignored")} onClick={()=>setProjFits(projFits.map((p,j)=>j===i?{...p,active:!on}:p))}
               style={{width:24,height:24,borderRadius:5,flexShrink:0,background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:on?C.accent:""}}>{on?"✓":""}</button>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:on?C.text:C.textMid}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div>
-            {onOpenFit&&<button title="Open this fit in a new tab" onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>Open</button>}
+            {onOpenFit&&<button title={t("Open this fit in a new tab")} onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>{t("Open")}</button>}
             <button onClick={()=>setProjFits(projFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,flexShrink:0}}>x</button>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-            <span style={{fontSize:11,color:C.textMid,minWidth:42}}>Range</span>
+            <span style={{fontSize:11,color:C.textMid,minWidth:42}}>{t("Range")}</span>
             <input type="range" min={0} max={150} step={1} value={rangeKm} onChange={e=>setRange(Number(e.target.value))} style={{flex:1,accentColor:C.accent}}/>
             <input type="number" inputMode="numeric" value={rangeKm} onChange={e=>setRange(Number(e.target.value)||0)} style={{width:52,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.text}}/>
-            <span style={{fontSize:10,color:C.textMute}}>km</span>
+            <span style={{fontSize:10,color:C.textMute}}>{t("km")}</span>
           </div>
           {hasAny?(
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {totals.shield>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.mid}}>{Math.round(totals.shield)}</div><div style={{fontSize:9,color:C.textMute}}>shield HP/s in</div></div>}
-              {totals.armor>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>{Math.round(totals.armor)}</div><div style={{fontSize:9,color:C.textMute}}>armor HP/s in</div></div>}
-              {totals.hull>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(totals.hull)}</div><div style={{fontSize:9,color:C.textMute}}>hull HP/s in</div></div>}
-              {hasWeb&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>-{Math.round((1-webMult)*100)}%</div><div style={{fontSize:9,color:C.textMute}}>your speed (web)</div></div>}
-              {hasNeut&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(neutGJs)}</div><div style={{fontSize:9,color:C.textMute}}>GJ/s neut</div></div>}
-              {hasCap&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.rig}}>+{Math.round(capGJs)}</div><div style={{fontSize:9,color:C.textMute}}>GJ/s cap in</div></div>}
-              {hasPaint&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>+{Math.round(painterSig)}%</div><div style={{fontSize:9,color:C.textMute}}>your sig (paint)</div></div>}
-              {hasDamp&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(dampLock)}%</div><div style={{fontSize:9,color:C.textMute}}>your lock range</div></div>}
-              {hasTD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(tdTrack)}%</div><div style={{fontSize:9,color:C.textMute}}>your tracking</div></div>}
-              {hasTDrng&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(Math.abs(tdOpt)>=Math.abs(tdFall)?tdOpt:tdFall)}%</div><div style={{fontSize:9,color:C.textMute}}>your turret range</div></div>}
-              {hasGD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(gdRange)}%</div><div style={{fontSize:9,color:C.textMute}}>your missile range</div></div>}
-              {hasEcm&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(ecmMax)}</div><div style={{fontSize:9,color:C.textMute}}>ECM strength</div></div>}
-              {hasJam&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{jamChance.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Jam chance</div></div>}
+              {totals.shield>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.mid}}>{Math.round(totals.shield)}</div><div style={{fontSize:9,color:C.textMute}}>{t("shield HP/s in")}</div></div>}
+              {totals.armor>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>{Math.round(totals.armor)}</div><div style={{fontSize:9,color:C.textMute}}>{t("armor HP/s in")}</div></div>}
+              {totals.hull>0&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(totals.hull)}</div><div style={{fontSize:9,color:C.textMute}}>{t("hull HP/s in")}</div></div>}
+              {hasWeb&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>-{Math.round((1-webMult)*100)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your speed (web)")}</div></div>}
+              {hasNeut&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{Math.round(neutGJs)}</div><div style={{fontSize:9,color:C.textMute}}>{t("GJ/s neut")}</div></div>}
+              {hasCap&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.rig}}>+{Math.round(capGJs)}</div><div style={{fontSize:9,color:C.textMute}}>{t("GJ/s cap in")}</div></div>}
+              {hasPaint&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.warning}}>+{Math.round(painterSig)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your sig (paint)")}</div></div>}
+              {hasDamp&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(dampLock)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your lock range")}</div></div>}
+              {hasTD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(tdTrack)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your tracking")}</div></div>}
+              {hasTDrng&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(Math.abs(tdOpt)>=Math.abs(tdFall)?tdOpt:tdFall)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your turret range")}</div></div>}
+              {hasGD&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(gdRange)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("your missile range")}</div></div>}
+              {hasEcm&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.accent}}>{Math.round(ecmMax)}</div><div style={{fontSize:9,color:C.textMute}}>{t("ECM strength")}</div></div>}
+              {hasJam&&<div style={{flex:1,minWidth:84,background:C.surfaceAlt,borderRadius:6,padding:"6px 8px",textAlign:"center"}}><div style={{fontSize:14,fontWeight:800,color:C.danger}}>{jamChance.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("Jam chance")}</div></div>}
             </div>
-          ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>Nothing on this fit projects onto a target</div>}
+          ):<div style={{fontSize:11,color:C.textMute,paddingLeft:2}}>{t("Nothing on this fit projects onto a target")}</div>}
         </div>);
       })}
-      <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>+ Add Projected Fit</button>
-      {showProjPicker&&<FitPickerSheet title="Project a Fit" fitsDB={fitsDB} pinned={openTabFits} onSelect={(ship,fit)=>{
+      <button className="press" onClick={()=>{haptic();setShowProjPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginTop:4}}>{t("+ Add Projected Fit")}</button>
+      {showProjPicker&&<FitPickerSheet title={t("Project a Fit")} fitsDB={fitsDB} pinned={openTabFits} onSelect={(ship,fit)=>{
         const eff=computeProjectedReps({name:ship,typeID:tidByName(ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones});
         const optims=[...eff.reps,...eff.webs,...eff.neuts,...(eff.painters||[]),...(eff.damps||[]),...(eff.trackDisr||[]),...(eff.guideDisr||[])].map(m=>m.optimal).filter(v=>v>0);
         const rangeKm=optims.length?Math.round(Math.min(...optims)/1000):30;
@@ -615,26 +645,26 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
       }} onClose={()=>setShowProjPicker(false)}/>}
     </div>)}
     {section==="command"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
-      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>Apply command burst bonuses from a fleet support ship fit. Bursts use the source fit's modules, charges, and active state.</div>
-      {cmdFits.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No command fits applied</div>}
+      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t("Apply command burst bonuses from a fleet support ship fit. Bursts use the source fit's modules, charges, and active state.")}</div>
+      {cmdFits.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>{t("No command fits applied")}</div>}
       {cmdFits.map((f,i)=>{
         const srcFit=fitsDB[f.ship]?.find(x=>x.name===f.fitName);
         const bursts=srcFit?computeCommandBursts({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,sourceSkills(srcFit),{implants:srcFit.implants,boosters:srcFit.boosters}):[];
         const on=f.active!==false;   // opt-out, see the projected tab
         return(<div key={i} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:10,padding:"12px 14px",marginBottom:8,opacity:on?1:0.55}}>
           <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:8}}>
-            <button title={on?"Applied to this fit":"Ignored"} onClick={()=>setCmdFits(cmdFits.map((p,j)=>j===i?{...p,active:!on}:p))}
+            <button title={on?t("Applied to this fit"):t("Ignored")} onClick={()=>setCmdFits(cmdFits.map((p,j)=>j===i?{...p,active:!on}:p))}
               style={{width:24,height:24,borderRadius:5,flexShrink:0,background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.borderStrong}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,lineHeight:1,color:on?C.accent:""}}>{on?"✓":""}</button>
             <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:on?C.text:C.textMid}}>{f.fitName}</div><div style={{fontSize:10,color:C.textMute,marginTop:2}}>{f.ship}</div></div>
-            {onOpenFit&&<button title="Open this fit in a new tab" onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>Open</button>}
+            {onOpenFit&&<button title={t("Open this fit in a new tab")} onClick={()=>onOpenFit(f.ship,f.fitName)} style={{background:"none",border:`1px solid ${C.border}`,borderRadius:6,color:C.textMid,cursor:"pointer",fontSize:10,fontWeight:700,padding:"4px 7px",flexShrink:0}}>{t("Open")}</button>}
             <button onClick={()=>setCmdFits(cmdFits.filter((_,j)=>j!==i))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14,flexShrink:0}}>x</button>
           </div>
-          {bursts.length===0&&<div style={{fontSize:11,color:C.textMute,paddingLeft:8}}>No active command bursts on this fit</div>}
+          {bursts.length===0&&<div style={{fontSize:11,color:C.textMute,paddingLeft:8}}>{t("No active command bursts on this fit")}</div>}
           {bursts.map((b,j)=><div key={j} style={{fontSize:11,color:C.rig,paddingLeft:8,marginBottom:3}}>- {b.label}: {b.value>0?"+":""}{Math.round(b.value*10)/10}{WARFARE_BUFF_UNIT[b.buffID]||"%"}</div>)}
         </div>);
       })}
-      <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>+ Add Command Fit</button>
-      {showCmdPicker&&<FitPickerSheet title="Select Command Ship Fit" fitsDB={fitsDB} filterFn={hasCommandBursts} pinned={cmdTabFits} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
+      <button className="press" onClick={()=>{haptic();setShowCmdPicker(true);}} style={{width:"100%",padding:"12px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("+ Add Command Fit")}</button>
+      {showCmdPicker&&<FitPickerSheet title={t("Select Command Ship Fit")} fitsDB={fitsDB} filterFn={hasCommandBursts} pinned={cmdTabFits} onSelect={(ship,fit)=>setCmdFits(prev=>[...prev,{ship,fitName:fit.name}])} onClose={()=>setShowCmdPicker(false)}/>}
     </div>)}
     </div>
     </div>

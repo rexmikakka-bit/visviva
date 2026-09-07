@@ -8,12 +8,15 @@ import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { SheetSearchBar } from "./ui.jsx";
+import { t } from "../lib/i18n.js";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
+// A function, so its t() calls run at render and not at import — see the module-scope note in
+// lib/i18n.js. The fall-through returns ESI's own message, which arrives in English from CCP.
 function friendlyError(e) {
-  if (!ESI_CLIENT_ID) return "ESI isn't configured yet — an application needs to be registered at developers.eveonline.com first (see src/esi-config.js).";
-  if (e?.code === "ESI_REAUTH_REQUIRED") return "Your EVE session expired — log in again.";
-  if (e?.code === "ESI_NOT_LINKED") return "That character isn't linked anymore.";
+  if (!ESI_CLIENT_ID) return t("ESI isn't configured yet — an application needs to be registered at developers.eveonline.com first (see src/esi-config.js).");
+  if (e?.code === "ESI_REAUTH_REQUIRED") return t("Your EVE session expired — log in again.");
+  if (e?.code === "ESI_NOT_LINKED") return t("That character isn't linked anymore.");
   return e?.message || String(e);
 }
 
@@ -87,7 +90,8 @@ export function EsiSettingsPanel({ setSkills }) {
       // Also cached per character, so a fit that names this pilot (slots.pilot = "esi:<id>") can be
       // calculated with their sheet offline, without disturbing the app-wide one.
       esi.storeCharacterSkills(activeId, full);
-      setSyncedMsg(`Synced ${Object.values(full).filter(v => v > 0).length} trained skills.`);
+      const trained = Object.values(full).filter(v => v > 0).length;
+      setSyncedMsg(t({ one: "Synced {n} trained skill.", other: "Synced {n} trained skills." }, { n: trained }));
     } catch (e) { setError(friendlyError(e)); }
     finally { setBusy(false); }
   };
@@ -97,18 +101,18 @@ export function EsiSettingsPanel({ setSkills }) {
   return (
     <div>
       <div style={{ background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 10, padding: 14 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>EVE ESI Connection</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>{t("EVE ESI Connection")}</div>
         <div style={{ fontSize: 11, color: C.textMute, marginBottom: 10 }}>
-          Connect an EVE character to sync skills and import/export saved fits directly from the game.
+          {t("Connect an EVE character to sync skills and import/export saved fits directly from the game.")}
         </div>
 
         {characters.length === 0 ? (
           <>
             <div style={{ marginBottom: 10, padding: "8px 12px", background: C.surface, border: `1px dashed ${C.border}`, borderRadius: 8, fontSize: 11, color: C.textMute, textAlign: "center" }}>
-              Not connected
+              {t("Not connected")}
             </div>
             <button onClick={connect} style={{ width: "100%", padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              Connect with EVE SSO
+              {t("Connect with EVE SSO")}
             </button>
           </>
         ) : (
@@ -118,19 +122,19 @@ export function EsiSettingsPanel({ setSkills }) {
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 10 }}>
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{activeChar.characterName}</div>
-                  <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{activeChar.scopes?.length ?? 0} scopes granted</div>
+                  <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{t({ one: "{n} scope granted", other: "{n} scopes granted" }, { n: activeChar.scopes?.length ?? 0 })}</div>
                 </div>
                 <button onClick={() => remove(activeChar.characterId)} style={{ background: "none", border: `1px solid ${C.danger}`, color: C.danger, borderRadius: 6, padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                  Unlink
+                  {t("Unlink")}
                 </button>
               </div>
             )}
             <div style={{ display: "flex", gap: 8, marginBottom: 4 }}>
               <button onClick={syncSkills} disabled={busy || !activeId} style={{ flex: 1, padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
-                {busy ? "Syncing…" : `Sync Skills from ${activeChar?.characterName ?? "character"}`}
+                {busy ? t("Syncing…") : t("Sync Skills from {name}", { name: activeChar?.characterName ?? t("character") })}
               </button>
               <button onClick={connect} style={{ padding: "10px 14px", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                + Add
+                + {t("Add")}
               </button>
             </div>
             {syncedMsg && <div style={{ fontSize: 11, color: C.success, marginTop: 6 }}>✓ {syncedMsg}</div>}
@@ -170,11 +174,11 @@ export function EsiSkillAlignPanel({ setSkills }) {
 
   return (
     <div style={{ marginBottom: 14, background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 2 }}>Match a character</div>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 2 }}>{t("Match a character")}</div>
       <div style={{ fontSize: 10, color: C.textMute, marginBottom: characters.length ? 9 : 0, lineHeight: 1.5 }}>
         {characters.length
-          ? "Sets every skill to that pilot's trained level. Anything they haven't trained is set to 0, not left at the level-V default."
-          : "Connect a character in the ESI tab to copy their trained skills here."}
+          ? t("Sets every skill to that pilot's trained level. Anything they haven't trained is set to 0, not left at the level-V default.")
+          : t("Connect a character in the ESI tab to copy their trained skills here.")}
       </div>
       {characters.length > 0 && (
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -183,13 +187,14 @@ export function EsiSkillAlignPanel({ setSkills }) {
               style={{ padding: "7px 12px", borderRadius: 7, fontSize: 12, fontWeight: 700,
                 cursor: busy != null ? "default" : "pointer", opacity: busy != null && busy !== c.characterId ? 0.5 : 1,
                 background: C.accentLight, border: `1px solid ${C.accentBorder}`, color: C.accent }}>
-              {busy === c.characterId ? "Syncing…" : c.characterName}
+              {busy === c.characterId ? t("Syncing…") : c.characterName}
             </button>
           ))}
         </div>
       )}
       {done && <div style={{ fontSize: 10, color: C.success, marginTop: 8 }}>
-        ✓ Matched {done.name} — {done.trained} of {done.total} skills trained, the rest set to 0.
+        {/* The tick stays outside the key so a translator cannot drop it. */}
+        ✓ {t("Matched {name} — {trained} of {total} skills trained, the rest set to 0.", { name: done.name, trained: done.trained, total: done.total })}
       </div>}
       {error && <div style={{ fontSize: 10, color: C.danger, marginTop: 8, lineHeight: 1.5 }}>{error}</div>}
     </div>
@@ -241,19 +246,19 @@ export function EsiImportModal({ onClose, onImport }) {
       <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88vh", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div onScroll={dismissKeyboardOnScroll} style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>Import from EVE</div>
-        {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>Connect a character in Settings → ESI first.</div>}
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>{t("Import from EVE")}</div>
+        {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>{t("Connect a character in Settings → ESI first.")}</div>}
         <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
-        {loading && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Loading saved fittings…</div>}
+        {loading && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("Loading saved fittings…")}</div>}
         {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
-        {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No saved fittings on this character.</div>}
+        {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("No saved fittings on this character.")}</div>}
         {fittings && fittings.length > 0 && (
           <div style={{ marginBottom: 8 }}>
-            <SheetSearchBar value={search} onChange={setSearch} placeholder="Search fits or hulls…" />
+            <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search fits or hulls…")} />
           </div>
         )}
         {fittings && fittings.length > 0 && shown.length === 0 && (
-          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>No fit matches “{search.trim()}”.</div>
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("No fit matches “{q}”.", { q: search.trim() })}</div>
         )}
         {shown.map(f => (
           <div key={f.fitting_id} onClick={() => importOne(f)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: C.surfaceAlt, border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 6, cursor: "pointer" }}>
@@ -262,12 +267,14 @@ export function EsiImportModal({ onClose, onImport }) {
                  onError={e => { e.currentTarget.style.visibility = "hidden"; }} />
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.name}</div>
-              <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{shipNameOf(f) || "Unknown hull"} · {f.items?.length ?? 0} items</div>
+              {/* The hull name is an item name and stays English; only the fallback and the count
+                  around it are translated. */}
+              <div style={{ fontSize: 10, color: C.textMute, marginTop: 1 }}>{shipNameOf(f) || t("Unknown hull")} · {t({ one: "{n} item", other: "{n} items" }, { n: f.items?.length ?? 0 })}</div>
             </div>
           </div>
         ))}
         <button onClick={sheet.dismiss} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
-          Cancel
+          {t("Cancel")}
         </button>
         </div>
       </div>
@@ -314,26 +321,26 @@ export function EsiExportModal({ activeFit, slots, drones, cargoItems, fighters,
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={sheet.dismiss}>
       <div ref={sheet.sheetRef} style={{ width: "100%", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", padding: "4px 20px 20px", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers} style={{ margin: "0 -20px" }}/>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>Export to EVE</div>
-        <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12 }}>Saves this fit into the selected character's in-game Fittings.</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>{t("Export to EVE")}</div>
+        <div style={{ fontSize: 11, color: C.textMute, marginBottom: 12 }}>{t("Saves this fit into the selected character's in-game Fittings.")}</div>
         {!activeFit?.ship ? (
-          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Open a fit first.</div>
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("Open a fit first.")}</div>
         ) : characters.length === 0 ? (
-          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>Connect a character in Settings → ESI first.</div>
+          <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("Connect a character in Settings → ESI first.")}</div>
         ) : (
           <>
             <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
-            <CheckRow label="Loaded charges (goes to cargo hold — EVE doesn't save per-module ammo)" val={incCharges} setVal={setIncCharges} />
-            <CheckRow label="Implants (as a cargo-hold shopping list)" val={incImplants} setVal={setIncImplants} />
-            <CheckRow label="Boosters (as a cargo-hold shopping list)" val={incBoosters} setVal={setIncBoosters} />
+            <CheckRow label={t("Loaded charges (goes to cargo hold — EVE doesn't save per-module ammo)")} val={incCharges} setVal={setIncCharges} />
+            <CheckRow label={t("Implants (as a cargo-hold shopping list)")} val={incImplants} setVal={setIncImplants} />
+            <CheckRow label={t("Boosters (as a cargo-hold shopping list)")} val={incBoosters} setVal={setIncBoosters} />
             <button onClick={doExport} disabled={busy} style={{ width: "100%", marginTop: 14, padding: 14, borderRadius: 10, border: "none", background: done ? C.success : C.accent, color: done ? "#0e0e10" : "#fff", fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
-              {done ? "✓ Saved to EVE" : busy ? "Saving…" : "Save to In-Game Fittings"}
+              {done ? <>✓ {t("Saved to EVE")}</> : busy ? t("Saving…") : t("Save to In-Game Fittings")}
             </button>
           </>
         )}
         {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 10 }}>{error}</div>}
         <button onClick={sheet.dismiss} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
-          Close
+          {t("Close")}
         </button>
       </div>
     </div>
