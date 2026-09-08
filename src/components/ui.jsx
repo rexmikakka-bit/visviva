@@ -17,7 +17,7 @@ import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
-import { useBackHandler } from "../lib/back-button.js";
+import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {

@@ -5,7 +5,7 @@ import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName,
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
-import { useBackHandler } from "../lib/back-button.js";
+import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────

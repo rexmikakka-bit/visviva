@@ -23,7 +23,8 @@ import { getLoadedFitsDB, persistFitsDB } from "./lib/fits-store.js";
 import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
-import { initBackButton, useBackHandler, BACK_APP } from "./lib/back-button.js";
+import { initBackButton, BACK_APP } from "./lib/back-button.js";
+import { useBackHandler } from "./lib/use-back-handler.js";
 import { LOCALE_KEY, LOCALES, applyLocale, loadLocale, t } from "./lib/i18n.js";
 import * as esi from "./lib/esi.js";
 

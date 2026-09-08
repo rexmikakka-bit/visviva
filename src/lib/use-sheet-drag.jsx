@@ -9,7 +9,7 @@
 // Release past a third of the sheet's height, or with a flick, to dismiss; otherwise spring back.
 import { useRef, useState } from "react";
 import { C } from "../theme.js";
-import { useBackHandler } from "./back-button.js";
+import { useBackHandler } from "./use-back-handler.js";
 
 // Kept in step with the caller's own transition duration — the close is DEFERRED by this long so
 // the exit can play, because the caller unmounts the sheet the moment onClose runs.

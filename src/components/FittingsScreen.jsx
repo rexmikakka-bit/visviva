@@ -15,7 +15,8 @@ import { FitTab, StatsTab } from "./tabs.jsx";
 import { InfoButton, ItemPrice, ModifierBreakdown, ResistBars, SheetSearchBar, TraitsPanel, useVisualViewport } from "./ui.jsx";
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
-import { useBackHandler, BACK_SCREEN } from "../lib/back-button.js";
+import { BACK_SCREEN } from "../lib/back-button.js";
+import { useBackHandler } from "../lib/use-back-handler.js";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 import { t } from "../lib/i18n.js";
 

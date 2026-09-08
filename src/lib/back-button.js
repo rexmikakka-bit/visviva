@@ -8,7 +8,9 @@
 // Registering a listener at all suppresses that default, which cuts both ways. Once this exists the
 // button is entirely ours: everything Back should close has to be in this stack, and an empty stack
 // has to call exitApp() explicitly or Back does nothing at all.
-import { useEffect, useRef } from 'react';
+//
+// This file must stay free of static package imports: the regression suite imports the stack and CI
+// runs it with no npm install. The React binding lives in use-back-handler.js for that reason.
 
 // Lower layers are reached only after everything above them declines. Overlays sit at the default 0
 // and order among themselves by MOUNT TIME, which is what makes a sheet opened on top of another
@@ -48,19 +50,6 @@ export function runBackHandler() {
 
 /** Test seam — the suite drives the stack directly rather than through React. */
 export function _backStackDepth() { return stack.length; }
-
-/**
- * @param handler what Back should do here; return false to decline and let the layer below try
- * @param enabled false parks the entry without giving up its place in the stack
- */
-export function useBackHandler(handler, enabled = true, layer = 0) {
-  const ref = useRef(null);
-  // Refreshed after every render, but registered exactly ONCE per mount: position in the stack IS
-  // the priority, so re-registering each time the handler's identity changed would float a
-  // background screen back above whatever is open on top of it.
-  useEffect(() => { ref.current = enabled ? handler : null; });
-  useEffect(() => pushBackHandler(ref, layer), [layer]);
-}
 
 /**
  * Installs the single listener. Native gets Capacitor's backButton; everywhere else gets Escape,

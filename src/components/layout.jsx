@@ -6,7 +6,7 @@ import { fitToEFT } from "../lib/eft-export.js";
 import { PILOT_ALL_V, PILOT_ALPHA, esiPilot, profilePilot, describeSkillSheet } from "../lib/pilot.js";
 import { SKILL_CATALOG } from "../calc.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
-import { useBackHandler } from "../lib/back-button.js";
+import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
 import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
