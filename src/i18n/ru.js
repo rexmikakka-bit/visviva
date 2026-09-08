@@ -233,7 +233,7 @@ export default {
   "Efficiency": "Эффективность",
   "Empty": "Пусто",
   "Empty text": "Пустой текст",
-  "Environment": "Окружение",
+  "environmentSystem": "Окружение",
   "Est. Value": "Оцен. стоимость",
   "Even 15% spread across all four armor resists": "Ровные 15% по всем четырём сопротивлениям брони",
   "Every skill trained to V": "Все навыки прокачаны до V",

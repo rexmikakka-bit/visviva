@@ -230,7 +230,7 @@ export default {
   "Efficiency": "效率",
   "Empty": "空",
   "Empty text": "内容为空",
-  "Environment": "环境",
+  "environmentSystem": "星系环境",
   "Est. Value": "估值",
   "Even 15% spread across all four armor resists": "四种装甲抗性均为 15%",
   "Every skill trained to V": "所有技能均为 V 级",

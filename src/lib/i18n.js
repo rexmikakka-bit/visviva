@@ -99,6 +99,15 @@ export async function initLocale() {
   return getLocale();
 }
 
+// Disambiguation, gettext's msgctxt by another name. Two unrelated concepts can share an English
+// word — the Effects tab's star system and the theme picker's follow-the-OS option are both
+// "System" — and no other language renders both senses with one word. Such a key is written
+// `"contextEnglish"`; English shows only the part after the marker, so the UI is unchanged
+// while each locale gets its own entry. Reach for this ONLY when a collision actually bites: the
+// context is invisible to the reader and has to be kept in sync with the catalogs by hand.
+const CTX = '';
+const strip = s => { const i = s.indexOf(CTX); return i < 0 ? s : s.slice(i + 1); };
+
 // {name} placeholders. Left alone when the param is missing, so a typo shows itself in the UI
 // instead of silently rendering an empty gap.
 function fill(str, params) {
@@ -130,7 +139,7 @@ export function t(key, params) {
   const hit = _cat[lookup];
   if (typeof hit === 'string') return fill(hit, params);
   if (hit && typeof hit === 'object') return fill(pluralForms(hit, params?.n ?? 0), params);
-  return fill(plural ? pluralForms(key, params?.n ?? 0) : lookup, params);
+  return fill(strip(plural ? pluralForms(key, params?.n ?? 0) : lookup), params);
 }
 
 /** Test seam — the suite installs catalogs directly rather than fetching chunks. */

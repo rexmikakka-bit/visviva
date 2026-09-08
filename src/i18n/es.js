@@ -239,7 +239,7 @@ export default {
   "Efficiency": "Eficiencia",
   "Empty": "Vacío",
   "Empty text": "Texto vacío",
-  "Environment": "Entorno",
+  "environmentSystem": "Entorno",
   "Est. Value": "Valor est.",
   "Even 15% spread across all four armor resists": "Un 15 % repartido por igual entre las cuatro resistencias de blindaje",
   "Every skill trained to V": "Todas las habilidades entrenadas a V",

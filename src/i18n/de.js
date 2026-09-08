@@ -239,7 +239,7 @@ export default {
   "Efficiency": "Effizienz",
   "Empty": "Leer",
   "Empty text": "Leerer Text",
-  "Environment": "Umgebung",
+  "environmentSystem": "Umgebung",
   "Est. Value": "Gesch. Wert",
   "Even 15% spread across all four armor resists": "Gleichmäßig 15 % auf alle vier Panzerungsresistenzen verteilt",
   "Every skill trained to V": "Jeder Skill auf V trainiert",

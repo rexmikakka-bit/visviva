@@ -456,9 +456,10 @@ function boosterSlotOf(b){
 // resolved the stored locale — a plain t() here would bake in English for the life of the process
 // and never re-evaluate on a language switch. Called at render instead. See lib/i18n.js.
 //
-// "Environment", not "System": under key-is-the-English-string, this tab would otherwise share a key
-// with the theme picker's follow-the-OS "System", and no locale can render both senses with one word.
-const _SECTIONS=[{tabId:"boosters",label:()=>t("Boosters")},{tabId:"projected",label:()=>t("Projected")},{tabId:"command",label:()=>t("Command")},{tabId:"environment",label:()=>t("Environment")}];
+// The  prefix is a disambiguating context, not text: this tab and the theme picker's
+// follow-the-OS option are both "System" in English, and no other language renders both senses with
+// one word. English still shows "System" — see the CTX note in lib/i18n.js.
+const _SECTIONS=[{tabId:"boosters",label:()=>t("Boosters")},{tabId:"projected",label:()=>t("Projected")},{tabId:"command",label:()=>t("Command")},{tabId:"environment",label:()=>t("environmentSystem")}];
 const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
 
 // `sourceSkills(fit)` comes from App.jsx and is the SAME resolver it applies the effects with, so a

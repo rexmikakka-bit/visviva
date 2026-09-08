@@ -231,7 +231,7 @@ export default {
   "Efficiency": "효율",
   "Empty": "비어 있음",
   "Empty text": "텍스트가 비어 있습니다",
-  "Environment": "환경",
+  "environmentSystem": "환경",
   "Est. Value": "예상 가격",
   "Even 15% spread across all four armor resists": "장갑 4개 저항에 15%씩 균등 배분",
   "Every skill trained to V": "모든 스킬을 V까지 트레이닝",
