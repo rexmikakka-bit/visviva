@@ -402,6 +402,14 @@ const isInitialismToken = (tok) => tok.length >= MIN_INITIALISM && tok.length <=
 // (Compressor, Fighter Support Unit, Setele's), which is the pile the plain Tracking Enhancer was
 // buried under. Four is where the two stop overlapping — every real query measured keeps its full
 // result set, and no shorter string that only ever occurs mid-word is one a player would type.
+// CCP punctuates its NEWER officer drops with a curly apostrophe — "Lorharyth’s Modified Inertial
+// Stabilizer" — while the older ones and a phone keyboard both use a straight one. A literal
+// substring test therefore found nothing for exactly the ten newest named modules, which reads as
+// "the item does not exist" rather than as a search bug. Both forms fold to ' here. EVE mixes them
+// ('Basic' Damage Control straight, ‘Vigilant’ Shield Command Burst curly), so this has to
+// normalise the NAME as well as the query.
+const norm = (s) => String(s ?? "").toLowerCase().replace(/[‘’]/g, "'");
+
 const MIN_MIDWORD = 4;
 const literalMatch = (name, tok) =>
   atWordStart(name, tok) || (tok.length >= MIN_MIDWORD && name.includes(tok));
@@ -420,7 +428,7 @@ function expansionScore(name, query) {
 // caller breaks ties on name LENGTH, which is what floats "Tracking Computer I" above "Unit
 // D-34343's Modified Tracking Computer" without needing to know anything about meta levels.
 function scoreOne(name, q) {
-  const n = String(name ?? "").toLowerCase();
+  const n = norm(name);
   if (!q) return 0;
   if (n === q) return 1000;                                     // exact
   const jargonHit = expansionScore(n, q);                       // "ac" -> AutoCannon
@@ -442,7 +450,7 @@ function scoreOne(name, q) {
 // Tracking Computer II" when both satisfy each token equally well. A one-token query is returned
 // unchanged, so nothing that already ranked correctly moves.
 export function searchScore(name, query) {
-  const q = String(query ?? "").trim().toLowerCase();
+  const q = norm(query).trim();
   const toks = q.split(/\s+/).filter(Boolean);
   if (toks.length < 2) return scoreOne(name, q);
   return toks.reduce((sum, t) => sum + scoreOne(name, t), scoreOne(name, q));
@@ -458,9 +466,9 @@ export function rankByRelevance(names, query, nameOf = (x) => x) {
 // True if `name` satisfies every token: each is a jargon expansion, else a literal substring OR an
 // initialism. Used directly for ships (which have no jargon table of their own).
 export function nameMatchesQuery(name, query) {
-  const tokens = String(query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = norm(query).trim().split(/\s+/).filter(Boolean);
   if (!tokens.length) return false;
-  const lower = String(name).toLowerCase();
+  const lower = norm(name);
   return tokens.every((tok) => {
     const entry = JARGON[tok];
     // A jargon entry pairs curated EXPANSIONS with the literal token itself. The expansions are

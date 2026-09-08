@@ -4410,6 +4410,23 @@ Republic Fleet Command Mindlink`;
   // ...and the shorthands that mean the grappler still reach it, so this is a narrowing, not a loss.
   check('search', '"sg" still finds a Stasis Grappler', nMatch('mid', 'sg', /Grappler/i) > 0 ? 1 : 0, 1, 0);
 
+  // CCP writes its newer officer drops with a CURLY apostrophe, so typing the straight one a phone
+  // keyboard produces matched NOTHING. Both forms must reach them. Asserted by PROPERTY over every
+  // curly-named low, not by one hand-listed module, because CCP keeps adding these — and the curly
+  // form is asserted to still work so a regression cannot pass by breaking both sides equally.
+  const curlyName = modsIn('low').find((m) => /Modified Inertial Stabilizer/.test(m.name))?.name ?? '';
+  check('search', "an officer module's name uses a curly apostrophe", /’/.test(curlyName) ? 1 : 0, 1, 0);
+  check('search', 'a straight apostrophe finds it', nameMatchesQuery(curlyName, curlyName.replace(/’/g, "'")) ? 1 : 0, 1, 0);
+  check('search', 'the curly apostrophe still finds it', nameMatchesQuery(curlyName, curlyName) ? 1 : 0, 1, 0);
+  const officerLows = modsIn('low').filter((m) => /’s Modified/.test(m.name));
+  check('search', 'every officer low reachable by straight apostrophe',
+        officerLows.filter((m) => !nameMatchesQuery(m.name, m.name.replace(/’/g, "'"))).length, 0, 0);
+
+  // The officer modules the frozen market data had been missing outright — the browser tree is
+  // generated now (scripts/build-market.py), so their presence is a property of the pipeline.
+  check('search', "Lorharyth's Modified Inertial Stabilizer is in the browser",
+        modsIn('low').filter((m) => m.typeID === 95556).length, 1, 0);
+
   // ── OFF-MARKET MODULES ──────────────────────────────────────────────────────
   // The browser tree is CCP's market tree, so a module CCP does not sell has no node to live under
   // and was absent from the search corpus entirely — a Civilian Light Missile Launcher could only be
