@@ -311,7 +311,7 @@ function DeleteX({on}){
   );
 }
 
-function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints}){
+function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -1015,15 +1015,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
         onSelect={m=>{
           const{count,filledIds}=addMod(emptySlot.secKey,emptySlot.id,m);
           // Stay open and retarget the next empty slot in the same group, so filling a whole rack
-          // is a run of taps instead of a close/reopen per slot. `slots` here is still the PRE-add
+          // is a run of taps instead of a close/reopen per slot — unless the user has asked for the
+          // older close-on-add behaviour, which takes the same exit path as a full rack. `slots`
+          // here is still the PRE-add
           // snapshot, but that's fine: every OTHER slot in the section is unaffected by this add, so
           // its "empty" status is already correct — exclude every id addMod just filled (auto-fill
           // may have taken more than just emptySlot.id).
-          const next=(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
+          const next=closeBrowserOnAdd?null:(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
           if(next){
             setEmptySlot({secKey:emptySlot.secKey,id:next.id});
           }else{
-            // Nothing left to retarget to — this WAS the last empty slot in the group, most often
+            // Nothing to retarget to — this WAS the last empty slot in the group, most often
             // because auto-fill hardpoints just filled the whole rack in one tap. Closing right away
             // used to unmount the sheet (and the "+ Module (x5)" toast living inside it) before
             // anyone could read it. Long enough to register the toast, then — NOT the toast's full
