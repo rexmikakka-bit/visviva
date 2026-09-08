@@ -294,7 +294,7 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
           <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>{t("System follows your device's light/dark setting; the rest pin the app regardless. Amarr, Sansha and Intaki are dark themes, in imperial gold, Nation oxblood and cold slate.")}</div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Fit Tabs")}</div>
           <ToggleRow label={t("Always open fits in a new tab")} on={!!openInNewTab} onChange={setOpenInNewTab}
-            note={t("Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.")}/>
+            note={t("Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.")}/>
           <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>{t("The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.")}</div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Module Browser")}</div>
           <ToggleRow label={t("Auto-fill hardpoints")} on={autoFillHardpoints??true} onChange={setAutoFillHardpoints}

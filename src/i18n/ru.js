@@ -439,7 +439,7 @@ export default {
   "Null": "Нули",
   "Null security": "Нулевой уровень безопасности",
   "OH": "ПГ",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.": "Выкл.: открытие фиттинга заменяет текущую вкладку, а «+» в полосе вкладок открывает новую. Вкл.: каждый открытый фиттинг получает свою вкладку, как в pyfa.",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.": "Выкл.: открытие фиттинга заменяет текущую вкладку, а «+» в полосе вкладок открывает новую. Вкл.: каждый открытый фиттинг получает свою вкладку.",
   "Offline": "Не в сети",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.": "Вкл.: выбор турели или пусковой в обозревателе заполняет все свободные подходящие хардпойнты, а не только тот слот, по которому вы нажали. Выкл.: заполняется только этот слот — используйте «Заполнить хардпойнты» на установленном модуле, чтобы дозаполнить вручную.",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.": "Вкл.: обозреватель закрывается сразу, как только вы что-то выбрали. Выкл.: он остаётся открытым и переходит к следующему свободному слоту в ряду, так что можно заполнить несколько, не открывая его заново.",
