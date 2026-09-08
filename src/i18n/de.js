@@ -455,8 +455,8 @@ export default {
   "Null": "Null",
   "Null security": "Null-Sec",
   "OH": "OH",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.":
-    "Aus: Ein geöffnetes Fitting ersetzt den Tab, in dem du dich befindest, und das + in der Tab-Leiste öffnet einen neuen. An: Jedes geöffnete Fitting bekommt seinen eigenen Tab, wie in pyfa.",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
+    "Aus: Ein geöffnetes Fitting ersetzt den Tab, in dem du dich befindest, und das + in der Tab-Leiste öffnet einen neuen. An: Jedes geöffnete Fitting bekommt seinen eigenen Tab.",
   "Offline": "Offline",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "An: Ein Turret oder Launcher aus dem Browser füllt jeden freien passenden Hardpoint, nicht nur den angetippten Slot. Aus: Es wird nur dieser eine Slot gefüllt — nutze „Hardpoints füllen“ an einem vorhandenen Modul, um den Rest von Hand zu füllen.",

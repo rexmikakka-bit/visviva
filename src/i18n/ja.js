@@ -438,7 +438,7 @@ export default {
   "Null": "ヌル",
   "Null security": "ヌルセキュリティ",
   "OH": "OH",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.": "オフ: フィットを開くと現在のタブが置き換わり、タブ列の「+」で新しいタブを開きます。オン: 開いたフィットごとに専用のタブができます（pyfa と同じ挙動）。",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.": "オフ: フィットを開くと現在のタブが置き換わり、タブ列の「+」で新しいタブを開きます。オン: 開いたフィットごとに専用のタブができます。",
   "Offline": "オフライン",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.": "オン: ブラウザからタレットやランチャーを選ぶと、タップしたスロットだけでなく、条件の合う空きハードポイントを全て埋めます。オフ: そのスロットだけを埋めます — 残りは装備済みモジュールの「ハードポイントを埋める」で手動で埋めてください。",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.": "オン: 何かを選ぶとブラウザはすぐ閉じます。オフ: 開いたままラック内の次の空きスロットに移るので、開き直さずに複数を埋められます。",

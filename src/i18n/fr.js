@@ -453,8 +453,8 @@ export default {
   "Null": "Nul",
   "Null security": "Sécurité nulle",
   "OH": "SC",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.":
-    "Désactivé : ouvrir un fitting remplace l'onglet courant, et le + de la barre d'onglets en ouvre un nouveau. Activé : chaque fitting ouvert obtient son propre onglet, comme dans pyfa.",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
+    "Désactivé : ouvrir un fitting remplace l'onglet courant, et le + de la barre d'onglets en ouvre un nouveau. Activé : chaque fitting ouvert obtient son propre onglet.",
   "Offline": "Hors ligne",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "Activé : choisir une tourelle ou un lanceur dans le navigateur remplit tous les points d'ancrage libres compatibles, pas seulement celui que vous avez touché. Désactivé : seul cet emplacement est rempli — utilisez « Remplir les points d'ancrage » sur un module déjà équipé pour compléter le reste à la main.",

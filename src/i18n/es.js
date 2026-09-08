@@ -452,8 +452,8 @@ export default {
   "Null": "Nula",
   "Null security": "Seguridad nula",
   "OH": "SC",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.":
-    "Desactivado: abrir un fitting sustituye la pestaña en la que estás, y el + de la barra abre una nueva. Activado: cada fitting que abres recibe su propia pestaña, como en pyfa.",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
+    "Desactivado: abrir un fitting sustituye la pestaña en la que estás, y el + de la barra abre una nueva. Activado: cada fitting que abres recibe su propia pestaña.",
   "Offline": "Apagado",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "Activado: elegir una torreta o un lanzador en el explorador rellena todos los puntos de anclaje libres compatibles, no solo la ranura que has tocado. Desactivado: solo se rellena esa ranura; usa «Rellenar puntos de anclaje» sobre un módulo ya equipado para completar el resto a mano.",

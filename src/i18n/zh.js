@@ -436,7 +436,7 @@ export default {
   "Null": "零安",
   "Null security": "零安全星域",
   "OH": "OH",
-  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab, like pyfa.": "关闭：打开装配会替换当前标签页，标签栏中的 + 用于新建标签页。开启：每打开一个装配都会新建标签页，与 pyfa 一致。",
+  "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.": "关闭：打开装配会替换当前标签页，标签栏中的 + 用于新建标签页。开启：每打开一个装配都会新建标签页。",
   "Offline": "离线",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.": "开启：从浏览器中选择炮塔或发射器时会装满所有空闲的匹配挂点，而不只是所点击的槽位。关闭：只装配该槽位 — 可对已装配的装备使用“装满挂点”来手动填充其余挂点。",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.": "开启：一旦选中装备，浏览器就会关闭。关闭：浏览器保持打开并跳到该槽位组中的下一个空槽，可以连续装配多个而无需重新打开。",
