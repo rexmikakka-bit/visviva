@@ -46,6 +46,7 @@ const CODES = new Set(LOCALES.map(l => l.code));
 const LOADERS = {
   de: () => import('../i18n/de.js'),
   fr: () => import('../i18n/fr.js'),
+  es: () => import('../i18n/es.js'),
 };
 
 const catalogs = { en: {} };   // en is empty and stays empty: its keys already ARE its values
