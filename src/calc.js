@@ -264,6 +264,10 @@ export function calcLockTime(scanRes, tgtSigRadius) {
   return Math.min(40000 / scanRes / Math.pow(Math.asinh(tgtSigRadius), 2), 30 * 60);
 }
 
+// The fill level the peak below occurs at, as a percentage. Lives next to the formula it falls out
+// of so the two cannot drift: the UI names this number to the user.
+export const PEAK_REGEN_AT_PCT = 25;
+
 export function peakRegen(capacityHP, rechargeRateMs) {
   // EVE formula: peak rate = capacity × (√f - f) × 10/T, max at f=0.25 → factor 2.5
   if (!capacityHP || !rechargeRateMs) return 0;
@@ -1796,7 +1800,9 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (sf < 0) webs.push({ name: slot.name, speedFactor: sf, optimal, falloff });
     } else if (gn === 'Energy Neutralizer' || gn === 'Energy Nosferatu') {
       const amt = fitItem.get('energyNeutralizerAmount') ?? fitItem.get('powerTransferAmount') ?? 0;
-      if (amt > 0) neuts.push({ name: slot.name, gjPerSec: amt / dur, optimal, falloff });
+      // `amount` is one cycle's drain, kept alongside the per-second rate so the graph can plot the
+      // hit a single cycle lands without having to reconstruct it from gjPerSec × cycle time.
+      if (amt > 0) neuts.push({ name: slot.name, gjPerSec: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Target Painter') {
       const sig = fitItem.get('signatureRadiusBonus') ?? 0;
       if (sig > 0) painters.push({ name: slot.name, sigBonus: sig, optimal, falloff });

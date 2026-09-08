@@ -32,7 +32,7 @@ export const FIT_SUBTABS=["Fit","Stats","Graph"];
 // is why this is a FUNCTION over literal keys rather than a module-level object of t() calls: a
 // module body runs before main.jsx has resolved the stored locale, and the labels have to be read at
 // render. See lib/i18n.js.
-const _subTabLabel=k=>({Fit:t("Modules"),Stats:t("Stats"),Graph:t("Graph")}[k]??k);
+const _subTabLabel=k=>({Fit:t("Modules"),Stats:t("Stats"),Graph:t("Graphs")}[k]??k);
 
 // Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
 // player) because the shapes read as "back" and "back to the start" without a label to explain them.
@@ -721,7 +721,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
   );
 }
 
-export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints,onOpenFit,fitSubTab,setFitSubTab}){
+export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,loadFit,deleteFit,view,setView,fitsDB,setFitsDB,slots,setSlots,setDrones,setFighters,fighters,setCargoItems,setImplants,setBoosters,setProjFits,setCmdFits,skills,sourceSkills,openFitTabs,implants,boosters,drones,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,newFitIntent,setNewFitIntent,newTabIntent,autoFillHardpoints,closeBrowserOnAdd,onOpenFit,fitSubTab,setFitSubTab}){
   // The ship browser is a nested menu now (Battleships > Faction Battleships > Pirate Faction), so
   // the position in it is a PATH of node labels rather than a single class name. An empty path is
   // the top-level list. See src/lib/ship-taxonomy.js.
@@ -1238,7 +1238,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
           cannot be open then. */}
       <div ref={_panel} key={fitSubTab} className={slideClass(_slideDir)}
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
-      {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints}/>}
+      {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
       {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
       </div>

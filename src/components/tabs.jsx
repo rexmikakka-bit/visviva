@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
-import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
+import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { missileRangeTip } from "../lib/fmt.js";
@@ -311,7 +311,7 @@ function DeleteX({on}){
   );
 }
 
-function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints}){
+function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -1015,15 +1015,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
         onSelect={m=>{
           const{count,filledIds}=addMod(emptySlot.secKey,emptySlot.id,m);
           // Stay open and retarget the next empty slot in the same group, so filling a whole rack
-          // is a run of taps instead of a close/reopen per slot. `slots` here is still the PRE-add
+          // is a run of taps instead of a close/reopen per slot — unless the user has asked for the
+          // older close-on-add behaviour, which takes the same exit path as a full rack. `slots`
+          // here is still the PRE-add
           // snapshot, but that's fine: every OTHER slot in the section is unaffected by this add, so
           // its "empty" status is already correct — exclude every id addMod just filled (auto-fill
           // may have taken more than just emptySlot.id).
-          const next=(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
+          const next=closeBrowserOnAdd?null:(slots[emptySlot.secKey]??[]).find(s=>s.type==="empty"&&!filledIds.includes(s.id));
           if(next){
             setEmptySlot({secKey:emptySlot.secKey,id:next.id});
           }else{
-            // Nothing left to retarget to — this WAS the last empty slot in the group, most often
+            // Nothing to retarget to — this WAS the last empty slot in the group, most often
             // because auto-fill hardpoints just filled the whole rack in one tap. Closing right away
             // used to unmount the sheet (and the "+ Module (x5)" toast living inside it) before
             // anyone could read it. Long enough to register the toast, then — NOT the toast's full
@@ -1420,10 +1422,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             // "EHP/s" stays inside the value strings: a CCP unit symbol, and `val.startsWith("0")`
             // below reads the number, not the unit.
             const peak=[
-              {label:t("Regen"),  val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
-              {label:t("Shield"), val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
-              {label:t("Armor"),  val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
-              {label:t("Hull"),   val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
+              // "Regen | Shield | Armor | Hull" left the first column reading as if it were a fourth
+              // layer rather than the passive SHIELD recharge, and gave no clue that the three beside
+              // it are active repair. Naming regen-vs-rep on every column is what makes the row legible.
+              {label:t("Shield regen"),val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
+              {label:t("Shield rep"),  val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
+              {label:t("Armor rep"),   val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
+              {label:t("Hull rep"),    val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
             ];
             // Sustained row values, aligned to the same columns (regen has no sustained variant → blank).
             // Sustained includes the full incoming remote rep (supplier-cap-independent).
@@ -1653,7 +1658,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           </div>
           <div onClick={()=>setPeakMode(m=>m==="regen"?"neut":"regen")} style={{padding:"7px 8px",textAlign:"center",cursor:"pointer"}}>
             {peakMode==="regen"
-              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute}}>{t("Peak regen")}</div></>
+              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute}}>{t("Peak regen at {pct}%",{pct:PEAK_REGEN_AT_PCT})}</div></>
               :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("Neut resist")}</div></>}
           </div>
         </div>
@@ -1684,11 +1689,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               ["targets",  t("Targets"),   String(Math.round(cs.maxTargets??0))],
               ["speed",    t("Speed"),     `${Math.round(abOn?cs.maxVelocityAB:(cs.maxVelocity??0))} m/s`, p(abOn?x.maxVelocityAB:x.maxVelocity,2," m/s")],
               ["lockrange",t("Lock range"),`${fmtF(cs.targetRange??0)} km`,  p(x.targetRange,3," km")],
-              ["align",    t("Align"),     `${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
+              ["align",    t("Align time"),`${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
               ["scanres",  t("Scan res."), `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
-              ["signature",t("Signature"), `${fmtN(cs.sigRadius??0)} m`,     p(x.sigRadius,2," m")],
-              ["sensor",   t("Sensor"),    `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
-              ["warp",     t("Warp"),      `${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
+              ["signature",t("Signature radius"), `${fmtN(cs.sigRadius??0)} m`, p(x.sigRadius,2," m")],
+              ["sensor",   t("Sensor strength"), `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
+              ["warp",     t("Warp speed"),`${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
               ...(cs.droneBay>0?[["dronerange",t("Drone range"),`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),

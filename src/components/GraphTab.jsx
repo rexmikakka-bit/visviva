@@ -84,7 +84,7 @@ const GRAPH_CONFIG=[
   {key:"damage",label:()=>t("Damage"),icon:"sword",color:"danger",showTargetControls:true,
    yAxes:[{key:"dps",label:()=>t("DPS")},{key:"volley",label:()=>t("Volley")},{key:"inflicted",label:()=>t("Damage inflicted")}],
    xAxes:[{key:"dist",label:()=>t("Distance, km")},{key:"time",label:()=>t("Time, s")},{key:"tgtSpeedMs",label:()=>t("Target speed, m/s")},{key:"tgtSpeedPct",label:()=>t("Target speed, %")},{key:"tgtSigM",label:()=>t("Target sig. radius, m")},{key:"tgtSigPct",label:()=>t("Target sig. radius, %")}]},
-  {key:"ewar",label:()=>t("Ewar"),icon:"radar",color:"high",yAxes:[{key:"neutsCap",label:()=>t("Neuts: cap/s")},{key:"webSpeed",label:()=>t("Webs: speed red., %")},{key:"ecmStr",label:()=>t("ECM: combined strength")},{key:"dampLock",label:()=>t("Damps: lock range red., %")},{key:"tdRange",label:()=>t("Tracking disr: range red., %")},{key:"gdRange",label:()=>t("Guidance disr: range red., %")},{key:"tpSig",label:()=>t("Target paint: sig incr., %")}],xAxes:[{key:"dist",label:()=>t("Distance, km")}]},
+  {key:"ewar",label:()=>t("Ewar"),icon:"radar",color:"high",yAxes:[{key:"neutsCap",label:()=>t("Neuts: cap/s")},{key:"neutsVolley",label:()=>t("Neuts: GJ volley")},{key:"webSpeed",label:()=>t("Webs: speed red., %")},{key:"ecmStr",label:()=>t("ECM: combined strength")},{key:"dampLock",label:()=>t("Damps: lock range red., %")},{key:"tdRange",label:()=>t("Tracking disr: range red., %")},{key:"gdRange",label:()=>t("Guidance disr: range red., %")},{key:"tpSig",label:()=>t("Target paint: sig incr., %")}],xAxes:[{key:"dist",label:()=>t("Distance, km")}]},
   {key:"reps",label:()=>t("Reps"),icon:"heart",color:"rig",yAxes:[{key:"repSpeed",label:()=>t("Repair speed, HP/s")},{key:"repTotal",label:()=>t("Total repaired, HP")}],xAxes:[{key:"dist",label:()=>t("Distance, km")},{key:"time",label:()=>t("Time, s")}]},
   {key:"shieldRegen",label:()=>t("Shield"),icon:"shield",color:"mid",yAxes:[{key:"shieldAmt",label:()=>t("Shield, EHP")},{key:"shieldRegen",label:()=>t("Shield regen, EHP/s")}],xAxes:[{key:"time",label:()=>t("Time, s")},{key:"shieldPct",label:()=>t("Shield, %")}]},
   {key:"cap",label:()=>t("Capacitor"),icon:"bolt",color:"warning",yAxes:[{key:"capAmt",label:()=>t("Cap, GJ")},{key:"capRegen",label:()=>t("Cap regen, GJ/s")}],xAxes:[{key:"time",label:()=>t("Time, s")},{key:"capPct",label:()=>t("Cap, %")}]},
@@ -108,6 +108,22 @@ function engagementDistanceM(cs){
   let d = 0;
   for (const w of (cs?.graphWeapons ?? [])) d = Math.max(d, w.kind==="missile" ? (w.lowerRange||0) : (w.optimal || 0));
   return d > 0 ? d : 30000;
+}
+
+// What the Range field starts on, per category. Damage takes the weapon reach above; REPS takes 0,
+// and deliberately so. A remote repairer is at full strength anywhere inside its optimal, so 0 km is
+// already a meaningful "in range" for it — whereas defaulting a logi fit to 30 km (what
+// engagementDistanceM returns for a hull with no guns) would put every remote rep past its optimal
+// and quietly halve the total-repaired curve for everyone who never touches the field.
+function defaultEngRangeKm(catKey,cs){
+  return catKey==="reps" ? 0 : engagementDistanceM(cs)/1000;
+}
+
+// The Range field is only meaningful where the X axis is NOT range and the curve actually falls off
+// with distance: turret tracking and missile application on Damage, rangeFactor on Reps. The cap,
+// shield, mobility and warp curves have no target at the other end of them.
+function usesEngRange(catKey,xKey){
+  return xKey!=="dist" && (catKey==="damage" || (catKey==="reps" && xKey==="time"));
 }
 
 // Your own fitted web(s) at a given distance — range-scaled and stacking-penalised, same as the
@@ -141,6 +157,12 @@ function generateCurve(catKey,yKey,xKey,params={}){
   // raw totals when the profile is "None".
   const realDps   = cs?.effective?.totalDps?.total    ?? cs?.totalDps?.total    ?? cs?.weaponDps?.total    ?? 0;
   const realVolley= cs?.effective?.totalVolley?.total ?? cs?.totalVolley?.total ?? cs?.weaponVolley?.total ?? 0;
+  // The range every X axis that ISN'T range evaluates at. The user can type one (see the Range
+  // field); engagementDistanceM is the default it starts on. This used to be a hardcoded 0 on the
+  // time axes, which is not "a fixed range" so much as a broken one: at 0 m separation angular
+  // velocity is infinite and turret tracking collapses, so damage-over-time against a moving target
+  // read near zero for reasons that had nothing to do with the fit.
+  const engDist = params.engRangeKm!=null ? Math.max(0,params.engRangeKm)*1000 : engagementDistanceM(cs);
   let pts=[],xMax,yMax;
   if(catKey==="damage"){
     const weapons = cs?.graphWeapons ?? [];
@@ -180,8 +202,6 @@ function generateCurve(catKey,yKey,xKey,params={}){
       const v = (nm && free!=="vel") ? nm.vel : vel;
       return [s*sigMultAt(dM), v*webMultAt(dM)];
     };
-    // Fixed engagement distance for the speed/sig axes (hold range constant, vary tracking inputs).
-    const engDist = engagementDistanceM(cs);
     const atkSpeed = params.selfVel ?? 0, atkAngle = params.selfAngle ?? 0;
     const tgtAngle = params.targetAngle ?? 0;
     const shipRadius = cs?.shipRadius ?? 0;
@@ -305,7 +325,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
         // Stepped cumulative damage: each weapon lands a discrete volley at t=0, then every cycle,
         // pausing for reload after each clip of numShots (so the staircase flattens during reload).
         const TMAX=dom(120);
-        const evts = damageEvents(TMAX, 0, profSig, profVel);
+        const evts = damageEvents(TMAX, engDist, profSig, profVel);
         let acc=0, gacc=0; pts.push([0,0,0]);
         for (const [tSec,d,g] of evts){ pts.push([tSec,acc,gacc]); acc+=d; gacc+=g; pts.push([tSec,acc,gacc]); }   // step then jump
         pts.push([TMAX,acc,gacc]);
@@ -314,13 +334,13 @@ function generateCurve(catKey,yKey,xKey,params={}){
         const hasSpoolW = weapons.some(w => (w.spoolMax ?? 0) > 0 && (w.spoolPerCycle ?? 0) > 0);
         const tEnd=dom(120), tStep=tEnd/480;
         if (!hasSpoolW) {
-          const [eff,effIdeal]=both(0,profSig,profVel);
+          const [eff,effIdeal]=both(engDist,profSig,profVel);
           for(let tSec=0;tSec<=tEnd+1e-9;tSec+=tStep) pts.push([tSec,eff,effIdeal]);
           xMax=tEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15;
         } else {
           // Entropic disintegrators ramp DPS each completed cycle (SpoolType.CYCLES): after n cycles
           // the factor is 1 + min(spoolMax, n * spoolPerCycle). Matches damageEvents' cycle counting.
-          const [sig,vel]=effTarget(0,profSig,profVel,null);
+          const [sig,vel]=effTarget(engDist,profSig,profVel,null);
           const spoolDpsAt=(tSec,perfect)=>{
             let total=0;
             for(const w of weapons){
@@ -330,7 +350,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
               const n=spools?Math.floor(tSec/(w.cycleS+(w.delayS??0))):0;
               const sp=spools?1+Math.min(w.spoolMax,n*w.spoolPerCycle):1;
               const per=wantVolley?vol*sp:vol*sp/(w.cycleS+(w.delayS??0));
-              total+=per*weaponMult(w,0,sig,vel,perfect);
+              total+=per*weaponMult(w,engDist,sig,vel,perfect);
             }
             return total;
           };
@@ -347,12 +367,16 @@ function generateCurve(catKey,yKey,xKey,params={}){
     const P=params.ownProj||{};
     const rf=(o,f,d)=>calcRangeFactor(o,f,d,true);
     // Distance axis auto-scales to the relevant modules' reach (optimal + falloff).
-    const mods = yKey==="neutsCap"?(P.neuts||[]) : yKey==="webSpeed"?(P.webs||[]) : yKey==="ecmStr"?(P.ecm||[]) : yKey==="tdRange"?(P.trackDisr||[]) : yKey==="gdRange"?(P.guideDisr||[]) : yKey==="tpSig"?(P.painters||[]) : (P.damps||[]);
+    const mods = (yKey==="neutsCap"||yKey==="neutsVolley")?(P.neuts||[]) : yKey==="webSpeed"?(P.webs||[]) : yKey==="ecmStr"?(P.ecm||[]) : yKey==="tdRange"?(P.trackDisr||[]) : yKey==="gdRange"?(P.guideDisr||[]) : yKey==="tpSig"?(P.painters||[]) : (P.damps||[]);
     let reachM=0; for(const m of mods) reachM=Math.max(reachM,(m.optimal||0)+(m.falloff||0)*2);
     let dmax=reachM>0?reachM/1000*1.05:30; dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;
     dmax=dom(dmax);
     const valAt=(dM)=>{
       if(yKey==="neutsCap") return (P.neuts||[]).reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff,dM),0);
+      // One cycle's drain rather than the sustained rate — what a single neut hit takes out of the
+      // target at this range. Summed across every fitted neut, matching cap/s above; with several
+      // fitted that is a worst case, since real cycles are not synchronised.
+      if(yKey==="neutsVolley") return (P.neuts||[]).reduce((s,n)=>s+(n.amount??n.gjPerSec*(n.cycleS||1))*rf(n.optimal,n.falloff,dM),0);
       if(yKey==="ecmStr")   return (P.ecm||[]).reduce((s,e)=>s+Math.max(0,...Object.values(e.byType||{}))*rf(e.optimal,e.falloff,dM),0);
       if(yKey==="webSpeed"){const ms=(P.webs||[]).map(w=>1+(w.speedFactor*rf(w.optimal,w.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
       if(yKey==="tdRange"){const ms=(P.trackDisr||[]).map(td=>1+((td.optimalBonus||0)*rf(td.optimal,td.falloff,dM))/100);return ms.length?(1-stackingPenalty(ms))*100:0;}
@@ -382,7 +406,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
       // Spool follows eos's calculateSpoolup (SpoolType.CYCLES): after `cycles` COMPLETED cycles
       // the bonus is min(max, cycles * step), so the first cycle lands unspooled.
       const tEnd=dom(120);
-      const src=reps.map(r=>({amt:(r.amount??r.rawPS*(r.cycleS||1))*rf(r.optimal,r.falloff,0),
+      const src=reps.map(r=>({amt:(r.amount??r.rawPS*(r.cycleS||1))*rf(r.optimal,r.falloff,engDist),
                               cycleS:r.cycleS||1, spoolMax:r.spoolMax||0, spoolPerCycle:r.spoolPerCycle||0}))
                     .filter(r=>r.amt>0&&r.cycleS>0);
       const evts=[];
@@ -1094,12 +1118,16 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // visit: someone comparing lock times across fits wants the digits on every fit they open, and this
   // panel remounts on each swipe, so plain state would drop it.
   const[exactHeadline,setExactHeadline]=useState(()=>gp('exactHeadline',false));
+  // The range every non-distance X axis is evaluated at, in km. null means "follow the fit" — the
+  // field shows defaultEngRangeKm and moves with the ship you are looking at. Typing pins it, which
+  // is the point: a pinned range is a stated engagement and has to survive switching fit tabs.
+  const[engRangeKm,setEngRangeKm]=useState(()=>gp('engRangeKm',null));
   // One write whenever any of it changes. Cheap, and it means leaving by ANY route (swipe, tab bar,
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm]);
   // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
   // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
   // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
@@ -1142,6 +1170,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   // which may predate the siege module being fitted.
   const selfMaxVel=cs?.maxVelocityAB??cs?.maxVelocity??ship?.maxVelocity??500;
   const selfVelEff=Math.max(0,Math.min(selfVel,selfMaxVel));
+  // Resolved once and used by both the curve and the field, so the number on screen is always the
+  // number that was plotted.
+  const engRangeEff=engRangeKm??defaultEngRangeKm(catKey,cs);
+  const showRangeField=usesEngRange(catKey,validX);
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
@@ -1185,7 +1217,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
     if(targetProfile===TARGET_FIT)return (targetMwd&&targetFitStats?.hasProp)?targetFitStats.noMwd:null;
     return (targetMwd&&TARGET_PROFILES[targetProfile]?.mwdSig!=null)?profileTarget(targetProfile,false):null;
   },[targetMwd,targetProfile,targetFitStats]);
-  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom});
+  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom,engRangeKm:engRangeEff});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
@@ -1258,8 +1290,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
       </div>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,padding:"8px 10px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`}}>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("Axis Y")}</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
-      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("Axis X")}</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("Y Axis")}</div><select value={validY} onChange={e=>{setYKey(e.target.value);setYZoom(1);}} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text}}>{cat.yAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
+      <div><div style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase",marginBottom:4}}>{t("X Axis")}</div><select value={validX} onChange={e=>{setXKey(e.target.value);setCursorX(null);setXZoom(1);}} disabled={cat.xAxes.length===1} style={{width:"100%",padding:"5px 6px",borderRadius:6,fontSize:11,background:C.surface,border:`1px solid ${C.border}`,color:C.text,opacity:cat.xAxes.length===1?.5:1}}>{cat.xAxes.map(a=><option key={a.key} value={a.key}>{a.label()}</option>)}</select></div>
       {/* Axis scale (zoom): − shrinks the displayed max, + grows it — the naive, "smaller number"
           reading of the sign, not the zoom-level's own (max=autoMax/zoom, so shrinking the number
           means INCREASING zoom). The readout between them is a continuous scrub: press and drag
@@ -1327,6 +1359,21 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
           <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>+</button>
         </div>);
       })}
+      {/* The engagement range every X axis that isn't range is read at. It lives here rather than in
+          TargetControls because Reps needs it too and has no target panel — and because it is a
+          property of the axis pair, which is what this row is. */}
+      {showRangeField&&<div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8}}>
+        <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase"}}>{t("Range")}</span>
+        <ScrubField value={engRangeEff} display={Math.round(engRangeEff)} anchor={30}
+          title={t("Type a range, or press and slide sideways to sweep it")}
+          onType={e=>{const v=e.target.value;setEngRangeKm(v===""?null:Math.max(0,Number(v)));}}
+          onScrub={setEngRangeKm}
+          style={{width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${engRangeKm==null?C.border:catColor}`,color:C.text}}/>
+        <span style={{fontSize:10,color:C.textMute}}>km</span>
+        {/* Only offered once it is pinned — with nothing to undo, a reset button is a dead control. */}
+        {engRangeKm!=null&&<button onClick={()=>setEngRangeKm(null)} title={t("Back to this fit's own reach")}
+          style={{padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>{t("Auto")}</button>}
+      </div>}
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
       {/* Tap to unround, same gesture as the Stats tab's Targeting cells. Lock time is quantised to
@@ -1350,7 +1397,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
         {(()=>{ if(catKey!=="ewar"&&catKey!=="reps") return null;
           const P=ownProj||{};
           const has = catKey==="reps" ? (P.reps?.length>0)
-            : yKey==="neutsCap" ? (P.neuts?.length>0)
+            : (yKey==="neutsCap"||yKey==="neutsVolley") ? (P.neuts?.length>0)
             : yKey==="webSpeed" ? (P.webs?.length>0)
             : yKey==="ecmStr"   ? (P.ecm?.length>0)
             : yKey==="tdRange"  ? (P.trackDisr?.length>0)

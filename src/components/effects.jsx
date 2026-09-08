@@ -518,7 +518,7 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
     <div {..._swipeHandlers} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0,overflow:"hidden"}}>
     <div ref={_panel} key={section} className={slideClass(_slideDir)} style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
     {section==="environment"&&(<div style={{flex:1,overflowY:"auto",padding:12}}>
-      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t("The system this fit is sitting in. Wormhole class effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.")}</div>
+      <div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t("The system this fit is sitting in. Wormhole effects and metaliminal storms change resists, reps, damage, speed and signature for everything in the system.")}</div>
       <div style={{background:C.surface,border:`1px solid ${environment?C.accentBorder:C.border}`,borderRadius:8,padding:"11px 12px",display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
         <div style={{flex:1}}>
           <div style={{fontSize:10,color:C.textMute}}>{t("Current system")}</div>

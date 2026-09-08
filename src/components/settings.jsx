@@ -224,7 +224,7 @@ function LanguagePicker({locale,setLocale}){
   </div>);
 }
 
-export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref,autoFillHardpoints,setAutoFillHardpoints,locale,setLocale}){
+export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref,autoFillHardpoints,setAutoFillHardpoints,closeBrowserOnAdd,setCloseBrowserOnAdd,locale,setLocale}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
   // Tap the dimmed strip above the sheet to close, the way every other sheet in the app already
@@ -299,6 +299,8 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Module Browser")}</div>
           <ToggleRow label={t("Auto-fill hardpoints")} on={autoFillHardpoints??true} onChange={setAutoFillHardpoints}
             note={t("On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.")}/>
+          <ToggleRow label={t("Close after adding one module")} on={!!closeBrowserOnAdd} onChange={setCloseBrowserOnAdd}
+            note={t("On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.")}/>
         </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
