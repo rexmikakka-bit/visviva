@@ -1796,7 +1796,9 @@ export function computeProjectedReps(ship, slots, skills = SKILL_DEFAULTS, opts 
       if (sf < 0) webs.push({ name: slot.name, speedFactor: sf, optimal, falloff });
     } else if (gn === 'Energy Neutralizer' || gn === 'Energy Nosferatu') {
       const amt = fitItem.get('energyNeutralizerAmount') ?? fitItem.get('powerTransferAmount') ?? 0;
-      if (amt > 0) neuts.push({ name: slot.name, gjPerSec: amt / dur, optimal, falloff });
+      // `amount` is one cycle's drain, kept alongside the per-second rate so the graph can plot the
+      // hit a single cycle lands without having to reconstruct it from gjPerSec × cycle time.
+      if (amt > 0) neuts.push({ name: slot.name, gjPerSec: amt / dur, amount: amt, cycleS: dur, optimal, falloff });
     } else if (gn === 'Target Painter') {
       const sig = fitItem.get('signatureRadiusBonus') ?? 0;
       if (sig > 0) painters.push({ name: slot.name, sigBonus: sig, optimal, falloff });
