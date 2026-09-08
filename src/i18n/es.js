@@ -82,6 +82,7 @@ export default {
   "Armor repaired": "Blindaje reparado",
   "Attribute Enhancers": "Potenciadores de atributos",
   "Attributes": "Atributos",
+  "Auto": "Auto",
   "Auto-fill hardpoints": "Rellenar automáticamente los puntos de anclaje",
   "Axis X": "Eje X",
   "Axis Y": "Eje Y",
@@ -91,6 +92,7 @@ export default {
   "Back": "Atrás",
   "Back one level": "Subir un nivel",
   "Back to all ships": "Volver a todas las naves",
+  "Back to this fit's own reach": "Volver al alcance propio de este fitting",
   "Backup": "Copia de seguridad",
   "Backup & Restore": "Copia de seguridad y restauración",
   "Backup JSON copied to clipboard.": "JSON de copia de seguridad copiado al portapapeles.",
@@ -146,6 +148,7 @@ export default {
   "Clip Dmg": "Daño/cargador",
   "Clip Duration": "Duración del cargador",
   "Close": "Cerrar",
+  "Close after adding one module": "Cerrar tras añadir un módulo",
   "Close all {n} tabs?": { one: "¿Cerrar la única pestaña?", other: "¿Cerrar las {n} pestañas?" },
   "Close {name}": "Cerrar {name}",
   "Colour {hex}": "Color {hex}",
@@ -390,6 +393,7 @@ export default {
   "Net GJ/s": "GJ/s netos",
   "Neut resist": "Resistencia a neutralización",
   "Neutralized": "Neutralizado",
+  "Neuts: GJ volley": "Neuts: andanada GJ",
   "Neuts: cap/s": "Neuts: cap./s",
   "New Fit": "Fitting nuevo",
   "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship":
@@ -452,6 +456,8 @@ export default {
   "Offline": "Apagado",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "Activado: elegir una torreta o un lanzador en el explorador rellena todos los puntos de anclaje libres compatibles, no solo la ranura que has tocado. Desactivado: solo se rellena esa ranura; usa «Rellenar puntos de anclaje» sobre un módulo ya equipado para completar el resto a mano.",
+  "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
+    "Activado: el explorador se cierra en cuanto eliges algo. Desactivado: sigue abierto y pasa a la siguiente ranura libre del banco, de modo que puedes rellenar varias sin volver a abrirlo.",
   "Online": "Encendido",
   "Only Standup (structure) modules can be fit to a structure": "En una estructura solo se pueden equipar módulos Standup (de estructura)",
   "Only {n} modules of this group can be fitted":
@@ -722,6 +728,8 @@ export default {
   "Tubes": "Tubos",
   "Turret Hardpoints": "Puntos de anclaje de torretas",
   "Turrets": "Torretas",
+  "Type a range, or press and slide sideways to sweep it":
+    "Escribe un alcance, o mantén pulsado y desliza en horizontal para barrerlo",
   "Type a signature, or press and slide sideways to sweep it":
     "Escribe una firma, o mantén pulsado y desliza en horizontal para barrerla",
   "Type a speed, or press and slide sideways to sweep it":

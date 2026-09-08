@@ -83,6 +83,7 @@ export default {
   "Armor repaired": "Blindage réparé",
   "Attribute Enhancers": "Améliorateurs d'attributs",
   "Attributes": "Attributs",
+  "Auto": "Auto",
   "Auto-fill hardpoints": "Remplir automatiquement les points d'ancrage",
   "Axis X": "Axe X",
   "Axis Y": "Axe Y",
@@ -92,6 +93,7 @@ export default {
   "Back": "Retour",
   "Back one level": "Remonter d'un niveau",
   "Back to all ships": "Retour à tous les vaisseaux",
+  "Back to this fit's own reach": "Revenir à la portée propre de ce fitting",
   "Backup": "Sauvegarde",
   "Backup & Restore": "Sauvegarde et restauration",
   "Backup JSON copied to clipboard.": "JSON de sauvegarde copié dans le presse-papiers.",
@@ -147,6 +149,7 @@ export default {
   "Clip Dmg": "Dégâts/chargeur",
   "Clip Duration": "Durée du chargeur",
   "Close": "Fermer",
+  "Close after adding one module": "Fermer après l'ajout d'un module",
   "Close all {n} tabs?": { one: "Fermer l'unique onglet ?", other: "Fermer les {n} onglets ?" },
   "Close {name}": "Fermer {name}",
   "Colour {hex}": "Couleur {hex}",
@@ -391,6 +394,7 @@ export default {
   "Net GJ/s": "GJ/s nets",
   "Neut resist": "Résistance à la neutralisation",
   "Neutralized": "Neutralisé",
+  "Neuts: GJ volley": "Neuts : salve GJ",
   "Neuts: cap/s": "Neuts : cond./s",
   "New Fit": "Nouveau fitting",
   "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship":
@@ -453,6 +457,8 @@ export default {
   "Offline": "Hors ligne",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "Activé : choisir une tourelle ou un lanceur dans le navigateur remplit tous les points d'ancrage libres compatibles, pas seulement celui que vous avez touché. Désactivé : seul cet emplacement est rempli — utilisez « Remplir les points d'ancrage » sur un module déjà équipé pour compléter le reste à la main.",
+  "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
+    "Activé : le navigateur se ferme dès que vous choisissez quelque chose. Désactivé : il reste ouvert et passe à l'emplacement libre suivant du rack, ce qui permet d'en remplir plusieurs sans le rouvrir.",
   "Online": "En ligne",
   "Only Standup (structure) modules can be fit to a structure": "Seuls les modules Standup (de structure) peuvent être équipés sur une structure",
   "Only {n} modules of this group can be fitted":
@@ -723,6 +729,8 @@ export default {
   "Tubes": "Tubes",
   "Turret Hardpoints": "Points d'ancrage de tourelles",
   "Turrets": "Tourelles",
+  "Type a range, or press and slide sideways to sweep it":
+    "Saisissez une portée, ou appuyez et faites glisser latéralement pour la balayer",
   "Type a signature, or press and slide sideways to sweep it":
     "Saisissez une signature, ou appuyez et faites glisser latéralement pour la balayer",
   "Type a speed, or press and slide sideways to sweep it":

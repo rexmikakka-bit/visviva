@@ -82,6 +82,7 @@ export default {
   "Armor repaired": "Panzerung repariert",
   "Attribute Enhancers": "Attributverstärker",
   "Attributes": "Attribute",
+  "Auto": "Auto",
   "Auto-fill hardpoints": "Hardpoints automatisch füllen",
   "Axis X": "Achse X",
   "Axis Y": "Achse Y",
@@ -91,6 +92,7 @@ export default {
   "Back": "Zurück",
   "Back one level": "Eine Ebene zurück",
   "Back to all ships": "Zurück zu allen Schiffen",
+  "Back to this fit's own reach": "Zurück zur Reichweite dieses Fittings",
   "Backup": "Backup",
   "Backup & Restore": "Backup & Wiederherstellung",
   "Backup JSON copied to clipboard.": "Backup-JSON in die Zwischenablage kopiert.",
@@ -146,6 +148,7 @@ export default {
   "Clip Dmg": "Magazinschaden",
   "Clip Duration": "Magazindauer",
   "Close": "Schließen",
+  "Close after adding one module": "Nach dem Hinzufügen eines Moduls schließen",
   "Close all {n} tabs?": { one: "Den {n} Tab schließen?", other: "Alle {n} Tabs schließen?" },
   "Close {name}": "{name} schließen",
   "Colour {hex}": "Farbe {hex}",
@@ -389,6 +392,7 @@ export default {
   "Net GJ/s": "Netto GJ/s",
   "Neut resist": "Neut-Resistenz",
   "Neutralized": "Neutralisiert",
+  "Neuts: GJ volley": "Neuts: GJ-Salve",
   "Neuts: cap/s": "Neuts: Kond./s",
   "New Fit": "Neues Fitting",
   "No MWD variant for this profile — applies to Frigate / Cruiser / Battleship":
@@ -451,6 +455,8 @@ export default {
   "Offline": "Offline",
   "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
     "An: Ein Turret oder Launcher aus dem Browser füllt jeden freien passenden Hardpoint, nicht nur den angetippten Slot. Aus: Es wird nur dieser eine Slot gefüllt — nutze „Hardpoints füllen“ an einem vorhandenen Modul, um den Rest von Hand zu füllen.",
+  "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
+    "An: Der Browser schließt sich, sobald du etwas auswählst. Aus: Er bleibt offen und springt zum nächsten freien Slot im Rack, sodass du mehrere füllen kannst, ohne ihn erneut zu öffnen.",
   "Online": "Online",
   "Only Standup (structure) modules can be fit to a structure": "An eine Struktur lassen sich nur Standup-Module (Strukturmodule) anbringen",
   "Only {n} modules of this group can be fitted": { one: "Nur {n} Modul dieser Gruppe kann gefittet werden", other: "Nur {n} Module dieser Gruppe können gefittet werden" },
@@ -712,6 +718,7 @@ export default {
   "Tubes": "Rohre",
   "Turret Hardpoints": "Geschützturm-Hardpoints",
   "Turrets": "Geschütztürme",
+  "Type a range, or press and slide sideways to sweep it": "Eine Reichweite eingeben oder gedrückt halten und seitwärts ziehen, um sie durchzufahren",
   "Type a signature, or press and slide sideways to sweep it": "Eine Signatur eingeben oder gedrückt halten und seitwärts ziehen, um sie durchzufahren",
   "Type a speed, or press and slide sideways to sweep it": "Eine Geschwindigkeit eingeben oder gedrückt halten und seitwärts ziehen, um sie durchzufahren",
   "UNMUTATED": "UNMUTIERT",
