@@ -9,6 +9,7 @@
 // Release past a third of the sheet's height, or with a flick, to dismiss; otherwise spring back.
 import { useRef, useState } from "react";
 import { C } from "../theme.js";
+import { useBackHandler } from "./use-back-handler.js";
 
 // Kept in step with the caller's own transition duration — the close is DEFERRED by this long so
 // the exit can play, because the caller unmounts the sheet the moment onClose runs.
@@ -29,6 +30,10 @@ export function useSheetDrag(onClose) {
   const drag = useRef(null);
 
   const dismiss = () => { if (closing) return; setClosing(true); setTimeout(() => onClose?.(), SHEET_EXIT_MS); };
+  // Android Back closes a sheet, the same animated close the × and the drag use. Registered HERE
+  // rather than per sheet because this hook is already the one thing every sheet in the app has in
+  // common — the same reason the gesture was pulled up here in the first place.
+  useBackHandler(dismiss);
 
   const onGrabStart = e => { const t = e.touches?.[0] ?? e; drag.current = { y: t.clientY, t: Date.now(), moved: 0 }; };
   const onGrabMove = e => {

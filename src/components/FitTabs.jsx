@@ -23,6 +23,9 @@ import { useEffect, useRef, useState } from "react";
 import { C } from "../theme.js";
 import { haptic } from "../lib/core.js";
 import { IconCheck } from "./glyphs.jsx";
+// A tab is `tab` throughout this file, never `t` — `t` is the translate function, and a map
+// parameter named for the thing being mapped would shadow it silently.
+import { t } from "../lib/i18n.js";
 
 
 
@@ -33,7 +36,7 @@ import { IconCheck } from "./glyphs.jsx";
 // and there would be nothing left to say which tab you are in.
 const STICKY = { position: "sticky", top: 0, zIndex: 20 };
 
-const keyOf = (t) => `${t.ship}:${t.id}`;
+const keyOf = (tab) => `${tab.ship}:${tab.id}`;
 // Long enough that it cannot fire during a flick of the strip, short enough to feel like a hold.
 const HOLD_MS = 350;
 // A tap is never perfectly still on a phone; past this the gesture is a scroll and the hold is off.
@@ -46,7 +49,7 @@ const ARMED_MS = 4000;
 export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, onOpenLibrary, onReorder, onCloseAll }) {
   const scroller = useRef(null);
   const activeEl = useRef(null);
-  const isActive = (t) => activeFit?.ship === t.ship && activeFit?.fitName === t.name;
+  const isActive = (tab) => activeFit?.ship === tab.ship && activeFit?.fitName === tab.name;
 
   // Hold-and-drag to reorder. The visual order lives here only while a drag is in flight; on drop it
   // is handed up once and this falls back to the `tabs` prop, so there is no second copy of the tab
@@ -77,8 +80,8 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
   const ignoreClick = useRef(false);
   useEffect(() => {
     if (!armed) return;
-    const t = setTimeout(() => setArmed(false), ARMED_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setArmed(false), ARMED_MS);
+    return () => clearTimeout(timer);
   }, [armed]);
   // Nothing to close: covers closing the last tab by hand while armed, and deleting its fit.
   useEffect(() => { if (!tabs.length) setArmed(false); }, [tabs.length]);
@@ -150,7 +153,7 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
     setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 400);
   };
 
-  const startPress = (e, t) => {
+  const startPress = (e, tab) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     lastX.current = e.clientX;
     const x = e.clientX, y = e.clientY;
@@ -171,7 +174,7 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
       haptic("medium");
       // Both setStates and the parent's are batched into one render, so the strip never flashes the
       // pre-drag order between dropping and the new order arriving as a prop.
-      if (next && next.some((t, i) => keyOf(t) !== keyOf(tabs[i]))) onReorder?.(next);
+      if (next && next.some((tb, i) => keyOf(tb) !== keyOf(tabs[i]))) onReorder?.(next);
     };
     const detach = () => {
       window.removeEventListener("pointermove", onMove);
@@ -186,7 +189,7 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
       press.current = { timer: null };
       dragging.current = true;
       orderRef.current = tabs.slice();
-      dragKeyRef.current = keyOf(t);
+      dragKeyRef.current = keyOf(tab);
       setOrder(orderRef.current);
       setDragKey(dragKeyRef.current);
       haptic("medium");
@@ -257,19 +260,19 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
           <div style={{ flex: 1, display: "flex", alignItems: "center", height: "100%",
                         padding: "0 8px" }}>
             <span style={{ fontSize: 11, fontWeight: 700, color: C.danger }}>
-              Close all {tabs.length} tab{tabs.length === 1 ? "" : "s"}?
+              {t({ one: "Close all {n} tab?", other: "Close all {n} tabs?" }, { n: tabs.length })}
             </span>
           </div>
         ) : (
-          <div role="button" aria-label={open ? "Hide fit tabs" : "Show fit tabs"}
+          <div role="button" aria-label={open ? t("Hide fit tabs") : t("Show fit tabs")}
                aria-expanded={open} onClick={tabs.length ? onToggle : undefined}
                style={{ flex: 1, display: "flex", gap: 2, alignItems: "center", height: "100%",
                         padding: "0 8px", cursor: tabs.length ? "pointer" : "default" }}>
-            {view.map((t) => (
-              <span key={keyOf(t)}
+            {view.map((tab) => (
+              <span key={keyOf(tab)}
                     style={{ flex: 1, maxWidth: 60, height: 3, borderRadius: 99,
                              transition: "background .18s ease",
-                             background: isActive(t) ? C.accent : C.borderStrong }}/>
+                             background: isActive(tab) ? C.accent : C.borderStrong }}/>
             ))}
           </div>
         )}
@@ -279,7 +282,7 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
             the confirm half it was missing, and pairs with the x as accept/dismiss instead of
             leaving one lone glyph to mean both. */}
         {armed && (
-          <div role="button" aria-label={`Confirm closing all ${tabs.length} tabs`}
+          <div role="button" aria-label={t({ one: "Confirm closing all {n} tab", other: "Confirm closing all {n} tabs" }, { n: tabs.length })}
                onClick={() => { setArmed(false); haptic("medium"); onCloseAll?.(); }}
                style={{ flexShrink: 0, width: 34, height: "100%", display: "flex", alignItems: "center",
                         justifyContent: "center", color: C.success, cursor: "pointer",
@@ -293,7 +296,7 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
             rotating that turned the divider into a diagonal slash across the rail. */}
         {/* Held, not just tapped, so it needs the same no-select the tabs' hold-drag does — otherwise
             iOS treats the hold as a text selection and highlights the glyph mid-gesture. */}
-        <div role="button" aria-label={armed ? "Cancel closing all tabs" : "Open a fit in a new tab"}
+        <div role="button" aria-label={armed ? t("Cancel closing all tabs") : t("Open a fit in a new tab")}
              className="no-select"
              onPointerDown={startPlusPress}
              onClick={() => {
@@ -320,16 +323,16 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
                       // The + column is sticky at the right edge; without this, scrolling the last
                       // tab into view parks it underneath and hides its close button.
                       scrollPaddingRight: 34 }}>
-          {view.map((t) => {
-            const on = isActive(t);
-            const lifted = dragKey === keyOf(t);
+          {view.map((tab) => {
+            const on = isActive(tab);
+            const lifted = dragKey === keyOf(tab);
             return (
               // Condensed to a single line: ship and fit name side by side rather than stacked,
               // which halves the height the strip costs on a phone.
-              <div key={keyOf(t)} ref={on ? activeEl : null}
-                   onPointerDown={(e) => startPress(e, t)}
-                   onClick={() => { if (!on) onSelect(t); }}
-                   title={`${t.ship} — ${t.name}`}
+              <div key={keyOf(tab)} ref={on ? activeEl : null}
+                   onPointerDown={(e) => startPress(e, tab)}
+                   onClick={() => { if (!on) onSelect(tab); }}
+                   title={`${tab.ship} — ${tab.name}`}
                    className="no-select"
                    style={{ flex: "0 0 auto", maxWidth: 150, display: "flex", alignItems: "center",
                             gap: 5, padding: "0 6px 0 9px", height: 43, cursor: "pointer",
@@ -343,13 +346,13 @@ export function FitTabs({ tabs, activeFit, open, onSelect, onClose, onToggle, on
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 12, fontWeight: on ? 700 : 500, lineHeight: 1.15,
                                 color: on ? C.text : C.textMid, whiteSpace: "nowrap",
-                                overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</div>
+                                overflow: "hidden", textOverflow: "ellipsis" }}>{tab.name}</div>
                   <div style={{ fontSize: 9, color: C.textMute, lineHeight: 1.2, whiteSpace: "nowrap",
-                                overflow: "hidden", textOverflow: "ellipsis" }}>{t.ship}</div>
+                                overflow: "hidden", textOverflow: "ellipsis" }}>{tab.ship}</div>
                 </div>
-                <span role="button" aria-label={`Close ${t.name}`}
+                <span role="button" aria-label={t("Close {name}", { name: tab.name })}
                       onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => { e.stopPropagation(); onClose(t); }}
+                      onClick={(e) => { e.stopPropagation(); onClose(tab); }}
                       style={{ flexShrink: 0, fontSize: 13, lineHeight: 1, padding: "4px 3px",
                                color: on ? C.textMid : C.textMute }}>&times;</span>
               </div>

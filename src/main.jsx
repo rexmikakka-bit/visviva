@@ -5,6 +5,7 @@ import App from './App.jsx'
 import ErrorBoundary from './ErrorBoundary.jsx'
 import { migrateLocalStorage } from './lib/storage-migrate.js'
 import { FITS_KEY, initFitsStore, replaceFitsDB } from './lib/fits-store.js'
+import { initLocale } from './lib/i18n.js'
 
 const mount = () => createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -37,5 +38,9 @@ const mount = () => createRoot(document.getElementById('root')).render(
     // it happens before React exists.
     console.error('boot: storage init failed', e)
   }
+  // Catalogs are lazy chunks, and t() is synchronous — so a non-English pref has to be RESOLVED
+  // before the first render, or that render is English and visibly flips a moment later. Same
+  // reason the fits are loaded above: React reads both without being able to wait.
+  await initLocale()
   mount()
 })()

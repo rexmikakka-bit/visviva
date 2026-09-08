@@ -25,6 +25,7 @@
 
 import { TYPES, tidByName } from '../calc.js';
 import { lookupShip } from './core.js';
+import { t } from './i18n.js';
 import dronesData from '../data/drones.json' with { type: 'json' };
 
 // name -> our section key. Order is the enum's, and the names are exact: "FighterBay", not "Fighter".
@@ -175,7 +176,9 @@ export function slotsToEsiFitting(shipTypeID, fitName, slots, drones, cargoItems
     }
   }
 
-  if (!items.length) throw new Error('Cannot export an empty fitting — add at least one module');
+  // Reaches the user: esi-ui.jsx's friendlyError falls through to `message` for anything that isn't
+  // an auth code, and this is the one throw here that is our own prose rather than an ESI fault.
+  if (!items.length) throw new Error(t('Cannot export an empty fitting — add at least one module'));
 
   return {
     name: (fitName || 'Unnamed').slice(0, 50),

@@ -34,8 +34,8 @@ actually touching that area; don't read them as background.
 ## Before you change anything
 
 ```bash
-npm run verify                    # the real gate: lint + imports + build + offline + effect coverage + regression
-node src/regression.test.mjs      # just the suite — must print "ALL N REGRESSION CHECKS PASSED" (currently 1151)
+npm run verify                    # the real gate: lint + imports + i18n + suite-deps + build + offline + effect coverage + regression
+node src/regression.test.mjs      # just the suite — must print "ALL N REGRESSION CHECKS PASSED" (currently 1345)
 ```
 
 Every number in that suite was validated by hand against pyfa. Several took an entire session to pin

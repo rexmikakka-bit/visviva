@@ -3,7 +3,7 @@
 // jargonSearch() splits the query on spaces; each token that matches a key is
 // expanded to its patterns. A module passes if it satisfies every token.
 
-import { browserMetaRank } from './meta.js';
+import { browserMetaRank, metaLevelOf } from './meta.js';
 import { TYPES } from '../calc.js';
 
 const J = (/** @type {string[]} */ ...pats) => pats.map(p => new RegExp(p, 'i'));
@@ -503,8 +503,12 @@ export function jargonSearch(query, mods) {
   return hits
     .sort((a, b) =>
       groupRank.get(a.g) - groupRank.get(b.g)
-      || browserMetaRank(a.m.typeID, a.m.meta) - browserMetaRank(b.m.typeID, b.m.meta)
+      || browserMetaRank(a.m.typeID) - browserMetaRank(b.m.typeID)
       || b.s - a.s
+      // Below the score, not above it: inside one meta tab a search for "centii" scores every
+      // A/B/C-type identically, and metaLevel is what then lays them out the way the browser does.
+      // Ahead of the score it would let a worse name match outrank a better one.
+      || metaLevelOf(a.m.typeID) - metaLevelOf(b.m.typeID)
       || a.m.name.length - b.m.name.length
       || a.i - b.i)
     .map((h) => h.m);

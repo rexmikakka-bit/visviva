@@ -23,6 +23,9 @@ import { getLoadedFitsDB, persistFitsDB } from "./lib/fits-store.js";
 import { buildFitEntry, emptyImplants } from "./lib/fit-entry.js";
 import { resolvePilotSkills, describeSkillSheet } from "./lib/pilot.js";
 import { resetScrollMemory } from "./lib/use-scroll-memory.js";
+import { initBackButton, BACK_APP } from "./lib/back-button.js";
+import { useBackHandler } from "./lib/use-back-handler.js";
+import { LOCALE_KEY, LOCALES, applyLocale, loadLocale, t } from "./lib/i18n.js";
 import * as esi from "./lib/esi.js";
 
 const IMPLANT_LOADOUTS_KEY = 'axis_implant_loadouts';
@@ -56,6 +59,16 @@ export default function App(){
     return()=>mq.removeEventListener?.('change',onChange);
   },[]);
   const resolvedTheme=themePref==="system"?systemTheme:themePref;
+  // Language: English unless explicitly chosen. main.jsx has already resolved and loaded the stored
+  // pref before this component existed, so the FIRST render is already in the right language; this
+  // effect only covers switching it afterwards, where the catalog chunk has to be fetched and the
+  // tick is what re-renders the tree once it arrives.
+  const[locale,setLocale]=useState(()=>{try{const v=localStorage.getItem(LOCALE_KEY);return LOCALES.some(l=>l.code===v)?v:"en";}catch{return"en";}});
+  useEffect(()=>{try{localStorage.setItem(LOCALE_KEY,locale);}catch{}},[locale]);
+  useEffect(()=>{let dead=false;loadLocale(locale).then(()=>{if(!dead)_setTick(t=>t+1);});return()=>{dead=true;};},[locale]);
+  // Same synchronous-in-render placement as setTheme below, and for the same reason: t() reads this
+  // during the render it is called in, so applying it in an effect would paint one frame late.
+  applyLocale(locale);
   // Mutating theme.js's module-level palette selector synchronously, in the same render pass that
   // reads it below (via C.xxx in the JSX), same precedent as _tick above: a plain useEffect would
   // apply the switch one render late, showing a frame of the old palette.
@@ -123,6 +136,10 @@ export default function App(){
     })();
     return()=>{try{sub?.remove?.();}catch(e){}};
   },[]);
+  // The one Android Back listener. Every sheet, drill-down level and screen registers with
+  // lib/back-button.js; this just turns the button on. See that file — once a listener exists,
+  // Capacitor stops exiting the app for us, so an unhandled press has to be handled below.
+  useEffect(()=>initBackButton(),[]);
   const[bottomTab,setBottomTab]=useState("fittings");
   const[showHamburger,setShowHamburger]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
@@ -200,7 +217,7 @@ export default function App(){
     setOpenTabs(prev=>{
       const list=prev??[];
       if(!list.length)return list;
-      if(list.some(t=>t.ship===activeFit.ship&&t.name===activeFit.fitName))return list;
+      if(list.some(tb=>tb.ship===activeFit.ship&&tb.name===activeFit.fitName))return list;
       const fit=fitsDB[activeFit.ship]?.find(f=>f.name===activeFit.fitName);
       if(!fit)return list;
       return [...list,{ship:activeFit.ship,id:fit.id,name:activeFit.fitName}];
@@ -318,7 +335,7 @@ export default function App(){
       // ship's own signal amps/Sensor Optimization burst in one penalized group. Only the attribute
       // pool can do that, so these are handed to calcFitStats rather than stacked here.
       if(!noAssist)for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
-      for(const t of (eff.trackDisr||[])){const f=rz('disrupt')*rf(t.optimal,t.falloff);col.trk.push(t.tracking*f);col.topt.push(t.optimalBonus*f);col.tfall.push(t.falloffBonus*f);}
+      for(const td of (eff.trackDisr||[])){const f=rz('disrupt')*rf(td.optimal,td.falloff);col.trk.push(td.tracking*f);col.topt.push(td.optimalBonus*f);col.tfall.push(td.falloffBonus*f);}
       for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
       // ECM jammers carry remoteResistanceID 2253 = ECMResistance, so they are resisted like any other
       // EWAR (eos multiplies the strength by getResistance before addProjectedEcm). ECCM is priced in
@@ -403,11 +420,11 @@ export default function App(){
   const[showExportChooser,setShowExportChooser]=useState(false);
   const[priceBanner,setPriceBanner]=useState(null);
   const optimizeFitPrice=async()=>{
-    if(!activeFit?.ship){setPriceBanner({kind:"none",msg:"Open a fit first"});setTimeout(()=>setPriceBanner(null),3000);return;}
+    if(!activeFit?.ship){setPriceBanner({kind:"none",msg:t("Open a fit first")});setTimeout(()=>setPriceBanner(null),3000);return;}
     const sections=["high","mid","low","rigs","subsystems"];
     const fitted=sections.flatMap(sec=>slots[sec]??[]).filter(s=>s?.typeID);
-    if(!fitted.length){setPriceBanner({kind:"none",msg:"No modules to optimize"});setTimeout(()=>setPriceBanner(null),3000);return;}
-    setPriceBanner({kind:"loading",msg:"Checking market prices…"});
+    if(!fitted.length){setPriceBanner({kind:"none",msg:t("No modules to optimize")});setTimeout(()=>setPriceBanner(null),3000);return;}
+    setPriceBanner({kind:"loading",msg:t("Checking market prices…")});
     const idsToPrice=new Set();
     for(const s of fitted){
       if(s.mutaplasmid)continue;   // abyssal: not a market item, and its roll belongs to THIS base type
@@ -418,7 +435,7 @@ export default function App(){
     // fetchPrices carries its own timeout, so this always settles — offline, the banner says so
     // rather than sitting on "Checking market prices…" until the app is restarted.
     try{priceMap=await fetchPrices([...idsToPrice],priceHub);}
-    catch(e){setPriceBanner({kind:"none",msg:e?.offline?"No connection — market prices need internet":"Couldn't fetch market prices — try again"});setTimeout(()=>setPriceBanner(null),3500);return;}
+    catch(e){setPriceBanner({kind:"none",msg:e?.offline?t("No connection — market prices need internet"):t("Couldn't fetch market prices — try again")});setTimeout(()=>setPriceBanner(null),3500);return;}
     let swapped=0;
     const patchSection=sec=>(slots[sec]??[]).map(s=>{
       const next=optimizeSlotPrice(s,priceMap);   // returns `s` itself when nothing changes
@@ -427,9 +444,9 @@ export default function App(){
     });
     const patched={...slots};
     for(const sec of sections)patched[sec]=patchSection(sec);
-    if(!swapped){setPriceBanner({kind:"none",msg:"No cheaper equivalents found"});setTimeout(()=>setPriceBanner(null),3000);return;}
+    if(!swapped){setPriceBanner({kind:"none",msg:t("No cheaper equivalents found")});setTimeout(()=>setPriceBanner(null),3000);return;}
     setSlots(patched);
-    setPriceBanner({kind:"success",msg:`Fit price optimized — ${swapped} module${swapped>1?"s":""} swapped`});
+    setPriceBanner({kind:"success",msg:t({one:"Fit price optimized — {n} module swapped",other:"Fit price optimized — {n} modules swapped"},{n:swapped})});
     setTimeout(()=>setPriceBanner(null),3500);
   };
   // `fitOverride` is for a fit that was JUST created and is not in fitsDB yet. setFitsDB is async,
@@ -463,11 +480,11 @@ export default function App(){
     const prevFit=activeFit;
     if(fit) setOpenTabs(prev=>{
       const list=prev??[];
-      // Match on id only when BOTH sides have a usable one. The old test was `t.id != null`, which
+      // Match on id only when BOTH sides have a usable one. The old test was `tb.id != null`, which
       // is TRUE for NaN — and NaN === NaN is false, so a fit carrying a NaN id never matched its
       // own tab and every open appended another copy. Falling back to the name is always safe here:
       // a ship's fit names are unique by construction (createNewFit dedupes them).
-      const at=list.findIndex(t=>t.ship===ship&&sameTab(t,fit,fitName));
+      const at=list.findIndex(tb=>tb.ship===ship&&sameTab(tb,fit,fitName));
       if(at>=0)return list;
       const entry={ship,id:fit.id,name:fitName};
       // A PLAIN open must never drag someone into the tab system who is not using it. With the
@@ -478,7 +495,7 @@ export default function App(){
       // out of nothing. That seeding is only correct when a new tab was explicitly asked for.
       if(!newTab){
         if(!list.length)return list;
-        const cur=prevFit?list.findIndex(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName):-1;
+        const cur=prevFit?list.findIndex(tb=>tb.ship===prevFit.ship&&tb.name===prevFit.fitName):-1;
         // Replace the tab you were in; if the current fit somehow has no tab, append rather than
         // silently dropping the fit being opened.
         if(cur>=0){const next=[...list];next[cur]=entry;return next;}
@@ -490,7 +507,7 @@ export default function App(){
       // loadFit, so nothing ever registered one -- and appending alone silently dropped it, leaving
       // the strip showing only the fit you just opened. Seed the outgoing fit as tab 1 first.
       const base=[...list];
-      if(prevFit?.ship&&prevFit?.fitName&&!base.some(t=>t.ship===prevFit.ship&&t.name===prevFit.fitName)){
+      if(prevFit?.ship&&prevFit?.fitName&&!base.some(tb=>tb.ship===prevFit.ship&&tb.name===prevFit.fitName)){
         const pf=fitsDB[prevFit.ship]?.find(f=>f.name===prevFit.fitName);
         if(pf)base.push({ship:prevFit.ship,id:pf.id,name:prevFit.fitName});
       }
@@ -597,8 +614,8 @@ export default function App(){
   useEffect(()=>{
     const onKey=e=>{
       if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){
-        const t=e.target;
-        if(t&&(t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable))return; // let the field undo its own text
+        const el=e.target;
+        if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable))return; // let the field undo its own text
         e.preventDefault();undo();
       }
     };
@@ -621,9 +638,9 @@ export default function App(){
   // other tab leaves the current fit alone. Closing the last tab just empties the strip -- the fit
   // stays loaded, since the strip is a shortcut rather than the thing holding the fit open.
   const closeFitTab=(tab)=>{
-    const idx=openFitTabs.findIndex(t=>t.ship===tab.ship&&t.id===tab.id);
+    const idx=openFitTabs.findIndex(tb=>tb.ship===tab.ship&&tb.id===tab.id);
     const wasActive=activeFit?.ship===tab.ship&&activeFit?.fitName===tab.name;
-    setOpenTabs(prev=>(prev??[]).filter(t=>!(t.ship===tab.ship&&(t.id!=null?t.id===tab.id:t.name===tab.name))));
+    setOpenTabs(prev=>(prev??[]).filter(tb=>!(tb.ship===tab.ship&&(tb.id!=null?tb.id===tab.id:tb.name===tab.name))));
     if(wasActive){
       const next=openFitTabs[idx+1]??openFitTabs[idx-1];
       if(next) loadFit(next.ship,next.name,undefined,true);
@@ -640,7 +657,7 @@ export default function App(){
   // actually clear, and that is the one case where losing the bottom nav is right: nothing to show.
   const deleteFit=(ship,fit)=>{
     const wasActive=activeFit?.ship===ship&&activeFit?.fitName===fit.name;
-    const tabIdx=openFitTabs.findIndex(t=>t.ship===ship&&sameTab(t,fit,fit.name));
+    const tabIdx=openFitTabs.findIndex(tb=>tb.ship===ship&&sameTab(tb,fit,fit.name));
     const tabNext=tabIdx>=0?(openFitTabs[tabIdx+1]??openFitTabs[tabIdx-1]):null;
     const siblings=fitsDB[ship]??[];
     const sibIdx=siblings.findIndex(f=>f.id===fit.id);
@@ -674,8 +691,8 @@ export default function App(){
   const lastScrollTop=useRef(0);
   useEffect(()=>{
     const onScroll=(e)=>{
-      const t=e.target;
-      const y=(t&&typeof t.scrollTop==='number')?t.scrollTop:(document.scrollingElement?.scrollTop??0);
+      const el=e.target;
+      const y=(el&&typeof el.scrollTop==='number')?el.scrollTop:(document.scrollingElement?.scrollTop??0);
       const prev=lastScrollTop.current;lastScrollTop.current=y;
       // Scrolling down closes the strip; scrolling back up does NOT reopen it. Re-opening would
       // put the tab list back in front of someone who never asked for it, which is the whole
@@ -704,6 +721,16 @@ export default function App(){
     if(bottomTab!=="fittings"||fittingsView!=="browse")setNewFitIntent(false);
   },[bottomTab,fittingsView]);
   const returnToFit=()=>{setBottomTab("fittings");setFittingsView("active");};
+  // The floor of the back stack: everything above has declined, so all that's left is the expanded
+  // tab strip and the bottom nav. Material's rule for a bottom nav is that Back returns to the start
+  // destination rather than exiting from wherever you happen to be, and Fittings is ours.
+  //
+  // Declining from there is deliberate — the fit screen is the root, and Back at the root exits.
+  useBackHandler(()=>{
+    if(tabsOpen){setTabsOpen(false);return;}
+    if(bottomTab!=="fittings"){setBottomTab("fittings");haptic("light");return;}
+    return false;
+  },true,BACK_APP);
   // `height`, not `minHeight`: the shell is exactly one viewport tall and clips, so the flex
   // children below finally have a bounded height and each screen's own overflowY:auto region takes
   // over. With minHeight the column just grew and the DOCUMENT scrolled, which is what dragged the
@@ -721,7 +748,7 @@ export default function App(){
           row of fit names would just be noise. */}
       {!(bottomTab==="fittings"&&fittingsView&&fittingsView!=="active")&&
         <FitTabs tabs={openFitTabs} activeFit={activeFit} open={tabsOpen}
-                 onSelect={t=>loadFit(t.ship,t.name,undefined,true)} onClose={closeFitTab}
+                 onSelect={tb=>loadFit(tb.ship,tb.name,undefined,true)} onClose={closeFitTab}
                  onReorder={order=>setOpenTabs(order)}
                  onCloseAll={()=>setOpenTabs([])}
                  onToggle={()=>setTabsOpen(o=>!o)}
@@ -730,8 +757,8 @@ export default function App(){
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent} newTabIntent={newTabIntent} autoFillHardpoints={autoFillHardpoints} onOpenFit={openFitInNewTab} fitSubTab={fitSubTab} setFitSubTab={setFitSubTab}/>}
-        {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const t=tidByName(activeFit?.ship);return t&&TYPES[t]?(TYPES[t].attrs?.capacity??1150):1150;})()} />}
-        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const t=tidByName(activeFit?.ship);const a=t&&TYPES[t]?TYPES[t].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
+        {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={(()=>{const tid=tidByName(activeFit?.ship);return tid&&TYPES[tid]?(TYPES[tid].attrs?.capacity??1150):1150;})()} />}
+        {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const tid=tidByName(activeFit?.ship);const a=tid&&TYPES[tid]?TYPES[tid].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
         {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} openFitTabs={openFitTabs} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} jamTarget={{strength:snapshotStats?.sensorStrength??0,type:snapshotStats?.sensorType??"",resist:projectedEffects?.ecmResist??1}} onOpenFit={openFitInNewTab}/>}
       </div>
@@ -742,34 +769,38 @@ export default function App(){
     </div>
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
     {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
-    {showImportChooser&&<ChooserSheet title="Import Fit" onClose={()=>setShowImportChooser(false)} options={[
-      {icon:IconClipboard,label:"From EFT",sub:"Paste from clipboard",onSelect:async()=>{
+    {/* "EFT" and "EVE" stay as they are — one is a file format's name, the other the game's. */}
+    {showImportChooser&&<ChooserSheet title={t("Import Fit")} onClose={()=>setShowImportChooser(false)} options={[
+      {icon:IconClipboard,label:t("From EFT"),sub:t("Paste from clipboard"),onSelect:async()=>{
         // Skip the sheet on the golden path: read the clipboard and import immediately, so a fit
         // copied in-game lands in three fewer taps ("Read from Clipboard" + "Import '<name>'" gone).
         // Anything that isn't a clean success — unreadable/empty clipboard, text that isn't EFT —
         // falls back to the sheet, pre-filled with what was found, rather than failing silently.
         setShowImportChooser(false);
         const{text,why}=await readClipboardText();
-        if(text==null){setImportFitInitial({text:"",err:`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`});setShowImportFit(true);return;}
-        if(!text.trim()){setImportFitInitial({text:"",err:"The clipboard is empty — copy a fit first, then tap this again."});setShowImportFit(true);return;}
+        // Two keys rather than one with an optional placeholder: a translator cannot write a natural
+        // sentence around a clause that may or may not be there. `why` itself is the platform's own
+        // error text and stays in whatever language the OS produced it in.
+        if(text==null){setImportFitInitial({text:"",err:why?t("Couldn't read the clipboard — {why}. Paste manually below.",{why}):t("Couldn't read the clipboard. Paste manually below.")});setShowImportFit(true);return;}
+        if(!text.trim()){setImportFitInitial({text:"",err:t("The clipboard is empty — copy a fit first, then tap this again.")});setShowImportFit(true);return;}
         const parsed=parseEFT(text);
         if(parsed.error){setImportFitInitial({text,err:parsed.error});setShowImportFit(true);return;}
         haptic();
         importFit(parsed);
-        setPriceBanner({kind:"success",msg:`Imported "${parsed.fitName}"`});setTimeout(()=>setPriceBanner(null),3000);
+        setPriceBanner({kind:"success",msg:t('Imported "{name}"',{name:parsed.fitName})});setTimeout(()=>setPriceBanner(null),3000);
       }},
-      {icon:IconCharacter,label:"From EVE Character",sub:"An in-game saved fitting",onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
+      {icon:IconCharacter,label:t("From EVE Character"),sub:t("An in-game saved fitting"),onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
     ]}/>}
-    {showExportChooser&&<ChooserSheet title="Export Fit" onClose={()=>setShowExportChooser(false)} options={[
-      {icon:IconClipboard,label:"To EFT",sub:"Copy to clipboard",onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
-      {icon:IconCharacter,label:"To EVE Character",sub:"Save into in-game fittings",onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
+    {showExportChooser&&<ChooserSheet title={t("Export Fit")} onClose={()=>setShowExportChooser(false)} options={[
+      {icon:IconClipboard,label:t("To EFT"),sub:t("Copy to clipboard"),onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},
+      {icon:IconCharacter,label:t("To EVE Character"),sub:t("Save into in-game fittings"),onSelect:()=>{setShowExportChooser(false);setShowEsiExport(true);}},
     ]}/>}
     {showShipInfo&&activeFit?.ship&&<ShipInfoSheet ship={shipInfoHull} cs={snapshotStats} onClose={()=>setShowShipInfo(false)}/>}
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
-    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints}/>}
+    {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints} locale={locale} setLocale={setLocale}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} projFits={projFits} cmdFits={cmdFits} fitsDB={fitsDB} onClose={()=>setShowFeedback(false)}/>}
     {showEsiImport&&<EsiImportModal onClose={()=>setShowEsiImport(false)} onImport={importFit}/>}

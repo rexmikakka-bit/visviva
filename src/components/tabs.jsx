@@ -11,44 +11,54 @@ import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
 import { useRowSwipe } from "../lib/use-row-swipe.js";
 import { Hint } from "./Hint.jsx";
+import { t } from "../lib/i18n.js";
 
 // Every figure in a module row's subtext is deliberately unlabelled — a phone row has no width for
 // a label — so each one carries a long-press explanation instead. Keyed by the `strengthKind` that
 // calc.js tags the value with, so the wording and the module the number came from cannot drift
 // apart the way a second hand-kept list of group names would.
+//
+// Every value is a THUNK. These objects are built at module scope, which runs before main.jsx has
+// resolved the stored locale, so a t() called here would bake in English for the session — and a
+// t(STRENGTH_LABEL[kind]) at the call site instead would be a computed key the catalog audit cannot
+// see. See lib/i18n.js.
 const STRENGTH_LABEL={
-  disrupt:"Weapon disruption", damp:"Sensor dampening", paint:"Target painting",
-  sebo:"Sensor boost", track:"Tracking bonus", web:"Stasis web",
-  ecm:"Jam strength", neut:"Neutralized", nos:"Drained",
-  rshield:"Shield transferred", rarmor:"Armor repaired", rhull:"Hull repaired",
-  rcap:"Capacitor transferred",
+  disrupt:()=>t("Weapon disruption"), damp:()=>t("Sensor dampening"), paint:()=>t("Target painting"),
+  sebo:()=>t("Sensor boost"), track:()=>t("Tracking bonus"), web:()=>t("Stasis web"),
+  ecm:()=>t("Jam strength"), neut:()=>t("Neutralized"), nos:()=>t("Drained"),
+  rshield:()=>t("Shield transferred"), rarmor:()=>t("Armor repaired"), rhull:()=>t("Hull repaired"),
+  rcap:()=>t("Capacitor transferred"),
 };
+// GJ and HP stay as they are inside the translated string: CCP's own unit symbols.
 const STRENGTH_UNIT={
-  disrupt:"% reduction", damp:"% reduction", paint:"% signature increase",
-  sebo:"% increase", track:"% increase", web:"% speed reduction",
-  neut:"GJ per cycle", nos:"GJ per cycle",
-  rshield:"HP per cycle", rarmor:"HP per cycle", rhull:"HP per cycle", rcap:"GJ per cycle",
+  disrupt:()=>t("% reduction"), damp:()=>t("% reduction"), paint:()=>t("% signature increase"),
+  sebo:()=>t("% increase"), track:()=>t("% increase"), web:()=>t("% speed reduction"),
+  neut:()=>t("GJ per cycle"), nos:()=>t("GJ per cycle"),
+  rshield:()=>t("HP per cycle"), rarmor:()=>t("HP per cycle"), rhull:()=>t("HP per cycle"), rcap:()=>t("GJ per cycle"),
 };
 // Used when one figure covers several attributes, so the tooltip can name them in front of it:
 // "Explosion velocity and explosion radius disruption". Only the kinds that can reach that case
 // have a noun — everything else moves a single attribute and keeps its STRENGTH_LABEL.
-const STRENGTH_NOUN={disrupt:"disruption",damp:"dampening",sebo:"boost",track:"bonus"};
+const STRENGTH_NOUN={disrupt:()=>t("disruption"),damp:()=>t("dampening"),sebo:()=>t("boost"),track:()=>t("bonus")};
 function strengthTip(e){
-  let t;
+  let tip;
   // Three shapes, in order of how much the figures leave unsaid. A split readout names each figure
   // ("targeting range 7.5%, scan resolution 15%"), since a number alone cannot say which attribute
   // it belongs to. One figure covering several attributes names them instead — scripting a
   // disruptor zeroes the attributes it doesn't boost rather than changing the number, so the names
   // are the only thing distinguishing a scripted module from an unscripted one. A single attribute
   // is already described by the module's name and just gets its unit.
-  if(e.strengthDetail) t=`${STRENGTH_LABEL[e.strengthKind]??""} — ${e.strengthDetail}`;
+  //
+  // `strengthAttrs` is a list of dogma ATTRIBUTE names and stays English, like every other piece of
+  // game data the app shows.
+  if(e.strengthDetail) tip=`${STRENGTH_LABEL[e.strengthKind]?.()??""} — ${e.strengthDetail}`;
   else if(e.strengthAttrs&&STRENGTH_NOUN[e.strengthKind])
-    t=`${e.strengthAttrs[0].toUpperCase()}${e.strengthAttrs.slice(1)} ${STRENGTH_NOUN[e.strengthKind]} — ${STRENGTH_UNIT[e.strengthKind]}`;
+    tip=`${e.strengthAttrs[0].toUpperCase()}${e.strengthAttrs.slice(1)} ${STRENGTH_NOUN[e.strengthKind]()} — ${STRENGTH_UNIT[e.strengthKind]()}`;
   // ECM's figure is a bare jam strength with no unit to name, hence the guard.
-  else t=(STRENGTH_LABEL[e.strengthKind]??"")+(STRENGTH_UNIT[e.strengthKind]?` — ${STRENGTH_UNIT[e.strengthKind]}`:"");
+  else tip=(STRENGTH_LABEL[e.strengthKind]?.()??"")+(STRENGTH_UNIT[e.strengthKind]?` — ${STRENGTH_UNIT[e.strengthKind]()}`:"");
   // The per-second rate is on the row itself now, so repeating it here would just be the tooltip
   // reading the badge back. `strengthPerSec` is still carried for anything else that wants the number.
-  return t;
+  return tip;
 }
 
 // Named attr keys for canFitShipGroup/canFitShipType (TYPES[].a uses names, not numeric IDs)
@@ -71,8 +81,14 @@ function checkFitRestriction(modTypeID, ship, subsystems) {
   if (modRigSize != null) {
     const shipRigSize = TYPES[String(ship.typeID)]?.a?.rigSize ?? null;
     if (shipRigSize != null && modRigSize !== shipRigSize) {
+      // CCP rig sizes, so they stay English like every other game term. When either side is a size
+      // we have no name for, one generic sentence replaces the four fallback permutations — the old
+      // template produced "Wrong-size rig cannot be fit to a this ship".
       const SIZE_NAME = {1:'Small',2:'Medium',3:'Large',4:'Capital'};
-      return `${SIZE_NAME[modRigSize]??'Wrong-size'} rig cannot be fit to a ${SIZE_NAME[shipRigSize]??'this'} ship`;
+      const modSize = SIZE_NAME[modRigSize], shipSize = SIZE_NAME[shipRigSize];
+      return modSize && shipSize
+        ? t('{size} rig cannot be fit to a {shipSize} ship', {size: modSize, shipSize})
+        : t('Wrong-size rig for this ship');
     }
   }
 
@@ -84,8 +100,9 @@ function checkFitRestriction(modTypeID, ship, subsystems) {
   const modIsStandup    = (TYPES[String(modTypeID)]?.c ?? TYPES[String(modTypeID)]?.category) === 66;
   if (shipIsStructure !== modIsStandup) {
     return shipIsStructure
-      ? 'Only Standup (structure) modules can be fit to a structure'
-      : 'Standup (structure) modules cannot be fit to a ship';
+      // "Standup" is CCP's own prefix on every structure module name, so it stays as it is.
+      ? t('Only Standup (structure) modules can be fit to a structure')
+      : t('Standup (structure) modules cannot be fit to a ship');
   }
 
   // canFitShipGroupN / canFitShipTypeN / fitsToShipType — an explicit CCP whitelist of hulls.
@@ -113,14 +130,17 @@ function checkFitRestriction(modTypeID, ship, subsystems) {
       const defSub = subsystems?.[1];
       const grantsCovert = defSub?.typeID != null &&
         (shipTraits[String(defSub.typeID)]?.role?.bonuses ?? []).some(b => /Covert Ops Cloaking Device/i.test(b.text ?? ''));
-      if (!grantsCovert) return 'Needs the Covert Reconfiguration Defensive subsystem';
+      if (!grantsCovert) return t('Needs the Covert Reconfiguration Defensive subsystem');
     }
   }
 
   if (!allowedGroups.length && !allowedTypes.length) return null;
   const shipGroupID = TYPES[String(ship.typeID)]?.g ?? null;
   if (allowedGroups.includes(shipGroupID) || allowedTypes.includes(ship.typeID)) return null;
-  return `Cannot be fit to ${ship.hullClass || ship.name || 'this ship'}`;
+  // `hullClass` and `name` are CCP names and stay English; only the frame around them is translated.
+  return ship.hullClass || ship.name
+    ? t('Cannot be fit to {ship}', {ship: ship.hullClass || ship.name})
+    : t('Cannot be fit to this ship');
 }
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
@@ -171,9 +191,13 @@ const groupFittedRoom=(slots,limits,typeID,exceptId)=>{
   }
   return Math.max(0,cap-n);
 };
+// `gn` is a CCP market group name and stays English. Its absence gets its own key pair rather than
+// substituting the word "module" into the group slot, which read as "one module module".
 const groupFittedError=typeID=>{
-  const gn=TYPES[typeID]?.gn??"module", cap=TYPES[typeID]?.a?.maxGroupFitted||1;
-  return `Only ${cap===1?"one":cap} ${gn} module${cap===1?"":"s"} can be fitted`;
+  const gn=TYPES[typeID]?.gn, cap=TYPES[typeID]?.a?.maxGroupFitted||1;
+  return gn
+    ? t({one:"Only one {group} module can be fitted",other:"Only {n} {group} modules can be fitted"},{n:cap,group:gn})
+    : t({one:"Only one module of this group can be fitted",other:"Only {n} modules of this group can be fitted"},{n:cap});
 };
 // ── The state dot, as a control ──────────────────────────────────────────────────────────────────
 // Tap = run/stop, double-tap = overheat, hold = offline. Setting a module's state was a three-tap
@@ -186,8 +210,8 @@ const groupFittedError=typeID=>{
 // sliders use the same gesture and it must not drift between the two.
 const HOLD_MS=450;
 function StateDot({row,states,onSet}){
-  const t=useRef({timer:null,lastTap:0,held:false});
-  useEffect(()=>()=>clearTimeout(t.current.timer),[]);
+  const gest=useRef({timer:null,lastTap:0,held:false});
+  useEffect(()=>()=>clearTimeout(gest.current.timer),[]);
   const color=STATE_COLORS[row.state]||C.textMid, glow=STATE_GLOW[row.state]??0;
   const fire=(gesture)=>{
     const next=gestureTarget(states,row.state,gesture);
@@ -197,28 +221,30 @@ function StateDot({row,states,onSet}){
     onSet(next);
   };
   const down=()=>{
-    t.current.held=false;
-    t.current.timer=setTimeout(()=>{t.current.held=true;t.current.lastTap=0;fire("hold");},HOLD_MS);
+    gest.current.held=false;
+    gest.current.timer=setTimeout(()=>{gest.current.held=true;gest.current.lastTap=0;fire("hold");},HOLD_MS);
   };
   const up=(e)=>{
-    clearTimeout(t.current.timer);
+    clearTimeout(gest.current.timer);
     e.stopPropagation();           // never opens the module menu — the row's onClick is the menu
-    if(t.current.held)return;      // the hold already fired; this is just the finger leaving
+    if(gest.current.held)return;   // the hold already fired; this is just the finger leaving
     // e.timeStamp, NOT Date.now() — see the note on DOUBLE_TAP_MS. Measured off the clock, a genuine
     // 140ms double-tap here reads as 650ms and degrades into two single taps: the module runs, stops,
     // and never overheats.
-    const now=e.timeStamp, isDouble=now-t.current.lastTap<DOUBLE_TAP_MS;
-    t.current.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
+    const now=e.timeStamp, isDouble=now-gest.current.lastTap<DOUBLE_TAP_MS;
+    gest.current.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
     fire(isDouble?"double":"tap");
   };
   return(
     <div onPointerDown={down} onPointerUp={up}
-         onPointerLeave={()=>clearTimeout(t.current.timer)}
-         onPointerCancel={()=>clearTimeout(t.current.timer)}
+         onPointerLeave={()=>clearTimeout(gest.current.timer)}
+         onPointerCancel={()=>clearTimeout(gest.current.timer)}
          onClick={e=>e.stopPropagation()}
          onContextMenu={e=>e.preventDefault()}   // long-press on touch otherwise raises the OS menu
-         title={`${STATE_LABELS[row.state]??"—"} — tap to run/stop, double-tap to overheat, hold to offline`}
-         aria-label={`Module state: ${STATE_LABELS[row.state]??"unknown"}`}
+         // STATE_LABELS holds thunks — it is built at module scope in lib/core.js, before the locale
+         // is resolved. Calling it here means the label follows a locale switch.
+         title={`${STATE_LABELS[row.state]?.()??"—"} — ${t("tap to run/stop, double-tap to overheat, hold to offline")}`}
+         aria-label={t("Module state: {state}",{state:STATE_LABELS[row.state]?.()??t("unknown")})}
          className="no-select"
          // The dot is 6px and the finger is not. Padding gives it a ~28px target without moving the
          // dot or changing the row's height; the negative margin takes back the space it borrows so
@@ -402,10 +428,12 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 
   const _isT3C = isT3Cruiser(ship?.name);
   const _isStructure = (TYPES[ship?.typeID]?.c ?? TYPES[ship?.typeID]?.category) === 65;
+  // Built inside the component, so a plain t() is right here — it is re-evaluated on every render,
+  // unlike the module-scope tables at the top of this file.
   const SECS=[
-    ...(_isT3C?[{key:"subsystems",label:"Subsystems",color:C.accent}]:[]),
-    {key:"high",label:"High Slots",color:C.high},{key:"mid",label:"Mid Slots",color:C.mid},{key:"low",label:"Low Slots",color:C.low},{key:"rigs",label:"Rigs",color:C.rig},
-    ...(_isStructure?[{key:"services",label:"Service Slots",color:C.accent}]:[]),
+    ...(_isT3C?[{key:"subsystems",label:t("Subsystems"),color:C.accent}]:[]),
+    {key:"high",label:t("High Slots"),color:C.high},{key:"mid",label:t("Mid Slots"),color:C.mid},{key:"low",label:t("Low Slots"),color:C.low},{key:"rigs",label:t("Rigs"),color:C.rig},
+    ...(_isStructure?[{key:"services",label:t("Service Slots"),color:C.accent}]:[]),
   ];
   // T3 Destroyer tactical modes (Defense/Propulsion/Sharpshooter). Detect by hull class and
   // by the existence of "<Ship> <Mode> Mode" types. Default to Defense if none chosen yet.
@@ -428,18 +456,20 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   const pilotSec = slots.pilotSec ?? 0;
   const setPilotSec = (v) => setSlots(prev => ({ ...prev, pilotSec: v }));
   const pilotSecHint = isATFrig
-    ? `+${((TYPES[ship?.typeID]?.a?.[5727] ?? -7.5) * Math.max(-10, Math.min(0, pilotSec))).toFixed(1)}% small turret & rocket/light-missile damage`
-    : `+${(Math.max(0, Math.min(5, pilotSec)) * 10).toFixed(0)}% armor rep & shield boost amount`;
+    ? t("+{pct}% small turret & rocket/light-missile damage",
+        {pct:((TYPES[ship?.typeID]?.a?.[5727] ?? -7.5) * Math.max(-10, Math.min(0, pilotSec))).toFixed(1)})
+    : t("+{pct}% armor rep & shield boost amount",
+        {pct:(Math.max(0, Math.min(5, pilotSec)) * 10).toFixed(0)});
 
   // SYSTEM security — where a STRUCTURE is anchored. Unrelated to pilot security above: it scales
   // structure rig bonuses (hiSecModifier/lowSecModifier/nullSecModifier -> `securityModifier`), so
   // the same rig is 20% weaker in hisec. Defaults to nullsec because eos does and pyfa is the
   // reference; only shown when the fit actually has structure rigs to be affected.
   const SYS_SEC_OPTS = [
-    { key: 'hisec',   label: 'Hi',   hint: 'High security'   },
-    { key: 'lowsec',  label: 'Low',  hint: 'Low security'    },
-    { key: 'nullsec', label: 'Null', hint: 'Null security'   },
-    { key: 'wspace',  label: 'W-C',  hint: 'Wormhole space'  },
+    { key: 'hisec',   label: t('Hi'),   hint: t('High security') },
+    { key: 'lowsec',  label: t('Low'),  hint: t('Low security')  },
+    { key: 'nullsec', label: t('Null'), hint: t('Null security') },
+    { key: 'wspace',  label: t('W-C'),  hint: t('Wormhole space')  },
   ];
   const systemSecurity = slots.systemSecurity ?? 'nullsec';
   const setSystemSecurity = (v) => setSlots(prev => ({ ...prev, systemSecurity: v }));
@@ -492,6 +522,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // per-member Remove was the odd one out: it silently split a "3x" row into 2x + empty with no
   // indication only one of three had gone. Falls back to just modId for an ungrouped row.
   const removeMod=(secKey,modId,groupIds)=>{
+    // "[Empty <rack> Slot]" is a STORED sentinel, not display text: lib/core.js builds the same
+    // string and calc.js, esi-fits.js and the regression suite compare against it. It stays English.
     const labels={high:"High",mid:"Mid",low:"Low",rigs:"Rig",services:"Service"};
     const ids=new Set(groupIds&&groupIds.length>1?groupIds:[modId]);
     setSlots(prev=>{
@@ -557,11 +589,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       if(groupFittedRoom(slots,_cs.groupLimits,modData.typeID,id)<1){showFitError(groupFittedError(modData.typeID));return;}
       if(secKey==='high'&&isTurretWeapon(modData.typeID)){
         const used=(slots.high??[]).filter(s=>s.typeID&&isTurretWeapon(s.typeID)).length;
-        if(used>=(ship.turrets??0)){showFitError('No turret hardpoints available');return;}
+        if(used>=(ship.turrets??0)){showFitError(t('No turret hardpoints available'));return;}
       }
       if(secKey==='high'&&isMissileLauncher(modData.typeID)){
         const used=(slots.high??[]).filter(s=>s.typeID&&isMissileLauncher(s.typeID)).length;
-        if(used>=(ship.launchers??0)){showFitError('No launcher hardpoints available');return;}
+        if(used>=(ship.launchers??0)){showFitError(t('No launcher hardpoints available'));return;}
       }
     }
     const modInfo=moduleByName(modData.name);
@@ -678,14 +710,14 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               projected/command fits) because the history snapshots the same state App.jsx persists.
               Disabled rather than hidden so the control doesn't shift position as you edit. */}
           <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
-            title={undoDepth?`Undo last change (${undoDepth})`:"Nothing to undo"}
+            title={undoDepth?t("Undo last change ({n})",{n:undoDepth}):t("Nothing to undo")}
             style={{display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
                     background:"none",border:`1px solid ${undoDepth?C.border:"transparent"}`,
                     color:undoDepth?C.textMid:C.textMute,opacity:undoDepth?1:0.4,
                     cursor:undoDepth?"pointer":"default"}}>
-            <span style={{fontSize:12,lineHeight:1}}>&#8630;</span>Undo
+            <span style={{fontSize:12,lineHeight:1}}>&#8630;</span>{t("Undo")}
           </button>
-          <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?"Grouped":"Ungrouped"}</button>
+          <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?t("Grouped"):t("Ungrouped")}</button>
         </div>
       </ResourceStrip>
       {shipModes&&(
@@ -703,7 +735,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       {showPilotSec&&(
         <div style={{padding:"8px 10px 4px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>PILOT SECURITY STATUS</span>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>{t("PILOT SECURITY STATUS")}</span>
             <span style={{fontSize:13,fontWeight:700,color:C.accent}}>{pilotSec.toFixed(1)}</span>
           </div>
           <input type="range" min={secRange[0]} max={secRange[1]} step={0.1} value={pilotSec}
@@ -715,8 +747,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       {_isStructure&&(
         <div style={{padding:"8px 10px 4px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
-            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>SYSTEM SECURITY</span>
-            <span style={{fontSize:10,color:C.textMute}}>{_rigsAffected?'affects rig bonuses':'no rigs affected'}</span>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:".3px",color:C.textMute}}>{t("SYSTEM SECURITY")}</span>
+            <span style={{fontSize:10,color:C.textMute}}>{_rigsAffected?t("affects rig bonuses"):t("no rigs affected")}</span>
           </div>
           <div style={{display:"flex",gap:6}}>
             {SYS_SEC_OPTS.map(o=>{
@@ -727,8 +759,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         color:on?C.accent:C.textMute}}>{o.label}</button>);
             })}
           </div>
+          {/* Two whole sentences rather than a stem plus two endings: a translator cannot inflect a
+              clause whose subject it never sees. */}
           <div style={{fontSize:10,color:C.textMute,marginTop:3}}>
-            Structure rig bonuses are {systemSecurity==='hisec'?'at base strength in hi-sec':'20% stronger outside hi-sec'}
+            {systemSecurity==='hisec'?t("Structure rig bonuses are at base strength in hi-sec")
+                                     :t("Structure rig bonuses are 20% stronger outside hi-sec")}
           </div>
         </div>
       )}
@@ -755,7 +790,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                 <div key={row.id} ref={el=>{rowRefs.current[sec.key+":"+rowIdx]=el;}} onClick={()=>setEmptySlot({secKey:sec.key,id:row.id})} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:8,marginBottom:4,background:C.surface,border:`1px dashed ${C.borderStrong}`,cursor:"pointer"}}>
                   <div style={{width:30,height:30,borderRadius:7,background:C.surfaceAlt,border:`1px dashed ${C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{color:C.borderStrong,fontSize:20}}>+</span></div>
                   <span style={{fontSize:13,color:C.textMute}}>{row.name}</span>
-                  <span style={{marginLeft:"auto",fontSize:11,color:C.accent,fontWeight:600}}>Add module</span>
+                  <span style={{marginLeft:"auto",fontSize:11,color:C.accent,fontWeight:600}}>{t("Add module")}</span>
                 </div>
               );
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
@@ -775,7 +810,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       red Remove button through itself. Enumerating the ways is the losing move; no row
                       should be offering a delete during a reorder anyway. */}
                   {swipeable&&!dragUI&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
-                    aria-label="Remove"
+                    aria-label={t("Remove")}
                     // This button is a SIBLING of the row, not a child, so useTabSwipe's standDownFor
                     // walks up from it and never meets the row's own data-rowswipe — it read the tap as
                     // a candidate tab swipe. A thumb coming off the reveal gesture is still drifting,
@@ -819,10 +854,10 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",gap:5}}>
                       {row.count>1&&<span style={{fontSize:9,fontWeight:800,color:sec.color,background:`${sec.color}20`,borderRadius:4,padding:"1px 5px"}}>{row.count}x</span>}
-                      {row.mutaplasmid&&<span title="Abyssal (mutated) module" style={{fontSize:9,lineHeight:1,fontWeight:800,color:C.danger,background:`${C.danger}22`,border:`1px solid ${C.danger}`,borderRadius:4,padding:"2px 4px",flexShrink:0,display:"inline-flex",alignItems:"center"}}>▲</span>}
+                      {row.mutaplasmid&&<span title={t("Abyssal (mutated) module")} style={{fontSize:9,lineHeight:1,fontWeight:800,color:C.danger,background:`${C.danger}22`,border:`1px solid ${C.danger}`,borderRadius:4,padding:"2px 4px",flexShrink:0,display:"inline-flex",alignItems:"center"}}>▲</span>}
                       <span style={{fontSize:12,fontWeight:600,color:row.orphan?C.danger:row.state==="offline"?C.textMute:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sec.key==="subsystems"?(row.name||"").replace(/^.+?\s-\s/,""):row.name}</span>
                       {/* Colour alone would just look like an error. Say what happened. */}
-                      {row.orphan&&<span title="This slot was removed by a subsystem change. The module is kept here so you don't lose it, but it isn't fitted and doesn't affect any stat." style={{fontSize:9,fontWeight:700,color:C.danger,border:`1px solid ${C.danger}`,borderRadius:4,padding:"0 4px",flexShrink:0,letterSpacing:.3}}>NO SLOT</span>}
+                      {row.orphan&&<span title={t("This slot was removed by a subsystem change. The module is kept here so you don't lose it, but it isn't fitted and doesn't affect any stat.")} style={{fontSize:9,fontWeight:700,color:C.danger,border:`1px solid ${C.danger}`,borderRadius:4,padding:"0 4px",flexShrink:0,letterSpacing:.3}}>{t("NO SLOT")}</span>}
                     </div>
                     {/* ONE wrapping line. The layout rule is just: the row wraps, the ammo chip
                         never breaks internally, and every stat lives inside a single nowrap group.
@@ -842,7 +877,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",columnGap:8,rowGap:1,marginTop:2}}>
                       {row.ammo&&<span style={{display:"inline-flex",alignItems:"center",maxWidth:"100%",minWidth:0}}>
                         <span style={{fontSize:11,color:C.textMute,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{(row.ammo||"").replace(/\s*\(\d+\)$/,"")} / {row.charges}/{row.maxCharges}</span>
-                        <button title={row.count>1?`Unload charge from all ${row.count}`:"Unload charge"} onClick={e=>{e.stopPropagation();setSlots(prev=>{
+                        <button title={row.count>1?t("Unload charge from all {n}",{n:row.count}):t("Unload charge")} onClick={e=>{e.stopPropagation();setSlots(prev=>{
                         // A grouped row stands for every slot in row.groupIds (identical module +
                         // identical ammo), so unloading has to clear all of them — clearing only the
                         // representative left the rest loaded while the row rendered as unloaded.
@@ -870,10 +905,12 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                             fal=Math.round(((a.falloff??a.falloffEffectiveness??0))*(ca.fallofMultiplier??1)/1000*10)/10;
                           }
                           if(!(opt>0||fal>0)) return;
-                          const tip=(missileRangeTip(e)??(fal>0?"Optimal + falloff — km":"Optimal range — km"))
-                            +(heated!=null?", OH: overheated optimal":"");
+                          // "OH" is an abbreviation the row has no width to spell out, so it is
+                          // translated as its own key rather than left as two English letters.
+                          const tip=(missileRangeTip(e)??(fal>0?t("Optimal + falloff — km"):t("Optimal range — km")))
+                            +(heated!=null?t(", OH: overheated optimal"):"");
                           push('rng',tip,<span style={{fontSize:11,color:C.rig}}>{opt}{fal>0?`+${fal}`:''} km
-                            {heated!=null&&<span style={{color:C.overheat,marginLeft:6}}>OH: {heated} km</span>}</span>);
+                            {heated!=null&&<span style={{color:C.overheat,marginLeft:6}}>{t("OH")}: {heated} km</span>}</span>);
                         })();
 
                         // ── turret tracking ──────────────────────────────────────────────────
@@ -887,8 +924,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                             trk=Math.round((a.trackingSpeed??0)*(ca.trackingSpeedMultiplier??1)*1000)/1000;
                           }
                           if(!(trk>0)) return;
-                          push('trk',"Tracking — radians/second",
-                            <span style={{fontSize:11,color:C.warning}}>Tr {(+trk).toFixed(1)}</span>);
+                          push('trk',t("Tracking — radians/second"),
+                            <span style={{fontSize:11,color:C.warning}}>{t("Tr")} {(+trk).toFixed(1)}</span>);
                         })();
 
                         // ── strength (EWAR / support / neut) ─────────────────────────────────
@@ -898,22 +935,22 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                         // ── ancillary reps, RAH, HIC bubble, breacher pods ───────────────────
                         if(e?.isAAR){
                           const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
-                          if(e.hasPaste) push('aar',`Repaired over the paste clip — EHP / seconds (${Math.round(e.reloadMs/1000)}s reload)`,
+                          if(e.hasPaste) push('aar',t("Repaired over the paste clip — EHP / seconds ({s}s reload)",{s:Math.round(e.reloadMs/1000)}),
                             <span style={{fontSize:11,color:C.high}}>{fmt(e.totalEHP??e.totalHP)}/{e.totalS}s</span>);
-                          else push('aar',"Repaired unloaded — EHP/second",
+                          else push('aar',t("Repaired unloaded — EHP/second"),
                             <span style={{fontSize:11,color:C.textMute}}>{fmt(e.ehpS??Math.round(e.repPerCycle/(e.cycleMs/1000)))} EHP/s</span>);
                         }
                         if(e?.isASB){
                           const fmt=v=>v>=1000?`${(v/1000).toFixed(1)}k`:Math.round(v).toString();
-                          if(e.hasCharges) push('asb',`Boosted over the ${e.clipCycles}-charge clip — EHP / seconds (+reload)`,
+                          if(e.hasCharges) push('asb',t("Boosted over the {n}-charge clip — EHP / seconds (+reload)",{n:e.clipCycles}),
                             <span style={{fontSize:11,color:C.high}}>{fmt(e.totalEHP??e.totalHP)} / {e.totalS}s (+{Math.round(e.totalS_withReload-e.totalS)}s)</span>);
-                          else push('asb',"Boosted on cap alone — EHP/second",
+                          else push('asb',t("Boosted on cap alone — EHP/second"),
                             <span style={{fontSize:11,color:C.textMute}}>{fmt(e.ehpS)} EHP/s</span>);
                         }
                         if(e?.isRAH&&e.rahResistPct){
                           // Current adapted resist split as four colour-coded figures (EM/Th/Kin/Exp).
                           const cols=[DMG.em.color,DMG.th.color,DMG.kin.color,DMG.exp.color];
-                          push('rah',"Adapted resists — EM / thermal / kinetic / explosive",
+                          push('rah',t("Adapted resists — EM / thermal / kinetic / explosive"),
                             <span style={{display:"inline-flex",alignItems:"center",fontSize:11,fontWeight:700}}>
                               {e.rahResistPct.map((v,i)=>(<span key={i}>
                                 {i>0&&<span style={{color:C.textMute,margin:"0 3px"}}>/</span>}
@@ -921,17 +958,17 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                               </span>))}
                             </span>);
                         }
-                        if(e?.isWDFG) push('wdfg',e.scripted?"Warp disruption range — km (scripted, single target)":"Warp disruption bubble radius — km",
+                        if(e?.isWDFG) push('wdfg',e.scripted?t("Warp disruption range — km (scripted, single target)"):t("Warp disruption bubble radius — km"),
                           <span style={{fontSize:11,color:C.rig}}>{Math.round((e.warpScrambleRange??0)/100)/10} km</span>);
                         if(e?.isBreacher){
-                          if(e.noPod) chips.push(<span key='bp' style={{fontSize:11,color:C.textMute}}>load a pod</span>);
+                          if(e.noPod) chips.push(<span key='bp' style={{fontSize:11,color:C.textMute}}>{t("load a pod")}</span>);
                           else{
                             // pyfa format: total absolute / total %-of-HP "over" duration, resist-ignoring.
                             const fmtK=n=>n>=1000?(n/1000).toFixed(n>=10000?0:1).replace(/\.0$/,'')+"k":Math.round(n).toString();
-                            push('bp',"Breacher damage, resist-ignoring — absolute / % of target HP, whichever is lower",
+                            push('bp',t("Breacher damage, resist-ignoring — absolute / % of target HP, whichever is lower"),
                               <span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:700}}>
                                 <span style={{color:C.danger}}>{fmtK(e.totalAbs)}/{Math.round(e.totalPct)}%</span>
-                                <span style={{color:C.textMute,fontWeight:400}}>over {Math.round(e.durationS)}s</span>
+                                <span style={{color:C.textMute,fontWeight:400}}>{t("over {s}s",{s:Math.round(e.durationS)})}</span>
                               </span>);
                           }
                         }
@@ -949,7 +986,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     onPointerUp={endRowDrag}
                     onPointerCancel={endRowDrag}
                     onClick={e=>e.stopPropagation()}
-                    title="Drag to reorder"
+                    title={t("Drag to reorder")}
                     className="no-select"
                     style={{touchAction:"none",cursor:"grab",flexShrink:0,padding:"6px 4px 6px 8px",marginRight:-4,color:C.textMute,fontSize:14,lineHeight:1,display:"flex",alignItems:"center"}}>
                     &#8801;
@@ -1063,8 +1100,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         // item's market price.
         ...(drones??[]).map(d=>({typeID:d.typeID??tidByName(d.name),qty:d.qty??1,
           abyssal:d.mutaplasmid!=null||metaOf(d.typeID,null)==='Abyssal'})),
-        ...(fighters??[]).map(f=>{const t=f.typeID??tidByName(f.name);
-          return{typeID:t,qty:(f.qty??1)*((t!=null?TYPES[t]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
+        ...(fighters??[]).map(f=>{const tid=f.typeID??tidByName(f.name);
+          return{typeID:tid,qty:(f.qty??1)*((tid!=null?TYPES[tid]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
       ].filter(d=>d.typeID),
     };
   },[ship,slots,implants,boosters,drones,fighters]);
@@ -1176,13 +1213,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   const ehpExact=exactCells.has("ehp");
   const ehpCol=ehpExact?"62px":"44px";
   const layers=[
-    {key:"shield",label:"Shield",hp:fmtN(cs.shieldHP??0),hpRaw:cs.shieldHP??0,ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
+    {key:"shield",label:t("Shield"),hp:fmtN(cs.shieldHP??0),hpRaw:cs.shieldHP??0,ehp:fmtN(shieldEHPp),ehpRaw:shieldEHPp,
      em:r.shield?.em??0,th:r.shield?.th??0,kin:r.shield?.kin??0,exp:r.shield?.exp??0,
-     regen:`${fmtF(cs.passiveShieldRegen??0)} HP/s`, repLabel:cs.shieldRepPS>0?`Boost: ${fmtF(cs.shieldRepPS)} HP/s`:""},
-    {key:"armor", label:"Armor", hp:fmtN(cs.armorHP??0), hpRaw:cs.armorHP??0, ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
+     regen:`${fmtF(cs.passiveShieldRegen??0)} HP/s`, repLabel:cs.shieldRepPS>0?t("Boost: {n} HP/s",{n:fmtF(cs.shieldRepPS)}):""},
+    {key:"armor", label:t("Armor"), hp:fmtN(cs.armorHP??0), hpRaw:cs.armorHP??0, ehp:fmtN(armorEHPp),ehpRaw:armorEHPp,
      em:r.armor?.em??0, th:r.armor?.th??0, kin:r.armor?.kin??0, exp:r.armor?.exp??0,
      regen:cs.armorRepPS>0?`${fmtF(cs.armorRepPS)} HP/s`:"", repLabel:""},
-    {key:"hull",  label:"Hull",  hp:fmtN(cs.hullHP??0),  hpRaw:cs.hullHP??0,  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
+    {key:"hull",  label:t("Hull"),  hp:fmtN(cs.hullHP??0),  hpRaw:cs.hullHP??0,  ehp:fmtN(hullEHPp),ehpRaw:hullEHPp,
      em:r.hull?.em??0,  th:r.hull?.th??0,  kin:r.hull?.kin??0,  exp:r.hull?.exp??0,
      regen:cs.hullRepPS>0?`${fmtF(cs.hullRepPS)} HP/s`:"", repLabel:""},
   ];
@@ -1217,13 +1254,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // battleship's would run off the end of a quarter-width cell. The split row below still spells it
   // out in full, and "19.1k" is the same shorthand this panel already uses for EHP and capacitor.
   const volleyVal     = showClip ? fmtN(_clip.total??0) : totalVolDisp;
-  const volleyLabel   = showClip ? "Clip Dmg" : "Volley";
+  const volleyLabel   = showClip ? t("Clip Dmg") : t("Volley");
   // Selected firepower stat's damage-type split (tap a column to switch). Fighters are lumped
   // with drones (as Pyfa does) in the "Drone" column.
   const _dfSplit = ['em','th','kin','exp','total'].reduce((o,k)=>{o[k]=(_dDps?.[k]??0)+(_fDps?.[k]??0);return o;},{});
   const _volSplit     = showClip ? _clip : _tVol;
   const dmgSplit      = ({weapon:_wDps,drone:_dfSplit,total:_tDps,volley:_volSplit}[dmgSource])??{};
-  const dmgSourceLabel= ({weapon:"Weapon",drone:"Drone",total:"Total",volley:volleyLabel}[dmgSource]);
+  const dmgSourceLabel= ({weapon:t("Weapon"),drone:t("Drone"),total:t("Total"),volley:volleyLabel}[dmgSource]);
   // Only when the split row would be describing the CLIP. Selecting another column while the cell
   // still reads Clip Dmg means that column's split is what the row is for.
   const showClipDuration = showClip && dmgSource==="volley" && (cs.clipSeconds??0)>0;
@@ -1245,31 +1282,32 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       {(()=>{
         const fr=n=>Math.abs(n)>=100?String(Math.round(Math.abs(n))):Math.abs(n).toFixed(1);
         const issues=[];
-        if((cs.cpuUsed??0)>(cs.cpuTotal??0)+0.01) issues.push({sev:"err",msg:`CPU overloaded by ${fr(cs.cpuUsed-cs.cpuTotal)} tf`});
-        if((cs.pgUsed??0)>(cs.pgTotal??0)+0.01) issues.push({sev:"err",msg:`Powergrid overloaded by ${fr(cs.pgUsed-cs.pgTotal)} MW`});
-        if((cs.calUsed??0)>(cs.calTotal??0)+0.01) issues.push({sev:"err",msg:`Calibration exceeded by ${fr(cs.calUsed-cs.calTotal)} points`});
+        if((cs.cpuUsed??0)>(cs.cpuTotal??0)+0.01) issues.push({sev:"err",msg:t("CPU overloaded by {n} tf",{n:fr(cs.cpuUsed-cs.cpuTotal)})});
+        if((cs.pgUsed??0)>(cs.pgTotal??0)+0.01) issues.push({sev:"err",msg:t("Powergrid overloaded by {n} MW",{n:fr(cs.pgUsed-cs.pgTotal)})});
+        if((cs.calUsed??0)>(cs.calTotal??0)+0.01) issues.push({sev:"err",msg:t("Calibration exceeded by {n} points",{n:fr(cs.calUsed-cs.calTotal)})});
         const _dRec=(d)=>TYPES[d.typeID]??TYPES[tidByName(d.name)];
-        const _dBW=(d)=>{const t=_dRec(d);return t?.attrs?.droneBandwidthUsed ?? t?.a?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
-        const _dVol=(d)=>{const t=_dRec(d);return t?.attrs?.volume ?? t?.a?.volume ?? d.volume ?? 5;};
+        const _dBW=(d)=>{const rec=_dRec(d);return rec?.attrs?.droneBandwidthUsed ?? rec?.a?.droneBandwidthUsed ?? d.bandwidth ?? 5;};
+        const _dVol=(d)=>{const rec=_dRec(d);return rec?.attrs?.volume ?? rec?.a?.volume ?? d.volume ?? 5;};
         const bayUsed=(drones??[]).reduce((s,d)=>s+(d.qty??0)*_dVol(d),0);
         const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*_dBW(d),0);
-        if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:`Drone bay over capacity by ${fr(bayUsed-cs.droneBay)} m³`});
-        if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:`Drone bandwidth exceeded by ${fr(bwUsed-cs.droneBandwidth)} Mbit/s`});
+        if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:t("Drone bay over capacity by {n} m³",{n:fr(bayUsed-cs.droneBay)})});
+        if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:t("Drone bandwidth exceeded by {n} Mbit/s",{n:fr(bwUsed-cs.droneBandwidth)})});
         // maxGroupFitted. The browser refuses to fit one too many, so anything caught here came in
         // through an EFT or ESI import, where the fit was built somewhere with no such gate.
-        for(const g of (cs.groupOverFitted??[])) issues.push({sev:"err",msg:`${g.count} ${g.group} modules fitted — only ${g.cap===1?"one":g.cap} allowed`});
+        // `g.group` is a CCP market group name and stays English, like every other game term.
+        for(const g of (cs.groupOverFitted??[])) issues.push({sev:"err",msg:t("{count} {group} modules fitted — only {cap} allowed",{count:g.count,group:g.group,cap:g.cap===1?t("one"):g.cap})});
         const hasErr=issues.some(i=>i.sev==="err");
         const accent=hasErr?C.danger:(issues.length?C.warning:C.success);
         return(
           <div style={{...card,border:`1px solid ${issues.length?accent:C.border}`}}>
-            <SectionHead id="validation" title="Validation" right={<span style={{fontSize:11,fontWeight:700,color:accent}}>{issues.length?`${issues.length} issue${issues.length>1?"s":""}`:"Valid"}</span>}/>
+            <SectionHead id="validation" title={t("Validation")} right={<span style={{fontSize:11,fontWeight:700,color:accent}}>{issues.length?t({one:"{n} issue",other:"{n} issues"},{n:issues.length}):t("Valid")}</span>}/>
             {isOpen("validation")&&(issues.length
               ?<div style={{padding:"2px 0"}}>{issues.map((it,i)=>(
                   <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",borderBottom:i<issues.length-1?`1px solid ${C.border}`:"none"}}>
                     <span style={{width:7,height:7,borderRadius:99,background:it.sev==="err"?C.danger:C.warning,flexShrink:0}}/>
                     <span style={{fontSize:11,color:C.text}}>{it.msg}</span>
                   </div>))}</div>
-              :<div style={{padding:"8px 12px",fontSize:11,color:C.textMid,display:"flex",alignItems:"center",gap:8}}><span style={{color:C.success,fontWeight:800}}>✓</span> No fitting issues detected.</div>)}
+              :<div style={{padding:"8px 12px",fontSize:11,color:C.textMid,display:"flex",alignItems:"center",gap:8}}><span style={{color:C.success,fontWeight:800}}>✓</span> {t("No fitting issues detected.")}</div>)}
           </div>
         );
       })()}
@@ -1283,15 +1321,15 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             bigger number does not. Tapping it commits to the combined figure, which is what a "EHP +
             clip" comparison in a fit discussion actually wants. Separate tap target from the exact-
             value toggle on the EHP number itself, so neither has to give up its gesture. */}
-        <SectionHead id="resists" title="Resistances" right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
+        <SectionHead id="resists" title={t("Resistances")} right={<span style={{fontSize:11,color:C.textMute}}>EHP: <span
           onClick={e=>{e.stopPropagation();toggleExact("ehp");}} title={fmtExact(headEHP)}
           style={{color:C.rig,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>{ehpExact?fmtExact(headEHP):fmtN(headEHP)}</span>
           {clipEHP>0&&<span onClick={e=>{e.stopPropagation();setClipMerged(m=>!m);}}
-            title={clipMerged?"Includes the ancillary clip — tap to show it separately":"Ancillary clip pool — tap to add it into the EHP total"}
+            title={clipMerged?t("Includes the ancillary clip — tap to show it separately"):t("Ancillary clip pool — tap to add it into the EHP total")}
             style={{color:C.high,fontWeight:700,cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>
-            {clipMerged?" w/ ancil.":` +${ehpExact?fmtExact(clipEHP):fmtN(clipEHP)} ancil.`}</span>}</span>}/>
+            {clipMerged?` ${t("w/ ancil.")}`:` +${ehpExact?fmtExact(clipEHP):fmtN(clipEHP)} ${t("ancil.")}`}</span>}</span>}/>
         {isOpen("resists")&&<div onClick={()=>setShowProfilePicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
-          <span style={{fontSize:10,color:C.textMute}}>Incoming damage</span>
+          <span style={{fontSize:10,color:C.textMute}}>{t("Incoming damage")}</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{display:"flex",gap:3}}>
               {[["em",dmgProfile.p[0]],["th",dmgProfile.p[1]],["kin",dmgProfile.p[2]],["exp",dmgProfile.p[3]]].map(([k,v])=>(<span key={k} style={{width:5,height:5,borderRadius:99,background:DMG[k].color,opacity:v>0.001?0.4+v*0.6:0.12}}/>))}
@@ -1311,7 +1349,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             {[{v:layer.em,d:DMG.em},{v:layer.th,d:DMG.th},{v:layer.kin,d:DMG.kin},{v:layer.exp,d:DMG.exp}].map(({v,d})=>(
               <div key={d.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
                 <div style={{width:"80%",height:3,background:C.border,borderRadius:99,overflow:"hidden"}}><div style={{width:`${v}%`,height:"100%",background:d.color,borderRadius:99}}/></div>
-                <Hint text={`${d.label} resistance: ${typeof v === "number" ? v.toFixed(2) : v}%`} highlight>
+                {/* `d.label` is a damage-type abbreviation (EM / Th / Kin / Exp) and stays English. */}
+                <Hint text={t("{type} resistance: {pct}%",{type:d.label,pct:typeof v === "number" ? v.toFixed(2) : v})} highlight>
                   <span style={{fontSize:10,fontWeight:600,color:d.color}}>{typeof v === "number" ? v.toFixed(1) : v}%</span>
                 </Hint>
               </div>
@@ -1334,7 +1373,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               HP: {ehpExact?fmtExact(layer.hpRaw):layer.hp}
             </span>
             <span style={{fontSize:9,color:C.textMute,textAlign:"center"}}>{layer.regen||layer.repLabel||""}</span>
-            <Hint text={`Resist multiplier — HP × this = EHP against ${dmgProfile.name}`} style={{justifyContent:"flex-end"}}>
+            {/* `dmgProfile.name` is a damage-profile name from the data and stays English. */}
+            <Hint text={t("Resist multiplier — HP × this = EHP against {profile}",{profile:dmgProfile.name})} style={{justifyContent:"flex-end"}}>
               <span style={{fontSize:9,fontWeight:700,color:C.rig}}>{layerMult.toFixed(2)}x</span>
             </Hint>
           </div>
@@ -1344,7 +1384,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Recharge Rates */}
       <div style={card}>
-        <SectionHead id="recharge" title="Recharge Rates"/>
+        <SectionHead id="recharge" title={t("Recharge Rates")}/>
         {isOpen("recharge")&&(() => {
             // Convert HP/s to EHP/s using the selected incoming damage profile.
             const avgR=(r)=>((r?.em??0)+(r?.th??0)+(r?.kin??0)+(r?.exp??0))/4;
@@ -1376,11 +1416,14 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const showShield=(cs.shieldRepPS??0)>0||incShield>0.05;
             const showArmor =(cs.armorRepPS??0)>0||incArmor>0.05;
             const showHull  =(cs.hullRepPS??0)>0||incHull>0.05;
+            // Built inside the component, so plain t() calls are re-evaluated every render.
+            // "EHP/s" stays inside the value strings: a CCP unit symbol, and `val.startsWith("0")`
+            // below reads the number, not the unit.
             const peak=[
-              {label:"Regen",  val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
-              {label:"Shield", val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
-              {label:"Armor",  val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
-              {label:"Hull",   val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
+              {label:t("Regen"),  val:`${fmtF(shieldEhpS)} EHP/s`, color:C.mid},
+              {label:t("Shield"), val:showShield?`${fmtF(shieldRepEhpS+incShield)} EHP/s`:"0 EHP/s", color:C.mid},
+              {label:t("Armor"),  val:showArmor?`${fmtF(armorRepEhpS+incArmor)} EHP/s`:"0 EHP/s",   color:C.warning},
+              {label:t("Hull"),   val:showHull?`${fmtF(hullRepEhpS+incHull)} EHP/s`:"0 EHP/s",     color:C.danger},
             ];
             // Sustained row values, aligned to the same columns (regen has no sustained variant → blank).
             // Sustained includes the full incoming remote rep (supplier-cap-independent).
@@ -1412,16 +1455,18 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 {sustained.map((val,i)=>(
                   <div key={i} style={{padding:"5px 8px",textAlign:"center",borderRight:i<3?`1px solid ${C.border}`:"none"}}>
                     {i===0
-                      ? <div style={{fontSize:8,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:0.5}}>Sustained</div>
+                      ? <div style={{fontSize:8,fontWeight:700,color:C.textMute,textTransform:"uppercase",letterSpacing:0.5}}>{t("Sustained")}</div>
                       : <div style={{fontSize:11,fontWeight:700,color:val?peak[i].color:C.textMute}}>{val??"—"}</div>}
                   </div>
                 ))}
               </div>}
               {hasInc&&<div style={{padding:"5px 12px",background:`${C.surfaceAlt}88`,fontSize:10,color:C.textMute,display:"flex",gap:10,flexWrap:"wrap"}}>
-                <span style={{fontWeight:700,color:C.rig}}>incl. remote:</span>
-                {incShield>0.05&&<span><span style={{color:C.mid,fontWeight:700}}>+{fmtF(incShield)}</span> shield</span>}
-                {incArmor>0.05&&<span><span style={{color:C.warning,fontWeight:700}}>+{fmtF(incArmor)}</span> armor</span>}
-                {incHull>0.05&&<span><span style={{color:C.danger,fontWeight:700}}>+{fmtF(incHull)}</span> hull</span>}
+                {/* Each chip is its own key rather than one sentence: they wrap independently and
+                    any of the three can be absent, so there is no sentence to inflect. */}
+                <span style={{fontWeight:700,color:C.rig}}>{t("incl. remote:")}</span>
+                {incShield>0.05&&<span><span style={{color:C.mid,fontWeight:700}}>+{fmtF(incShield)}</span> {t("shield")}</span>}
+                {incArmor>0.05&&<span><span style={{color:C.warning,fontWeight:700}}>+{fmtF(incArmor)}</span> {t("armor")}</span>}
+                {incHull>0.05&&<span><span style={{color:C.danger,fontWeight:700}}>+{fmtF(incHull)}</span> {t("hull")}</span>}
                 <span>EHP/s</span>
               </div>}
             </>);
@@ -1430,26 +1475,26 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Firepower */}
       <div style={card}>
-        <SectionHead id="firepower" title="Firepower" right={
+        <SectionHead id="firepower" title={t("Firepower")} right={
           <button onClick={e=>{e.stopPropagation();setFactorInReload&&setFactorInReload(v=>!v);}}
             style={{display:"flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:6,fontSize:9,fontWeight:700,cursor:"pointer",
               background:factorInReload?C.accentLight:C.surface,border:`1px solid ${factorInReload?C.accent:C.border}`,color:factorInReload?C.accent:C.textMute}}>
             <span style={{width:7,height:7,borderRadius:"50%",background:factorInReload?C.accent:C.textMute,display:"inline-block"}}/>
-            Reload
+            {t("Reload")}
           </button>
         }/>
         {isOpen("firepower")&&<div onClick={()=>setShowTargetPicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
-          <span style={{fontSize:10,color:C.textMute}}>Target resists</span>
+          <span style={{fontSize:10,color:C.textMute}}>{t("Target resists")}</span>
           <span style={{display:"flex",alignItems:"center",gap:6}}>
             <span style={{display:"flex",gap:3}}>
               {[["em",tgtProfile?.r?.[0]??0],["th",tgtProfile?.r?.[1]??0],["kin",tgtProfile?.r?.[2]??0],["exp",tgtProfile?.r?.[3]??0]].map(([k,v])=>(<span key={k} style={{width:5,height:5,borderRadius:99,background:DMG[k].color,opacity:v>0.001?0.4+v*0.6:0.12}}/>))}
             </span>
-            <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??"None (0%)"}</span>
+            <span style={{fontSize:11,fontWeight:700,color:C.accent,borderBottom:`1px dotted ${C.accent}`}}>{tgtProfile?.n??t("None (0%)")}</span>
           </span>
         </div>}
         {isOpen("firepower")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:`1px solid ${C.border}`}}>
-          {[["Weapon DPS",weapDpsDisp,"weapon"],["Drone DPS",droneDpsTotal,"drone"],["Total DPS",totalDpsDisp,"total"],[volleyLabel,volleyVal,"volley"]].map(([label,val,srcKey],i,arr)=>{
+          {[[t("Weapon DPS"),weapDpsDisp,"weapon"],[t("Drone DPS"),droneDpsTotal,"drone"],[t("Total DPS"),totalDpsDisp,"total"],[volleyLabel,volleyVal,"volley"]].map(([label,val,srcKey],i,arr)=>{
             const sel=dmgSource===srcKey;
             // One tap, not two. This used to require selecting the column before the swap would fire,
             // to keep it from happening by accident — but a rapid launcher rack is nearly always one
@@ -1467,7 +1512,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           })}
         </div>
         {hasSpool&&(cs.weaponSpoolTimeS??0)>0&&<div style={{padding:"5px 12px",background:`${C.surfaceAlt}88`,display:"flex",justifyContent:"space-between",fontSize:10,borderBottom:`1px solid ${C.border}`}}>
-          <span style={{color:C.textMute}}>Spool-up time</span>
+          <span style={{color:C.textMute}}>{t("Spool-up time")}</span>
           <span style={{color:C.text,fontWeight:700}}>{fmtF(cs.weaponSpoolTimeS)}s</span>
         </div>}
         {/* With the clip selected this row spends itself on a damage split that is nearly always a
@@ -1475,7 +1520,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             more useful thing to put there: how long it takes to land, and the silence that follows. */}
         {showClipDuration
           ?<div style={{padding:"6px 12px",background:`${C.surfaceAlt}88`,display:"flex",gap:10,fontSize:10,alignItems:"center",flexWrap:"wrap"}}>
-            <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>Clip Duration</span>
+            <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{t("Clip Duration")}</span>
             <span>
               <span style={{color:C.text,fontWeight:700}}>{Math.round(cs.clipSeconds)}s</span>
               {(cs.clipReloadSeconds??0)>0&&<span style={{color:C.textMute}}> (+{Math.round(cs.clipReloadSeconds)}s)</span>}
@@ -1483,6 +1528,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           </div>
           :(dmgSplit.total??0)>0&&<div style={{padding:"6px 12px",background:`${C.surfaceAlt}88`,display:"flex",gap:10,fontSize:10,alignItems:"center",flexWrap:"wrap"}}>
             <span style={{color:C.textMute,fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:.3}}>{dmgSourceLabel}</span>
+            {/* The four damage types are CCP's own taxonomy and stay English, like the EM/Th/Kin/Exp
+                abbreviations in the resist table. */}
             {[["EM",dmgSplit.em,DMG.em.color],["Thermal",dmgSplit.th,DMG.th.color],["Kinetic",dmgSplit.kin,DMG.kin.color],["Explosive",dmgSplit.exp,DMG.exp.color]].filter(([,v])=>(v??0)>0.05).map(([l,v,c])=>(
               <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
             ))}
@@ -1503,39 +1550,39 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         const effOf = (gj) => gj==null ? null : gj===0 ? Infinity : 1/gj;
         // pyfa column order: Cap, Shield, Armor, Hull
         const cols=[
-          {key:"cap",   label:"Cap",    unit:"GJ/s", val:cs.remoteCapPS??0,    color:C.rig},
-          {key:"shield",label:"Shield", unit:"HP/s", val:cs.remoteShieldPS??0, color:C.mid,
+          {key:"cap",   label:t("Cap"),    unit:"GJ/s", val:cs.remoteCapPS??0,    color:C.rig},
+          {key:"shield",label:t("Shield"), unit:"HP/s", val:cs.remoteShieldPS??0, color:C.mid,
             eff: effOf(cs.remoteShieldGJPerHP)},
-          {key:"armor", label:"Armor",  unit:"HP/s", val:cs.remoteArmorPS??0,  color:C.warning,
+          {key:"armor", label:t("Armor"),  unit:"HP/s", val:cs.remoteArmorPS??0,  color:C.warning,
             disp: spoolRep ? `${fmtF(cs.remoteArmorPS??0)}-${fmtF(armorMax)} HP/s` : null,
             eff: effOf(cs.remoteArmorGJPerHP),
             // Same cap cost, more HP delivered once spooled — the ratio moves too, so it gets the
             // same min-max treatment as the rate cell above rather than freezing at the pre-spool figure.
             effDisp: (spoolRep && cs.remoteArmorGJPerHPMax!=null)
               ? `${fmtF(effOf(cs.remoteArmorGJPerHP))}-${fmtF(effOf(cs.remoteArmorGJPerHPMax))} HP/GJ` : null},
-          {key:"hull",  label:"Hull",   unit:"HP/s", val:cs.remoteHullPS??0,   color:C.danger,
+          {key:"hull",  label:t("Hull"),   unit:"HP/s", val:cs.remoteHullPS??0,   color:C.danger,
             eff: effOf(cs.remoteHullGJPerHP)},
         ];
         return(
           <div style={card}>
-            <SectionHead id="remotereps" title="Remote Reps"/>
+            <SectionHead id="remotereps" title={t("Remote Reps")}/>
             {isOpen("remotereps")&&<>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:spoolRep?`1px solid ${C.border}`:"none"}}>
               {cols.map((col,i)=>{
                 // Tap a Shield/Armor/Hull cell to swap its rate for GJ efficiency, same gesture as
                 // the Capacitor card's Capacity/In-Out/Peak-regen cells.
                 const can=col.eff!=null, on=can&&exactCells.has(`remoteEff_${col.key}`);
-                const content=on?(col.eff===Infinity?"Free":(col.effDisp??`${fmtF(col.eff)} HP/GJ`)):(col.disp??`${fmtF(col.val)} ${col.unit}`);
+                const content=on?(col.eff===Infinity?t("Free"):(col.effDisp??`${fmtF(col.eff)} HP/GJ`)):(col.disp??`${fmtF(col.val)} ${col.unit}`);
                 return(<div key={col.key} onClick={can?()=>toggleExact(`remoteEff_${col.key}`):undefined}
                             style={{padding:"8px 6px",textAlign:"center",borderRight:i<cols.length-1?`1px solid ${C.border}`:"none",cursor:can?"pointer":"default"}}>
                   {/* lineHeight pinned to match Recharge Rates — see the note there. */}
-                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{on?"Efficiency":col.label}</div>
+                  <div style={{fontSize:9,fontWeight:700,color:C.textMute,marginBottom:4,textTransform:"uppercase",letterSpacing:0.5,lineHeight:1.2}}>{on?t("Efficiency"):col.label}</div>
                   <div style={{fontSize:12,fontWeight:700,color:col.val>0?col.color:C.textMute}}>{content}</div>
                 </div>);
               })}
             </div>
             {spoolRep&&(spoolRep.spoolTimeS??0)>0&&<div style={{padding:"5px 12px",background:`${C.surfaceAlt}88`,display:"flex",justifyContent:"space-between",fontSize:10}}>
-              <span style={{color:C.textMute}}>Spool-up time</span>
+              <span style={{color:C.textMute}}>{t("Spool-up time")}</span>
               <span style={{color:C.text,fontWeight:700}}>{fmtF(spoolRep.spoolTimeS)}s</span>
             </div>}
             </>}
@@ -1547,13 +1594,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
       {(cs.mining?.totalM3S??0)>0&&(()=>{
         const mn=cs.mining;
         const cols=[
-          {key:"lasers",label:"Lasers",val:mn.moduleM3S,color:C.rig},
-          ...(mn.droneM3S>0?[{key:"drones",label:"Drones",val:mn.droneM3S,color:C.low}]:[]),
-          {key:"total", label:"Total", val:mn.totalM3S, color:C.success},
+          {key:"lasers",label:t("Lasers"),val:mn.moduleM3S,color:C.rig},
+          ...(mn.droneM3S>0?[{key:"drones",label:t("Drones"),val:mn.droneM3S,color:C.low}]:[]),
+          {key:"total", label:t("Total"), val:mn.totalM3S, color:C.success},
         ];
         return(
           <div style={card}>
-            <SectionHead id="mining" title="Mining" right={<span style={{fontSize:11,fontWeight:700,color:C.success}}>{fmtF(mn.totalM3S)} m³/s</span>}/>
+            <SectionHead id="mining" title={t("Mining")} right={<span style={{fontSize:11,fontWeight:700,color:C.success}}>{fmtF(mn.totalM3S)} m³/s</span>}/>
             {isOpen("mining")&&<>
             <div style={{display:"grid",gridTemplateColumns:`repeat(${cols.length},1fr)`,borderBottom:`1px solid ${C.border}`}}>
               {cols.map((col,i)=>(
@@ -1563,10 +1610,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                 </div>
               ))}
             </div>
-            <Row label="Per hour" value={`${fmtN(Math.round(mn.totalM3S*3600))} m³`} last={(mn.wasteM3S??0)<=0}/>
+            <Row label={t("Per hour")} value={`${fmtN(Math.round(mn.totalM3S*3600))} m³`} last={(mn.wasteM3S??0)<=0}/>
             {/* Waste is ore destroyed, not yield lost — the hold still fills at the rate above. It
                 decides how fast the rock disappears, which is what separates two equal-yield fits. */}
-            {(mn.wasteM3S??0)>0&&<Row label="Ore wasted" value={`${fmtF(mn.wasteM3S)} m³/s`} color={C.warning} last/>}
+            {(mn.wasteM3S??0)>0&&<Row label={t("Ore wasted")} value={`${fmtF(mn.wasteM3S)} m³/s`} color={C.warning} last/>}
             </>}
           </div>
         );
@@ -1574,11 +1621,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Cap */}
       <div style={card}>
-        <SectionHead id="cap" title="Capacitor" right={(()=>{
+        <SectionHead id="cap" title={t("Capacitor")} right={(()=>{
+          // h/m/s stay as they are: the same single-letter duration markers the EVE client uses.
           const fmtDur=(s)=>{if(s==null)return "?";s=Math.round(s);if(s<60)return s+"s";const m=Math.floor(s/60),sec=s%60;if(m<60)return sec?`${m}m ${sec}s`:`${m}m`;const h=Math.floor(m/60),mm=m%60;return mm?`${h}h ${mm}m`:`${h}h`;};
           return cs.capStable
-            ?<span style={{fontSize:11,fontWeight:700,color:C.success}}>Stable at {((cs.capLevel??1)*100).toFixed(1)}%</span>
-            :<span style={{fontSize:11,fontWeight:700,color:C.danger}}>Unstable - depleted in {fmtDur(cs.capTime)}</span>;
+            ?<span style={{fontSize:11,fontWeight:700,color:C.success}}>{t("Stable at {pct}%",{pct:((cs.capLevel??1)*100).toFixed(1)})}</span>
+            :<span style={{fontSize:11,fontWeight:700,color:C.danger}}>{t("Unstable - depleted in {dur}",{dur:fmtDur(cs.capTime)})}</span>;
         })()}/>
         {isOpen("cap")&&<>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
@@ -1592,7 +1640,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             return(<div onClick={can?()=>toggleExact("capCapacity"):undefined} title={can?exact:undefined}
                         style={{padding:"7px 8px",textAlign:"center",borderRight:`1px solid ${C.border}`,cursor:can?"pointer":"default"}}>
               <div style={{fontSize:12,fontWeight:700,color:C.warning,fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</div>
-              <div style={{fontSize:9,color:C.textMute}}>Capacity</div>
+              <div style={{fontSize:9,color:C.textMute}}>{t("Capacity")}</div>
             </div>);
           })()}
           {/* In/Out drops to 11px so both numbers fit side by side, but its LINE HEIGHT is left
@@ -1600,13 +1648,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               label clear of the Capacity/Peak regen columns either side. */}
           <div onClick={()=>setCapDeltaMode(m=>m==="net"?"inout":"net")} style={{padding:"7px 8px",textAlign:"center",borderRight:`1px solid ${C.border}`,cursor:"pointer"}}>
             {capDeltaMode==="net"
-              ?<><div style={{fontSize:12,fontWeight:700,color:cs.capDelta>=0?C.success:C.danger}}>{(cs.capDelta??0)>=0?"+":""}{fmtF(cs.capDelta??0)}</div><div style={{fontSize:9,color:C.textMute}}>Net GJ/s</div></>
-              :<><div style={{fontSize:11,fontWeight:700}}><span style={{color:C.success}}>+{fmtF(capInGJs)}</span> <span style={{color:C.danger}}>-{fmtF(cs.capDrainPS??0)}</span></div><div style={{fontSize:9,color:C.textMute}}>In / Out GJ/s</div></>}
+              ?<><div style={{fontSize:12,fontWeight:700,color:cs.capDelta>=0?C.success:C.danger}}>{(cs.capDelta??0)>=0?"+":""}{fmtF(cs.capDelta??0)}</div><div style={{fontSize:9,color:C.textMute}}>{t("Net GJ/s")}</div></>
+              :<><div style={{fontSize:11,fontWeight:700}}><span style={{color:C.success}}>+{fmtF(capInGJs)}</span> <span style={{color:C.danger}}>-{fmtF(cs.capDrainPS??0)}</span></div><div style={{fontSize:9,color:C.textMute}}>{t("In / Out GJ/s")}</div></>}
           </div>
           <div onClick={()=>setPeakMode(m=>m==="regen"?"neut":"regen")} style={{padding:"7px 8px",textAlign:"center",cursor:"pointer"}}>
             {peakMode==="regen"
-              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute}}>Peak regen</div></>
-              :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>Neut resist</div></>}
+              ?<><div style={{fontSize:12,fontWeight:700,color:C.textMid}}>{fmtF(peakRegen(cs.capCapacity,cs.capRechargeMs))} GJ/s</div><div style={{fontSize:9,color:C.textMute}}>{t("Peak regen")}</div></>
+              :<><div style={{fontSize:12,fontWeight:700,color:neutResistPct>0.05?C.rig:C.textMid}}>{neutResistPct.toFixed(1)}%</div><div style={{fontSize:9,color:C.textMute}}>{t("Neut resist")}</div></>}
           </div>
         </div>
         </>}
@@ -1614,7 +1662,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Targeting & Misc */}
       <div style={card}>
-        <SectionHead id="targeting" title="Targeting and Misc"/>
+        <SectionHead id="targeting" title={t("Targeting and Misc")}/>
         {/* Every figure here is rounded to stay legible in a 1fr column, and for one of them that
             rounding is dangerous: align time is quantised to whole server ticks, so a 4.003 s align
             displayed as "4.00" hides a fifth second of exposure and reads as already under the wire.
@@ -1628,36 +1676,40 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const x=cs.exact??{};
             const abOn=cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity;
             const p=(v,d,unit)=>v==null?null:`${v.toFixed(d)}${unit}`;
+            // Each row leads with a stable `id`, which is what the expanded-cell set is keyed on and
+            // what the Sensor branch below switches on. The label used to serve as both, and a
+            // translated one would have silently reset every expanded cell on a language change.
+            // `cs.sensorType` is a CCP sensor name and stays English.
             return [
-              ["Targets",   String(Math.round(cs.maxTargets??0))],
-              ["Speed",     `${Math.round(abOn?cs.maxVelocityAB:(cs.maxVelocity??0))} m/s`, p(abOn?x.maxVelocityAB:x.maxVelocity,2," m/s")],
-              ["Lock range",`${fmtF(cs.targetRange??0)} km`,  p(x.targetRange,3," km")],
-              ["Align",     `${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
-              ["Scan res.", `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
-              ["Signature", `${fmtN(cs.sigRadius??0)} m`,     p(x.sigRadius,2," m")],
-              ["Sensor",    `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
-              ["Warp",      `${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
+              ["targets",  t("Targets"),   String(Math.round(cs.maxTargets??0))],
+              ["speed",    t("Speed"),     `${Math.round(abOn?cs.maxVelocityAB:(cs.maxVelocity??0))} m/s`, p(abOn?x.maxVelocityAB:x.maxVelocity,2," m/s")],
+              ["lockrange",t("Lock range"),`${fmtF(cs.targetRange??0)} km`,  p(x.targetRange,3," km")],
+              ["align",    t("Align"),     `${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
+              ["scanres",  t("Scan res."), `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
+              ["signature",t("Signature"), `${fmtN(cs.sigRadius??0)} m`,     p(x.sigRadius,2," m")],
+              ["sensor",   t("Sensor"),    `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
+              ["warp",     t("Warp"),      `${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
-              ...(cs.droneBay>0?[["Drone range",`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),
-              ["Cargo",     `${fmtN(cs.cargoCapacity??0)} m³`,p(cs.cargoCapacity,2," m³")],
+              ...(cs.droneBay>0?[["dronerange",t("Drone range"),`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),
+              ["cargo",    t("Cargo"),     `${fmtN(cs.cargoCapacity??0)} m³`,p(cs.cargoCapacity,2," m³")],
               // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
               // multiplier — the same value feeding the align-time cell above it. Grouped digits
               // rather than decimals: kg fractions are noise, but "12.5M" hiding 250,000 kg is not.
-              ["Mass",      `${fmtN(cs.mass??0)} kg`,         cs.mass!=null?`${Math.round(cs.mass).toLocaleString()} kg`:null],
+              ["mass",     t("Mass"),      `${fmtN(cs.mass??0)} kg`,         cs.mass!=null?`${Math.round(cs.mass).toLocaleString()} kg`:null],
             ];
-          })().map(([label,val,exact],i,arr)=>{
+          })().map(([id,label,val,exact],i,arr)=>{
             const bb=arr.length>(i+2)?`1px solid ${C.border}`:"none";
             const br=(i%2===0)?`1px solid ${C.border}`:"none";
             const can=exact!=null&&exact!==val;
-            const on=can&&exactCells.has(label);
+            const on=can&&exactCells.has(id);
             // The parenthesised percentage on Sensor is jam chance, not part of the sensor strength,
             // so that row spends its tooltip naming it rather than on the exact value — which is
             // still one tap away, like every other cell.
-            const tip=label==="Sensor"&&cs.jamChance>0
-              ?`${cs.jamChance}% Jam chance${jammers?` (${jammers})`:""}`
+            const tip=id==="sensor"&&cs.jamChance>0
+              ?t("{pct}% Jam chance",{pct:cs.jamChance})+(jammers?` (${jammers})`:"")
               :(can?exact:undefined);
-            return(<div key={label} onClick={can?()=>toggleExact(label):undefined}
+            return(<div key={id} onClick={can?()=>toggleExact(id):undefined}
                         title={tip}
                         style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,cursor:can?"pointer":"default"}}>
               <span style={{color:C.textMid,flexShrink:0}}>{label}</span>
@@ -1669,19 +1721,19 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
 
       {/* Fit Value */}
       <div style={card}>
-        <SectionHead id="fitvalue" title="Fit Value" right={
+        <SectionHead id="fitvalue" title={t("Fit Value")} right={
           <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
             <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
             {!priceLoading&&(groupTotals.implants??0)>0&&
-              <span style={{color:C.accent}} title="Including implants">{fmtISK(totalPrice)}</span>}
+              <span style={{color:C.accent}} title={t("Including implants")}>{fmtISK(totalPrice)}</span>}
           </span>
         }/>
         {isOpen("fitvalue")&&<>
-          {[['Ship','ship'],['Modules','modules'],['Charges','charges'],['Drones','drones'],['Boosters','boosters'],['Implants','implants']].map(([label,key],i,arr)=>{
+          {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
             const open=expandable&&openPriceGroups[key];
-            return(<div key={label}>
+            return(<div key={key}>
               <div onClick={expandable?()=>togglePriceGroup(key):undefined}
                 style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 12px",
                         borderBottom:(last&&!open)?"none":`1px solid ${C.border}`,cursor:expandable?"pointer":"default"}}>
@@ -1700,7 +1752,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                   <span style={{fontSize:11,color:C.textMid,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {it.qty>1&&<span style={{color:C.textMute,fontWeight:700}}>{it.qty}x </span>}{it.name}
                   </span>
-                  <span title={it.abyssal?"Abyssal module — value depends on the roll, not the base type":undefined}
+                  <span title={it.abyssal?t("Abyssal module — value depends on the roll, not the base type"):undefined}
                         style={{fontSize:11,fontWeight:600,color:it.abyssal?C.textMute:C.text,flexShrink:0}}>{it.abyssal?'—':fmtISK(it.total)}</span>
                 </div>
               ))}

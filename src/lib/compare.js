@@ -20,7 +20,7 @@
 // React-free on purpose: `regression.test.mjs` runs under Node and cannot import .jsx.
 import { TYPES, ATTR_ID_TO_NAME, attrHighIsGood } from '../calc.js';
 import { EFFECTS_DATA } from '../dogma-engine-init.js';
-import { metaOf, META_ORDER } from './meta.js';
+import { compareByMeta } from './meta.js';
 
 // name -> attributeID, so a runtime attrs map keyed by NAME can still reach CCP's highIsGood flag.
 const ATTR_NAME_TO_ID = {};
@@ -390,7 +390,7 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutati
  * Sorts comparison rows for display. The fitted module is always pinned first — it is the thing
  * every other row is measured against, so burying it mid-list makes the deltas unreadable.
  *
- * `by`: 'price' (cheapest first, unpriced last) or 'meta' (T1 -> T2 -> Faction -> ... ).
+ * `by`: 'price' (cheapest first, unpriced last) or 'meta' (pyfa's order — see `compareByMeta`).
  *
  * There is deliberately NO "best stat" sort: with several differing attributes on screen, a control
  * labelled that way cannot say WHICH stat it ranked by, so the ordering looks arbitrary. Meta level
@@ -402,14 +402,12 @@ export function sortCompareRows(rows, { by = 'price', dir = 'asc', prices } = {}
     const p = prices?.get?.(Number(r.typeID));
     return (typeof p === 'number' && p > 0) ? p : Infinity;   // unpriced sinks, never sorts as free
   };
-  // Unknown meta sorts last rather than first, so an unclassified item never leads the list.
-  const meta = r => META_ORDER[metaOf(Number(r.typeID), null)] ?? 99;
   const sign = dir === 'desc' ? -1 : 1;
   return [...rows].sort((a, b) => {
     // The fitted module stays pinned at the top in BOTH directions — it is the baseline every
     // delta is measured from, so flipping the sort must not bury it halfway down the list.
     if (a.isBaseline !== b.isBaseline) return a.isBaseline ? -1 : 1;
-    const cmp = by === 'meta' ? ((meta(a) - meta(b)) || (price(a) - price(b))) : (price(a) - price(b));
+    const cmp = by === 'meta' ? (compareByMeta(a, b) || (price(a) - price(b))) : (price(a) - price(b));
     // Unpriced rows sort as Infinity, which would float them to the TOP when reversed. Keep them
     // last either way: "we don't know" is not the most expensive thing on the list.
     if (by === 'price') {

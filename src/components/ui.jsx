@@ -17,6 +17,8 @@ import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
+import { useBackHandler } from "../lib/use-back-handler.js";
+import { t } from "../lib/i18n.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
   const [descs, setDescs] = useState(null);
@@ -37,7 +39,9 @@ function useTypeDescriptions() {
 // Shared by the module browser, the ammo picker and the ship browser so they can't drift apart.
 // The glyph used to be pinned to Arial to stop the "i" varying across platforms; it now inherits,
 // because a bundled face is the stronger version of that guarantee than a font we hope is installed.
-function InfoButton({onClick,title="Item info"}){
+// The default is a DEFAULT PARAMETER, evaluated per call rather than at module scope, so a plain
+// t() is safe here — see lib/i18n.js.
+function InfoButton({onClick,title=t("Item info")}){
   return(
     <button onClick={onClick} title={title} aria-label={title}
       style={{width:19,height:19,flexShrink:0,padding:0,borderRadius:"50%",
@@ -338,14 +342,14 @@ export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inp
           the screen before mouseup — so the click landed on whatever now sat under the thumb and the
           field never actually cleared. Cancelling the blur keeps the keyboard up, keeps the button
           still, and leaves the caret in the box ready for the next query. */}
-      {!!value&&<button onClick={()=>onChange("")} onMouseDown={e=>e.preventDefault()} aria-label="Clear search" style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+      {!!value&&<button onClick={()=>onChange("")} onMouseDown={e=>e.preventDefault()} aria-label={t("Clear search")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
       {/* Same padding/flex recipe as the x button next to it so the two share a baseline, but a
           POSITIVE left margin instead of the matching -10: the row's gap is 8, so two neighbours
           both pulling in by 10 left their 20px-wide hit areas overlapping by 12px and a thumb
           aiming here landed on "clear search" instead. 8 - 10 + 10 puts 8px of clear space
           between the two targets, and 28px between the glyphs. */}
       {onDismiss&&
-        <button onClick={onDismiss} aria-label="Dismiss keyboard"
+        <button onClick={onDismiss} aria-label={t("Dismiss keyboard")}
           style={{background:"none",border:"none",color:C.accent,cursor:"pointer",padding:10,margin:"-10px -10px -10px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
           <svg width={16} height={16} viewBox="0 0 16 16" fill="none" aria-hidden="true">
             <path d="M3.5 6.2 8 10.5l4.5-4.3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -373,8 +377,9 @@ function AccordionSection({title,color,children,defaultOpen,indent}){
 function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
   const[val,setVal]=useState(String(initial));
   const press=d=>{if(d==="<")setVal(v=>v.length>1?v.slice(0,-1):"0");else if(d==="0"&&val==="0")return;else setVal(v=>v==="0"?d:v.length<9?v+d:v);};
+  // `label` is the item's own name and stays English.
   return(
-    <BottomSheet title={`Set quantity - ${label}`} onClose={onClose} height="62vh">
+    <BottomSheet title={t("Set quantity - {item}",{item:label})} onClose={onClose} height="62vh">
       <div style={{padding:16}}>
         <div style={{fontSize:32,fontWeight:800,color:C.text,textAlign:"center",marginBottom:16,background:C.surfaceAlt,borderRadius:10,padding:"10px 0"}}>{Number(val).toLocaleString()}</div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:8}}>
@@ -382,8 +387,8 @@ function NumpadModal({label,initial,onConfirm,onClose,fillMax}){
             <button key={d} onClick={()=>press(d)} style={{padding:"16px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,color:C.text,fontSize:20,fontWeight:700,cursor:"pointer"}}>{d}</button>
           ))}
         </div>
-        {fillMax>0&&<button onClick={()=>setVal(String(fillMax))} style={{width:"100%",padding:"10px 0",marginBottom:8,background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:10,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Fill Cargo ({fillMax.toLocaleString()})</button>}
-        <button onClick={()=>{onConfirm(Number(val)||0);onClose();}} style={{width:"100%",padding:"12px 0",background:C.accent,border:"none",borderRadius:10,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Confirm</button>
+        {fillMax>0&&<button onClick={()=>setVal(String(fillMax))} style={{width:"100%",padding:"10px 0",marginBottom:8,background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:10,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Fill Cargo ({n})",{n:fillMax.toLocaleString()})}</button>}
+        <button onClick={()=>{onConfirm(Number(val)||0);onClose();}} style={{width:"100%",padding:"12px 0",background:C.accent,border:"none",borderRadius:10,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>{t("Confirm")}</button>
       </div>
     </BottomSheet>
   );
@@ -428,7 +433,9 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
   // Readout mode: tap any row to swap between "used / total" and remaining ("x left" / "x over").
   const[showRemaining,setShowRemaining]=useState(false);
   const fmtRes=v=>Number((v??0).toFixed(2)).toLocaleString();
-  // Powergrid first, matching the order the game and pyfa put them in.
+  // Powergrid first, matching the order the game and pyfa put them in. The three labels stay English
+  // for the same reason the graph's compass points do: they are two- and three-glyph column headers
+  // in a strip three columns wide, and PG/CPU are what the EVE fitting window itself shows.
   const resources=[
     {key:"pg", label:"PG",    used:cs.pgUsed??0,   total:cs.pgTotal??0,   unit:"MW",  warn:95},
     {key:"cpu",label:"CPU",   used:cs.cpuUsed??0,  total:cs.cpuTotal??0,  unit:"tf",  warn:95},
@@ -439,9 +446,9 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
   // this on "is a missile weapon" gave a Scan Probe Launcher a launcher hardpoint.
   const {turretsUsed,launchUsed}=(slots?.high??[]).reduce((acc,s)=>{
     if(!s||s.type==="empty")return acc;
-    const t=TYPES[s.typeID]??TYPES[String(s.typeID)];
-    if(usesTurretHardpoint(t?.e))acc.turretsUsed++;
-    else if(usesLauncherHardpoint(t?.e))acc.launchUsed++;
+    const ty=TYPES[s.typeID]??TYPES[String(s.typeID)];
+    if(usesTurretHardpoint(ty?.e))acc.turretsUsed++;
+    else if(usesLauncherHardpoint(ty?.e))acc.launchUsed++;
     return acc;
   },{turretsUsed:0,launchUsed:0});
   const turretsTotal=ship?.turrets??0, launchTotal=ship?.launchers??0;
@@ -495,7 +502,7 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
         const overColor=`hsl(${Math.round(38*(1-overFactor))},${Math.round(92-8*overFactor)}%,${Math.round(50+10*overFactor)}%)`;
         return(
           <div key={res.key} onClick={()=>setShowRemaining(v=>!v)}
-               title={`${res.label}: ${fmtRes(res.used)} / ${fmtRes(res.total)} ${res.unit} — tap to switch readout`}
+               title={t("{res}: {used} / {total} {unit} — tap to switch readout",{res:res.label,used:fmtRes(res.used),total:fmtRes(res.total),unit:res.unit})}
                style={{flex:1,minWidth:0,cursor:"pointer",WebkitTapHighlightColor:"transparent"}}>
             <div style={{display:"flex",alignItems:"baseline",gap:4,marginBottom:4,whiteSpace:"nowrap",lineHeight:1.15}}>
               <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.4,textTransform:"uppercase",flexShrink:0}}>{res.label}</span>
@@ -507,7 +514,7 @@ function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReloa
               {showRemaining
                 ? <span style={{fontSize:12,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",fontVariantNumeric:"tabular-nums"}}>
                     <span style={{fontWeight:700,color:over?overColor:C.text}}>{fmtShort(Math.abs(rem))}</span>
-                    <span style={{fontSize:10,color:over?overColor:C.textMid}}> {over?"over":"left"}</span>
+                    <span style={{fontSize:10,color:over?overColor:C.textMid}}> {over?t("over"):t("left")}</span>
                     {/* The margin as a PROPORTION, which is the form the fix comes in: fitting
                         implants and rigs are sold as percentages, so "10.03k over" does not tell you
                         whether a 3% or a 5% powergrid implant closes the gap, and "-4.7%" does. Same
@@ -567,15 +574,19 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
   const group=current?.subGroup??order[slotIdx]??"Core";
   const byGroup=subsystemsForHull(ship?.name);
   const options=byGroup[group]??[];
+  // The one picker still built as a bare overlay rather than on BottomSheet, so Back is wired here.
+  useBackHandler(onClose);
   return(
     <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:200,display:"flex",alignItems:"flex-end"}}>
       <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxHeight:"70vh",background:C.bg,borderTopLeftRadius:16,borderTopRightRadius:16,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         <div style={{padding:"14px 16px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:14,fontWeight:700,color:C.text}}>{group} Subsystem</span>
+          {/* `group` is a CCP subsystem group (Core/Defensive/Offensive/Propulsion), so it stays
+              English while the frame around it does not. */}
+          <span style={{fontSize:14,fontWeight:700,color:C.text}}>{t("{group} Subsystem",{group})}</span>
           <button className="press" onClick={onClose} style={{background:"none",border:"none",color:C.textMid,fontSize:20,cursor:"pointer",padding:"0 4px",lineHeight:1}}>x</button>
         </div>
         <div style={{flex:1,overflowY:"auto",padding:12}}>
-          {options.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>No subsystems found</div>}
+          {options.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"24px 0",fontSize:13}}>{t("No subsystems found")}</div>}
           {options.map(opt=>{
             const on=current?.typeID===opt.typeID;
             const shortName=opt.name.replace(`${ship?.name} ${group} - `,"");
@@ -655,28 +666,32 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const[justAdded,setJustAdded]=useState(null);
   useEffect(()=>{
     if(!justAdded)return;
-    const t=setTimeout(()=>setJustAdded(null),1100);
-    return ()=>clearTimeout(t);
+    const timer=setTimeout(()=>setJustAdded(null),1100);
+    return ()=>clearTimeout(timer);
   },[justAdded]);
   const[navPath,setNavPath]=useState([]);
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
   const goBack=()=>{if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
+  // Back climbs the market tree before it closes the sheet, matching the header's ‹ and the
+  // left-to-right swipe below. Registered by THIS component rather than the <BottomSheet> it renders,
+  // which is what puts it above the sheet's own dismiss — see back-button.js on layering.
+  useBackHandler(goBack,navPath.length>0);
   const goInto=id=>{setNavDir(1);setNavPath([...navPath,id]);};
   // Swipe left-to-right to go up a level, the way iOS back-swipe works. Axis-locked on the first
   // meaningful movement so scrolling a long module list never triggers it.
   const _nav=useRef({x:0,y:0,axis:null});
-  const _navStart=e=>{const t=e.touches[0];if(t)_nav.current={x:t.clientX,y:t.clientY,axis:null};};
+  const _navStart=e=>{const pt=e.touches[0];if(pt)_nav.current={x:pt.clientX,y:pt.clientY,axis:null};};
   const _navMove=e=>{
-    const t=e.touches[0];if(!t||_nav.current.axis)return;
-    const dx=t.clientX-_nav.current.x,dy=t.clientY-_nav.current.y;
+    const pt=e.touches[0];if(!pt||_nav.current.axis)return;
+    const dx=pt.clientX-_nav.current.x,dy=pt.clientY-_nav.current.y;
     if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
     _nav.current.axis=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y";
   };
   const _navEnd=e=>{
-    const t=e.changedTouches[0],axis=_nav.current.axis;_nav.current.axis=null;
-    if(!t||axis!=="x")return;
-    if(t.clientX-_nav.current.x>70)goBack();
+    const pt=e.changedTouches[0],axis=_nav.current.axis;_nav.current.axis=null;
+    if(!pt||axis!=="x")return;
+    if(pt.clientX-_nav.current.x>70)goBack();
   };
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
@@ -754,6 +769,10 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const slotCount=slots[slotType]?.length??0;
   const filledCount=(slots[slotType]??[]).filter(s=>s.type!=="empty").length;
   const ordinal=Math.min(filledCount+1,slotCount);
+  // One literal key per rack rather than capitalising `slotType` into a shared sentence: a computed
+  // key is invisible to the catalog audit, and the old version also produced "Rigs Slot".
+  const SLOT_TITLE={high:t("Add Module - High Slot"),mid:t("Add Module - Mid Slot"),low:t("Add Module - Low Slot"),
+                    rigs:t("Add Module - Rig Slot"),services:t("Add Module - Service Slot")};
   const searchInputRef=useRef(null);
   const[searchFocused,setSearchFocused]=useState(false);
   useSuppressAccessoryBar({focusRef:searchInputRef});
@@ -765,7 +784,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         bottom-anchored sheet's top upward. 100vh is how a caller asks for the full-height treatment
         instead; BottomSheet gives that its own constant peek strip, measured off frame so no keyboard
         transition can move it. */}
-    <BottomSheet title={`Add Module - ${slotType.charAt(0).toUpperCase()+slotType.slice(1)} Slot${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="100vh" fillHeight dismissRequested={dismissRequested}
+    <BottomSheet title={`${SLOT_TITLE[slotType]??t("Add Module")}${slotCount?` ${ordinal}/${slotCount}`:""}`} onClose={onClose} height="100vh" fillHeight dismissRequested={dismissRequested}
       headerExtra={
         // Header content, not scroller content: position:sticky here used to fight WebKit's handling
         // of sticky across a transformed ancestor (the sheet itself is always under a transform, for
@@ -776,7 +795,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
               Faction/...) and Abyssal's tier color is pink, a different thing from the red used for
               mutaplasmid/grade badges everywhere else (ui.jsx's own grade badge above, the fit list's
               ▲ marker, drones.jsx) — this toast should match THAT red, not the tier pink. */}
-          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:justAdded.abyssal?C.danger:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.abyssal?"Abyssal ":""}{justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
+          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:justAdded.abyssal?C.danger:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.abyssal?`${t("Abyssal")} `:""}{justAdded.name}{justAdded.count>1?` (x${justAdded.count})`:""}</div>}
         </ResourceStrip>
       }
       footerExtra={
@@ -798,7 +817,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           <SheetSearchBar value={search} onChange={setSearch} onPaste={onSearchPaste}
             inputRef={searchInputRef} onDismiss={searchFocused?()=>searchInputRef.current?.blur():null}
             inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}
-            placeholder="Search all modules, or paste an abyssal..."/>
+            placeholder={t("Search all modules, or paste an abyssal...")}/>
         </div>
       }>
       {/* Sticky: this bar lives inside the sheet's scroller, so it used to scroll out of reach the
@@ -812,7 +831,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
       <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
       {!searchResults&&navPath.length>0&&(
         <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-          <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; Back</button>
+          <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; {t("Back")}</button>
           <span style={{fontSize:12,color:C.textMute,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{breadcrumb.join(" / ")}</span>
         </div>
       )}
@@ -823,7 +842,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         // The search box is a footer now — outside the scroller, always visible — so a short list
         // can end wherever it ends and just show more of what's above it.
         <div>
-          {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules found</div>}
+          {searchResults.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>{t("No modules found")}</div>}
           {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
         </div>
       ):(
@@ -841,13 +860,13 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
               </div>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{node.name}</div>
-                <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{countAll(node)} modules</div>
+                <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{t({one:"{n} module",other:"{n} modules"},{n:countAll(node)})}</div>
               </div>
               <span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
             </div>
           ))}
           {currentLevel.nodes.length===0&&currentLevel.mods.length===0&&(
-            <div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>No modules for this slot type</div>
+            <div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>{t("No modules for this slot type")}</div>
           )}
         </div>
       )}
@@ -901,10 +920,12 @@ const RESIST_ATTRS = new Set(['armorEmDamageResonance','armorThermalDamageResona
   'emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']);
 // Grouped for the ResistBars widget — Hull has no `hull` prefix on its own resonance keys (CCP
 // reuses the bare em/thermal/kinetic/explosiveDamageResonance names for it).
+// `label` is a THUNK: this table is built at module scope, which runs before main.jsx has resolved
+// the stored locale — see lib/i18n.js. Read sites call it.
 const RESIST_LAYER_DEFS = [
-  {label:'Shield', keys:['shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
-  {label:'Armor',  keys:['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
-  {label:'Hull',   keys:['emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
+  {label:()=>t('Shield'), keys:['shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
+  {label:()=>t('Armor'),  keys:['armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
+  {label:()=>t('Hull'),   keys:['emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
 ];
 const HIDDEN_ATTRS = new Set(['skillPoints','skillTimeConstant','typeColorScheme','canBeJettisoned']);
 // Attrs hidden in the detailed info panel (shown in dedicated sections or irrelevant for display)
@@ -918,18 +939,21 @@ const INFO_HIDDEN = new Set([...HIDDEN_ATTRS,
   'triggerGroup','weaponRangeFlag','subSystemSlot',
 ]);
 // Attribute grouping for the organized info panel
+// `label` is a THUNK and `id` is what the rendered list keys on: this table is built at module scope,
+// which runs before main.jsx has resolved the stored locale — see lib/i18n.js. ECM is a CCP acronym
+// and is the same in every client language, so it has no key.
 const INFO_SECTIONS = [
-  {label:'Fitting',    keys:['cpu','power','upgradeCost']},
-  {label:'Capacitor',  keys:['capacitorNeed','capacitorBonus']},
-  {label:'Cycle',      keys:['speed','duration','reloadTime']},
-  {label:'Damage',     keys:['damageMultiplier','emDamage','thermalDamage','kineticDamage','explosiveDamage']},
-  {label:'Range',      keys:['maxRange','falloff','trackingSpeed','optimalSigRadius','aoeCloudSize','aoeVelocity','explosionDelay','missileVelocity']},
-  {label:'Shield',     keys:['shieldBonus','shieldCapacityBonus','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
-  {label:'Armor',      keys:['armorDamageAmount','armorHpBonus','armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
-  {label:'Hull',       keys:['hullBonus','emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
-  {label:'Propulsion', keys:['speedFactor','maxVelocityBonus','signatureRadiusBonus','signatureRadiusBonusPercent','massAddition']},
-  {label:'Targeting',  keys:['maxTargetRange','scanResolution','maxLockedTargets','warpScrambleRange','stasisWebifierRange','signatureRadius']},
-  {label:'ECM',        keys:['gravimetricStrengthBonus','ladarStrengthBonus','magnetometricStrengthBonus','radarStrengthBonus','scanGravimetricStrengthBonus','scanLadarStrengthBonus','scanMagnetometricStrengthBonus','scanRadarStrengthBonus']},
+  {id:'fitting',    label:()=>t('Fitting'),    keys:['cpu','power','upgradeCost']},
+  {id:'capacitor',  label:()=>t('Capacitor'),  keys:['capacitorNeed','capacitorBonus']},
+  {id:'cycle',      label:()=>t('Cycle'),      keys:['speed','duration','reloadTime']},
+  {id:'damage',     label:()=>t('Damage'),     keys:['damageMultiplier','emDamage','thermalDamage','kineticDamage','explosiveDamage']},
+  {id:'range',      label:()=>t('Range'),      keys:['maxRange','falloff','trackingSpeed','optimalSigRadius','aoeCloudSize','aoeVelocity','explosionDelay','missileVelocity']},
+  {id:'shield',     label:()=>t('Shield'),     keys:['shieldBonus','shieldCapacityBonus','shieldEmDamageResonance','shieldThermalDamageResonance','shieldKineticDamageResonance','shieldExplosiveDamageResonance']},
+  {id:'armor',      label:()=>t('Armor'),      keys:['armorDamageAmount','armorHpBonus','armorEmDamageResonance','armorThermalDamageResonance','armorKineticDamageResonance','armorExplosiveDamageResonance']},
+  {id:'hull',       label:()=>t('Hull'),       keys:['hullBonus','emDamageResonance','thermalDamageResonance','kineticDamageResonance','explosiveDamageResonance']},
+  {id:'propulsion', label:()=>t('Propulsion'), keys:['speedFactor','maxVelocityBonus','signatureRadiusBonus','signatureRadiusBonusPercent','massAddition']},
+  {id:'targeting',  label:()=>t('Targeting'),  keys:['maxTargetRange','scanResolution','maxLockedTargets','warpScrambleRange','stasisWebifierRange','signatureRadius']},
+  {id:'ecm',        label:()=>'ECM',           keys:['gravimetricStrengthBonus','ladarStrengthBonus','magnetometricStrengthBonus','radarStrengthBonus','scanGravimetricStrengthBonus','scanLadarStrengthBonus','scanMagnetometricStrengthBonus','scanRadarStrengthBonus']},
 ];
 
 function fmtAttrVal(name, val) {
@@ -957,16 +981,26 @@ function fmtInfoVal(name, val) {
 // A modifier source's secondary label, for the attribute breakdown. Only the kinds whose NAME is
 // ambiguous on its own get one: "Gyrostabilizer II" explains itself, but "Phantasm" sitting under a
 // Phantasm's own damage attribute does not, and neither does an ammo type listed beside the modules.
-const SRC_NOTE = {hull:'hull bonus', charge:'ammo', env:'environment', mode:'tactical mode',
-                  subsystem:'subsystem', implant:'implant', booster:'booster', drone:'drone',
+// Each value is a THUNK: this table is built at module scope, which runs before main.jsx has
+// resolved the stored locale — see lib/i18n.js. The read site calls it.
+const SRC_NOTE = {hull:()=>t('hull bonus'), charge:()=>t('ammo'), env:()=>t('environment'), mode:()=>t('tactical mode'),
+                  subsystem:()=>t('subsystem'), implant:()=>t('implant'), booster:()=>t('booster'), drone:()=>t('drone'),
                   // The three that do not come from this ship's own hull and racks. `burst` is named
                   // after its charge and may be another pilot entirely; `projected` is something
                   // being done TO this fit; `sideEffect` is a drug penalty the pilot opted into, kept
                   // apart from that same drug's intended bonus so one row is not mistaken for both.
-                  burst:'command burst', projected:'projected', sideEffect:'booster side effect'};
+                  burst:()=>t('command burst'), projected:()=>t('projected'), sideEffect:()=>t('booster side effect')};
 const ROMAN = ['0','I','II','III','IV','V'];
-const srcLabel = (s) => !s ? 'Other'
-  : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}` : s.name;
+// Four sources calc.js names generically rather than after an item, because by the time the trace
+// reaches here there is no per-source identity left to recover. Translated HERE, not there, so the
+// English name stays the stable identity the engine and the regression suite key on — the rule that
+// a label doubling as a key must not move with the locale. Thunks for the module-scope reason.
+const GENERIC_SRC = {'Command burst':()=>t('Command burst'), 'Stasis webifier':()=>t('Stasis webifier'),
+                     'Sensor dampening':()=>t('Sensor dampening'), 'Tracking disruption':()=>t('Tracking disruption')};
+// Otherwise `s.name` is a CCP item or skill name and stays English.
+const srcLabel = (s) => !s ? t('Other')
+  : s.kind === 'skill' ? `${s.name} ${ROMAN[s.level] ?? s.level}`
+  : GENERIC_SRC[s.name]?.() ?? s.name;
 // Modifiers read as percentages everywhere in EVE, so a multiplier is shown as the change it makes
 // rather than as a bare factor. Two decimals under 10% — the difference between a second hardener at
 // +4.34% and a third at +2.51% is the entire point of showing this, and one decimal blurs it.
@@ -1021,7 +1055,8 @@ function ItemPrice({typeID}) {
   return (
     <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,
                  marginBottom:14,padding:'8px 12px',background:C.surfaceAlt,borderRadius:8,border:`1px solid ${C.border}`}}>
-      <span style={{fontSize:11,color:C.textMute}}>Price <span style={{color:C.textMute,opacity:.7}}>· {state.hub}</span></span>
+      {/* `state.hub` is a station name (Jita, Amarr) and stays as it is. */}
+      <span style={{fontSize:11,color:C.textMute}}>{t("Price")} <span style={{color:C.textMute,opacity:.7}}>· {state.hub}</span></span>
       <span style={{fontSize:13,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>
         {state.status==='loading'?'…':`${fmtResource(state.value)} ISK`}
       </span>
@@ -1097,26 +1132,26 @@ export function ModifierBreakdown({attr, ex, bleed, fmt}) {
             with ammo those differ — the chain starts at 2.4 km optimal and the BASE column reads
             1.2 km, because the ammo's −50% is listed below as its own row. Both numbers are right;
             calling them both "base" is what would be wrong. */}
-        {fv(ex.base)} unmodified
-        {ex.capped && <span style={{marginLeft:6}}>· capped</span>}
+        {t("{val} unmodified",{val:fv(ex.base)})}
+        {ex.capped && <span style={{marginLeft:6}}>· {t("capped")}</span>}
       </div>
       {rows.map((r, i) => (
         <div key={i} style={{display:'grid',gridTemplateColumns:'1fr auto',gap:10,alignItems:'baseline',padding:'2px 0'}}>
           <span style={{fontSize:11,color:C.textMid,minWidth:0,wordBreak:'break-word'}}>
             {srcLabel(r.source)}
             {r.source && SRC_NOTE[r.source.kind] &&
-              <span style={{color:C.textMute,marginLeft:5}}>{SRC_NOTE[r.source.kind]}</span>}
+              <span style={{color:C.textMute,marginLeft:5}}>{SRC_NOTE[r.source.kind]()}</span>}
             {/* The penalty is stated as what the modifier LOST, not as the exp() factor itself — a
                 player wants "this is only doing 87% of its job", not a number from the formula. */}
             {r.factor != null && r.factor < 0.9999 && (
               <span style={{color:C.warning,marginLeft:5,whiteSpace:'nowrap'}}>
-                stacked · {fmtMult(r.raw)} at {(r.factor * 100).toFixed(0)}%
+                {t("stacked · {mult} at {pct}%",{mult:fmtMult(r.raw),pct:(r.factor*100).toFixed(0)})}
               </span>
             )}
           </span>
           <span style={{fontSize:11,fontWeight:600,color:C.text,textAlign:'right',
                         fontVariantNumeric:'tabular-nums',whiteSpace:'nowrap'}}>
-            {r.assigns ? `set to ${fv(ex.final)}`
+            {r.assigns ? t("set to {val}",{val:fv(ex.final)})
               : r.add != null ? `${r.add >= 0 ? '+' : '−'}${fv(Math.abs(r.add))}`
               : fmtMult(r.mult)}
           </span>
@@ -1173,7 +1208,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
   const [openAttrs, setOpenAttrs] = useState(() => new Set());
   const [traced, setTraced] = useState(null);
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
-  if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No data available</div>;
+  if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No data available")}</div>;
   const attrs = td.attrs ?? td.a ?? {};
   const skills = getItemSkills(typeID);
   const meta = metaOf(typeID, null);
@@ -1193,7 +1228,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
   for (const def of RESIST_LAYER_DEFS) {
     if (def.keys.every(k => attrs[k] != null)) {
       const [em,th,kin,exp] = def.keys.map(k => Math.round((1-attrs[k])*1000)/10);
-      resistLayers.push({label:def.label, em, th, kin, exp});
+      resistLayers.push({label:def.label(), em, th, kin, exp});
       def.keys.forEach(k => resistKeys.add(k));
     }
   }
@@ -1203,12 +1238,12 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
   const sections = [];
   for (const sec of INFO_SECTIONS) {
     const rows = sec.keys.filter(k => attrs[k] != null && !INFO_HIDDEN.has(k) && !resistKeys.has(k));
-    if (rows.length) { sections.push({label:sec.label, rows}); rows.forEach(k=>shownKeys.add(k)); }
+    if (rows.length) { sections.push({id:sec.id, label:sec.label(), rows}); rows.forEach(k=>shownKeys.add(k)); }
   }
   resistKeys.forEach(k => shownKeys.add(k));
   // Remaining attrs not in any section
   const other = Object.keys(attrs).filter(k => !shownKeys.has(k) && !INFO_HIDDEN.has(k) && typeof attrs[k] === 'number').sort((a,b)=>a.localeCompare(b));
-  if (other.length) sections.push({label:'Other', rows:other});
+  if (other.length) sections.push({id:'other', label:t('Other'), rows:other});
 
   const GRID = eng ? '1fr auto auto' : '1fr auto';
 
@@ -1315,7 +1350,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
       {/* Required skills */}
       {skills.length > 0 && (
         <div style={{marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Required Skills</div>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>{t("Required Skills")}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
             {skills.map((s,i) => (
               <span key={i} style={{fontSize:11,color:C.text,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:6,padding:'3px 8px'}}>
@@ -1329,7 +1364,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
           rather than wherever Shield happened to fall in the attribute section order. */}
       {resistLayers.length > 0 && (
         <div style={{marginBottom:12}}>
-          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Resistances</div>
+          <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>{t("Resistances")}</div>
           <ResistBars layers={resistLayers}/>
         </div>
       )}
@@ -1340,12 +1375,12 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
         <div style={{display:'grid',gridTemplateColumns:GRID,gap:10,padding:'0 0 3px',
                      fontSize:9,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5}}>
           <span/>
-          <span style={{textAlign:'right'}}>Current</span>
-          <span style={{textAlign:'right'}}>Base</span>
+          <span style={{textAlign:'right'}}>{t("Current")}</span>
+          <span style={{textAlign:'right'}}>{t("Base")}</span>
         </div>
       )}
       {sections.map(sec => (
-        <div key={sec.label} style={{marginBottom:10}}>
+        <div key={sec.id} style={{marginBottom:10}}>
           <div style={{fontSize:10,fontWeight:700,color:C.textMute,textTransform:'uppercase',letterSpacing:.5,marginBottom:4,marginTop:4}}>{sec.label}</div>
           {sec.rows.map(k => <Row key={k} k={k}/>)}
         </div>
@@ -1361,12 +1396,14 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
 // A T3 cruiser's bonuses live almost entirely on its SUBSYSTEMS — the hull's own trait text says
 // little — so without this the numbers actually deciding the fit had nowhere to be shown.
 function hasTraits(typeID){
-  const t=(shipTraits??{})[String(typeID)];
-  return !!(t&&(t.skills?.length||t.role||t.misc));
+  const tr=(shipTraits??{})[String(typeID)];
+  return !!(tr&&(tr.skills?.length||tr.role||tr.misc));
 }
 
-function TraitsPanel({typeID, empty="No trait data available."}){
-  const t=(shipTraits??{})[String(typeID)]??{};
+// The default is a DEFAULT PARAMETER, evaluated per call rather than at module scope, so a plain
+// t() is safe here — see lib/i18n.js.
+function TraitsPanel({typeID, empty=t("No trait data available.")}){
+  const tr=(shipTraits??{})[String(typeID)]??{};
   const Section=({header,bonuses})=>(
     <div style={{marginBottom:14}}>
       {header&&<div style={{fontSize:12,fontWeight:700,color:C.text,marginBottom:6}}>{header}</div>}
@@ -1384,9 +1421,11 @@ function TraitsPanel({typeID, empty="No trait data available."}){
   if(!hasTraits(typeID)) return <div style={{color:C.textMute,fontSize:13}}>{empty}</div>;
   return (
     <div>
-      {t.skills?.map((s,i)=><Section key={i} header={s.header} bonuses={s.bonuses}/>)}
-      {t.role&&<Section header={t.role.header||'Role Bonus:'} bonuses={t.role.bonuses}/>}
-      {t.misc&&<Section header={t.misc.header||'Misc:'} bonuses={t.misc.bonuses}/>}
+      {tr.skills?.map((s,i)=><Section key={i} header={s.header} bonuses={s.bonuses}/>)}
+      {/* `header` and the bonus text itself come from CCP's trait data and stay in the language the
+          bundle was generated in. Only the fallback, which is ours, has a key. */}
+      {tr.role&&<Section header={tr.role.header||t('Role Bonus:')} bonuses={tr.role.bonuses}/>}
+      {tr.misc&&<Section header={tr.misc.header||t('Misc:')} bonuses={tr.misc.bonuses}/>}
     </div>
   );
 }
@@ -1515,20 +1554,22 @@ function FitCost({item, size=11, headroom}) {
   const cell  = (key) => ({display:"inline-flex",alignItems:"center",gap:3.5,color:RES_INK[key]});
   const num   = {color:C.textMid,fontWeight:600};
   const row   = {fontSize:size,marginTop:1,display:"flex",alignItems:"center",gap:10,lineHeight:1.3};
+  // Two keys rather than one sentence with an optional clause: a translator cannot write a natural
+  // "doesn't fit" phrase around a tail that may or may not be there.
   const part  = (key, Glyph, val, unit) => {
     const ok = fits(key, val);
     return (
-      <span style={cell(key)} title={`${val}${unit}${ok === false ? " — won't fit" : ''}`}>
+      <span style={cell(key)} title={ok===false?t("{val} {unit} — won't fit",{val,unit}):t("{val} {unit}",{val,unit})}>
         <Glyph size={g}/><span style={ok===false?{...num,color:C.danger,fontWeight:700}:num}>{fmtResource(val)}</span>
       </span>
     );
   };
-  if (calib > 0) return <div style={row}>{part('cal', CalGlyph, calib, ' calibration points')}</div>;
+  if (calib > 0) return <div style={row}>{part('cal', CalGlyph, calib, t('calibration points'))}</div>;
   if (!(pg > 0) && !(cpu > 0)) return null;
   return (
     <div style={row}>
-      {pg  > 0 && part('pg',  PgGlyph,  pg,  ' MW powergrid')}
-      {cpu > 0 && part('cpu', CpuGlyph, cpu, ' tf CPU')}
+      {pg  > 0 && part('pg',  PgGlyph,  pg,  t('MW powergrid'))}
+      {cpu > 0 && part('cpu', CpuGlyph, cpu, t('tf CPU'))}
     </div>
   );
 }
@@ -1552,7 +1593,7 @@ const hasDelta = st => st.delta != null && st.delta !== 0;
 // `better === null` means no judgement (CCP has no opinion, or nothing changed — the `=` branch).
 function DeltaMark({dir, text, better}) {
   const color = better == null ? C.textMute : (better ? C.rig : C.danger);
-  if (!dir) return <span style={{color:C.textMid,fontSize:10,marginLeft:3}} title="same as fitted">=</span>;
+  if (!dir) return <span style={{color:C.textMid,fontSize:10,marginLeft:3}} title={t("same as fitted")}>=</span>;
   return (
     <span style={{color,marginLeft:3,whiteSpace:"nowrap"}}>
       <span style={{fontSize:7,verticalAlign:1,marginRight:2}}>{dir > 0 ? '▲' : '▼'}</span>{text}
@@ -1598,8 +1639,13 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
     const d = val - base;
     const fits = baseTypeID == null ? null
       : fitCostFits(resourceHeadroom?.[key], val, base, ratio?.[key]);
+    // Built as independent clauses joined by a dash rather than one template with two optional
+    // tails: a translator cannot phrase a sentence around parts that may or may not be present.
+    const bits = [t("{val} {unit}",{val,unit})];
+    if (baseTypeID != null) bits.push(d ? t("{delta} vs fitted",{delta:`${d>0?'+':'−'}${Math.abs(d)}`}) : t("same as fitted"));
+    if (fits != null) bits.push(fits ? t("fits") : t("won't fit"));
     return (
-      <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={`${val}${unit}${baseTypeID == null ? '' : d ? ` (${d > 0 ? '+' : '−'}${Math.abs(d)} vs fitted)` : ' — same as fitted'}${fits == null ? '' : fits ? ' — fits' : " — won't fit"}`}>
+      <span key={key} style={{...cell(key),flexWrap:"nowrap"}} title={bits.join(" — ")}>
         <span style={{display:"inline-flex",alignItems:"center",gap:3.5}}>
           <Glyph size={g}/><span style={fits===false?{...num,color:C.danger}:num}>{fmtResource(val)}</span>
         </span>
@@ -1610,21 +1656,36 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
     );
   };
   const cells = (v.calib > 0 || b.calib > 0)
-    ? [part('cal', CalGlyph, v.calib ?? 0, b.calib ?? 0, ' calibration')]
-    : [ (v.pg  > 0 || b.pg  > 0) && part('pg',  PgGlyph,  v.pg,  b.pg,  ' MW'),
-        (v.cpu > 0 || b.cpu > 0) && part('cpu', CpuGlyph, v.cpu, b.cpu, ' tf') ].filter(Boolean);
+    ? [part('cal', CalGlyph, v.calib ?? 0, b.calib ?? 0, t('calibration'))]
+    : [ (v.pg  > 0 || b.pg  > 0) && part('pg',  PgGlyph,  v.pg,  b.pg,  'MW'),
+        (v.cpu > 0 || b.cpu > 0) && part('cpu', CpuGlyph, v.cpu, b.cpu, 'tf') ].filter(Boolean);
   if (!cells.length) return null;
   return <div style={{display:"flex",flexWrap:"wrap",gap:'3px 12px',marginTop:5,marginLeft:35,fontSize:10,fontVariantNumeric:'tabular-nums'}}>{cells}</div>;
+}
+
+// Validated on read rather than trusted: this is the one setting written as a compound string, and a
+// stale or hand-edited value would otherwise reach sortCompareRows as an unknown `by` and silently
+// fall through to the price branch.
+const VAR_SORT_KEY='axis_varsort';
+function readSort(){
+  try{
+    const [by,dir]=String(localStorage.getItem(VAR_SORT_KEY)??'').split(':');
+    if((by==='price'||by==='meta')&&(dir==='asc'||dir==='desc')) return {by,dir};
+  }catch{/* private mode */}
+  return {by:'price',dir:'asc'};
 }
 
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
-  const [sortBy, setSortBy] = useState('price');
+  // Persisted: the tab is opened one module at a time, so a session-local choice meant re-picking
+  // "meta level, highest first" on every single module you looked at.
+  const [sortBy, setSortBy] = useState(()=>readSort().by);
   // Tapping the ACTIVE sort flips direction; tapping the other one switches to it at its natural
   // default (cheapest first, lowest meta first) rather than inheriting the previous direction,
   // which would otherwise silently hand you a reversed list you did not ask for.
-  const [sortDir, setSortDir] = useState('asc');
+  const [sortDir, setSortDir] = useState(()=>readSort().dir);
+  useEffect(()=>{try{localStorage.setItem(VAR_SORT_KEY,`${sortBy}:${sortDir}`);}catch{/* private mode */}},[sortBy,sortDir]);
   const [prices, setPrices] = useState(null);
 
   // One batched request for the whole variant set — fetchPrices dedupes and serves from cache, so
@@ -1640,7 +1701,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
     return()=>{cancelled=true;};
   },[idKey]);// eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>No variation data available.</div>;
+  if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No variation data available.")}</div>;
 
   // Deltas are measured against the module ACTUALLY FITTED — including its abyssal roll, since an
   // abyssal module keeps its base typeID and comparing against the unrolled item answers a question
@@ -1655,11 +1716,17 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   const basePrice = abyssal ? null : prices?.get(Number(typeID));
   const grade = abyssalGrade(baseMutaplasmid);
 
+  // `label` arrives already translated. The direction is two literal keys rather than one word
+  // substituted into a shared sentence, both so the catalog audit can see them and because the
+  // adjective inflects with the noun in several of the target languages.
   const Sort = ({k,label}) => {
     const on=sortBy===k;
+    const title=on?(sortDir==='asc'?t("{label}, lowest first — tap to reverse",{label})
+                                   :t("{label}, highest first — tap to reverse",{label}))
+                  :t("Sort by {label}",{label});
     return(
     <button onClick={()=>{haptic();if(on)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(k);setSortDir('asc');}}}
-      title={on?`${label}, ${sortDir==='asc'?'lowest':'highest'} first — tap to reverse`:`Sort by ${label.toLowerCase()}`}
+      title={title}
       style={{display:"flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
       background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.border}`,
       color:on?C.accent:C.textMute}}>{label}
@@ -1672,8 +1739,13 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:'6px 0 9px'}}>
-        <span style={{fontSize:10,color:C.textMute}}>{rows.length} variants · vs fitted{abyssal&&' roll'}</span>
-        <div style={{display:"flex",gap:5}}><Sort k="price" label="Price"/><Sort k="meta" label="Meta Level"/></div>
+        {/* Two whole sentences rather than one with an appended " roll": the clause is the object of
+            "vs", and a language that puts the object elsewhere cannot bolt it on at the end. */}
+        <span style={{fontSize:10,color:C.textMute}}>
+          {abyssal?t({one:"{n} variant · vs fitted roll",other:"{n} variants · vs fitted roll"},{n:rows.length})
+                  :t({one:"{n} variant · vs fitted",other:"{n} variants · vs fitted"},{n:rows.length})}
+        </span>
+        <div style={{display:"flex",gap:5}}><Sort k="price" label={t("Price")}/><Sort k="meta" label={t("Meta Level")}/></div>
       </div>
       {rows.map(r => {
         const v = byID.get(String(r.typeID)); if(!v) return null;
@@ -1691,9 +1763,9 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
               {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.display="none";}}/>}
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,color:r.isBaseline?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                  {v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>FITTED</span>}
+                  {v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>{t("FITTED")}</span>}
                   {/* Same name as the row above it, so without this the two read as a duplicate. */}
-                  {r.isStockBase&&<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>UNMUTATED</span>}
+                  {r.isStockBase&&<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{t("UNMUTATED")}</span>}
                 </div>
                 {/* Price and its delta lead, because that is the axis this view exists to serve. */}
                 <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
@@ -1704,7 +1776,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                     ? <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
                                     color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
                                     borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>
-                    : <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:'no price'}</span>}
+                    : <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:t('no price')}</span>}
                   {dPrice!=null&&dPrice!==0&&
                     <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
                 </div>
@@ -1768,8 +1840,10 @@ export function ItemDetailSheet({typeID, name, onClose, onSwap, actions, item}) 
   // other item type is unaffected and still opens on Info.
   const traits = hasTraits(typeID);
   const [tab, setTab] = useState(traits ? "traits" : "info");
-  const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? "Item";
-  const TABS = [...(traits ? [["traits", "Traits"]] : []), ["info", "Info"], ["vars", "Variations"]];
+  const title = name ?? TYPES[typeID]?.n ?? TYPES[String(typeID)]?.n ?? t("Item");
+  // Built inside the component, so it is rebuilt on every render and a plain t() is correct — see
+  // lib/i18n.js. The first element is the stable tab id; only the second is shown.
+  const TABS = [...(traits ? [["traits", t("Traits")]] : []), ["info", t("Info")], ["vars", t("Variations")]];
   return (
     <BottomSheet title={title} onClose={onClose} height="82vh">
       {actions?.length>0&&(
@@ -1872,7 +1946,7 @@ const mutaDisplayInverted=(name)=>mutaToDisplay(name,2)<mutaToDisplay(name,1);
 // Trailing zeros carry no information and cost width on a phone: a booster penalty of exactly 20
 // reads "20", not "20.00". The decimals are still produced first, so a value that genuinely has
 // them (1.25, 11.73) keeps every digit it needs.
-const trimZeros=(t)=>t.includes('.')?t.replace(/\.?0+$/,''):t;
+const trimZeros=(s)=>s.includes('.')?s.replace(/\.?0+$/,''):s;
 // The display-space half is separate so a DIFFERENCE between two display values can be formatted the
 // same way a value is, without a raw number to convert that would not survive the round trip.
 const mutaDisplayStr=(name,d)=>{
@@ -1907,7 +1981,8 @@ function MutaValueInput({name,value,min,max,onCommit}){
     setTxt(mutaValStr(name,raw));
   };
   return(<span style={{display:"inline-flex",alignItems:"baseline",gap:3}}>
-    <input value={txt} inputMode="decimal" aria-label={`${mutaLabel(name)} value`}
+    {/* `mutaLabel` is a dogma attribute name and stays English, like every other attribute name. */}
+    <input value={txt} inputMode="decimal" aria-label={t("{attr} value",{attr:mutaLabel(name)})}
       onFocus={e=>{setEditing(true);e.target.select();}}
       onChange={e=>setTxt(e.target.value)}
       onBlur={commit}
@@ -1998,24 +2073,25 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   };
   const UndoBtn=({style})=>(
     <button onClick={undo} disabled={!history.length}
-      title={history.length?`Undo last change (${history.length})`:"Nothing to undo"}
+      title={history.length?t("Undo last change ({n})",{n:history.length}):t("Nothing to undo")}
       style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,padding:"8px 0",borderRadius:7,
               background:C.surfaceAlt,border:`1px solid ${history.length?C.border:"transparent"}`,
               color:history.length?C.textMid:C.textMute,opacity:history.length?1:.4,fontSize:11,fontWeight:700,
               cursor:history.length?"pointer":"default",...style}}>
-      <span style={{fontSize:13,lineHeight:1}}>↶</span>Undo
+      {/* The glyph stays outside the key so a translator cannot drop it. */}
+      <span style={{fontSize:13,lineHeight:1}}>↶</span>{t("Undo")}
     </button>
   );
   const applicable=MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[];
   const active=mod.mutaplasmid;
   if(!active){
-    if(!applicable.length) return <div style={{padding:"16px",fontSize:12,color:C.textMute,textAlign:"center"}}>No mutaplasmids apply to this module.</div>;
+    if(!applicable.length) return <div style={{padding:"16px",fontSize:12,color:C.textMute,textAlign:"center"}}>{t("No mutaplasmids apply to this module.")}</div>;
     return(<div style={{padding:"10px 12px"}}>
-      <div style={{fontSize:11,color:C.textMid,marginBottom:8}}>Apply a mutaplasmid to mutate this module's stats:</div>
+      <div style={{fontSize:11,color:C.textMid,marginBottom:8}}>{t("Apply a mutaplasmid to mutate this module's stats:")}</div>
       {applicable.map(mid=>{const m=mutaplasmidData[mid];return(
         <button key={mid} onClick={()=>{pushHistory('apply');const ranges=mutaAttrRanges(mid,mod.typeID);const mutations={};for(const r of ranges)mutations[r.name]=r.base;onUpdateMod({...mod,mutaplasmid:mid,mutations});}}
           style={{display:"block",width:"100%",textAlign:"left",padding:"9px 11px",marginBottom:6,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,fontWeight:600,cursor:"pointer"}}>
-          {m.n}<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{Object.keys(m.a||{}).length} attrs</span>
+          {m.n}<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{t({one:"{n} attr",other:"{n} attrs"},{n:Object.keys(m.a||{}).length})}</span>
         </button>);})}
       {/* Reachable from here too: Remove drops you back to this list, and losing a tuned roll to a
           mis-tap is exactly the case undo exists for. */}
@@ -2059,7 +2135,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   return(<div style={{padding:"10px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{m.n}</span>
-      <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>Remove</button>
+      <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>{t("Remove")}</button>
     </div>
     {ranges.map(r=>{
       const cur=drag?.name===r.name?drag.value:(mod.mutations?.[r.name]??r.base);
@@ -2164,7 +2240,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
                  // could be half of a double-tap. The others stay plain commits; a cancelled or
                  // blurred drag is not a tap and must not arm the reset. onLostPointerCapture still
                  // follows a reset, but commitDrag no-ops once endDrag has cleared the ref.
-                 title="Double-tap to reset to base"
+                 title={t("Double-tap to reset to base")}
                  onPointerDown={e=>{downRef.current={x:e.clientX,y:e.clientY};}}
                  onPointerUp={e=>endDrag(e,r.name,r.base)} onPointerCancel={commitDrag}
                  onLostPointerCapture={commitDrag} onKeyUp={commitDrag} onBlur={commitDrag}
@@ -2172,7 +2248,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
                          "--b":trackPos(Math.max(originFrac,curFrac)),"--c":deltaColor}}/>
         </div>
         <div style={{display:"flex",justifyContent:"space-between",fontSize:8,color:C.textMute}}>
-          <span>{fmtMutaVal(r.name,mirrored?r.max:r.min)}</span><span>base {fmtMutaVal(r.name,r.base)}</span><span>{fmtMutaVal(r.name,mirrored?r.min:r.max)}</span>
+          <span>{fmtMutaVal(r.name,mirrored?r.max:r.min)}</span><span>{t("base {val}",{val:fmtMutaVal(r.name,r.base)})}</span><span>{fmtMutaVal(r.name,mirrored?r.min:r.max)}</span>
         </div>
       </div>);
     })}
@@ -2185,9 +2261,9 @@ function MutaplasmidEditor({mod,onUpdateMod}){
           Replaces a "Random" button, which rolled a fresh set of values — fine as a toy, but it
           could not put back a roll you had entered by hand off a real abyssal module. */}
       <button onClick={()=>{pushHistory('revert');const ms={};for(const r of ranges)ms[r.name]=r.base;onUpdateMod({...mod,mutations:ms});}}
-        title="Set every attribute on this module back to its base value"
-        style={{flex:1,padding:"8px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>Revert</button>
-      <button onClick={()=>{const txt=abyssalToText(mod);try{navigator.clipboard?.writeText(txt);}catch{} setCopied(true);setTimeout(()=>setCopied(false),1500);}} style={{flex:1,padding:"8px 0",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{copied?"Copied!":"Copy"}</button>
+        title={t("Set every attribute on this module back to its base value")}
+        style={{flex:1,padding:"8px 0",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.textMid,fontSize:11,fontWeight:700,cursor:"pointer"}}>{t("Revert")}</button>
+      <button onClick={()=>{const txt=abyssalToText(mod);try{navigator.clipboard?.writeText(txt);}catch{} setCopied(true);setTimeout(()=>setCopied(false),1500);}} style={{flex:1,padding:"8px 0",background:C.accent,border:"none",borderRadius:7,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>{copied?t("Copied!"):t("Copy")}</button>
     </div>
   </div>);
 }
@@ -2219,23 +2295,25 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
   // Reactive Armor Hardener: gets a "Reactive" tab to choose its adaptation pattern.
   const _isRAH=((TYPES[mod.typeID]??TYPES[String(mod.typeID)])?.gn??(TYPES[mod.typeID]??TYPES[String(mod.typeID)])?.groupName)==="Armor Resistance Shift Hardener";
   const tabs=[...((mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)?["state","charge","info","variations"]:["state","info","variations"]),...(_hasMuta?["mutate"]:[])];
-  const tabLabel={state:"State",charge:"Charge",info:"Info",variations:"Variations",mutate:"Mutate"};
+  // Built inside the component, so it is rebuilt every render and a plain t() is correct. The KEYS
+  // are the stable tab ids and stay English — only the values are shown.
+  const tabLabel={state:t("State"),charge:t("Charge"),info:t("Info"),variations:t("Variations"),mutate:t("Mutate")};
   const states=validStatesFor(mod);
   const metaColor={T1:C.textMid,T2:C.accent,Deadspace:C.rig,Named:C.rig,Storyline:C.warning,Faction:C.danger,Officer:"#f0abfc"};
   const modData=moduleByName(mod.name);
   return(<>
     <BottomSheet title={mod.name} onClose={onClose} height="78vh">
       <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
-        {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
+        {tabs.map(tb=><button key={tb} onClick={()=>setTab(tb)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===tb?C.accent:C.textMute,borderBottom:tab===tb?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[tb]}</button>)}
       </div>
       <div onScroll={dismissKeyboardOnScroll} style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
         {tab==="state"&&(<div>
-          <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Module State</div>
+          <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>{t("Module State")}</div>
           <div style={{display:"flex",gap:8,marginBottom:20}}>
             {states.map(s=>(<button key={s} className="press" onClick={()=>{if(mod.state!==s)haptic("medium");onUpdateMod({...mod,state:s});}} style={{flex:1,padding:"10px 0",borderRadius:8,border:`1px solid ${mod.state===s?STATE_COLORS[s]:C.border}`,background:mod.state===s?`${STATE_COLORS[s]}22`:"none",cursor:"pointer",transition:"background-color .18s ease, border-color .18s ease"}}>
               {/* Same glow as the fit list, so the picker teaches the mapping the rows use. */}
               <div style={{width:8,height:8,borderRadius:99,background:STATE_COLORS[s],margin:"0 auto 4px",boxShadow:STATE_GLOW[s]?`0 0 ${STATE_GLOW[s]}px ${STATE_COLORS[s]}`:"none",transform:mod.state===s?"scale(1.35)":"scale(1)",transition:"transform .18s cubic-bezier(.22,.61,.36,1)"}}/>
-              <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]}</span>
+              <span style={{fontSize:10,fontWeight:700,color:mod.state===s?STATE_COLORS[s]:C.textMute}}>{STATE_LABELS[s]?.()}</span>
             </button>))}
           </div>
         {_isRAH&&(()=>{
@@ -2254,17 +2332,20 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           const q=rahQuery.trim().toLowerCase();
           return(<div>
             <div style={{height:1,background:C.border,margin:"14px 0 12px"}}/>
-            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Reactive Armor Hardener adaptation</div>
-            <Opt active={isFit} onClick={()=>onUpdateMod({...mod,rahPattern:"fit"})} title="Fit Pattern" sub="Adapts to the damage profile selected in the Resistances tab"/>
-            <Opt active={isDisable} onClick={()=>onUpdateMod({...mod,rahPattern:"disable"})} title="Do Not Adapt" sub="Even 15% spread across all four armor resists"/>
+            {/* "Reactive Armor Hardener" is the module's own CCP name and stays English. */}
+            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>{t("Reactive Armor Hardener adaptation")}</div>
+            <Opt active={isFit} onClick={()=>onUpdateMod({...mod,rahPattern:"fit"})} title={t("Fit Pattern")} sub={t("Adapts to the damage profile selected in the Resistances tab")}/>
+            <Opt active={isDisable} onClick={()=>onUpdateMod({...mod,rahPattern:"disable"})} title={t("Do Not Adapt")} sub={t("Even 15% spread across all four armor resists")}/>
             {/* Collapsed by default. Fit Pattern and Do Not Adapt cover almost every use; the
                 full ammo/NPC list is a long scroll that used to push them off the top. */}
             <div onClick={()=>setRahOpen(o=>!o)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",cursor:"pointer",margin:"14px 0 8px"}}>
-              <span style={{fontSize:11,color:C.textMute}}>Adapt to a specific damage type{curName?` — ${curName}`:""}</span>
+              {/* `curName` is an ammo or NPC name from DAMAGE_PROFILES and stays English, so it rides
+                  in a placeholder rather than being appended after the sentence has been translated. */}
+              <span style={{fontSize:11,color:C.textMute}}>{curName?t("Adapt to a specific damage type — {name}",{name:curName}):t("Adapt to a specific damage type")}</span>
               <span style={{fontSize:11,color:C.textMute}}>{rahOpen?"▲":"▼"}</span>
             </div>
             {rahOpen&&<>
-            <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder="Search ammo or NPC…" style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
+            <input autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search" value={rahQuery} onChange={e=>setRahQuery(e.target.value)} placeholder={t("Search ammo or NPC…")} style={{width:"100%",boxSizing:"border-box",padding:"9px 10px",marginBottom:8,background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,color:C.text,fontSize:12,outline:"none"}}/>
             {DAMAGE_PROFILES.map(cat=>{
               const items=cat.items.filter(it=>!q||it.n.toLowerCase().includes(q)||cat.cat.toLowerCase().includes(q));
               if(!items.length)return null;
@@ -2286,13 +2367,13 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
               second name, and two buttons doing the same thing is worse than one. The count is in
               the label because the two limits it reconciles (free hardpoints, empty high slots)
               aren't both visible from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
-          {onFillHardpoints&&fillCount>1&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Fill Hardpoints (+{fillCount})</button>}
-          {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>Duplicate to Next Empty Slot</button>}
+          {onFillHardpoints&&fillCount>1&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Fill Hardpoints (+{n})",{n:fillCount})}</button>}
+          {onDuplicate&&<button onClick={()=>{onDuplicate();onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Duplicate to Next Empty Slot")}</button>}
           {/* A grouped rack (identical turrets/launchers, shown as one "Nx" row) removes ALL of its
               members here — matching the state dot and unload-charge button on the same row, which
               already act on the whole group. The label says so, since a "Remove Module" that quietly
               took out the whole rack would read like a bug. */}
-          <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>{groupCount>1?`Remove Module Group (${groupCount})`:"Remove Module"}</button>
+          <button onClick={()=>{onRemove();onClose();}} style={{width:"100%",padding:"11px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:13,fontWeight:700,cursor:"pointer"}}>{groupCount>1?t("Remove Module Group ({n})",{n:groupCount}):t("Remove Module")}</button>
         </div>)}
         {tab==="charge"&&(mod.type==="weapon"||mod.type==="capbooster"||_modTakesCharges)&&(()=>{
           const groups=groupChargesForBrowser(getCompatibleCharges(mod));
@@ -2305,10 +2386,10 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           };
           const activeGroup=chargeFamily!=null?groups.find(g=>g.family===chargeFamily):null;
           if(!activeGroup)return(<div>
-            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Select charge - applies to all grouped turrets</div>
+            <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>{t("Select charge - applies to all grouped turrets")}</div>
             {/* Second way to clear a charge, alongside the row's own ✕ on the fit list — some users
                 only ever look for it here, inside the menu they already opened to manage the charge. */}
-            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Unload Charge</button>}
+            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Unload Charge")}</button>}
             {/* Families ordered shortest-range first (see groupChargesForBrowser); a lone-item
                 family (Civilian charges, most cap boosters) equips straight away instead of
                 drilling into a submenu with only one thing in it. */}
@@ -2351,10 +2432,11 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           </div>);
           return(<div>
             <div onClick={()=>setChargeFamily(null)} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,cursor:"pointer"}}>
-              <span style={{color:C.accent,fontSize:14,fontWeight:700}}>&#8249; Back</span>
+              {/* The chevron stays outside the key so a translator cannot drop it. */}
+              <span style={{color:C.accent,fontSize:14,fontWeight:700}}>&#8249; {t("Back")}</span>
               <span style={{fontSize:11,color:C.textMute}}>{activeGroup.family}</span>
             </div>
-            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>Unload Charge</button>}
+            {mod.ammo&&<button onClick={()=>onUpdateMod({...mod,ammo:null,charges:undefined,maxCharges:undefined})} style={{width:"100%",marginBottom:10,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Unload Charge")}</button>}
             {activeGroup.items.map(a=>{
               const on=mod.ammo===a.name;
               const aMeta=metaOf(a.typeID,null);
@@ -2423,10 +2505,11 @@ function DroneMenu({drone,onClose,onUpdateDrone,onUpdateDroneLive,engineItem}){
   const _hasMuta=(MUTA_BY_TYPE[drone.typeID]??MUTA_BY_TYPE[String(drone.typeID)]??[]).length>0||drone.mutaplasmid;
   const[tab,setTab]=useState("info");
   const tabs=["info","variations",...(_hasMuta?["mutate"]:[])];
-  const tabLabel={info:"Info",variations:"Variations",mutate:"Mutate"};
+  // Rebuilt every render, so a plain t() is correct. The KEYS are the stable tab ids.
+  const tabLabel={info:t("Info"),variations:t("Variations"),mutate:t("Mutate")};
   return(<BottomSheet title={drone.name} onClose={onClose} height="78vh">
     <div style={{display:"flex",borderBottom:`1px solid ${C.border}`}}>
-      {tabs.map(t=><button key={t} onClick={()=>setTab(t)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===t?C.accent:C.textMute,borderBottom:tab===t?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[t]}</button>)}
+      {tabs.map(tb=><button key={tb} onClick={()=>setTab(tb)} style={{flex:1,padding:"8px 0",fontSize:11,fontWeight:700,background:"none",border:"none",cursor:"pointer",color:tab===tb?C.accent:C.textMute,borderBottom:tab===tb?`2px solid ${C.accent}`:"2px solid transparent"}}>{tabLabel[tb]}</button>)}
     </div>
     <div onScroll={dismissKeyboardOnScroll} style={{padding:14,overflowY:'auto',maxHeight:'60vh'}}>
       {tab==="info"&&<ModuleInfoTab typeID={drone.typeID} mod={drone} engineItem={engineItem} bleed={14}/>}
@@ -2455,7 +2538,7 @@ function ImportFitSheet({onClose,onImport,initialText="",initialErr=null}){
   const[text,setText]=useState(initialText);
   const[parsed,setParsed]=useState(null);
   const[err,setErr]=useState(initialErr);
-  const process=(t)=>{if(!t.trim()){setParsed(null);setErr(null);return;}const r=parseEFT(t);if(r.error){setParsed(null);setErr(r.error);}else{setParsed(r);setErr(null);}};
+  const process=(txt)=>{if(!txt.trim()){setParsed(null);setErr(null);return;}const r=parseEFT(txt);if(r.error){setParsed(null);setErr(r.error);}else{setParsed(r);setErr(null);}};
   // navigator.clipboard.readText() is not permitted inside the native WebView, which is why this
   // button did nothing in the installed app and the fit had to be pasted by hand. Capacitor's
   // Clipboard plugin reads through the OS instead; the web API stays as the browser fallback.
@@ -2470,31 +2553,40 @@ function ImportFitSheet({onClose,onImport,initialText="",initialErr=null}){
   // is expected and is not the fault. The error text names the cause.
   const readClip=async()=>{
     setErr(null);
-    const{text:t,why}=await readClipboardText();
-    if(t==null){setErr(`Couldn't read the clipboard${why?` — ${why}`:""}. Paste manually below.`);return;}
-    if(!t.trim()){setErr("The clipboard is empty — copy a fit first, then tap this again.");return;}
-    haptic();setText(t);process(t);
+    const{text:txt,why}=await readClipboardText();
+    // `why` is the platform's own error text and is not ours to translate, so it rides in a
+    // placeholder rather than being spliced into the sentence.
+    if(txt==null){setErr(why?t("Couldn't read the clipboard — {why}. Paste manually below.",{why}):t("Couldn't read the clipboard. Paste manually below."));return;}
+    if(!txt.trim()){setErr(t("The clipboard is empty — copy a fit first, then tap this again."));return;}
+    haptic();setText(txt);process(txt);
   };
   return(
-    <BottomSheet title="Import EFT Fit" onClose={onClose} height="88vh">
+    <BottomSheet title={t("Import EFT Fit")} onClose={onClose} height="88vh">
       <div style={{padding:14}}>
-        <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>Paste a fit copied from Pyfa or the in-game fitting window.</div>
-        <button onClick={readClip} style={{width:"100%",padding:"10px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>Read from Clipboard</button>
+        <div style={{fontSize:11,color:C.textMute,marginBottom:10}}>{t("Paste a fit copied from Pyfa or the in-game fitting window.")}</div>
+        <button onClick={readClip} style={{width:"100%",padding:"10px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",marginBottom:10}}>{t("Read from Clipboard")}</button>
         <textarea value={text} onChange={e=>{setText(e.target.value);process(e.target.value);}} placeholder={"[Hyperion, My Fit]\nNeutron Blaster Cannon II, Caldari Navy Antimatter Charge L\nMagnetic Field Stabilizer II\n..."} style={{width:"100%",height:110,background:C.surfaceAlt,border:`1px solid ${err?C.danger:C.border}`,borderRadius:8,color:C.text,fontSize:11,padding:"8px 10px",boxSizing:"border-box",resize:"none",fontFamily:"monospace"}}/>
         {err&&<div style={{color:C.danger,fontSize:11,marginTop:6}}>{err}</div>}
         {parsed&&(<div style={{marginTop:12,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:12,maxHeight:200,overflowY:"auto"}}>
           <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:2}}>{parsed.fitName}</div>
+          {/* Each count is its own plural key rather than an English "s" appended to a number:
+              Russian takes four forms where English takes two. The hull name is a CCP item name and
+              stays English. */}
           <div style={{fontSize:11,color:C.textMid,marginBottom:8}}>
-            {parsed.shipName} &middot; {parsed.mods.length} mod{parsed.mods.length!==1?"s":""}
-            {parsed.drones.length>0&&<> &middot; {parsed.drones.length} drone type{parsed.drones.length!==1?"s":""}</>}
-            {parsed.fighters?.length>0&&<> &middot; {parsed.fighters.reduce((s,f)=>s+f.qty,0)} fighter squadron{parsed.fighters.reduce((s,f)=>s+f.qty,0)!==1?"s":""}</>}
-            {parsed.cargo.length>0&&<> &middot; {parsed.cargo.length} cargo</>}
-            {parsed.implantNames.length>0&&<> &middot; {parsed.implantNames.length} implant{parsed.implantNames.length!==1?"s":""}</>}
-            {parsed.boosterNames.length>0&&<> &middot; {parsed.boosterNames.length} booster{parsed.boosterNames.length!==1?"s":""}</>}
+            {(()=>{
+              const nFighters=(parsed.fighters??[]).reduce((s,f)=>s+f.qty,0);
+              const bits=[parsed.shipName, t({one:"{n} mod",other:"{n} mods"},{n:parsed.mods.length})];
+              if(parsed.drones.length>0) bits.push(t({one:"{n} drone type",other:"{n} drone types"},{n:parsed.drones.length}));
+              if(nFighters>0) bits.push(t({one:"{n} fighter squadron",other:"{n} fighter squadrons"},{n:nFighters}));
+              if(parsed.cargo.length>0) bits.push(t("{n} cargo",{n:parsed.cargo.length}));
+              if(parsed.implantNames.length>0) bits.push(t({one:"{n} implant",other:"{n} implants"},{n:parsed.implantNames.length}));
+              if(parsed.boosterNames.length>0) bits.push(t({one:"{n} booster",other:"{n} boosters"},{n:parsed.boosterNames.length}));
+              return bits.join(" · ");
+            })()}
           </div>
           {parsed.mods.map((m,i)=>(<div key={i} style={{fontSize:11,padding:"2px 0",borderBottom:`1px solid ${C.border}`}}><span style={{color:C.text}}>{m.name}</span>{m.charge&&<span style={{color:C.textMute}}> &rsaquo; {m.charge}</span>}</div>))}
         </div>)}
-        {parsed&&<button onClick={()=>{onImport(parsed);onClose();}} style={{width:"100%",marginTop:14,padding:"12px 0",background:C.accent,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>Import "{parsed.fitName}"</button>}
+        {parsed&&<button onClick={()=>{onImport(parsed);onClose();}} style={{width:"100%",marginTop:14,padding:"12px 0",background:C.accent,border:"none",borderRadius:8,color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer"}}>{t('Import "{name}"',{name:parsed.fitName})}</button>}
       </div>
     </BottomSheet>
   );
@@ -2515,10 +2607,10 @@ function TargetProfileSheet({current,onSelect,onClose}){
     {[["em",r[0]],["th",r[1]],["kin",r[2]],["exp",r[3]]].map(([k,v])=>(
       <span key={k} title={`${k} ${Math.round(v*100)}%`} style={{width:11,height:11,borderRadius:2,background:DMG[k].color,opacity:0.15+v*0.85}}/>))}
   </span>);
-  return(<BottomSheet title="Target Resist Profile" onClose={onClose} height="80vh" fillHeight>
+  return(<BottomSheet title={t("Target Resist Profile")} onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>Weights your DPS by how resistant the target is. Does not change raw DPS.</div>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search targets..."/>
+      <div style={{fontSize:10,color:C.textMute,marginBottom:6}}>{t("Weights your DPS by how resistant the target is. Does not change raw DPS.")}</div>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search targets...")}/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
@@ -2544,9 +2636,9 @@ function DamageProfileSheet({current,onSelect,onClose}){
   const Bar=({p})=>(<span style={{display:"flex",width:54,height:6,borderRadius:99,overflow:"hidden",border:`1px solid ${C.border}`,flexShrink:0}}>
     {[["em",p[0]],["th",p[1]],["kin",p[2]],["exp",p[3]]].map(([k,v])=><span key={k} style={{width:`${v*100}%`,background:DMG[k].color}}/>)}
   </span>);
-  return(<BottomSheet title="Incoming Damage Profile" onClose={onClose} height="80vh" fillHeight>
+  return(<BottomSheet title={t("Incoming Damage Profile")} onClose={onClose} height="80vh" fillHeight>
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
-      <SheetSearchBar value={search} onChange={setSearch} placeholder="Search profiles..."/>
+      <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search profiles...")}/>
     </div>
     {cats.map(g=>{const open=!!q||openCat.has(g.cat);return(<div key={g.cat}>
       <div onClick={()=>toggleCat(g.cat)} style={{display:"flex",alignItems:"center",gap:6,padding:"8px 14px",background:C.surfaceAlt,borderBottom:`1px solid ${C.border}`,cursor:"pointer"}}>
