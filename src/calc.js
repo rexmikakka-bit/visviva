@@ -264,6 +264,10 @@ export function calcLockTime(scanRes, tgtSigRadius) {
   return Math.min(40000 / scanRes / Math.pow(Math.asinh(tgtSigRadius), 2), 30 * 60);
 }
 
+// The fill level the peak below occurs at, as a percentage. Lives next to the formula it falls out
+// of so the two cannot drift: the UI names this number to the user.
+export const PEAK_REGEN_AT_PCT = 25;
+
 export function peakRegen(capacityHP, rechargeRateMs) {
   // EVE formula: peak rate = capacity × (√f - f) × 10/T, max at f=0.25 → factor 2.5
   if (!capacityHP || !rechargeRateMs) return 0;

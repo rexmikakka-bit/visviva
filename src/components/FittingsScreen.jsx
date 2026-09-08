@@ -32,7 +32,7 @@ export const FIT_SUBTABS=["Fit","Stats","Graph"];
 // is why this is a FUNCTION over literal keys rather than a module-level object of t() calls: a
 // module body runs before main.jsx has resolved the stored locale, and the labels have to be read at
 // render. See lib/i18n.js.
-const _subTabLabel=k=>({Fit:t("Modules"),Stats:t("Stats"),Graph:t("Graph")}[k]??k);
+const _subTabLabel=k=>({Fit:t("Modules"),Stats:t("Stats"),Graph:t("Graphs")}[k]??k);
 
 // Transport-control arrows for the ship browser's header, borrowed from pyfa (and every media
 // player) because the shapes read as "back" and "back to the start" without a label to explain them.
