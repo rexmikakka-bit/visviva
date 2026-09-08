@@ -50,6 +50,7 @@ const LOADERS = {
   ru: () => import('../i18n/ru.js'),
   ja: () => import('../i18n/ja.js'),
   ko: () => import('../i18n/ko.js'),
+  zh: () => import('../i18n/zh.js'),
 };
 
 const catalogs = { en: {} };   // en is empty and stays empty: its keys already ARE its values
