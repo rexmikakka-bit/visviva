@@ -232,6 +232,7 @@ export default {
   "Efficiency": "効率",
   "Empty": "空",
   "Empty text": "テキストが空です",
+  "Environment": "環境",
   "Est. Value": "推定価格",
   "Even 15% spread across all four armor resists": "アーマー 4 耐性すべてに 15% を均等配分",
   "Every skill trained to V": "全スキルを V までトレーニング",
