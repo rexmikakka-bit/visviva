@@ -37,7 +37,10 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
+// core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
+// app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
+import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
 const SYSTEM_EFFECTS = SYSFX.effects;
 
 const tid = (n) => typeIDByName(n);
@@ -2281,6 +2284,51 @@ Loki Propulsion - Intercalated Nanofibers
   // Unmutated behaviour must be untouched: no roll, no extra candidate, same three attributes.
   check('cmp', 'no roll leaves the comparison exactly as before',
         differingAttributes(webVars).join(',') === 'capacitorNeed,maxRange,speedFactor' ? 1 : 0, 1, 0);
+
+  // ── The unrolled "Mutated <module>" SHELL is not a swap candidate ─────────────────────────
+  // CCP ships one shell type per mutaplasmid target, and 22 of the bundle's variation families list
+  // it as an ordinary sibling — so a Fighter Support Unit offered "Mutated Fighter Support Unit,
+  // no price" as an upgrade. Nobody can obtain that item: a real abyssal is a base module plus a
+  // roll. Tested against the BUNDLE's own family rather than variantsOf(), because core.js's
+  // data-bundle import needs Vite and is empty under Node — the shells are only reachable on the
+  // path this suite cannot walk, which is exactly why the bug shipped.
+  const fsuFamily = BUNDLE_VARIATIONS['24283'] ?? [];        // Fighter Support Unit I
+  const MUTATED_FSU = 60483;
+  check('cmp', "the bundle really does list a mutaplasmid shell as a sibling",
+        fsuFamily.some(v => v.typeID === MUTATED_FSU) ? 1 : 0, 1, 0);
+  const cleaned = withoutMutaplasmidShells(fsuFamily, 24283);
+  check('cmp', 'the shell is dropped from the family', cleaned.some(v => v.typeID === MUTATED_FSU) ? 1 : 0, 0, 0);
+  check('cmp', 'every real sibling survives', cleaned.length, fsuFamily.length - 1, 0);
+  // A roll the user OWNS carries the shell's typeID, and the Variations tab builds its rows from
+  // this list — filtering the baseline out would take the fitted module's own row off the screen.
+  check('cmp', 'the shell survives when it IS the module being compared',
+        withoutMutaplasmidShells(fsuFamily, MUTATED_FSU).some(v => v.typeID === MUTATED_FSU) ? 1 : 0, 1, 0);
+  // Asserted by property, not by one hand-listed family: CCP adds mutaplasmids every few releases.
+  // A shell listed under its OWN key is the exemption above, not a leak, so it is discounted here.
+  const shellLeaks = Object.entries(BUNDLE_VARIATIONS)
+    .filter(([tid, list]) => withoutMutaplasmidShells(list, tid)
+      .some(v => String(v.typeID) !== String(tid) && metaOf(v.typeID) === 'Abyssal'));
+  check('cmp', 'no family anywhere still offers a shell', shellLeaks.length, 0, 0);
+  // The shells the filter is there to catch — if this drops to zero the checks above are vacuous.
+  const shellsSeen = new Set(Object.values(BUNDLE_VARIATIONS)
+    .flatMap(list => (list ?? []).filter(v => metaOf(v.typeID) === 'Abyssal').map(v => v.typeID)));
+  check('cmp', 'the bundle still carries shells to filter', shellsSeen.size > 0 ? 1 : 0, 1, 0);
+
+  // ── A SMALLER explosion radius is better, whoever carries it ──────────────────────────────
+  // CCP flags the missile's own aoeCloudSize highIsGood=0, correctly, then flags
+  // fighterAbilityMissilesExplosionRadius and its Attack sibling 1. The derived rule believed the
+  // flag, so an Omnidirectional Tracking Link II's -8.25% was painted red against a I's -5.5% —
+  // the better module marked as the downgrade. Both signs are asserted so a regression cannot pass
+  // by breaking the comparison symmetrically.
+  check('cmp', 'a stronger explosion radius bonus reads better',
+        directionOf('aoeCloudSizeBonus', -8.25, -5.5, tid('Omnidirectional Tracking Link II')) ? 1 : 0, 1, 0);
+  check('cmp', 'a weaker explosion radius bonus reads worse',
+        directionOf('aoeCloudSizeBonus', -5.5, -8.25, tid('Omnidirectional Tracking Link I')) ? 1 : 0, 0, 0);
+  check('cmp', 'the enhancer family reads the same way',
+        directionOf('aoeCloudSizeBonus', -6, -4.4, tid('Omnidirectional Tracking Enhancer II')) ? 1 : 0, 1, 0);
+  // The velocity half of the same module is a genuine high-is-good and must not have flipped with it.
+  check('cmp', 'explosion velocity is still bigger-is-better',
+        directionOf('aoeVelocityBonus', 8.25, 5.5, tid('Omnidirectional Tracking Link II')) ? 1 : 0, 1, 0);
 }
 
 // 13l. COMMAND BURSTS FROM A LINK FIT - whose skills fly the booster?
@@ -4891,6 +4939,50 @@ Medium Capacitor Control Circuit II
   check('fighter', 'Sotiyo + Standup Templar II', sotiyo(null), 555.8142857142857, 1e-9);
   check('fighter', 'Standup ignores Drone Interfacing', sotiyo(lower('droneInterfacing')), 555.8142857142857, 1e-9);
   check('fighter', 'Standup ignores Fighters', sotiyo(lower('fighters')), 555.8142857142857, 1e-9);
+
+  // ── The damage graph has to SEE the fighters ────────────────────────────────────────────────
+  // `graphWeapons` is the per-weapon list the damage graph sums. Fighter damage was computed, put on
+  // the stats panel and never pushed into it, so every carrier's damage curve was a flat zero while
+  // the panel beside it read four thousand DPS.
+  const carrierStats = calcFitStats(
+    { typeID: tid('Thanatos'), name: 'Thanatos' },
+    { high: [], mid: [M('Networked Sensor Array', 'active')], low: [M('Capital Armor Repairer II', 'active')], rigs: [] },
+    [], null, { fighters: [{ typeID: tid('Firbolg II'), name: 'Firbolg II', qty: 9, active: true }] },
+  );
+  const ftrRows = (carrierStats.graphWeapons ?? []).filter((w) => w.kind === 'fighter');
+  // A Firbolg II has two damage abilities and both default to on, so both must be drawn.
+  check('fighter', 'the graph gets one row per damage ability', ftrRows.length, 2, 0);
+  // The graph's own arithmetic — volley over cycle, summed — has to land on the headline number, or
+  // the curve and the panel are describing different fits.
+  check('fighter', 'the rows sum to the displayed fighter DPS',
+        ftrRows.reduce((s, w) => s + (w.volley.em + w.volley.th + w.volley.kin + w.volley.exp) / w.cycleS, 0),
+        5733.823660714287, 1e-9);
+
+  // Fighters apply like missiles, off attributes the ability carries itself. Without these the curve
+  // would be flat across the sig and speed axes — which is also what makes an omnidirectional
+  // tracking link visible on this graph at all.
+  const atk = ftrRows.find((w) => Math.abs(w.cycleS - 5) < 1e-9); // the 5 s attack run
+  check('fighter', 'the attack run carries its explosion radius', atk.explosionRadius, 185, 0);
+  check('fighter', 'and its explosion velocity', atk.explosionVelocity, 105, 0);
+  // CCP files the reduction factor under two different attribute names depending on the ability, and
+  // splits it into a factor and a sensitivity. The graph needs the single aggregated exponent that
+  // pyfa's _calcAggregatedDrf produces: ln(factor) / ln(sensitivity).
+  check('fighter', 'and one aggregated damage reduction factor', atk.aoeDamageReductionFactor,
+        Math.log(3) / Math.log(5.5), 1e-12);
+  check('fighter', 'a frigate still mitigates a fighter attack run',
+        calcMissileFactor(atk.explosionRadius, atk.explosionVelocity, atk.aoeDamageReductionFactor, 400, 40) < 0.2 ? 1 : 0, 1, 0);
+  // A squadron cannot be told what to shoot past the carrier's own lock, so that is the hard edge the
+  // curve falls off at — the fighter equivalent of drone control range.
+  check('fighter', 'and the lock range that gates it', atk.lockRange, carrierStats.exact.targetRange * 1000, 1e-9);
+
+  // Sitting in the hangar is not firing. The firepower total already skips unlaunched squadrons; the
+  // graph has to skip the same ones or it draws damage the fit is not dealing.
+  const parked = calcFitStats(
+    { typeID: tid('Thanatos'), name: 'Thanatos' }, { high: [], mid: [], low: [], rigs: [] }, [], null,
+    { fighters: [{ typeID: tid('Firbolg II'), name: 'Firbolg II', qty: 9, active: false }] },
+  );
+  check('fighter', 'an unlaunched squadron is not on the graph',
+        (parked.graphWeapons ?? []).filter((w) => w.kind === 'fighter').length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

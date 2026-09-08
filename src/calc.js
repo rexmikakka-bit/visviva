@@ -3931,6 +3931,9 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       const isOn = (def) => tog[def.key] !== undefined ? !!tog[def.key] : (def.kind === 'damage'); // damage on by default
       const abilities = [];
       let ftrDpsTotal = 0;
+      // Graph contributions for this squadron, held back until the speed model below has run: whether
+      // range matters at all depends on whether the fighter can outrun what it is shooting.
+      const ftrGraph = [];
       for (const def of FIGHTER_ABILITY_DEFS) {
         if (fa[def.probe] == null) continue; // fighter doesn't have this ability
         const abilOn = isOn(def);
@@ -3951,6 +3954,18 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
               if (sqActive) { // only active squadrons feed the firepower total
                 for (const k of ['em','th','kin','exp']) { fighterDps[k] += pt[k]/durS; fighterVolley[k] += pt[k]; }
                 fighterDps.total += vol/durS; fighterVolley.total += vol;
+                // Fighter attacks apply like missiles — the ability carries its own explosion radius,
+                // explosion velocity and damage reduction factor. CCP files the reduction factor under
+                // two different attribute names depending on the ability, hence the pair of lookups.
+                const rFac = fa[`fighterAbility${ab}ReductionFactor`] ?? fa[`fighterAbility${ab}DamageReductionFactor`] ?? 0;
+                const rSen = fa[`fighterAbility${ab}ReductionSensitivity`] ?? fa[`fighterAbility${ab}DamageReductionSensitivity`] ?? 0;
+                ftrGraph.push({ kind:'fighter', volley:{...pt}, cycleS: durS,
+                  optimal: fa[`fighterAbility${ab}RangeOptimal`] ?? fa[`fighterAbility${ab}Range`] ?? 0,
+                  falloff: fa[`fighterAbility${ab}RangeFalloff`] ?? 0,
+                  explosionRadius: fa[`fighterAbility${ab}ExplosionRadius`] ?? 0,
+                  explosionVelocity: fa[`fighterAbility${ab}ExplosionVelocity`] ?? 0,
+                  aoeDamageReductionFactor: (rFac > 0 && rSen > 1) ? Math.log(rFac)/Math.log(rSen) : 0,
+                  lockRange: Math.min(s.get('maxTargetRange'), s.get('maximumRangeCap') || 300000) });
               }
             }
           }
@@ -3974,6 +3989,11 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         const spd = velCore * stackMult([bonus, ...dncVals]);
         if (spd > speedActive) { speedActive = spd; burstFrom = def.label; }
       }
+      // A squadron that can outrun its target closes and stays in its own optimal, so the carrier's
+      // distance to the target stops mattering — the same assumption pyfa's graph makes for mobile
+      // drones and fighters. Below that speed the squadron trails and its range factor bites, so the
+      // graph needs the speed it actually flies at.
+      for (const g of ftrGraph) { g.speed = baseSpeed; graphWeapons.push(g); }
       // EHP: shield boosted by Drone Durability (+25%), the hull fighter-HP bonus, and FSU shield
       // (unpenalized), weighted by the incoming damage profile; structure (hull) also gets Drone Durability.
       const durMult = req('Fighters') ? droneDurability : 1;

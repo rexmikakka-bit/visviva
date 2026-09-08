@@ -146,12 +146,29 @@ function implantFamilyIndex() {
   return _implantFamilies;
 }
 
+/**
+ * Drops the unrolled "Mutated <module>" shell CCP ships for every mutaplasmid target.
+ *
+ * The shell is not an item anyone can obtain — a real abyssal module is a BASE type plus a roll —
+ * so listing one as a swap candidate offers to trade a working module for an empty husk, priced at
+ * "no price" because no such thing is ever sold. 22 of the bundle's families carry one.
+ *
+ * `keepTypeID` is the module being compared, and it is exempt: a roll the user actually owns keeps
+ * the shell as its typeID, and the Variations tab builds its rows from this list, so filtering the
+ * baseline out would take the fitted module's own row off the screen.
+ */
+const ABYSSAL_META_GROUP = 15;
+function withoutMutaplasmidShells(list, keepTypeID) {
+  return (list ?? []).filter(v => String(v?.typeID) === String(keepTypeID)
+    || ((TYPES[v?.typeID] ?? TYPES[String(v?.typeID)])?.mg !== ABYSSAL_META_GROUP));
+}
+
 function variantsOf(typeID) {
-  const direct = (moduleVariations ?? {})[String(typeID)] ?? [];
+  const direct = withoutMutaplasmidShells((moduleVariations ?? {})[String(typeID)], typeID);
   if (direct.length) return direct;
   if (isImplantLike(typeID)) {
     const self = TYPES[typeID] ?? TYPES[String(typeID)];
-    const kin = implantFamilyIndex().get(implantFamilyKey(self?.n)) ?? [];
+    const kin = withoutMutaplasmidShells(implantFamilyIndex().get(implantFamilyKey(self?.n)), typeID);
     // Only narrow when the key found relatives; a name matching none of the shapes keeps whatever
     // the market-group fallback gives it rather than collapsing to a single entry.
     if (kin.length > 1) return kin.map(k => ({ ...k }));
@@ -161,7 +178,7 @@ function variantsOf(typeID) {
 
   // meta is left undefined on purpose — the Variations tab resolves it from CCP's metaGroupID,
   // which is more reliable than anything stored alongside the name.
-  return (MT_ITEMS[row[0]] ?? []).map(s => ({ typeID: s.typeID, name: s.name }));
+  return withoutMutaplasmidShells((MT_ITEMS[row[0]] ?? []).map(s => ({ typeID: s.typeID, name: s.name })), typeID);
 }
 import { DRONE_TYPES } from "../dogma-engine-init.js";
 
@@ -1666,4 +1683,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

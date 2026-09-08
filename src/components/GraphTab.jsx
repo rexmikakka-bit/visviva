@@ -212,6 +212,7 @@ function generateCurve(catKey,yKey,xKey,params={}){
     for (const w of weapons) {
       if (w.kind === "turret") rangeMaxM = Math.max(rangeMaxM, (w.optimal||0) + 3*(w.falloff||0));
       else if (w.kind === "drone") rangeMaxM = Math.max(rangeMaxM, w.controlRange||0);
+      else if (w.kind === "fighter") rangeMaxM = Math.max(rangeMaxM, w.lockRange||0);
       else if (w.kind === "missile") rangeMaxM = Math.max(rangeMaxM, w.higherRange||0);
       else if (w.optimal) rangeMaxM = Math.max(rangeMaxM, w.optimal);
     }
@@ -240,6 +241,17 @@ function generateCurve(catKey,yKey,xKey,params={}){
                                         perfect?0:tgtSpeed, perfect?IDEAL_SIG:tgtSig);
         } else if (w.kind === "drone") {
           return distM <= (w.controlRange ?? Infinity) ? 1 : 0;
+        } else if (w.kind === "fighter") {
+          // A squadron has to be locked to be told what to shoot, so the carrier's own lock range is a
+          // hard edge. Inside it, a squadron faster than its target chases it down and fights at its own
+          // optimal, so the carrier's distance stops mattering; a slower one trails and takes the range
+          // factor. The application itself is missile math off the ability's explosion radius/velocity,
+          // which is why an omni tracking link moves this curve at all.
+          if (distM > (w.lockRange ?? Infinity)) return 0;
+          const tv = perfect ? 0 : tgtSpeed;
+          const rf = (w.speed ?? 0) >= tv ? 1 : calcRangeFactor(w.optimal, w.falloff, distM, true);
+          return rf * calcMissileFactor(w.explosionRadius, w.explosionVelocity, w.aoeDamageReductionFactor,
+                                        tv, perfect ? IDEAL_SIG : tgtSig);
         }
         return 1;
     };
@@ -1069,7 +1081,7 @@ function interpCurveAt(pts,xVal,col=1){
 // tgtProfile is READ-ONLY here — it is owned by Stats > Firepower, which is the single place it is
 // set. No setTgtProfile prop on purpose: the graph consuming state it cannot write is what keeps the
 // two views from disagreeing about which resist profile is in force.
-function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,tgtProfile,fitsDB,sourceSkills,openFitTabs,onOpenFit}){
+function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,externalBursts,projectedEffects,tgtProfile,fitsDB,sourceSkills,openFitTabs,onOpenFit}){
   const _scroll=useScrollMemory("Graph");
   // Lazy, once per mount — see loadGraphPrefs. A ref rather than useMemo because these feed useState
   // initialisers, and a discarded memo would silently hand back defaults.
@@ -1163,7 +1175,10 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,factorInReload,ext
   const validY=cat.yAxes.find(a=>a.key===yKey)?yKey:cat.yAxes[0].key;
   const validX=cat.xAxes.find(a=>a.key===xKey)?xKey:cat.xAxes[0].key;
   const yAxis=cat.yAxes.find(a=>a.key===validY),xAxis=cat.xAxes.find(a=>a.key===validX);
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{};
+  // Fighters are passed the same shape the stats panel uses. Leaving them out was why a carrier's
+  // damage graph drew a flat zero next to a panel reading four thousand DPS: the curve is built from
+  // this call's graphWeapons, and a fit whose only weapons are squadrons had none.
+  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
   // The fit's own top speed, and the speed actually used by the maths. A sieged/bastioned hull
   // reports 0 here, so the wheel's stored heading and speed must NOT be allowed to contribute a
   // transversal the ship cannot physically generate — clamp rather than trust the persisted value,

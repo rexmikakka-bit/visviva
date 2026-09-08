@@ -167,7 +167,17 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
       // carrying them is legal, so there is nothing to warn about.
       return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active:active&&qty<=droneSlotsFree,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
     });}
-  const addFighter=f=>{setFighters(prev=>[...prev,{id:Date.now(),name:f.name,tier:f.tier,typeID:f.typeID,role:f.role||null,qty:1,active:true,abilities:{}}]);};
+  const classOfType=f=>{const tid=f.typeID??(f.name?tidByName(f.name):null);const a=tid!=null?(TYPES[tid]?.attrs??TYPES[String(tid)]?.attrs):null;
+    return a?.fighterSquadronIsHeavy?"Heavy":a?.fighterSquadronIsSupport?"Support":"Light";};
+  // Launched only if there is BOTH a free tube and a free slot of its own class — the same rule the
+  // drone rack uses, where a stack added past the bandwidth or the drone limit lands in the bay
+  // instead of silently putting the fit over. A carrier's hangar legally holds spare squadrons, so
+  // there is nothing to warn about; the squadron just sits there until a tube frees up.
+  const addFighter=f=>{
+    const cls=classOfType(f);
+    const tubesFree=(shipFighter?.tubes??0)-activeSquads;
+    const classFree=(shipFighter?.[cls.toLowerCase()]??0)-squadActive[cls];
+    setFighters(prev=>[...prev,{id:Date.now(),name:f.name,tier:f.tier,typeID:f.typeID,role:f.role||null,qty:1,active:tubesFree>0&&classFree>0,abilities:{}}]);};
   const toggleFighterActive=id=>setFighters(fighters.map(f=>f.id===id?{...f,active:f.active===false?true:false}:f));
   const toggleFighterAbility=(id,abilityKey,currentActive)=>setFighters(fighters.map(f=>
     f.id===id?{...f,abilities:{...(f.abilities||{}),[abilityKey]:!currentActive}}:f));
@@ -176,10 +186,12 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
   const usesFighters = (shipFighter?.tubes ?? 0) > 0;
   const _ftrVol=(name)=>{const tid=name?tidByName(name):null;const a=tid!=null?(TYPES[tid]?.attrs??TYPES[String(tid)]?.attrs):null;return a?.volume??0;};
   const fighterBayUsed = fighters.reduce((s,f,i)=>{const sz=fighterInfo[i]?.sqSize ?? (()=>{const tid=f.name?tidByName(f.name):null;return (tid!=null?TYPES[tid]?.attrs?.fighterSquadronMaxSize:0)??0;})();return s+(f.qty??1)*sz*_ftrVol(f.name);},0);
-  const classOf=(f,i)=>fighterInfo[i]?.class ?? (()=>{const tid=f.name?tidByName(f.name):null;const a=tid!=null?TYPES[tid]?.attrs:null;return a?.fighterSquadronIsHeavy?"Heavy":a?.fighterSquadronIsSupport?"Support":"Light";})();
-  const squadTotals={Light:0,Heavy:0,Support:0}, squadActive={Light:0,Heavy:0,Support:0};
-  fighters.forEach((f,i)=>{const c=classOf(f,i);const q=f.qty??1;if(squadTotals[c]!=null){squadTotals[c]+=q;if(f.active!==false)squadActive[c]+=q;}});
-  const totalSquads = fighters.reduce((s,f)=>s+(f.qty??1),0);
+  const classOf=(f,i)=>fighterInfo[i]?.class ?? classOfType(f);
+  // Per-class counts are ACTIVE squadrons, like the tube count beside them: the light/heavy/support
+  // limits cap what can be in space at once, not what the bay may hold. Counting every squadron put
+  // an unlaunched spare over the class limit while the tube chip said there was room.
+  const squadActive={Light:0,Heavy:0,Support:0};
+  fighters.forEach((f,i)=>{const c=classOf(f,i);if(squadActive[c]!=null&&f.active!==false)squadActive[c]+=f.qty??1;});
   const activeSquads = fighters.reduce((s,f)=>s+(f.active!==false?(f.qty??1):0),0);
   const fighterDpsActive = fighterInfo.reduce((s,d)=>s+(d?.active!==false?(d?.dps||0):0),0);
   const fmtM3=v=>v>=1000?(v/1000).toFixed(1)+"k":Math.round(v);
@@ -244,7 +256,7 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
             are CCP taxonomy and stay English — and keying on the label would rebuild the row on
             every language switch. */}
         {[{id:"tubes",label:t("Tubes"),used:activeSquads,cap:shipFighter.tubes,col:C.high},
-          ...CLASS_META.filter(c=>c.cap>0).map(c=>({id:c.k,label:c.k,used:squadTotals[c.k],cap:c.cap,col:c.col}))
+          ...CLASS_META.filter(c=>c.cap>0).map(c=>({id:c.k,label:c.k,used:squadActive[c.k],cap:c.cap,col:c.col}))
          ].map(chip=>{
           const over=chip.used>chip.cap, n=Math.max(chip.cap,chip.used,1);
           return(<div key={chip.id} style={{flex:1,minWidth:0,background:C.surface,border:`1px solid ${over?C.danger:C.border}`,borderRadius:8,padding:"6px 8px"}}>

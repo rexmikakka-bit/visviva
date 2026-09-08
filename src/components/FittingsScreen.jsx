@@ -860,10 +860,12 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
     // Names are the app's identity for a fit, so a second "New Fit" on the same hull would collide
     // with the first and both would resolve to whichever came back from the lookup.
     const taken=new Set((fitsDB[ship]||[]).map(f=>f.name));
-    // Stays an English literal, unlike the identically-worded BUTTON: this is saved onto the fit and
-    // travels out through EFT export and backups, where a localised default would be noise.
-    let name="New Fit", n=2;
-    while(taken.has(name))name=`New Fit ${n++}`;
+    // Localised, matching the button that creates it. The name is a label the user reads and renames,
+    // so an English "New Fit" appearing under a German UI reads as a bug; once saved it travels
+    // through EFT export and backups as whatever it says, exactly like a name typed by hand.
+    const base=t("New Fit");
+    let name=base, n=2;
+    while(taken.has(name))name=`${base} ${n++}`;
     const nf={id:nextId,name,modified:now,tags:[],slots:generateEmptySlots(lookupShip(ship))};
     setFitsDB(prev=>({...prev,[ship]:[...(prev[ship]||[]),nf]}));
     setNextId(x=>x+1);
@@ -1240,7 +1242,7 @@ export function FittingsScreen({recents,undo,undoDepth,activeFit,setActiveFit,lo
            style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
       {fitSubTab==="Fit"   &&<FitTab   undo={undo} undoDepth={undoDepth} ship={activeShip} slots={slots} setSlots={setSlots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} dmgProfile={dmgProfile} tgtProfile={tgtProfile} autoFillHardpoints={autoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd}/>}
       {fitSubTab==="Stats" &&<StatsTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub}/>}
-      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
+      {fitSubTab==="Graph" &&<GraphTab ship={activeShip} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} fighters={fighters} factorInReload={factorInReload} externalBursts={externalBursts} projectedEffects={projectedEffects} tgtProfile={tgtProfile} fitsDB={fitsDB} sourceSkills={sourceSkills} openFitTabs={openFitTabs} onOpenFit={onOpenFit}/>}
       </div>
     </div>
     {tagSheetEl}

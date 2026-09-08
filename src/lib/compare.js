@@ -261,6 +261,11 @@ const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
  * `mass` is the same shape on a ship — flagged high-is-good, but an armor plate's added tonnage is
  * a cost, not a benefit.
  *
+ * The fighter explosion radii are a third: CCP flags the missile's own `aoeCloudSize` 0, correctly,
+ * and then flags `fighterAbilityMissilesExplosionRadius` and its Attack sibling 1. A smaller blast
+ * radius applies better against a small target no matter who carries it, so an Omnidirectional
+ * Tracking Link II's −8.25% beat a I's −5.5% while being painted as the worse module.
+ *
  * Kept as patterns rather than a list of 50 names because the family is open-ended: CCP adds a new
  * manufacturing category and its multiplier arrives mis-flagged exactly like the others.
  *
@@ -269,7 +274,7 @@ const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
  * a cost here, and then the fallback at the bottom of directionOf asked CCP's raw flag and painted a
  * heavier hull green. The correction belongs to the attribute, not to the route taken to reach it.
  */
-const LOWER_IS_BETTER_TARGET_RE = /(Time|Material|Mat|Cost)Multiplier$/;
+const LOWER_IS_BETTER_TARGET_RE = /((Time|Material|Mat|Cost)Multiplier|ExplosionRadius)$/;
 const LOWER_IS_BETTER_TARGETS = new Set(['mass', 'strEngMatBonus']);
 function correctedHighIsGood(attrID) {
   const name = ATTR_ID_TO_NAME[attrID];
