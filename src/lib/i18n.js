@@ -47,6 +47,7 @@ const LOADERS = {
   de: () => import('../i18n/de.js'),
   fr: () => import('../i18n/fr.js'),
   es: () => import('../i18n/es.js'),
+  ru: () => import('../i18n/ru.js'),
 };
 
 const catalogs = { en: {} };   // en is empty and stays empty: its keys already ARE its values
