@@ -1692,7 +1692,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               ["align",    t("Align time"),`${fmtF(cs.alignTime??0)} s`,     p(x.alignTime,3," s")],
               ["scanres",  t("Scan res."), `${fmtN(cs.scanRes??0)} mm`,      p(x.scanRes,2," mm")],
               ["signature",t("Signature radius"), `${fmtN(cs.sigRadius??0)} m`, p(x.sigRadius,2," m")],
-              ["sensor",   t("Sensor strength"), `${cs.sensorStrength??0} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)} ${cs.sensorType??""}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
+              // The sensor TYPE is a category, not part of the magnitude, so it drops to its own
+              // muted line below rather than sharing one — "Sensor strength" plus "30 Magnetometric"
+              // does not fit a 1fr column, and letting it wrap orphaned the number above the type.
+              ["sensor",   t("Sensor strength"), `${cs.sensorStrength??0}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`, x.sensorStrength!=null?`${x.sensorStrength.toFixed(2)}${cs.jamChance>0?` (${cs.jamChance}%)`:""}`:null],
               ["warp",     t("Warp speed"),`${fmtF(cs.warpSpeed??3)} AU/s`,  p(x.warpSpeed,3," AU/s")],
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
@@ -1718,7 +1721,10 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
                         title={tip}
                         style={{padding:"5px 12px",fontSize:11,borderBottom:bb,borderRight:br,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6,cursor:can?"pointer":"default"}}>
               <span style={{color:C.textMid,flexShrink:0}}>{label}</span>
-              <span style={{fontWeight:600,color:C.text,textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</span>
+              <div style={{textAlign:"right",lineHeight:1.25}}>
+                <div style={{fontWeight:600,color:C.text,fontVariantNumeric:"tabular-nums"}}>{on?exact:val}</div>
+                {id==="sensor"&&cs.sensorType&&<div style={{fontSize:9,color:C.textMute}}>{cs.sensorType}</div>}
+              </div>
             </div>);
           })}
         </div>}
