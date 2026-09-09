@@ -7,6 +7,7 @@ import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { abyssalGrade, mutaplasmidName } from "../lib/eft-export.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
+import { useSwipeBack } from "../lib/use-swipe-back.js";
 import { t } from "../lib/i18n.js";
 
 // Drone sizes (Light/Medium/Heavy/Sentry), fighter classes (Light/Heavy/Support) and race names are
@@ -23,6 +24,11 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
   // only matches the punctuation as typed.
   const searchResults=search.trim().length>1?allDrones.filter(d=>nameMatchesQuery(d.name,search)).slice(0,40):null;
   const drilledGroup=drillSub?REAL_DRONE_BROWSER.find(g=>g.topGroup===drillSub):null;
+  // Same condition as the Back arrow below: a search covers the drilled list, so there is no visible
+  // level to leave while one is running.
+  const canGoUp=!searchResults&&!!drillSub;
+  const goUp=()=>setDrillSub(null);
+  const backSwipe=useSwipeBack(goUp,canGoUp);
 
   function DroneRow({d}){
     const already=existingDrones.find(e=>e.name===d.name);
@@ -66,8 +72,10 @@ export function DroneBrowserSheet({existingDrones,onAdd,onClose}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search drones...")}/>
     </div>
-    {!searchResults&&drillSub&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={()=>setDrillSub(null)} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>{t("Back")}</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
+    <div {...backSwipe}>
+    {canGoUp&&(<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}><button onClick={goUp} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>{t("Back")}</button><span style={{fontSize:13,fontWeight:600,color:C.text}}>{drillSub}</span></div>)}
     <div>{renderBody()}</div>
+    </div>
   </BottomSheet>);
 }
 

@@ -34,7 +34,7 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
+import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
 import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
@@ -2059,6 +2059,27 @@ Loki Propulsion - Intercalated Nanofibers
     check('back', 'a remounted screen stays below an open sheet', (runBackHandler(), fired.pop()), 'sheet-again', 0);
     for (const f of unreg) f();
     check('back', 'unregistering empties the stack', _backStackDepth(), 0, 0);
+  }
+
+  // The swipe half of "go up a level". Every browser sheet with a drill-down path now shares this
+  // with the hardware Back button (lib/use-swipe-back.js) — the module browser had both by hand
+  // while the cargo and drone browsers had neither, which is the bug that made this shared.
+  //
+  // The axis lock is the load-bearing part. These sheets are long scrolling lists, so a gesture that
+  // resolves an ambiguous diagonal to "x" navigates away from what the user was reading; the 1.2 bias
+  // exists to make scrolling win ties, and a symmetric compare would silently undo that.
+  {
+    check('back', 'a tap is too small to be a swipe', String(swipeBackAxis(3, 2)), 'null');
+    check('back', 'and so is a slow start', String(swipeBackAxis(7, 7)), 'null');
+    check('back', 'a flat drag goes to the path', swipeBackAxis(40, 5), 'x');
+    check('back', 'scrolling never does', swipeBackAxis(5, 40), 'y');
+    check('back', 'a tie resolves to scrolling', swipeBackAxis(30, 30), 'y');
+    check('back', 'and so does a shallow diagonal', swipeBackAxis(33, 30), 'y');
+    check('back', 'past the bias it is a swipe', swipeBackAxis(40, 30), 'x');
+    check('back', 'a long drag commits', String(swipeBackCommits(90)), 'true');
+    check('back', 'a short one does not', String(swipeBackCommits(40)), 'false');
+    // Leftward is the tab swipe's and the row tray's direction, never this one.
+    check('back', 'and neither does a leftward one', String(swipeBackCommits(-200)), 'false');
   }
 
   // ── Translation lookup ────────────────────────────────────────────────────────────────────

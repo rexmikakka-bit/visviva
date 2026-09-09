@@ -51,6 +51,25 @@ export function runBackHandler() {
 /** Test seam — the suite drives the stack directly rather than through React. */
 export function _backStackDepth() { return stack.length; }
 
+// The GESTURE form of Back: an iOS-style left-to-right swipe up one level of a browser sheet's path.
+// The decision lives here rather than beside the hook that uses it (lib/use-swipe-back.js) for the
+// same reason the stack does — this file takes no package imports, so the suite can cover it with no
+// npm install, and the hook needs React.
+const AXIS_LOCK_PX = 8;  // travel before the gesture decides horizontal vs vertical
+const COMMIT_PX = 70;    // rightward travel that counts as back
+
+/** Which axis a drag has committed to, or null while it is still too small to tell. */
+export function swipeBackAxis(dx, dy) {
+  if (Math.abs(dx) < AXIS_LOCK_PX && Math.abs(dy) < AXIS_LOCK_PX) return null;
+  // The 1.2 bias is deliberate: these sheets are long scrolling lists, so an ambiguous diagonal has
+  // to resolve to "y" or the browser navigates out from under someone who was only reading.
+  return Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+}
+
+/** Whether a finished horizontal drag counts as back. Rightward only — leftward belongs to the tab
+ *  swipe and the row tray. */
+export function swipeBackCommits(dx) { return dx > COMMIT_PX; }
+
 /**
  * Installs the single listener. Native gets Capacitor's backButton; everywhere else gets Escape,
  * which is both what a desktop browser user expects and the only way to exercise any of this on the

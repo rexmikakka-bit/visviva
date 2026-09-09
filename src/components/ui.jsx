@@ -18,6 +18,7 @@ import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { useBackHandler } from "../lib/use-back-handler.js";
+import { useSwipeBack } from "../lib/use-swipe-back.js";
 import { t } from "../lib/i18n.js";
 let _typeDescsCache = null;
 function useTypeDescriptions() {
@@ -687,26 +688,11 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
   const goBack=()=>{if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
-  // Back climbs the market tree before it closes the sheet, matching the header's ‹ and the
-  // left-to-right swipe below. Registered by THIS component rather than the <BottomSheet> it renders,
-  // which is what puts it above the sheet's own dismiss — see back-button.js on layering.
-  useBackHandler(goBack,navPath.length>0);
+  // Back climbs the market tree before it closes the sheet, matching the header's ‹. The hardware
+  // button and the left-to-right swipe are one hook so a browser cannot end up with only one of them
+  // — which is exactly how the cargo and drone browsers ended up with neither.
+  const backSwipe=useSwipeBack(goBack,navPath.length>0);
   const goInto=id=>{setNavDir(1);setNavPath([...navPath,id]);};
-  // Swipe left-to-right to go up a level, the way iOS back-swipe works. Axis-locked on the first
-  // meaningful movement so scrolling a long module list never triggers it.
-  const _nav=useRef({x:0,y:0,axis:null});
-  const _navStart=e=>{const pt=e.touches[0];if(pt)_nav.current={x:pt.clientX,y:pt.clientY,axis:null};};
-  const _navMove=e=>{
-    const pt=e.touches[0];if(!pt||_nav.current.axis)return;
-    const dx=pt.clientX-_nav.current.x,dy=pt.clientY-_nav.current.y;
-    if(Math.abs(dx)<8&&Math.abs(dy)<8)return;
-    _nav.current.axis=Math.abs(dx)>Math.abs(dy)*1.2?"x":"y";
-  };
-  const _navEnd=e=>{
-    const pt=e.changedTouches[0],axis=_nav.current.axis;_nav.current.axis=null;
-    if(!pt||axis!=="x")return;
-    if(pt.clientX-_nav.current.x>70)goBack();
-  };
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
   // enforces it), so the other sizes are dead weight to scroll past. Prune them here rather than
@@ -860,7 +846,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           {searchResults.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
         </div>
       ):(
-        <div key={navPath.join(">")} onTouchStart={_navStart} onTouchMove={_navMove} onTouchEnd={_navEnd}
+        <div key={navPath.join(">")} {...backSwipe}
              style={{flex:1}}
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
           {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}

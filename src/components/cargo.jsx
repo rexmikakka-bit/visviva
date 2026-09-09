@@ -6,6 +6,7 @@ import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressA
 import { MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, cargoUnitVolume, cargoVolume, getCompatibleCharges, haptic, isChargeType } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
+import { useSwipeBack } from "../lib/use-swipe-back.js";
 import { t } from "../lib/i18n.js";
 
 // Module scope, NOT nested inside CargoBrowserSheet — see the ModRow note in ui.jsx. A component
@@ -102,6 +103,12 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
     :null;
 
   const openGroup=gid=>setPath(p=>[...p,gid]);
+  // Gated on the same condition that renders the breadcrumb's Back arrow below, so the button, the
+  // hardware Back and the swipe always agree on whether there is a level to leave. Behind a search or
+  // the flat "for active fit" list there is no visible path, so Back belongs to the sheet's dismiss.
+  const canGoUp=!searchResults&&!fitCharges&&path.length>0;
+  const goUp=()=>{haptic();setPath(p=>p.slice(0,-1));};
+  const backSwipe=useSwipeBack(goUp,canGoUp);
   // Turning the charge filter on inside a branch with no charges in it would leave an empty list and
   // a breadcrumb pointing at somewhere you can no longer be. Back out to the deepest ancestor that
   // survives the filter instead, which is a no-op when you were already somewhere charges live.
@@ -147,12 +154,15 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
           inputProps={{onFocus:()=>setSearchFocused(true),onBlur:()=>setSearchFocused(false)}}/>
       </div>
     }>
+    {/* The whole body, so the back-swipe is available over the list and the breadcrumb alike rather
+        than only where a row happens to be. */}
+    <div {...backSwipe}>
     {/* Sticky, because these now live inside the sheet's own scroller: this used to be a fixed
         header above a NESTED scroller, which meant BottomSheet's onScroll={dismissKeyboardOnScroll}
         never fired here and scrolling the cargo list could not dismiss the keyboard at all. */}
-    {!searchResults&&!fitCharges&&path.length>0&&(
+    {canGoUp&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>setPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
+        <button onClick={goUp} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
         <span style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{crumb}</span>
       </div>
     )}
@@ -166,6 +176,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
         {items.map(item=><ItemRow key={item.typeID} item={item} onAdd={onAdd}/>)}
       </div>
     )}
+    </div>
   </BottomSheet>);
 }
 
