@@ -2,7 +2,7 @@ import { useState } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, AccordionSection, DroneMenu, SheetSearchBar } from "./ui.jsx";
-import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, droneAddQty } from "../lib/core.js";
+import { REAL_DRONE_BROWSER, FIGHTER_CATALOG, DRONE_FLIGHT, droneAddQty } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { abyssalGrade, mutaplasmidName } from "../lib/eft-export.js";
@@ -139,17 +139,14 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
   const activeCount=drones.filter(d=>d.active).reduce((s,d)=>s+d.qty,0);
   const droneSlotsFree=maxActiveDrones-activeCount;
   const addDrone=d=>{
-    const bayFree=shipDroneBay-bayUsed, bwFree=shipDroneBandwidth-bwUsed;
+    const bwFree=shipDroneBandwidth-bwUsed;
     // An abyssal roll is its own item, never merged with a plain stack of the same name — pyfa
     // never stacks a mutated drone with an unmutated one either.
     const ex=drones.find(e=>e.name===d.name && !e.mutaplasmid);
-    // Topping up a stack already in the bay: the bay always caps it, but bandwidth only does if that
-    // stack is flying — spares cost none. Its active state is the user's and is left alone.
+    // Topping up a stack already in the bay: another full flight on top of what is there. Its active
+    // state is the user's and is left alone, so nothing here has to weigh the budgets.
     if(ex){
-      const{qty}=droneAddQty({bandwidth:getDroneBW(ex),volume:getDroneVol(ex),
-                              bwFree:ex.active?bwFree:Infinity,bayFree,
-                              max:ex.active?Math.max(1,droneSlotsFree):maxActiveDrones});
-      setDrones(drones.map(e=>e===ex?{...e,qty:e.qty+qty}:e));return;
+      setDrones(drones.map(e=>e===ex?{...e,qty:e.qty+DRONE_FLIGHT}:e));return;
     }
     setDrones(prev=>{
       const dtid = d.typeID ?? (d.name ? tidByName(d.name) : null);
@@ -161,11 +158,11 @@ export function DronesScreen({drones,setDrones,droneInfo=[],fittedDrones=null,fi
       const trk = dta?.trackingSpeed ?? d.tracking ?? 0;
       const vel = dta?.maxVelocity ?? d.maxVelocity ?? d.velocity ?? 0;
       const hp_ = dta?.hp ?? d.hp ?? 0;
-      const{qty,active}=droneAddQty({bandwidth:bw,volume:vol,bwFree,bayFree,max:Math.max(1,droneSlotsFree)});
-      // Launched only if it fits under BOTH limits. Added while already flying a full set, the stack
-      // goes to the bay rather than silently putting the fit over — the bay is where spares live and
-      // carrying them is legal, so there is nothing to warn about.
-      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active:active&&qty<=droneSlotsFree,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
+      // Launched only if the whole flight fits the remaining bandwidth AND the remaining slots.
+      // Added while already flying a full set, the stack goes to the bay rather than silently putting
+      // the fit over — the bay is where spares live and carrying them is legal.
+      const{qty,active}=droneAddQty({bandwidth:bw,bwFree,slotsFree:droneSlotsFree});
+      return [...prev,{id:Date.now(),name:d.name,size:d.size,qty,active,range:rng,falloff:fal,tracking:trk,velocity:vel,hp:hp_,dps:d.dps??0,bandwidth:bw,volume:vol,typeID:d.typeID}];
     });}
   const classOfType=f=>{const tid=f.typeID??(f.name?tidByName(f.name):null);const a=tid!=null?(TYPES[tid]?.attrs??TYPES[String(tid)]?.attrs):null;
     return a?.fighterSquadronIsHeavy?"Heavy":a?.fighterSquadronIsSupport?"Support":"Light";};

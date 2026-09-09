@@ -37,7 +37,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -3970,74 +3970,82 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13q. DRONE AUTO-ADD QUANTITY — tapping a drone in the browser used to drop in a hardcoded five,
-//      inactive. Reported from the field: a Vigil (5 Mbit/s bandwidth, 5 m³ bay) can fly exactly ONE
-//      light drone, so the screen opened five deep with the bandwidth bar already red.
+// 13q. DRONE AUTO-ADD QUANTITY — a tap always adds a full flight of FIVE. Quantity is what you pack,
+//      and neither gauge shortens it; the budgets only decide whether the new stack launches.
 //
-//      The two budgets cap independently and mean different things — bandwidth is what can be IN
-//      SPACE, the bay is what is CARRIED — so a hull can legitimately hold more than it can launch,
-//      and the quantity has to respect the smaller while the ACTIVE flag follows bandwidth alone.
+//      This replaces a rule that capped the quantity by bandwidth AND bay. That rule kept both bars
+//      green, but it meant every stack added after the first five were already in space arrived as a
+//      SINGLE drone, so loading a bay with spare flights cost four extra taps each. Packing past a
+//      gauge is legal and visible (the bar goes red); silently editing the quantity down was not.
+//
+//      Bandwidth is what can be IN SPACE, the bay is what is CARRIED — so the launch decision reads
+//      bandwidth and the drones-in-space slots, and ignores the bay entirely.
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  // Light drone: 5 Mbit/s, 5 m³. Medium: 10/10. Heavy: 25/25. Sentry: 25 Mbit/s but 25 m³.
-  const LIGHT={bandwidth:5,volume:5}, MED={bandwidth:10,volume:10}, HEAVY={bandwidth:25,volume:25};
+  // Light drone: 5 Mbit/s. Medium: 10. Heavy: 25.
+  const LIGHT={bandwidth:5}, MED={bandwidth:10}, HEAVY={bandwidth:25};
+  const FIVE={slotsFree:5};   // an empty rack: five drones in space available
 
-  // The reported fit, exactly. Vigil: droneCapacity 5, droneBandwidth 5.
-  const vigil=droneAddQty({...LIGHT,bwFree:5,bayFree:5});
-  check('drn', 'a Vigil takes ONE light drone, not five', vigil.qty, 1, 0);
-  check('drn', 'and that one is launched', String(vigil.active), 'true');
+  // A Vexor: 75 Mbit/s, 125 m³. The flight fits both ways.
+  const vexor=droneAddQty({...LIGHT,...FIVE,bwFree:75});
+  check('drn', 'a Vexor takes a full flight of five', vexor.qty, 5, 0);
+  check('drn', 'and the flight launches', String(vexor.active), 'true');
 
-  // The case the hardcoded five was right for, and which must not regress.
-  const vexor=droneAddQty({...LIGHT,bwFree:75,bayFree:125});
-  check('drn', 'a Vexor still takes a full flight of five', vexor.qty, 5, 0);
-  check('drn', 'a Vexor flight launches', String(vexor.active), 'true');
+  // Five is a TARGET, not a ceiling reached only when there is room: a Vigil has 5 Mbit/s and a 5 m³
+  // bay, one light drone's worth of each, and still gets the whole flight. Four of them are spares
+  // the hull cannot carry, which is the user's call to make and the bay bar's job to show.
+  const vigil=droneAddQty({...LIGHT,...FIVE,bwFree:5});
+  check('drn', 'a Vigil takes five light drones too', vigil.qty, 5, 0);
+  // It must NOT launch: 25 Mbit/s of drones on 5 Mbit/s of bandwidth is a fit that cannot be flown,
+  // and the tap may not put the fit into that state on the user's behalf.
+  check('drn', 'but a Vigil flight does not launch', String(vigil.active), 'false');
 
-  // Five is a CEILING, not a target: a Vexor has bandwidth for 15 lights and bay for 25, but no
-  // pilot flies more than five, so the extra room must not pull more in.
-  check('drn', 'five is a ceiling', droneAddQty({...LIGHT,bwFree:1000,bayFree:1000}).qty, 5, 0);
+  // Spare room never pulls in MORE than five either — the flight size is fixed at both ends.
+  check('drn', 'and abundant room still adds exactly five',
+        droneAddQty({...LIGHT,...FIVE,bwFree:100000}).qty, 5, 0);
 
-  // Bandwidth binds below the bay: a Vexor's 75 Mbit/s is three heavies, its 125 m³ is five.
-  const heavies=droneAddQty({...HEAVY,bwFree:75,bayFree:125});
-  check('drn', 'bandwidth caps heavies below what the bay holds', heavies.qty, 3, 0);
-  check('drn', 'and all three launch', String(heavies.active), 'true');
+  // Partial bandwidth is still not enough. A Vexor flies three heavies; five is over, so all five
+  // are packed and none of them fly. All-or-nothing, because a stack has ONE active flag.
+  const heavies=droneAddQty({...HEAVY,...FIVE,bwFree:75});
+  check('drn', 'five heavies are packed on a Vexor', heavies.qty, 5, 0);
+  check('drn', 'and stay stowed, since only three would fly', String(heavies.active), 'false');
+  // Exactly enough is enough — the comparison is >=, not >.
+  check('drn', 'a rack with bandwidth for exactly five launches',
+        String(droneAddQty({...HEAVY,...FIVE,bwFree:125}).active), 'true');
 
-  // ...and the bay binds below bandwidth the other way round. An Ishtar-shaped case: plenty of
-  // bandwidth left, but the bay is nearly full. Whichever is smaller has to win, both ways, or the
-  // fix just moves the red bar from one gauge to the other.
-  const cramped=droneAddQty({...MED,bwFree:50,bayFree:20});
-  check('drn', 'the bay caps below bandwidth', cramped.qty, 2, 0);
-  check('drn', 'a bay-capped stack still launches', String(cramped.active), 'true');
-
-  // No room at all — bandwidth already spent on another flight. One still goes in, as a spare, but
-  // it must NOT come in active or it immediately overruns the bandwidth the user just allocated.
-  const spare=droneAddQty({...HEAVY,bwFree:0,bayFree:125});
-  check('drn', 'a drone with no bandwidth left still gets added', spare.qty, 1, 0);
+  // Bandwidth already spent on another flight. Five more go in as spares, stowed.
+  const spare=droneAddQty({...HEAVY,...FIVE,bwFree:0});
+  check('drn', 'a drone with no bandwidth left still adds five', spare.qty, 5, 0);
   check('drn', 'but it is not launched', String(spare.active), 'false');
 
-  // Already OVER bandwidth (a restored fit can be), which floors negative. Same answer, and the
-  // clamp is what stops a negative or zero quantity reaching the drone list.
-  const over=droneAddQty({...HEAVY,bwFree:-30,bayFree:125});
-  check('drn', 'an over-bandwidth fit still adds one', over.qty, 1, 0);
-  check('drn', 'and does not launch it', String(over.active), 'false');
+  // Already OVER bandwidth, which a restored fit can be. Negative must not read as room.
+  check('drn', 'an over-bandwidth fit does not launch the new stack',
+        String(droneAddQty({...HEAVY,...FIVE,bwFree:-30}).active), 'false');
 
-  // Bay full, bandwidth free. The spare has nowhere to go, but refusing the tap outright would
-  // leave the user unable to swap flights without deleting first.
-  check('drn', 'a full bay still adds one', droneAddQty({...LIGHT,bwFree:75,bayFree:0}).qty, 1, 0);
+  // The SLOT limit binds on its own, with bandwidth to spare. This is the case the old rule turned
+  // into a single drone: five already in space, so the next stack is spares — five of them.
+  const second=droneAddQty({...LIGHT,bwFree:1000,slotsFree:0});
+  check('drn', 'a second stack over a full rack still adds five', second.qty, 5, 0);
+  check('drn', 'and does not launch', String(second.active), 'false');
+  // Four free slots is not five. Partial room does not launch a five-stack.
+  check('drn', 'four free slots will not launch a flight of five',
+        String(droneAddQty({...LIGHT,bwFree:1000,slotsFree:4}).active), 'false');
 
-  // A hull with NO drone bay at all. Every gauge reads zero; nothing may divide by it or return 0.
-  const noBay=droneAddQty({...LIGHT,bwFree:0,bayFree:0});
-  check('drn', 'a hull with no drone bay adds one, idle', noBay.qty, 1, 0);
-  check('drn', 'no-bay drone is not launched', String(noBay.active), 'false');
+  // Salvage/mining drones carry no bandwidth figure in some data paths. A zero must read as free,
+  // not as a divisor — the old rule divided by it.
+  const free=droneAddQty({bandwidth:0,...FIVE,bwFree:0});
+  check('drn', 'a zero-bandwidth drone adds five', free.qty, 5, 0);
+  check('drn', 'and launches even with no bandwidth left', String(free.active), 'true');
 
-  // Salvage/mining drones and the like carry no bandwidth figure in some data paths; a zero divisor
-  // must fall through to the ceiling rather than producing Infinity or NaN.
-  const free=droneAddQty({bandwidth:0,volume:0,bwFree:75,bayFree:125});
-  check('drn', 'a zero-cost drone falls back to the ceiling', free.qty, 5, 0);
-  check('drn', 'and launches', String(free.active), 'true');
+  // A hull whose rack is bigger than five (drone control units) still gets flights of five, and the
+  // extra slots do not change the answer.
+  check('drn', 'a ten-slot rack still adds five at a time',
+        droneAddQty({...LIGHT,bwFree:1000,slotsFree:10}).qty, 5, 0);
 
-  // The top-up path passes Infinity for an inactive stack, since spares cost no bandwidth. Guard
-  // that it stays finite and bay-bound rather than returning Infinity into a quantity.
-  check('drn', 'topping up a stowed stack is bay-bound', droneAddQty({...MED,bwFree:Infinity,bayFree:30}).qty, 3, 0);
+  // The flight size is the exported constant, so the browser's top-up path (which adds DRONE_FLIGHT
+  // directly without consulting the budgets) cannot drift away from the new-stack path.
+  check('drn', 'the flight size is five', DRONE_FLIGHT, 5, 0);
+  check('drn', 'and it is what a tap adds', droneAddQty({...LIGHT,...FIVE,bwFree:75}).qty, DRONE_FLIGHT, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

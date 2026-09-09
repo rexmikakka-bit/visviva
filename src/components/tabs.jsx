@@ -1374,6 +1374,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItem
         const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*_dBW(d),0);
         if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:t("Drone bay over capacity by {n} m³",{n:fr(bayUsed-cs.droneBay)})});
         if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:t("Drone bandwidth exceeded by {n} Mbit/s",{n:fr(bwUsed-cs.droneBandwidth)})});
+        // Drones IN SPACE, which bandwidth does not imply — a Vexor's 75 Mbit/s carries seven mediums
+        // and the pilot still launches five. Drone DPS sums every active stack without capping, so
+        // without this the panel reads Valid while quoting damage from drones that cannot be launched.
+        const activeDrones=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0),0);
+        if((cs.maxActiveDrones??0)>0&&activeDrones>cs.maxActiveDrones) issues.push({sev:"err",msg:t("{n} drones in space — only {cap} can be launched",{n:activeDrones,cap:cs.maxActiveDrones})});
         // maxGroupFitted. The browser refuses to fit one too many, so anything caught here came in
         // through an EFT or ESI import, where the fit was built somewhere with no such gate.
         // `g.group` is a CCP market group name and stays English, like every other game term.

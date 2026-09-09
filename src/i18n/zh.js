@@ -833,6 +833,7 @@ export default {
   "{n} cargo": "{n} 件货物",
   "{n} drone types": "{n} 种无人机",
   "{n} drones": "{n} 架无人机",
+  "{n} drones in space — only {cap} can be launched": "太空中有 {n} 架无人机 — 最多只能出击 {cap} 架",
   "{n} fighter squadrons": "{n} 个铁骑士中队",
   "{n} fits": "{n} 个装配",
   "{n} fittings couldn't be read and were skipped.": "有 {n} 个装配无法读取，已跳过。",

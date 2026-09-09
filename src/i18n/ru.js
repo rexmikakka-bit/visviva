@@ -840,6 +840,7 @@ export default {
   "{n} cargo": "{n} в трюме",
   "{n} drone types": { one: "{n} тип дронов", few: "{n} типа дронов", many: "{n} типов дронов", other: "{n} типа дронов" },
   "{n} drones": { one: "{n} дрон", few: "{n} дрона", many: "{n} дронов", other: "{n} дрона" },
+  "{n} drones in space — only {cap} can be launched": "Дронов в космосе: {n} — запустить можно только {cap}",
   "{n} fighter squadrons": { one: "{n} эскадрилья", few: "{n} эскадрильи", many: "{n} эскадрилий", other: "{n} эскадрильи" },
   "{n} fits": { one: "{n} фиттинг", few: "{n} фиттинга", many: "{n} фиттингов", other: "{n} фиттинга" },
   "{n} fittings couldn't be read and were skipped.": { one: "Не удалось прочитать {n} фиттинг — он пропущен.", few: "Не удалось прочитать {n} фиттинга — они пропущены.", many: "Не удалось прочитать {n} фиттингов — они пропущены.", other: "Не удалось прочитать {n} фиттинга — они пропущены." },

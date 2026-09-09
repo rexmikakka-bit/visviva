@@ -839,6 +839,7 @@ export default {
   "{n} cargo": "カーゴ {n} 件",
   "{n} drone types": "{n} 種類のドローン",
   "{n} drones": "{n} 機のドローン",
+  "{n} drones in space — only {cap} can be launched": "宇宙空間に {n} 機のドローン — 発進できるのは {cap} 機までです",
   "{n} fighter squadrons": "{n} 個の飛行隊",
   "{n} fits": "{n} 件のフィット",
   "{n} fittings couldn't be read and were skipped.": "{n} 件のフィッティングを読み込めず、スキップしました。",

@@ -838,6 +838,7 @@ export default {
   "{n} cargo": "화물 {n}개",
   "{n} drone types": "드론 {n}종",
   "{n} drones": "드론 {n}기",
+  "{n} drones in space — only {cap} can be launched": "우주에 드론 {n}기 — {cap}기만 발진할 수 있습니다",
   "{n} fighter squadrons": "편대 {n}개",
   "{n} fits": "피팅 {n}개",
   "{n} fittings couldn't be read and were skipped.": "피팅 {n}개를 읽지 못해 건너뛰었습니다.",

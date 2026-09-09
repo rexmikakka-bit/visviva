@@ -885,6 +885,7 @@ export default {
   "{n} cargo": "{n} Frachtposten",
   "{n} drone types": { one: "{n} Drohnentyp", other: "{n} Drohnentypen" },
   "{n} drones": { one: "{n} Drohne", other: "{n} Drohnen" },
+  "{n} drones in space — only {cap} can be launched": "{n} Drohnen im All – nur {cap} können ausgebracht werden",
   "{n} fighter squadrons": { one: "{n} Fighter-Staffel", other: "{n} Fighter-Staffeln" },
   "{n} fits": { one: "{n} Fitting", other: "{n} Fittings" },
   "{n} fittings couldn't be read and were skipped.":

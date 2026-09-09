@@ -899,6 +899,7 @@ export default {
   "{n} cargo": "{n} en soute",
   "{n} drone types": { one: "{n} type de drone", other: "{n} types de drones" },
   "{n} drones": { one: "{n} drone", other: "{n} drones" },
+  "{n} drones in space — only {cap} can be launched": "{n} drones dans l'espace — seulement {cap} peuvent être lancés",
   "{n} fighter squadrons": { one: "{n} escadron de chasseurs", other: "{n} escadrons de chasseurs" },
   "{n} fits": { one: "{n} fitting", other: "{n} fittings" },
   "{n} fittings couldn't be read and were skipped.":

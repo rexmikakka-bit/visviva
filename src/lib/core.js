@@ -1480,19 +1480,24 @@ function moduleTakesCharges(typeID,name){
 
 // How many of a drone to drop in when one is tapped in the browser, and whether it starts flying.
 //
-// Five was hardcoded, which is right for a Vexor and flatly wrong for a Vigil: 5 Mbit/s of bandwidth
-// flies exactly one light drone, so the screen opened with the bandwidth bar already red. Bay volume
-// caps it too, and INDEPENDENTLY — bandwidth limits what can be in space, the bay limits what is
-// carried, so a hull can legitimately hold more than it can launch. Five stays the ceiling: it is
-// the game's own max drones in space for a fully skilled pilot, and this app assumes skills at V.
+// A tap always adds a full flight of five, because five is how drones are bought, carried and lost.
+// Neither budget shortens it: quantity is what you PACK, and packing past a gauge is a thing the
+// player is allowed to do and can see (the bay bar goes red). What the budgets decide is only
+// whether the new stack launches.
 //
-// Never returns 0. A drone that fits neither budget is still worth carrying as a spare or as the
-// thing you swap the current flight for — it just goes in unactivated.
-export function droneAddQty({bandwidth,volume,bwFree,bayFree,max=5}){
-  const byBw =bandwidth>0?Math.floor(bwFree /bandwidth):max;
-  const byBay=volume   >0?Math.floor(bayFree/volume   ):max;
-  const qty=Math.max(1,Math.min(max,byBw,byBay));
-  return {qty,active:byBw>=qty};
+// It did cap by both, and the capping was the problem: once five were already in space every later
+// stack arrived as a single drone, so filling a bay with spare flights meant tapping + four times
+// per stack. The gauges still tell the truth afterwards; they just no longer silently edit the
+// quantity down to keep themselves green.
+//
+// `active` is all-or-nothing because a stack is: the whole five has to fit BOTH the remaining
+// bandwidth and the remaining drones-in-space slots, or it goes to the bay as spares. Coming in
+// flying while over bandwidth would put the fit into a state it cannot actually be flown in, which
+// is the one thing the tap should never do on the user's behalf.
+export const DRONE_FLIGHT=5;
+export function droneAddQty({bandwidth,bwFree,slotsFree,group=DRONE_FLIGHT}){
+  const fitsBandwidth=bandwidth>0?bwFree>=group*bandwidth:true;
+  return {qty:group,active:fitsBandwidth&&group<=slotsFree};
 }
 
 const TOP_DRONE_ORDER=["Combat Drones","Combat Utility Drones","Electronic Warfare Drones","Logistics Drones","Mining Drones","Salvage Drones"];
