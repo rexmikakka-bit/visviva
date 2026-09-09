@@ -262,7 +262,6 @@ export default {
   "Fighter Bay": "Soute à chasseurs",
   "Fighters": "Chasseurs",
   "Fill Cargo ({n})": "Remplir la soute ({n})",
-  "Fill Hardpoints (+{n})": "Remplir les points d'ancrage (+{n})",
   "Find or create a tag...": "Trouver ou créer un tag…",
   "Firepower": "Puissance de feu",
   "Fit Pattern": "Motif du fitting",
@@ -458,8 +457,8 @@ export default {
   "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
     "Désactivé : ouvrir un fitting remplace l'onglet courant, et le + de la barre d'onglets en ouvre un nouveau. Activé : chaque fitting ouvert obtient son propre onglet.",
   "Offline": "Hors ligne",
-  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
-    "Activé : choisir une tourelle ou un lanceur dans le navigateur remplit tous les points d'ancrage libres compatibles, pas seulement celui que vous avez touché. Désactivé : seul cet emplacement est rempli — utilisez « Remplir les points d'ancrage » sur un module déjà équipé pour compléter le reste à la main.",
+  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Duplicate to Empty Slots on an existing module to fill the rest by hand.":
+    "Activé : choisir une tourelle ou un lanceur dans le navigateur remplit tous les points d'ancrage libres compatibles, pas seulement celui que vous avez touché. Désactivé : seul cet emplacement est rempli — utilisez « Dupliquer dans les emplacements libres » sur un module déjà équipé pour compléter le reste à la main.",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
     "Activé : le navigateur se ferme dès que vous choisissez quelque chose. Désactivé : il reste ouvert et passe à l'emplacement libre suivant du rack, ce qui permet d'en remplir plusieurs sans le rouvrir.",
   "Online": "En ligne",

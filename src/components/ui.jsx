@@ -2271,7 +2271,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
 // `chargeStats` is calc.js' effective-charge map for THIS slot — see `fittedChargeStats` there. Only
 // the loaded charge gets it: the ammo list offers every compatible charge, but the others aren't on
 // the fit, so type data alone is the honest answer for them.
-function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,duplicateCount=1,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
+function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,duplicateCount=1,resourceHeadroom,engineItem,chargeStats}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -2363,13 +2363,6 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
             </>}
           </div>);
         })()}
-          {/* Only offered at 2 or more: at exactly one free hardpoint it would be Duplicate under a
-              second name, and two buttons doing the same thing is worse than one. The same reasoning
-              hides it behind the chip row below — that row's highest chip fills every free hardpoint
-              already, since both counts come from duplicateRoom. The count is in the label because
-              the two limits it reconciles (free hardpoints, empty high slots) aren't both visible
-              from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
-          {onFillHardpoints&&fillCount>1&&duplicateCount<2&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Fill Hardpoints (+{n})",{n:fillCount})}</button>}
           {/* One slot of room is not a choice, so it stays the single button it has always been. From
               two up it becomes a row of count chips: a rack never has more than eight slots, so every
               count fits on screen and any of them is one tap — a stepper would cost a tap per
