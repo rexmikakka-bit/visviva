@@ -37,7 +37,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -3970,74 +3970,142 @@ Republic Fleet Command Mindlink`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 13q. DRONE AUTO-ADD QUANTITY — tapping a drone in the browser used to drop in a hardcoded five,
-//      inactive. Reported from the field: a Vigil (5 Mbit/s bandwidth, 5 m³ bay) can fly exactly ONE
-//      light drone, so the screen opened five deep with the bandwidth bar already red.
+// 13q. DRONE AUTO-ADD QUANTITY — a tap always adds a full flight of FIVE. Quantity is what you pack,
+//      and neither gauge shortens it; the budgets only decide whether the new stack launches.
 //
-//      The two budgets cap independently and mean different things — bandwidth is what can be IN
-//      SPACE, the bay is what is CARRIED — so a hull can legitimately hold more than it can launch,
-//      and the quantity has to respect the smaller while the ACTIVE flag follows bandwidth alone.
+//      This replaces a rule that capped the quantity by bandwidth AND bay. That rule kept both bars
+//      green, but it meant every stack added after the first five were already in space arrived as a
+//      SINGLE drone, so loading a bay with spare flights cost four extra taps each. Packing past a
+//      gauge is legal and visible (the bar goes red); silently editing the quantity down was not.
+//
+//      Bandwidth is what can be IN SPACE, the bay is what is CARRIED — so the launch decision reads
+//      bandwidth and the drones-in-space slots, and ignores the bay entirely.
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  // Light drone: 5 Mbit/s, 5 m³. Medium: 10/10. Heavy: 25/25. Sentry: 25 Mbit/s but 25 m³.
-  const LIGHT={bandwidth:5,volume:5}, MED={bandwidth:10,volume:10}, HEAVY={bandwidth:25,volume:25};
+  // Light drone: 5 Mbit/s. Medium: 10. Heavy: 25.
+  const LIGHT={bandwidth:5}, MED={bandwidth:10}, HEAVY={bandwidth:25};
+  const FIVE={slotsFree:5};   // an empty rack: five drones in space available
 
-  // The reported fit, exactly. Vigil: droneCapacity 5, droneBandwidth 5.
-  const vigil=droneAddQty({...LIGHT,bwFree:5,bayFree:5});
-  check('drn', 'a Vigil takes ONE light drone, not five', vigil.qty, 1, 0);
-  check('drn', 'and that one is launched', String(vigil.active), 'true');
+  // A Vexor: 75 Mbit/s, 125 m³. The flight fits both ways.
+  const vexor=droneAddQty({...LIGHT,...FIVE,bwFree:75});
+  check('drn', 'a Vexor takes a full flight of five', vexor.qty, 5, 0);
+  check('drn', 'and the flight launches', String(vexor.active), 'true');
 
-  // The case the hardcoded five was right for, and which must not regress.
-  const vexor=droneAddQty({...LIGHT,bwFree:75,bayFree:125});
-  check('drn', 'a Vexor still takes a full flight of five', vexor.qty, 5, 0);
-  check('drn', 'a Vexor flight launches', String(vexor.active), 'true');
+  // Five is a TARGET, not a ceiling reached only when there is room: a Vigil has 5 Mbit/s and a 5 m³
+  // bay, one light drone's worth of each, and still gets the whole flight. Four of them are spares
+  // the hull cannot carry, which is the user's call to make and the bay bar's job to show.
+  const vigil=droneAddQty({...LIGHT,...FIVE,bwFree:5});
+  check('drn', 'a Vigil takes five light drones too', vigil.qty, 5, 0);
+  // It must NOT launch: 25 Mbit/s of drones on 5 Mbit/s of bandwidth is a fit that cannot be flown,
+  // and the tap may not put the fit into that state on the user's behalf.
+  check('drn', 'but a Vigil flight does not launch', String(vigil.active), 'false');
 
-  // Five is a CEILING, not a target: a Vexor has bandwidth for 15 lights and bay for 25, but no
-  // pilot flies more than five, so the extra room must not pull more in.
-  check('drn', 'five is a ceiling', droneAddQty({...LIGHT,bwFree:1000,bayFree:1000}).qty, 5, 0);
+  // Spare room never pulls in MORE than five either — the flight size is fixed at both ends.
+  check('drn', 'and abundant room still adds exactly five',
+        droneAddQty({...LIGHT,...FIVE,bwFree:100000}).qty, 5, 0);
 
-  // Bandwidth binds below the bay: a Vexor's 75 Mbit/s is three heavies, its 125 m³ is five.
-  const heavies=droneAddQty({...HEAVY,bwFree:75,bayFree:125});
-  check('drn', 'bandwidth caps heavies below what the bay holds', heavies.qty, 3, 0);
-  check('drn', 'and all three launch', String(heavies.active), 'true');
+  // Partial bandwidth is still not enough. A Vexor flies three heavies; five is over, so all five
+  // are packed and none of them fly. All-or-nothing, because a stack has ONE active flag.
+  const heavies=droneAddQty({...HEAVY,...FIVE,bwFree:75});
+  check('drn', 'five heavies are packed on a Vexor', heavies.qty, 5, 0);
+  check('drn', 'and stay stowed, since only three would fly', String(heavies.active), 'false');
+  // Exactly enough is enough — the comparison is >=, not >.
+  check('drn', 'a rack with bandwidth for exactly five launches',
+        String(droneAddQty({...HEAVY,...FIVE,bwFree:125}).active), 'true');
 
-  // ...and the bay binds below bandwidth the other way round. An Ishtar-shaped case: plenty of
-  // bandwidth left, but the bay is nearly full. Whichever is smaller has to win, both ways, or the
-  // fix just moves the red bar from one gauge to the other.
-  const cramped=droneAddQty({...MED,bwFree:50,bayFree:20});
-  check('drn', 'the bay caps below bandwidth', cramped.qty, 2, 0);
-  check('drn', 'a bay-capped stack still launches', String(cramped.active), 'true');
-
-  // No room at all — bandwidth already spent on another flight. One still goes in, as a spare, but
-  // it must NOT come in active or it immediately overruns the bandwidth the user just allocated.
-  const spare=droneAddQty({...HEAVY,bwFree:0,bayFree:125});
-  check('drn', 'a drone with no bandwidth left still gets added', spare.qty, 1, 0);
+  // Bandwidth already spent on another flight. Five more go in as spares, stowed.
+  const spare=droneAddQty({...HEAVY,...FIVE,bwFree:0});
+  check('drn', 'a drone with no bandwidth left still adds five', spare.qty, 5, 0);
   check('drn', 'but it is not launched', String(spare.active), 'false');
 
-  // Already OVER bandwidth (a restored fit can be), which floors negative. Same answer, and the
-  // clamp is what stops a negative or zero quantity reaching the drone list.
-  const over=droneAddQty({...HEAVY,bwFree:-30,bayFree:125});
-  check('drn', 'an over-bandwidth fit still adds one', over.qty, 1, 0);
-  check('drn', 'and does not launch it', String(over.active), 'false');
+  // Already OVER bandwidth, which a restored fit can be. Negative must not read as room.
+  check('drn', 'an over-bandwidth fit does not launch the new stack',
+        String(droneAddQty({...HEAVY,...FIVE,bwFree:-30}).active), 'false');
 
-  // Bay full, bandwidth free. The spare has nowhere to go, but refusing the tap outright would
-  // leave the user unable to swap flights without deleting first.
-  check('drn', 'a full bay still adds one', droneAddQty({...LIGHT,bwFree:75,bayFree:0}).qty, 1, 0);
+  // The SLOT limit binds on its own, with bandwidth to spare. This is the case the old rule turned
+  // into a single drone: five already in space, so the next stack is spares — five of them.
+  const second=droneAddQty({...LIGHT,bwFree:1000,slotsFree:0});
+  check('drn', 'a second stack over a full rack still adds five', second.qty, 5, 0);
+  check('drn', 'and does not launch', String(second.active), 'false');
+  // Four free slots is not five. Partial room does not launch a five-stack.
+  check('drn', 'four free slots will not launch a flight of five',
+        String(droneAddQty({...LIGHT,bwFree:1000,slotsFree:4}).active), 'false');
 
-  // A hull with NO drone bay at all. Every gauge reads zero; nothing may divide by it or return 0.
-  const noBay=droneAddQty({...LIGHT,bwFree:0,bayFree:0});
-  check('drn', 'a hull with no drone bay adds one, idle', noBay.qty, 1, 0);
-  check('drn', 'no-bay drone is not launched', String(noBay.active), 'false');
+  // Salvage/mining drones carry no bandwidth figure in some data paths. A zero must read as free,
+  // not as a divisor — the old rule divided by it.
+  const free=droneAddQty({bandwidth:0,...FIVE,bwFree:0});
+  check('drn', 'a zero-bandwidth drone adds five', free.qty, 5, 0);
+  check('drn', 'and launches even with no bandwidth left', String(free.active), 'true');
 
-  // Salvage/mining drones and the like carry no bandwidth figure in some data paths; a zero divisor
-  // must fall through to the ceiling rather than producing Infinity or NaN.
-  const free=droneAddQty({bandwidth:0,volume:0,bwFree:75,bayFree:125});
-  check('drn', 'a zero-cost drone falls back to the ceiling', free.qty, 5, 0);
-  check('drn', 'and launches', String(free.active), 'true');
+  // A hull whose rack is bigger than five (drone control units) still gets flights of five, and the
+  // extra slots do not change the answer.
+  check('drn', 'a ten-slot rack still adds five at a time',
+        droneAddQty({...LIGHT,bwFree:1000,slotsFree:10}).qty, 5, 0);
 
-  // The top-up path passes Infinity for an inactive stack, since spares cost no bandwidth. Guard
-  // that it stays finite and bay-bound rather than returning Infinity into a quantity.
-  check('drn', 'topping up a stowed stack is bay-bound', droneAddQty({...MED,bwFree:Infinity,bayFree:30}).qty, 3, 0);
+  // The flight size is the exported constant, so the browser's top-up path (which adds DRONE_FLIGHT
+  // directly without consulting the budgets) cannot drift away from the new-stack path.
+  check('drn', 'the flight size is five', DRONE_FLIGHT, 5, 0);
+  check('drn', 'and it is what a tap adds', droneAddQty({...LIGHT,...FIVE,bwFree:75}).qty, DRONE_FLIGHT, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13r2. CARGO CHARGES-ONLY FILTER — the cargo browser's charge filter narrows the market tree in
+//       place rather than jumping to a flat list, so it needs the tree to stay WALKABLE: every group
+//       it leaves visible must lead somewhere. MT_CHARGE_GROUPS marks ancestors, not just the groups
+//       holding charges, and getting that wrong hides Ammunition & Charges itself — its charges all
+//       live one or more levels down, so a "has charges directly" test empties the root.
+//
+//       The second trap is scope. Charges are category 8, which is far more than ammunition: scripts,
+//       scanner probes, cap booster charges, mining crystals and nanite paste are all charges and all
+//       filed elsewhere in the tree. Pinning the filter to the ammunition root would have silently
+//       dropped them, which is most of what actually goes in a cargo bay.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const cid = n => typeIDByName(n);
+  check('crg', 'antimatter is a charge', String(isChargeType(cid('Antimatter Charge S'))), 'true');
+  check('crg', 'a script is a charge', String(isChargeType(cid('Focused Warp Disruption Script'))), 'true');
+  check('crg', 'a scanner probe is a charge', String(isChargeType(cid('Core Scanner Probe I'))), 'true');
+  check('crg', 'a cap booster charge is a charge', String(isChargeType(cid('Navy Cap Booster 400'))), 'true');
+  check('crg', 'nanite paste is a charge', String(isChargeType(cid('Nanite Repair Paste'))), 'true');
+  check('crg', 'the gun that fires it is not', String(isChargeType(cid('125mm Gatling AutoCannon II'))), 'false');
+  check('crg', 'and neither is a ship', String(isChargeType(cid('Rifter'))), 'false');
+
+  // Nothing but charges survives the filter, anywhere in the tree.
+  const leaked = Object.values(MT_CHARGE_ITEMS).flat().filter(i => !isChargeType(i.typeID));
+  check('crg', 'no non-charge leaks into the filtered items', leaked.length, 0, 0);
+
+  // Every group left visible leads to a charge — either it holds one, or a visible child does.
+  const dangling = [...MT_CHARGE_GROUPS].filter(g =>
+    !MT_CHARGE_ITEMS[g] && !(MT_CHILDREN[g] ?? []).some(c => MT_CHARGE_GROUPS.has(c)));
+  check('crg', 'no visible group is a dead end', dangling.length, 0, 0);
+
+  // ...and it is reachable from a root, which is the ancestor-marking this index exists for.
+  const reachable = new Set();
+  for (const stack = MT_ROOTS.filter(g => MT_CHARGE_GROUPS.has(g)); stack.length; ) {
+    const g = stack.pop();
+    if (reachable.has(g)) continue;
+    reachable.add(g);
+    for (const c of (MT_CHILDREN[g] ?? [])) if (MT_CHARGE_GROUPS.has(c)) stack.push(c);
+  }
+  check('crg', 'every visible group is reachable from a root', MT_CHARGE_GROUPS.size - reachable.size, 0, 0);
+  check('crg', 'and some roots survive the filter', MT_ROOTS.filter(g => MT_CHARGE_GROUPS.has(g)).length > 0 ? 1 : 0, 1, 0);
+
+  // The five kinds above are all findable through the filtered tree, not just the ammunition ones.
+  const visible = new Set(Object.values(MT_CHARGE_ITEMS).flat().map(i => i.typeID));
+  for (const n of ['Antimatter Charge S', 'Focused Warp Disruption Script', 'Core Scanner Probe I',
+                   'Navy Cap Booster 400', 'Nanite Repair Paste', 'Scourge Fury Heavy Missile'])
+    check('crg', `${n} survives the filter`, String(visible.has(cid(n))), 'true');
+
+  // A hull is not reachable through it. Rifter's own market group must be filtered away entirely —
+  // this is the check that fails if the ancestor walk ever marks a whole branch instead of a path.
+  const rifterGroup = Object.entries(MT_ITEMS).find(([, arr]) => arr.some(i => i.typeID === cid('Rifter')))?.[0];
+  check('crg', 'the frigate group is filtered away', String(MT_CHARGE_GROUPS.has(Number(rifterGroup))), 'false');
+
+  // The filter really narrows: charges are a small slice of the market, not most of it.
+  const allItems = Object.values(MT_ITEMS).flat().length;
+  const chargeItems = Object.values(MT_CHARGE_ITEMS).flat().length;
+  check('crg', 'the filter keeps a minority of the market', chargeItems < allItems / 4 ? 1 : 0, 1, 0);
+  check('crg', 'but keeps a useful number of them', chargeItems > 400 ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6327,6 +6395,71 @@ Nanofiber Internal Structure II
   const ok = generateEmptySlots(lookupShip('Cenotaph'));
   check('ceno', 'a correct fit is returned untouched',
         reconcileRacks(ok, lookupShip('Cenotaph')) === ok ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 23. DISPLAY-ROW IDENTITY — what React keys a fitted row on, which decides whether the swipe
+// tray survives an edit made from inside that tray.
+//
+// A grouped high row reports the id of whichever member comes FIRST in the rack, so copying the
+// module into an empty slot above it hands the row a different id while it is visibly the same row,
+// one thicker. Keyed on that id, React tears the node down and rebuilds it — and the swipe tray's
+// offset is written straight to the node (lib/use-row-swipe.js), so the tray closes under the thumb
+// after a single tap. `rkey` is the group instead, and does not move.
+//
+// The `id` assertions are here deliberately: they are what makes the rkey ones mean something. If a
+// later change makes a group's id stable on its own, these fail and say so, rather than leaving rkey
+// pinned as a no-op.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const empty = (id) => ({ id, name: '[Empty High Slot]', type: 'empty' });
+  const gun = (id) => ({ id, name: 'Mega Pulse Laser II', typeID: tid('Mega Pulse Laser II'),
+                         type: 'module', state: 'active' });
+
+  const before = computeDisplayRows([empty('h0'), empty('h1'), gun('h2')], 'high', true);
+  const after  = computeDisplayRows([empty('h0'), gun('h1'),   gun('h2')], 'high', true);
+  check('rowkey', 'the copy merges into one grouped row', after.length, 2, 0);
+  check('rowkey', 'and the row now counts two', after.find(r => r.count === 2)?.count, 2, 0);
+
+  const gunBefore = before.find(r => r.type === 'module');
+  const gunAfter  = after.find(r => r.count === 2);
+  check('rowkey', 'the group reports a NEW id after the copy',
+        gunBefore.id !== gunAfter.id ? 1 : 0, 1, 0);
+  check('rowkey', 'and it is the new first member', gunAfter.id, 'h1');
+  check('rowkey', 'but rkey is unchanged, so the node survives',
+        gunBefore.rkey === gunAfter.rkey ? 1 : 0, 1, 0);
+
+  // Every row carries an rkey, grouped or not — the key expression must never fall through to
+  // `name`, which two identical ungrouped modules would collide on.
+  const mids = computeDisplayRows([gun('m0'), gun('m1'), empty('m2')], 'mid', true);
+  check('rowkey', 'ungrouped rows key on their slot id', mids.map(r => r.rkey).join(','), 'm0,m1,m2');
+  check('rowkey', 'and no rkey is ever missing',
+        [...before, ...after, ...mids].filter(r => !r.rkey).length, 0, 0);
+}
+
+// 24. CARGO VOLUME — one helper behind both the Cargo screen's readout and the Stats tab's Cargo
+// row. They were computed separately and the Stats one only ever showed capacity; the point of
+// sharing is that the two figures can never again disagree about the same hold.
+{
+  const paste = { name: 'Nanite Repair Paste', typeID: tid('Nanite Repair Paste'), qty: 100 };
+  check('cargo', 'quantity multiplies the type volume', cargoVolume([paste]), 1.0);
+  check('cargo', 'an empty hold is zero', cargoVolume([]), 0, 0);
+  check('cargo', 'so is a missing list', cargoVolume(undefined), 0, 0);
+  check('cargo', 'items sum', cargoVolume([paste, { ...paste, qty: 50 }]), 1.5);
+  // Resolution is by typeID first, then by name — an ESI or EFT import arrives with a name only.
+  check('cargo', 'a name alone still resolves',
+        cargoVolume([{ name: 'Nanite Repair Paste', qty: 100 }]), 1.0);
+  // The stored `vol` is the last resort for an item whose name no longer names a type (an old saved
+  // fit, or an import of something CCP has since removed). Without it those rows would count as
+  // weightless and the hold would silently read under.
+  check('cargo', 'an unresolvable item falls back to its stored volume',
+        cargoVolume([{ name: 'Nonexistent Widget', qty: 3, vol: 7 }]), 21);
+  check('cargo', 'and contributes nothing when it has none',
+        cargoVolume([{ name: 'Nonexistent Widget', qty: 3 }]), 0, 0);
+  // A real type's volume WINS over a stale stored one: `vol` is a snapshot taken when the item was
+  // added, so a CCP volume change would otherwise never reach an already-saved fit.
+  check('cargo', 'live type data beats a stale stored volume',
+        cargoVolume([{ ...paste, vol: 999 }]), 1.0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

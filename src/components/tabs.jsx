@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
@@ -311,6 +311,18 @@ function DeleteX({on}){
   );
 }
 
+// Two stacked sheets, the usual "duplicate" mark. Not a plus sign: it sits next to DeleteX's cross,
+// and a + beside an x at 22px is two diagonals apart at a glance.
+function CopyGlyph(){
+  return(
+    <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true"
+         stroke="#fff" strokeWidth={2.2} strokeLinejoin="round" fill="none">
+      <rect x={9} y={3} width={12} height={12} rx={2.5}/>
+      <path d="M15 18v1.5A1.5 1.5 0 0 1 13.5 21h-9A1.5 1.5 0 0 1 3 19.5v-9A1.5 1.5 0 0 1 4.5 9H6"/>
+    </svg>
+  );
+}
+
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
@@ -357,7 +369,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   });
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
-  const rowSwipe=useRowSwipe(()=>dragInfo.current!=null);
+  // Two buttons behind every fitted row: copy-to-next-empty-slot, then Remove.
+  const rowSwipe=useRowSwipe(()=>dragInfo.current!=null,2);
   const[fitError,setFitError]=useState(null);
   const showFitError=msg=>{setFitError(msg);setTimeout(()=>setFitError(null),3000);};
 
@@ -560,19 +573,43 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     }
     return Math.max(0,n);
   };
-  // Copies this module into the first `n` empty slots of its section. Clones the SLOT rather than
-  // re-adding the type, so the copies arrive in the same state and with the same charge — the same
-  // thing fillHardpoints does, and the reason both take one pure setSlots pass instead of a loop over
-  // addMod (which resolves its target against this render's `slots`, so every iteration would aim at
-  // the same slot, and which StrictMode's double invocation would run twice). Clamped again here
-  // rather than trusting the caller's count, so this is the one place the ceiling is decided.
+  // The `n` empty slots CLOSEST to the module being copied, taken downwards first and only then
+  // upwards. Not the first `n` in the rack, which is what this used to do: filling a slot ABOVE the
+  // source shifts the source's own row down the screen (and, in a grouped high rack, hands the group
+  // a new first member — see computeDisplayRows' `rkey`). The swipe tray's copy button is meant to
+  // be tapped repeatedly, and a button that walks out from under the thumb after the first tap is
+  // not. Going down first also just reads as what "copy to the next empty slot" should mean.
+  //
+  // Upwards is still the fallback, for a module sitting at the bottom of its rack with nothing below
+  // it. That case does walk the row up the screen a slot per tap, and there is no way around it — the
+  // row moves because the empty above it stops being a row. It stays the rare case, though: modules
+  // pack from the top of a rack, so a source with empties only ABOVE it has to be built deliberately.
+  const nearestEmptyIds=(sec,fromId,n)=>{
+    const from=sec.findIndex(m=>m.id===fromId);
+    const empties=sec.map((m,i)=>({m,i})).filter(x=>x.m.type==="empty");
+    const below=empties.filter(x=>x.i>from);
+    const above=empties.filter(x=>x.i<from).reverse();
+    return[...below,...above].slice(0,n).map(x=>x.m.id);
+  };
+  // Copies this module into the `n` empty slots nearest it. Clones the SLOT rather than
+  // re-adding the type, so the copies arrive in the same state and with the same charge, and
+  // `orphan` is dropped deliberately: the copies are going into slots the ship genuinely has,
+  // whatever the source's own standing.
+  //
+  // ONE pure setSlots for the whole run, never a loop over addMod. addMod resolves its target
+  // against `slots` from this render's closure, so every iteration would aim at the same slot; and
+  // the updater has to be pure because StrictMode double-invokes it, so a countdown held in the
+  // enclosing scope would be spent by the first pass and fill nothing on the second.
+  //
+  // Clamped again here rather than trusting the caller's count, so this is the one place the
+  // ceiling is decided. fillHardpoints below clones a slot the same way, for the same reasons.
   const duplicateMod=(secKey,mod,n=1)=>{
     const room=Math.min(n,duplicateRoom(secKey,mod));
     if(room<1)return;
     const clone={...mod};delete clone.id;delete clone.orphan;
     setSlots(prev=>{
       const sec=prev[secKey]??[];
-      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,room).map(m=>m.id));
+      const targets=new Set(nearestEmptyIds(sec,mod.id,room));
       if(!targets.size)return prev;
       return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
     });
@@ -815,12 +852,19 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               );
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
-              const rowKey=sec.key+":"+rowIdx;
+              // Keyed on the row's identity, not its position: copying a module into an empty slot
+              // renumbers every row below it, and an index-keyed open tray would then belong to a
+              // different row than the one the thumb is on. See computeDisplayRows' `rkey`.
+              const rowKey=sec.key+":"+row.rkey;
               // Subsystems have no remove path (see ModuleMenu below) — swapping is the only edit,
               // so their row never gets the swipe gesture at all.
               const swipeable=sec.key!=="subsystems";
+              // The real slot behind this row, since a display row also carries count/groupIds/rkey
+              // and those must not be cloned into a fitted slot.
+              const srcMod=swipeable?(slots[sec.key]??[]).find(m=>m.id===row.id):null;
+              const dupRoom=srcMod?duplicateRoom(sec.key,srcMod):0;
               return(
-                <div key={row.id||row.name} style={{position:"relative"}}>
+                <div key={row.rkey||row.id||row.name} style={{position:"relative"}}>
                   {/* Not rendered at all while a reorder is live, on ANY row rather than just the one
                       being dragged. The button sits BEHIND the row and is only ever invisible because
                       the row is opaque — so every way a row can stop being opaque leaks it, and there
@@ -829,7 +873,23 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       only the first (which is what `!isDragSrc` did) left the drop target showing a
                       red Remove button through itself. Enumerating the ways is the losing move; no row
                       should be offering a delete during a reorder anyway. */}
-                  {swipeable&&!dragUI&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
+                  {swipeable&&!dragUI&&<>
+                  {/* Copy sits OUTSIDE Remove, nearest the screen edge, for two reasons. A reveal
+                      that is still short of COMMIT_PX shows this one and not the destructive one; and
+                      when the rack fills up this greys out in place rather than unmounting, so
+                      Remove can never slide across into the spot a spamming thumb was already
+                      aiming at. It deliberately does NOT close the tray — being tappable repeatedly
+                      is the entire reason it exists, which is also why duplicateMod fills the
+                      NEAREST empty slot rather than the rack's first. */}
+                  <button onClick={()=>{if(!dupRoom)return;haptic();duplicateMod(sec.key,srcMod,1);}}
+                    aria-label={t("Copy to nearest empty slot")} disabled={!dupRoom}
+                    data-rowswipe="open"
+                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
+                            alignItems:"center",justifyContent:"center",opacity:dupRoom?1:.35,
+                            background:C.accent,color:"#fff",cursor:dupRoom?"pointer":"default"}}>
+                    <CopyGlyph/>
+                  </button>
+                  <button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
                     aria-label={t("Remove")}
                     // This button is a SIBLING of the row, not a child, so useTabSwipe's standDownFor
                     // walks up from it and never meets the row's own data-rowswipe — it read the tap as
@@ -840,11 +900,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     // "open" (not "closed") because this is only ever reachable once the row IS open,
                     // and a touch here belongs to the row machinery in BOTH directions.
                     data-rowswipe="open"
-                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
+                    style={{position:"absolute",top:0,left:72,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
                             alignItems:"center",justifyContent:"center",
                             background:C.danger,color:"#fff",cursor:"pointer"}}>
                     <DeleteX on={rowSwipe.openKey===rowKey}/>
-                  </button>}
+                  </button></>}
                   {/* no-select on the ROW, not just the handle: the press starts on the handle but the
                       drag travels across the module names either side, and those are what the browser
                       was selecting. */}
@@ -1018,7 +1078,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} duplicateCount={duplicateRoom(moduleMenu.secKey,menuMod)} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
@@ -1070,7 +1130,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 }
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
+function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItems,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   const _scroll=useScrollMemory("Stats");
   // Per-section collapse state — all open by default.
   // Everything on this page that you SET rather than read goes through useViewMemory, because this
@@ -1314,6 +1374,11 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
         const bwUsed=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0)*_dBW(d),0);
         if((cs.droneBay??0)>0&&bayUsed>cs.droneBay+0.01) issues.push({sev:"err",msg:t("Drone bay over capacity by {n} m³",{n:fr(bayUsed-cs.droneBay)})});
         if((cs.droneBandwidth??0)>0&&bwUsed>cs.droneBandwidth+0.01) issues.push({sev:"err",msg:t("Drone bandwidth exceeded by {n} Mbit/s",{n:fr(bwUsed-cs.droneBandwidth)})});
+        // Drones IN SPACE, which bandwidth does not imply — a Vexor's 75 Mbit/s carries seven mediums
+        // and the pilot still launches five. Drone DPS sums every active stack without capping, so
+        // without this the panel reads Valid while quoting damage from drones that cannot be launched.
+        const activeDrones=(drones??[]).filter(d=>d.active).reduce((s,d)=>s+(d.qty??0),0);
+        if((cs.maxActiveDrones??0)>0&&activeDrones>cs.maxActiveDrones) issues.push({sev:"err",msg:t("{n} drones in space — only {cap} can be launched",{n:activeDrones,cap:cs.maxActiveDrones})});
         // maxGroupFitted. The browser refuses to fit one too many, so anything caught here came in
         // through an EFT or ESI import, where the fit was built somewhere with no such gate.
         // `g.group` is a CCP market group name and stays English, like every other game term.
@@ -1701,6 +1766,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const x=cs.exact??{};
             const abOn=cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity;
             const p=(v,d,unit)=>v==null?null:`${v.toFixed(d)}${unit}`;
+            const cargoUsed=cargoVolume(cargoItems);
             // Each row leads with a stable `id`, which is what the expanded-cell set is keyed on and
             // what the Sensor branch below switches on. The label used to serve as both, and a
             // translated one would have silently reset every expanded cell on a language change.
@@ -1720,7 +1786,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
               ...(cs.droneBay>0?[["dronerange",t("Drone range"),`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),
-              ["cargo",    t("Cargo"),     `${fmtN(cs.cargoCapacity??0)} m³`,p(cs.cargoCapacity,2," m³")],
+              // Used AND capacity. This showed the capacity alone, which is a fixed property of the
+              // hull — it told you nothing about whether what you actually packed fits. `cargoUsed`
+              // comes from the same helper the Cargo screen's own readout uses, so the two figures
+              // cannot drift apart.
+              ["cargo",    t("Cargo"),     `${fmtN(cargoUsed)} / ${fmtN(cs.cargoCapacity??0)} m³`,
+                                           `${cargoUsed.toFixed(2)} / ${(cs.cargoCapacity??0).toFixed(2)} m³`],
               // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
               // multiplier — the same value feeding the align-time cell above it. Grouped digits
               // rather than decimals: kg fractions are noise, but "12.5M" hiding 250,000 kg is not.

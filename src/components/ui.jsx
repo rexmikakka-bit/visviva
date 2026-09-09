@@ -2285,7 +2285,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
 // `chargeStats` is calc.js' effective-charge map for THIS slot — see `fittedChargeStats` there. Only
 // the loaded charge gets it: the ammo list offers every compatible charge, but the others aren't on
 // the fit, so type data alone is the honest answer for them.
-function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,duplicateCount=1,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
+function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -2378,28 +2378,15 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
           </div>);
         })()}
           {/* Only offered at 2 or more: at exactly one free hardpoint it would be Duplicate under a
-              second name, and two buttons doing the same thing is worse than one. The same reasoning
-              hides it behind the chip row below — that row's highest chip fills every free hardpoint
-              already, since both counts come from duplicateRoom. The count is in the label because
-              the two limits it reconciles (free hardpoints, empty high slots) aren't both visible
-              from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
-          {onFillHardpoints&&fillCount>1&&duplicateCount<2&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Fill Hardpoints (+{n})",{n:fillCount})}</button>}
-          {/* One slot of room is not a choice, so it stays the single button it has always been. From
-              two up it becomes a row of count chips: a rack never has more than eight slots, so every
-              count fits on screen and any of them is one tap — a stepper would cost a tap per
-              increment before the fill even starts. The ceiling is duplicateRoom, which stops at the
-              hull's real limits (empty slots, hardpoints, per-group caps) and NOT at what the fit can
-              power — going over CPU/PG shows red afterwards, exactly as it does when the modules are
-              added one at a time, but going over a hardpoint would build a fit that cannot undock. */}
-          {onDuplicate&&(duplicateCount>1?(<div style={{marginBottom:10}}>
-            <div style={{fontSize:11,color:C.textMute,marginBottom:7}}>{t("Duplicate to Empty Slots")}</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-              {Array.from({length:duplicateCount},(_,i)=>i+1).map(n=>(
-                <button key={n} className="press" onClick={()=>{haptic("medium");onDuplicate(n);onClose();}} style={{flex:"1 1 0",minWidth:54,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{n===duplicateCount?t("All {n}",{n}):`×${n}`}</button>))}
-            </div>
-          </div>):(
-            <button onClick={()=>{onDuplicate(1);onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Duplicate to Next Empty Slot")}</button>
-          ))}
+              second name, and two buttons doing the same thing is worse than one. The count is in
+              the label because the two limits it reconciles (free hardpoints, empty high slots)
+              aren't both visible from here — an 8-high hull with 7 launchers reads "+6", not "+7". */}
+          {onFillHardpoints&&fillCount>1&&<button onClick={()=>{haptic("medium");onFillHardpoints();onClose();}} style={{width:"100%",marginBottom:8,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Fill Hardpoints (+{n})",{n:fillCount})}</button>}
+          {/* One button, one slot — picking an exact count belongs to the row's swipe tray now, where
+              you tap the copy button until the rack looks right instead of counting empty slots in
+              your head first. This sheet briefly grew a row of ×1 ×2 ×3 chips for that, and a rack
+              with six slots free made it a wall of buttons for a choice nobody makes deliberately. */}
+          {onDuplicate&&<button onClick={()=>{onDuplicate(1);onClose();}} style={{width:"100%",marginBottom:10,padding:"11px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer"}}>{t("Duplicate to Next Empty Slot")}</button>}
           {/* A grouped rack (identical turrets/launchers, shown as one "Nx" row) removes ALL of its
               members here — matching the state dot and unload-charge button on the same row, which
               already act on the whole group. The label says so, since a "Remove Module" that quietly

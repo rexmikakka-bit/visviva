@@ -82,6 +82,27 @@ const MT_ROOTS = Object.keys(marketTreeData.g).filter(g => marketTreeData.g[g].p
   .sort((a, b) => marketTreeData.g[a].n.localeCompare(marketTreeData.g[b].n));
 const MT_ALL_ITEMS = Object.entries(marketTreeData.t).map(([tid, [mgid, name, vol]]) => ({ typeID: Number(tid), name, vol, mgid }));
 
+// The same tree again, keeping only category 8 (Charge), for the cargo browser's charges-only
+// filter. `MT_CHARGE_GROUPS` marks every ANCESTOR of a group holding one, not just the leaf, so the
+// filtered tree is walkable from the roots — filtering on "has charges directly" would hide
+// Ammunition & Charges itself, since all its charges live one or more levels down.
+//
+// Not all charges are ammunition: scripts, probes, cap booster charges, mining crystals and nanite
+// paste are all category 8 and scattered across the tree, which is why this is derived rather than
+// pinned to one root group.
+const isChargeType = tid => ((TYPES[tid] ?? TYPES[String(tid)])?.c ?? (TYPES[tid] ?? TYPES[String(tid)])?.category) === 8;
+const MT_CHARGE_ITEMS = {};
+for (const [gid, arr] of Object.entries(MT_ITEMS)) {
+  const only = arr.filter(i => isChargeType(i.typeID));
+  if (only.length) MT_CHARGE_ITEMS[gid] = only;
+}
+const MT_CHARGE_GROUPS = new Set();
+for (const gid of Object.keys(MT_CHARGE_ITEMS)) {
+  // Stop at the first ancestor already marked: it was reached from another branch, so everything
+  // above it is marked too.
+  for (let g = Number(gid); Number.isFinite(g) && !MT_CHARGE_GROUPS.has(g); g = Number(marketTreeData.g[g]?.p ?? NaN)) MT_CHARGE_GROUPS.add(g);
+}
+
 /**
  * Sibling items for the Variations tab.
  *
@@ -616,11 +637,18 @@ function isGroupableModule(m){
   const gn=TYPES[String(m.typeID)]?.gn??'';
   return _TURRET_GROUPS.has(gn)||/^Missile Launcher/i.test(gn);
 }
+// `rkey` is the row's identity ACROSS a re-render, which is not the same thing as `id`: a grouped
+// row's id is whichever member came first in the rack, so copying the module into an empty slot
+// ABOVE it hands the row a new representative and a new id even though it is visibly the same row,
+// one thicker. React would tear the node down and rebuild it, and anything living on that node
+// rather than in state — the swipe tray's directly-written transform (lib/use-row-swipe.js) — goes
+// with it. Keying on the GROUP instead survives the copy, which is what lets the tray's duplicate
+// button be tapped more than once.
 function computeDisplayRows(mods,secKey,grouped){
-  if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id]}));
+  if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id],rkey:m.id}));
   const seen=new Map();
   mods.forEach(m=>{
-    if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
+    if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id],rkey:m.id});return;}
     // `orphan` is part of the key: a module stranded by a subsystem swap must never merge into
     // a group with a live one of the same name, or the red 'no longer have this slot' marking
     // would apply to both — or to neither, depending which landed first.
@@ -632,9 +660,21 @@ function computeDisplayRows(mods,secKey,grouped){
     // for all five — the DMG figure was real for some of the row and wrong for the rest of it.
     const key=m.mutaplasmid?`__abyssal_${m.id}`:`${m.orphan?'__orphan_':''}${m.state}||${m.ammo?`${m.name}||${m.ammo}`:m.name}`;
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
-    else seen.set(key,{...m,count:1,groupIds:[m.id]});
+    else seen.set(key,{...m,count:1,groupIds:[m.id],rkey:key});
   });
   return Array.from(seen.values());
+}
+
+// Shared by the Cargo screen's own readout and the Stats tab's Cargo row, which have to agree —
+// they used to be computed in different places and the Stats one only ever showed the capacity.
+// `it.vol` is the fallback for an item whose name no longer resolves to a type (an old saved fit,
+// or an import naming something CCP has since removed); the stored volume is all that's left then.
+function cargoUnitVolume(it){
+  const tid=it.typeID??tidByName(it.name);
+  return (tid?TYPES[tid]?.attrs?.volume:undefined)??(it.vol>0?it.vol:0);
+}
+function cargoVolume(items){
+  return (items??[]).reduce((sum,it)=>sum+(it.qty??0)*cargoUnitVolume(it),0);
 }
 
 function generateEmptySlots(ship,subsystems){
@@ -1461,19 +1501,24 @@ function moduleTakesCharges(typeID,name){
 
 // How many of a drone to drop in when one is tapped in the browser, and whether it starts flying.
 //
-// Five was hardcoded, which is right for a Vexor and flatly wrong for a Vigil: 5 Mbit/s of bandwidth
-// flies exactly one light drone, so the screen opened with the bandwidth bar already red. Bay volume
-// caps it too, and INDEPENDENTLY — bandwidth limits what can be in space, the bay limits what is
-// carried, so a hull can legitimately hold more than it can launch. Five stays the ceiling: it is
-// the game's own max drones in space for a fully skilled pilot, and this app assumes skills at V.
+// A tap always adds a full flight of five, because five is how drones are bought, carried and lost.
+// Neither budget shortens it: quantity is what you PACK, and packing past a gauge is a thing the
+// player is allowed to do and can see (the bay bar goes red). What the budgets decide is only
+// whether the new stack launches.
 //
-// Never returns 0. A drone that fits neither budget is still worth carrying as a spare or as the
-// thing you swap the current flight for — it just goes in unactivated.
-export function droneAddQty({bandwidth,volume,bwFree,bayFree,max=5}){
-  const byBw =bandwidth>0?Math.floor(bwFree /bandwidth):max;
-  const byBay=volume   >0?Math.floor(bayFree/volume   ):max;
-  const qty=Math.max(1,Math.min(max,byBw,byBay));
-  return {qty,active:byBw>=qty};
+// It did cap by both, and the capping was the problem: once five were already in space every later
+// stack arrived as a single drone, so filling a bay with spare flights meant tapping + four times
+// per stack. The gauges still tell the truth afterwards; they just no longer silently edit the
+// quantity down to keep themselves green.
+//
+// `active` is all-or-nothing because a stack is: the whole five has to fit BOTH the remaining
+// bandwidth and the remaining drones-in-space slots, or it goes to the bay as spares. Coming in
+// flying while over bandwidth would put the fit into a state it cannot actually be flown in, which
+// is the one thing the tap should never do on the user's behalf.
+export const DRONE_FLIGHT=5;
+export function droneAddQty({bandwidth,bwFree,slotsFree,group=DRONE_FLIGHT}){
+  const fitsBandwidth=bandwidth>0?bwFree>=group*bandwidth:true;
+  return {qty:group,active:fitsBandwidth&&group<=slotsFree};
 }
 
 const TOP_DRONE_ORDER=["Combat Drones","Combat Utility Drones","Electronic Warfare Drones","Logistics Drones","Mining Drones","Salvage Drones"];
@@ -1683,4 +1728,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
