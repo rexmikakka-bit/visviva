@@ -17,7 +17,7 @@ import { useRef, useState } from "react";
 import { haptic } from "./core.js";
 
 const BUTTON_PX = 72;   // width of one revealed button
-const COMMIT_PX = 40;   // past this on release, snap open instead of springing back
+const COMMIT_PX = 40;   // travel from where the row STARTED before a release commits rather than springs back
 const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs vertical
 
 /**
@@ -104,7 +104,12 @@ export function useRowSwipe(isBlocked, buttons = 1) {
       // case, so there's exactly one source of truth for "how far did this row actually move."
       const m = /translateX\((-?[\d.]+)px\)/.exec(e.currentTarget.style.transform || "");
       const cur = m ? parseFloat(m[1]) : 0;
-      if (cur > COMMIT_PX) { setX(e.currentTarget, REVEAL_PX, true); setOpenKey(key); openEl.current = e.currentTarget; haptic(); }
+      // Measured from where this gesture STARTED, so opening and closing both take the same COMMIT_PX
+      // of travel. Comparing the raw offset against COMMIT_PX instead made closing cost
+      // REVEAL_PX - COMMIT_PX — 104px with a two-button tray, against 40px to open — so a short flick
+      // back sprang the tray open again and the row only shut for an unnaturally long drag.
+      const commit = openKey === key ? cur > REVEAL_PX - COMMIT_PX : cur > COMMIT_PX;
+      if (commit) { setX(e.currentTarget, REVEAL_PX, true); setOpenKey(key); openEl.current = e.currentTarget; haptic(); }
       else close(e.currentTarget);
     },
   });
