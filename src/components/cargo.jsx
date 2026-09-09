@@ -199,8 +199,15 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   // the numpad was dismissed without confirming, in which case the quantity addItem set still stands.
   const confirmedQty=useRef(null);
   const volOf=cargoUnitVolume;
-  const totalVol=cargoVolume(items).toFixed(1);
+  const used=cargoVolume(items);
+  const totalVol=used.toFixed(1);
   const cap=Math.round(shipCapacity||0);
+  const free=cap-used;
+  const over=free<0;
+  // Which figure matters flips with what you are doing: used volume while you load, remaining volume
+  // while you decide whether one more thing fits. Not persisted — the screen unmounts with the tab,
+  // and used/capacity is the right thing to come back to.
+  const[showFree,setShowFree]=useState(false);
   const addItem=item=>{
     const ex=items.find(e=>e.name===item.name);
     if(ex){setItems(items.map(e=>e.name===item.name?{...e,qty:e.qty+1}:e));setNumpad({...ex,qty:ex.qty+1,fromAdd:true});return;}
@@ -220,15 +227,20 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
           over. This was 11px at textMute, which is the figure you are actually watching while
           loading cargo. The capacity is a fixed property of the hull — it is context for the number
           that moves, so it should not compete with it at the same size. */}
-      <div><span style={{fontSize:12,fontWeight:700,color:C.text}}>{t("Cargo Bay")}</span>
+      {/* Both modes keep the same two-tone shape so the strip does not reflow on tap, and the number
+          stays red when over capacity — in free mode that reads as how much has to come back out. */}
+      <button className="press" onClick={()=>{haptic();setShowFree(v=>!v);}}
+        title={showFree?t("Show used space"):t("Show remaining space")}
+        style={{display:"flex",alignItems:"baseline",background:"none",border:"none",padding:0,cursor:"pointer",textAlign:"left"}}>
+        <span style={{fontSize:12,fontWeight:700,color:C.text}}>{t("Cargo Bay")}</span>
         <span style={{fontSize:12,marginLeft:8,fontVariantNumeric:"tabular-nums"}}>
-          <span style={{fontWeight:700,color:totalVol>cap?C.danger:C.text}}>{totalVol}</span>
-          <span style={{fontSize:10,color:C.textMid}}>/{cap.toLocaleString()} m³</span>
+          <span style={{fontWeight:700,color:over?C.danger:C.text}}>{showFree?Math.abs(free).toFixed(1):totalVol}</span>
+          <span style={{fontSize:10,color:C.textMid}}>{showFree?` ${over?t("m³ over"):t("m³ free")}`:`/${cap.toLocaleString()} m³`}</span>
         </span>
-      </div>
+      </button>
       <button className="press" onClick={()=>{haptic();setShowCargoPicker(true);}} style={{padding:"5px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer"}}>+ {t("Add")}</button>
     </div>
-    <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((parseFloat(totalVol)/cap)*100,100):0}%`,height:"100%",background:parseFloat(totalVol)>cap?C.danger:C.accent}}/></div>
+    <div style={{height:3,background:C.border}}><div style={{width:`${cap>0?Math.min((used/cap)*100,100):0}%`,height:"100%",background:over?C.danger:C.accent}}/></div>
     <div style={{flex:1,overflowY:"auto",padding:12}}>
       {items.length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:13}}>{t("Cargo bay is empty")}</div>}
       {items.map(item=>{

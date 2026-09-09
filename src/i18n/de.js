@@ -627,6 +627,8 @@ export default {
   "Ship: {v}": "Schiff: {v}",
   "Short summary, e.g. \"RAH split wrong on Astarte\"": "Kurze Zusammenfassung, z. B. „RAH verteilt auf der Astarte falsch“",
   "Show fit tabs": "Fitting-Tabs anzeigen",
+  "Show remaining space": "Verbleibenden Platz anzeigen",
+  "Show used space": "Belegten Platz anzeigen",
   "Side effects ({pct}% chance each) - tap to simulate": "Nebenwirkungen (je {pct} % Chance) – tippen zum Simulieren",
   "Sig": "Sig",
   "Sig radius": "Sig-Radius",
@@ -827,6 +829,8 @@ export default {
   "lock range": "Aufschaltreichweite",
   "lowest sell order in the hub's region. One small request per item.": "niedrigste Verkaufsorder in der Region des Hubs. Eine kleine Anfrage pro Item.",
   "m/s transversal": "m/s transversal",
+  "m³ free": "m³ frei",
+  "m³ over": "m³ zu viel",
   "no price": "kein Preis",
   "no rigs affected": "keine Rigs betroffen",
   "not applied to a typed target: a typed sig or speed can't be split into hull and MWD bloom":
