@@ -537,38 +537,51 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return{...prev,[secKey]:reabsorbOrphans(arr)};
     });
   };
+  // How many more of THIS module the hull can actually take: the smallest of its empty slots in that
+  // section, its free hardpoints of the matching kind, and whatever its group still has room for. All
+  // three are limits EVE itself enforces — an Apocalypse has 8 highs and 8 turret hardpoints, but a
+  // Drake has 8 highs and only 7 launchers, and a Bomb Launcher takes a launcher hardpoint yet is
+  // capped at one per hull. Going over CPU/powergrid only turns the bar red; going over these would
+  // build a fit that cannot undock, so they stay hard stops. This count is what the menu OFFERS and
+  // what the fill itself uses, so the two cannot disagree. No exceptId on the group room: the module
+  // being copied stays put and counts.
+  const duplicateRoom=(secKey,mod)=>{
+    const sec=slots[secKey]??[];
+    let n=sec.filter(m=>m.type==="empty").length;
+    if(!n||!mod?.typeID)return n;
+    n=Math.min(n,groupFittedRoom(slots,_cs.groupLimits,mod.typeID));
+    if(secKey==="high"&&ship){
+      const isT=isTurretWeapon(mod.typeID);
+      if(isT||isMissileLauncher(mod.typeID)){
+        const match=isT?isTurretWeapon:isMissileLauncher;
+        const used=sec.filter(s=>s.typeID&&match(s.typeID)).length;
+        n=Math.min(n,((isT?ship.turrets:ship.launchers)??0)-used);
+      }
+    }
+    return Math.max(0,n);
+  };
   // Copies this module into the first `n` empty slots of its section. Clones the SLOT rather than
   // re-adding the type, so the copies arrive in the same state and with the same charge — the same
   // thing fillHardpoints does, and the reason both take one pure setSlots pass instead of a loop over
   // addMod (which resolves its target against this render's `slots`, so every iteration would aim at
-  // the same slot, and which StrictMode's double invocation would run twice).
+  // the same slot, and which StrictMode's double invocation would run twice). Clamped again here
+  // rather than trusting the caller's count, so this is the one place the ceiling is decided.
   const duplicateMod=(secKey,mod,n=1)=>{
-    if(n<1)return;
+    const room=Math.min(n,duplicateRoom(secKey,mod));
+    if(room<1)return;
     const clone={...mod};delete clone.id;delete clone.orphan;
     setSlots(prev=>{
       const sec=prev[secKey]??[];
-      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,n).map(m=>m.id));
+      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,room).map(m=>m.id));
       if(!targets.size)return prev;
       return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
     });
     setModuleMenu(null);
   };
-  // How many more of THIS weapon the hull can still take: the smallest of its free hardpoints of the
-  // matching kind, its empty high slots, and whatever its group still has room for. All three limits
-  // are real — an Apocalypse has 8 highs and 8 turret hardpoints, but a Drake has 8 highs and only 7
-  // launchers, and a Bomb Launcher takes a launcher hardpoint yet is capped at one per hull. This
-  // count is what the menu's "Fill" label shows AND what the fill itself uses, so the two cannot
-  // disagree. No exceptId on the group room: the module being copied stays put and counts.
   const hardpointRoom=(secKey,mod)=>{
     if(secKey!=="high"||!ship||!mod?.typeID)return 0;
-    const isT=isTurretWeapon(mod.typeID);
-    if(!isT&&!isMissileLauncher(mod.typeID))return 0;
-    const match=isT?isTurretWeapon:isMissileLauncher;
-    const total=(isT?ship.turrets:ship.launchers)??0;
-    const high=slots.high??[];
-    const used=high.filter(s=>s.typeID&&match(s.typeID)).length;
-    return Math.max(0,Math.min(total-used,high.filter(s=>s.type==="empty").length,
-      groupFittedRoom(slots,_cs.groupLimits,mod.typeID)));
+    if(!isTurretWeapon(mod.typeID)&&!isMissileLauncher(mod.typeID))return 0;
+    return duplicateRoom(secKey,mod);
   };
   const fillHardpoints=(secKey,mod)=>{
     const n=hardpointRoom(secKey,mod);
@@ -1005,7 +1018,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} emptyCount={(slots[moduleMenu.secKey]??[]).filter(m=>m.type==="empty").length} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} duplicateCount={duplicateRoom(moduleMenu.secKey,menuMod)} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
