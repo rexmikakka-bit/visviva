@@ -37,7 +37,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -6367,6 +6367,31 @@ Nanofiber Internal Structure II
   check('rowkey', 'ungrouped rows key on their slot id', mids.map(r => r.rkey).join(','), 'm0,m1,m2');
   check('rowkey', 'and no rkey is ever missing',
         [...before, ...after, ...mids].filter(r => !r.rkey).length, 0, 0);
+}
+
+// 24. CARGO VOLUME — one helper behind both the Cargo screen's readout and the Stats tab's Cargo
+// row. They were computed separately and the Stats one only ever showed capacity; the point of
+// sharing is that the two figures can never again disagree about the same hold.
+{
+  const paste = { name: 'Nanite Repair Paste', typeID: tid('Nanite Repair Paste'), qty: 100 };
+  check('cargo', 'quantity multiplies the type volume', cargoVolume([paste]), 1.0);
+  check('cargo', 'an empty hold is zero', cargoVolume([]), 0, 0);
+  check('cargo', 'so is a missing list', cargoVolume(undefined), 0, 0);
+  check('cargo', 'items sum', cargoVolume([paste, { ...paste, qty: 50 }]), 1.5);
+  // Resolution is by typeID first, then by name — an ESI or EFT import arrives with a name only.
+  check('cargo', 'a name alone still resolves',
+        cargoVolume([{ name: 'Nanite Repair Paste', qty: 100 }]), 1.0);
+  // The stored `vol` is the last resort for an item whose name no longer names a type (an old saved
+  // fit, or an import of something CCP has since removed). Without it those rows would count as
+  // weightless and the hold would silently read under.
+  check('cargo', 'an unresolvable item falls back to its stored volume',
+        cargoVolume([{ name: 'Nonexistent Widget', qty: 3, vol: 7 }]), 21);
+  check('cargo', 'and contributes nothing when it has none',
+        cargoVolume([{ name: 'Nonexistent Widget', qty: 3 }]), 0, 0);
+  // A real type's volume WINS over a stale stored one: `vol` is a snapshot taken when the item was
+  // added, so a CCP volume change would otherwise never reach an already-saved fit.
+  check('cargo', 'live type data beats a stale stored volume',
+        cargoVolume([{ ...paste, vol: 999 }]), 1.0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

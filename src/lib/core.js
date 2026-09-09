@@ -644,6 +644,18 @@ function computeDisplayRows(mods,secKey,grouped){
   return Array.from(seen.values());
 }
 
+// Shared by the Cargo screen's own readout and the Stats tab's Cargo row, which have to agree —
+// they used to be computed in different places and the Stats one only ever showed the capacity.
+// `it.vol` is the fallback for an item whose name no longer resolves to a type (an old saved fit,
+// or an import naming something CCP has since removed); the stored volume is all that's left then.
+function cargoUnitVolume(it){
+  const tid=it.typeID??tidByName(it.name);
+  return (tid?TYPES[tid]?.attrs?.volume:undefined)??(it.vol>0?it.vol:0);
+}
+function cargoVolume(items){
+  return (items??[]).reduce((sum,it)=>sum+(it.qty??0)*cargoUnitVolume(it),0);
+}
+
 function generateEmptySlots(ship,subsystems){
   const s=ship??{};
   const make=(prefix,label,count)=>Array.from({length:count??0},(_,i)=>({id:`${prefix}${i}`,name:`[Empty ${label} Slot]`,icon:null,type:"empty"}));
@@ -1690,4 +1702,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

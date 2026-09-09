@@ -3,7 +3,7 @@ import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressAccessoryBar } from "./ui.jsx";
-import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, getCompatibleCharges, haptic } from "../lib/core.js";
+import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, cargoUnitVolume, cargoVolume, getCompatibleCharges, haptic } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
 import { t } from "../lib/i18n.js";
@@ -148,12 +148,8 @@ export function CargoScreen({items,setItems,shipCapacity=1150,slots}){
   // read the new quantity out of `items` yet — this carries it across those two calls. Null when
   // the numpad was dismissed without confirming, in which case the quantity addItem set still stands.
   const confirmedQty=useRef(null);
-  const volOf=it=>{
-    const tid=it.typeID??tidByName(it.name);
-    const typeVol=tid?(TYPES[tid]?.attrs?.volume??TYPES[tid]?.a?.['161']):undefined;
-    return typeVol??(it.vol>0?it.vol:0);
-  };
-  const totalVol=items.reduce((s,i)=>s+i.qty*volOf(i),0).toFixed(1);
+  const volOf=cargoUnitVolume;
+  const totalVol=cargoVolume(items).toFixed(1);
   const cap=Math.round(shipCapacity||0);
   const addItem=item=>{
     const ex=items.find(e=>e.name===item.name);

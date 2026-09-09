@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
@@ -1130,7 +1130,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
 }
 
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
+function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItems,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   const _scroll=useScrollMemory("Stats");
   // Per-section collapse state — all open by default.
   // Everything on this page that you SET rather than read goes through useViewMemory, because this
@@ -1761,6 +1761,7 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
             const x=cs.exact??{};
             const abOn=cs.maxVelocityAB&&cs.maxVelocityAB!==cs.maxVelocity;
             const p=(v,d,unit)=>v==null?null:`${v.toFixed(d)}${unit}`;
+            const cargoUsed=cargoVolume(cargoItems);
             // Each row leads with a stable `id`, which is what the expanded-cell set is keyed on and
             // what the Sensor branch below switches on. The label used to serve as both, and a
             // translated one would have silently reset every expanded cell on a language change.
@@ -1780,7 +1781,12 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
               // droneControlRange is metres and already whole, so the gain here is the km conversion's
               // own rounding, not a lost fraction of a metre.
               ...(cs.droneBay>0?[["dronerange",t("Drone range"),`${fmtN(Math.round((cs.droneControlRange??0)/1000))} km`,p((cs.droneControlRange??0)/1000,3," km")]]:[]),
-              ["cargo",    t("Cargo"),     `${fmtN(cs.cargoCapacity??0)} m³`,p(cs.cargoCapacity,2," m³")],
+              // Used AND capacity. This showed the capacity alone, which is a fixed property of the
+              // hull — it told you nothing about whether what you actually packed fits. `cargoUsed`
+              // comes from the same helper the Cargo screen's own readout uses, so the two figures
+              // cannot drift apart.
+              ["cargo",    t("Cargo"),     `${fmtN(cargoUsed)} / ${fmtN(cs.cargoCapacity??0)} m³`,
+                                           `${cargoUsed.toFixed(2)} / ${(cs.cargoCapacity??0).toFixed(2)} m³`],
               // Engine-computed, so it already includes plate/MWD massAddition and any Higgs Anchor
               // multiplier — the same value feeding the align-time cell above it. Grouped digits
               // rather than decimals: kg fractions are noise, but "12.5M" hiding 250,000 kg is not.
