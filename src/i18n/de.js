@@ -72,7 +72,6 @@ export default {
   "All skill requirements met": "Alle Skillanforderungen erfüllt",
   "All skill requirements met — tap to change pilot": "Alle Skillanforderungen erfüllt — tippen, um den Piloten zu wechseln",
   "All sources cache for 1 hour per hub.": "Alle Quellen werden pro Hub 1 Stunde zwischengespeichert.",
-  "All {n}": "Alle {n}",
   "Alpha": "Alpha",
   "Always open fits in a new tab": "Fittings immer in einem neuen Tab öffnen",
   "An in-game saved fitting": "Ein im Spiel gespeichertes Fitting",
@@ -230,7 +229,6 @@ export default {
   "Drone bay over capacity by {n} m³": "Drohnenbucht um {n} m³ überfüllt",
   "Drone range": "Drohnenreichweite",
   "Drones": "Drohnen",
-  "Duplicate to Empty Slots": "In freie Slots duplizieren",
   "Duplicate to Next Empty Slot": "In den nächsten freien Slot duplizieren",
   "ECM strength": "ECM-Stärke",
   "ECM: combined strength": "ECM: kombinierte Stärke",
@@ -266,6 +264,7 @@ export default {
   "Fighter Bay": "Fighterhangar",
   "Fighters": "Fighter",
   "Fill Cargo ({n})": "Frachtraum füllen ({n})",
+  "Fill Hardpoints (+{n})": "Hardpoints füllen (+{n})",
   "Find or create a tag...": "Tag finden oder erstellen...",
   "Firepower": "Feuerkraft",
   "Fit Pattern": "Fitting-Muster",
@@ -460,8 +459,8 @@ export default {
   "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
     "Aus: Ein geöffnetes Fitting ersetzt den Tab, in dem du dich befindest, und das + in der Tab-Leiste öffnet einen neuen. An: Jedes geöffnete Fitting bekommt seinen eigenen Tab.",
   "Offline": "Offline",
-  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Duplicate to Empty Slots on an existing module to fill the rest by hand.":
-    "An: Ein Turret oder Launcher aus dem Browser füllt jeden freien passenden Hardpoint, nicht nur den angetippten Slot. Aus: Es wird nur dieser eine Slot gefüllt — nutze „In freie Slots duplizieren“ an einem vorhandenen Modul, um den Rest von Hand zu füllen.",
+  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
+    "An: Ein Turret oder Launcher aus dem Browser füllt jeden freien passenden Hardpoint, nicht nur den angetippten Slot. Aus: Es wird nur dieser eine Slot gefüllt — nutze „Hardpoints füllen“ an einem vorhandenen Modul, um den Rest von Hand zu füllen.",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
     "An: Der Browser schließt sich, sobald du etwas auswählst. Aus: Er bleibt offen und springt zum nächsten freien Slot im Rack, sodass du mehrere füllen kannst, ohne ihn erneut zu öffnen.",
   "Online": "Online",

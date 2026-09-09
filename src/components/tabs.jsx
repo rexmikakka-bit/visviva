@@ -602,7 +602,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   // enclosing scope would be spent by the first pass and fill nothing on the second.
   //
   // Clamped again here rather than trusting the caller's count, so this is the one place the
-  // ceiling is decided.
+  // ceiling is decided. fillHardpoints below clones a slot the same way, for the same reasons.
   const duplicateMod=(secKey,mod,n=1)=>{
     const room=Math.min(n,duplicateRoom(secKey,mod));
     if(room<1)return;
@@ -611,6 +611,30 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       const sec=prev[secKey]??[];
       const targets=new Set(nearestEmptyIds(sec,mod.id,room));
       if(!targets.size)return prev;
+      return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
+    });
+    setModuleMenu(null);
+  };
+  const hardpointRoom=(secKey,mod)=>{
+    if(secKey!=="high"||!ship||!mod?.typeID)return 0;
+    if(!isTurretWeapon(mod.typeID)&&!isMissileLauncher(mod.typeID))return 0;
+    return duplicateRoom(secKey,mod);
+  };
+  const fillHardpoints=(secKey,mod)=>{
+    const n=hardpointRoom(secKey,mod);
+    if(!n)return;
+    // Copies the SLOT, not just the type — so the rack arrives loaded and in the same state as the
+    // gun it came from. `orphan` is dropped deliberately: the copies are going into slots the ship
+    // genuinely has, whatever the source's own standing.
+    const clone={...mod};delete clone.id;delete clone.orphan;
+    // ONE setSlots for the whole rack. Calling addMod in a loop cannot work: it resolves the target
+    // slot against `slots` from this render's closure, so every iteration would aim at the same one.
+    //
+    // The updater must also be PURE — StrictMode double-invokes it, so a countdown held in the
+    // enclosing scope would be spent by the first pass and fill nothing on the second.
+    setSlots(prev=>{
+      const sec=prev[secKey]??[];
+      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,n).map(m=>m.id));
       return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
     });
     setModuleMenu(null);
@@ -643,29 +667,31 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     const defaultState=isRigMod?"online":(isMicroJumpDrive(modData.typeID)||isAssaultDamageControl(modData.typeID))?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
     // Ancillary boosters/repairers arrive pre-loaded — see defaultChargeFor. Anything else
     // starts empty, as before. duplicateMod sets preserveCharge to carry the SOURCE module's own
-    // state/charge forward instead, so a duplicated overheated, loaded cap booster arrives identical
-    // to the one it was copied from.
+    // state/charge forward instead — matching Fill Hardpoints, which clones the slot wholesale — so
+    // a duplicated overheated, loaded cap booster arrives identical to the one it was copied from.
     const preload=modData.preserveCharge?null:defaultChargeFor(modData.typeID);
     const state=modData.preserveCharge?modData.state:defaultState;
     const ammo=modData.preserveCharge?modData.ammo:preload?.name;
     const charges=modData.preserveCharge?modData.charges:preload?.qty;
     const maxCharges=modData.preserveCharge?modData.maxCharges:preload?.qty;
     // Auto-fill the rest of the rack: picking ONE turret/launcher from the browser is almost always
-    // "I want these on every hardpoint", and the module menu's Duplicate already covers the case
-    // where it isn't (turn the setting off, or just remove the extras). Skipped for preserveCharge —
-    // that path is Duplicate itself, which does its own explicit fill and would otherwise double up.
+    // "I want these on every hardpoint", and the explicit Fill Hardpoints button already exists for
+    // the case where it isn't (turn the setting off, or just remove the extras). Skipped for
+    // preserveCharge — that path is Duplicate/Fill themselves, which already do their own explicit
+    // fill and would otherwise double up.
     //
     // Targets are decided HERE, off `slots` (this render's snapshot), rather than recomputed inside
-    // the second setSlots off `prev` — so the count returned to the caller (for the browser's
-    // "+ Module (x5)" toast) is provably the same set of ids actually filled, not two independent
-    // calculations that could drift apart.
+    // the second setSlots off `prev` — so the count hardpointRoom-style logic returns to the caller
+    // (for the browser's "+ Module (x5)" toast) is provably the same set of ids actually filled,
+    // not two independent calculations that could drift apart.
     let fillIds=[];
     if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
       const match=isTurretWeapon(modData.typeID)?isTurretWeapon:isMissileLauncher;
       const total=(isTurretWeapon(modData.typeID)?ship.turrets:ship.launchers)??0;
       const high=slots.high??[];
       // Pre-add counts: the primary slot is still "empty" and unc­ounted in all three of these, so
-      // each already includes room for it, measured one step before the primary itself lands.
+      // each already includes room for it — same as hardpointRoom's own "no exceptId" reasoning,
+      // just measured one step earlier (before vs. after the primary itself lands).
       const usedBefore=high.filter(s=>s.typeID&&match(s.typeID)).length;
       const roomTotal=Math.max(1,Math.min(total-usedBefore,high.filter(s=>s.type==="empty").length,
         groupFittedRoom(slots,_cs.groupLimits,modData.typeID)));
@@ -1052,7 +1078,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} duplicateCount={duplicateRoom(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}

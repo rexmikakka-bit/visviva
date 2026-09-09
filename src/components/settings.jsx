@@ -298,7 +298,7 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
           <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>{t("The strip holds up to 8 tabs; past that the oldest drops off. Closing a tab never deletes the fit.")}</div>
           <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Module Browser")}</div>
           <ToggleRow label={t("Auto-fill hardpoints")} on={autoFillHardpoints??true} onChange={setAutoFillHardpoints}
-            note={t("On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Duplicate to Empty Slots on an existing module to fill the rest by hand.")}/>
+            note={t("On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.")}/>
           <ToggleRow label={t("Close after adding one module")} on={!!closeBrowserOnAdd} onChange={setCloseBrowserOnAdd}
             note={t("On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.")}/>
         </div>}

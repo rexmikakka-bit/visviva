@@ -68,7 +68,6 @@ export default {
   "All skill requirements met": "Se cumplen todos los requisitos de habilidad",
   "All skill requirements met — tap to change pilot": "Se cumplen todos los requisitos de habilidad — toca para cambiar de piloto",
   "All sources cache for 1 hour per hub.": "Todas las fuentes se cachean 1 hora por hub.",
-  "All {n}": "Todas ({n})",
   "Alpha": "Alfa",
   "Always open fits in a new tab": "Abrir siempre los fittings en una pestaña nueva",
   "An in-game saved fitting": "Un fitting guardado en el juego",
@@ -226,7 +225,6 @@ export default {
   "Drone bay over capacity by {n} m³": "Bodega de drones excedida en {n} m³",
   "Drone range": "Alcance de drones",
   "Drones": "Drones",
-  "Duplicate to Empty Slots": "Duplicar en las ranuras libres",
   "Duplicate to Next Empty Slot": "Duplicar en la siguiente ranura libre",
   "ECM strength": "Potencia de ECM",
   "ECM: combined strength": "ECM: potencia combinada",
@@ -262,6 +260,7 @@ export default {
   "Fighter Bay": "Bodega de cazas",
   "Fighters": "Cazas",
   "Fill Cargo ({n})": "Llenar la bodega ({n})",
+  "Fill Hardpoints (+{n})": "Rellenar puntos de anclaje (+{n})",
   "Find or create a tag...": "Busca o crea una etiqueta…",
   "Firepower": "Potencia de fuego",
   "Fit Pattern": "Patrón del fitting",
@@ -457,8 +456,8 @@ export default {
   "Off: opening a fit replaces the tab you are in, and the + in the tab strip opens a new one. On: every fit you open gets its own tab.":
     "Desactivado: abrir un fitting sustituye la pestaña en la que estás, y el + de la barra abre una nueva. Activado: cada fitting que abres recibe su propia pestaña.",
   "Offline": "Apagado",
-  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Duplicate to Empty Slots on an existing module to fill the rest by hand.":
-    "Activado: elegir una torreta o un lanzador en el explorador rellena todos los puntos de anclaje libres compatibles, no solo la ranura que has tocado. Desactivado: solo se rellena esa ranura; usa «Duplicar en las ranuras libres» sobre un módulo ya equipado para completar el resto a mano.",
+  "On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.":
+    "Activado: elegir una torreta o un lanzador en el explorador rellena todos los puntos de anclaje libres compatibles, no solo la ranura que has tocado. Desactivado: solo se rellena esa ranura; usa «Rellenar puntos de anclaje» sobre un módulo ya equipado para completar el resto a mano.",
   "On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.":
     "Activado: el explorador se cierra en cuanto eliges algo. Desactivado: sigue abierto y pasa a la siguiente ranura libre del banco, de modo que puedes rellenar varias sin volver a abrirlo.",
   "Online": "Encendido",
