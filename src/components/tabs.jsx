@@ -1105,21 +1105,16 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           if(next){
             setEmptySlot({secKey:emptySlot.secKey,id:next.id});
           }else{
-            // Nothing to retarget to — this WAS the last empty slot in the group, most often
-            // because auto-fill hardpoints just filled the whole rack in one tap. Closing right away
-            // used to unmount the sheet (and the "+ Module (x5)" toast living inside it) before
-            // anyone could read it. Long enough to register the toast, then — NOT the toast's full
-            // 1100ms lifetime, which it used to wait out: the sheet keeps sliding for another 200ms
-            // after this fires, so the toast stays legible through the exit, and the full wait read
-            // as the app having hung rather than as a confirmation.
-            // Guarded on the exact slot (not just the section) so a sheet the user reopened for a
-            // different slot in the same group in the meantime isn't yanked shut by this stale timer.
+            // Nothing to retarget to — this WAS the last empty slot in the group, most often because
+            // auto-fill hardpoints just filled the whole rack in one tap. Dismiss on the same frame:
+            // this used to hold 450ms so the "+ Module (x5)" toast inside the sheet could be read,
+            // but the sheet's own slide-down still runs after this, which is confirmation enough, and
+            // any deliberate hold reads as lag on the tap rather than as feedback.
             // Flips `autoClose` rather than nulling `emptySlot` outright — nulling it unmounts
             // ModuleBrowserSheet mid-frame with no exit transition. This keeps the sheet mounted and
             // asks it (via dismissRequested) to run its OWN slide-down close, same as tapping the x,
             // and onClose (below) nulls emptySlot for real once that animation finishes.
-            const closingSlot=emptySlot;
-            setTimeout(()=>setEmptySlot(prev=>prev&&prev.secKey===closingSlot.secKey&&prev.id===closingSlot.id?{...prev,autoClose:true}:prev),450);
+            setEmptySlot(prev=>prev?{...prev,autoClose:true}:prev);
           }
           return count;
         }}
