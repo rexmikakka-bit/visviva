@@ -171,6 +171,7 @@ export default {
   "Copy report to clipboard instead": "Скопировать отчёт в буфер обмена",
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.": "Скопируйте отчёт об ошибке и отправьте разработчику, чтобы её исправили. В отчёте есть текст ошибки и данные об устройстве/браузере — данных фиттингов в нём нет.",
   "Copy to clipboard": "Копировать в буфер обмена",
+  "Copy to nearest empty slot": "Скопировать в ближайший пустой слот",
   "Couldn't clear: {err}": "Не удалось очистить: {err}",
   "Couldn't copy — use Download instead.": "Не удалось скопировать — воспользуйтесь загрузкой.",
   "Couldn't copy: {err}. Use {button} instead.": "Не удалось скопировать: {err}. Воспользуйтесь «{button}».",

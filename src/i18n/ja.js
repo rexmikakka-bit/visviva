@@ -170,6 +170,7 @@ export default {
   "Copy report to clipboard instead": "代わりにレポートをクリップボードにコピー",
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.": "エラーレポートをコピーして開発者に送ると修正に役立ちます。含まれるのはエラーメッセージと端末／ブラウザの情報だけで、フィットのデータは入りません。",
   "Copy to clipboard": "クリップボードにコピー",
+  "Copy to nearest empty slot": "最も近い空きスロットに複製",
   "Couldn't clear: {err}": "消去できませんでした: {err}",
   "Couldn't copy — use Download instead.": "コピーできませんでした — 代わりにダウンロードを使ってください。",
   "Couldn't copy: {err}. Use {button} instead.": "コピーできませんでした: {err}。代わりに「{button}」を使ってください。",

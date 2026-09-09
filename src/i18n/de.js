@@ -179,6 +179,7 @@ export default {
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.":
     "Kopiere den Fehlerbericht und schicke ihn an den Entwickler, damit das behoben werden kann. Er enthält die Fehlermeldung und dein Gerät bzw. deinen Browser — keine Fitting-Daten.",
   "Copy to clipboard": "In die Zwischenablage kopieren",
+  "Copy to nearest empty slot": "In den nächsten freien Slot kopieren",
   "Couldn't clear: {err}": "Leeren fehlgeschlagen: {err}",
   "Couldn't copy — use Download instead.": "Kopieren fehlgeschlagen — nutze stattdessen den Download.",
   "Couldn't copy: {err}. Use {button} instead.": "Kopieren fehlgeschlagen: {err}. Nutze stattdessen {button}.",

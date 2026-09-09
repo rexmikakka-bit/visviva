@@ -168,6 +168,7 @@ export default {
   "Copy report to clipboard instead": "改为将报告复制到剪贴板",
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.": "复制错误报告并发送给开发者，有助于修复问题。其中只包含错误信息与您的设备／浏览器信息，不含装配数据。",
   "Copy to clipboard": "复制到剪贴板",
+  "Copy to nearest empty slot": "复制到最近的空槽位",
   "Couldn't clear: {err}": "无法清除：{err}",
   "Couldn't copy — use Download instead.": "无法复制——请改用下载。",
   "Couldn't copy: {err}. Use {button} instead.": "无法复制：{err}。请改用“{button}”。",

@@ -37,7 +37,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -6327,6 +6327,46 @@ Nanofiber Internal Structure II
   const ok = generateEmptySlots(lookupShip('Cenotaph'));
   check('ceno', 'a correct fit is returned untouched',
         reconcileRacks(ok, lookupShip('Cenotaph')) === ok ? 1 : 0, 1, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 23. DISPLAY-ROW IDENTITY — what React keys a fitted row on, which decides whether the swipe
+// tray survives an edit made from inside that tray.
+//
+// A grouped high row reports the id of whichever member comes FIRST in the rack, so copying the
+// module into an empty slot above it hands the row a different id while it is visibly the same row,
+// one thicker. Keyed on that id, React tears the node down and rebuilds it — and the swipe tray's
+// offset is written straight to the node (lib/use-row-swipe.js), so the tray closes under the thumb
+// after a single tap. `rkey` is the group instead, and does not move.
+//
+// The `id` assertions are here deliberately: they are what makes the rkey ones mean something. If a
+// later change makes a group's id stable on its own, these fail and say so, rather than leaving rkey
+// pinned as a no-op.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const empty = (id) => ({ id, name: '[Empty High Slot]', type: 'empty' });
+  const gun = (id) => ({ id, name: 'Mega Pulse Laser II', typeID: tid('Mega Pulse Laser II'),
+                         type: 'module', state: 'active' });
+
+  const before = computeDisplayRows([empty('h0'), empty('h1'), gun('h2')], 'high', true);
+  const after  = computeDisplayRows([empty('h0'), gun('h1'),   gun('h2')], 'high', true);
+  check('rowkey', 'the copy merges into one grouped row', after.length, 2, 0);
+  check('rowkey', 'and the row now counts two', after.find(r => r.count === 2)?.count, 2, 0);
+
+  const gunBefore = before.find(r => r.type === 'module');
+  const gunAfter  = after.find(r => r.count === 2);
+  check('rowkey', 'the group reports a NEW id after the copy',
+        gunBefore.id !== gunAfter.id ? 1 : 0, 1, 0);
+  check('rowkey', 'and it is the new first member', gunAfter.id, 'h1');
+  check('rowkey', 'but rkey is unchanged, so the node survives',
+        gunBefore.rkey === gunAfter.rkey ? 1 : 0, 1, 0);
+
+  // Every row carries an rkey, grouped or not — the key expression must never fall through to
+  // `name`, which two identical ungrouped modules would collide on.
+  const mids = computeDisplayRows([gun('m0'), gun('m1'), empty('m2')], 'mid', true);
+  check('rowkey', 'ungrouped rows key on their slot id', mids.map(r => r.rkey).join(','), 'm0,m1,m2');
+  check('rowkey', 'and no rkey is ever missing',
+        [...before, ...after, ...mids].filter(r => !r.rkey).length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

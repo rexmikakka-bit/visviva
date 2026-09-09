@@ -176,6 +176,7 @@ export default {
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.":
     "Copiez le rapport d'erreur et envoyez-le au développeur pour que le problème soit corrigé. Il contient le message d'erreur et votre appareil/navigateur — aucune donnée de fitting.",
   "Copy to clipboard": "Copier dans le presse-papiers",
+  "Copy to nearest empty slot": "Copier dans l'emplacement libre le plus proche",
   "Couldn't clear: {err}": "Échec du vidage : {err}",
   "Couldn't copy — use Download instead.": "Copie impossible — utilisez plutôt Télécharger.",
   "Couldn't copy: {err}. Use {button} instead.": "Copie impossible : {err}. Utilisez plutôt {button}.",

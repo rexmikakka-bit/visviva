@@ -311,6 +311,18 @@ function DeleteX({on}){
   );
 }
 
+// Two stacked sheets, the usual "duplicate" mark. Not a plus sign: it sits next to DeleteX's cross,
+// and a + beside an x at 22px is two diagonals apart at a glance.
+function CopyGlyph(){
+  return(
+    <svg width={22} height={22} viewBox="0 0 24 24" aria-hidden="true"
+         stroke="#fff" strokeWidth={2.2} strokeLinejoin="round" fill="none">
+      <rect x={9} y={3} width={12} height={12} rx={2.5}/>
+      <path d="M15 18v1.5A1.5 1.5 0 0 1 13.5 21h-9A1.5 1.5 0 0 1 3 19.5v-9A1.5 1.5 0 0 1 4.5 9H6"/>
+    </svg>
+  );
+}
+
 function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
@@ -357,7 +369,8 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
   });
   const[moduleMenu,setModuleMenu]=useState(null);
   const[emptySlot,setEmptySlot]=useState(null);
-  const rowSwipe=useRowSwipe(()=>dragInfo.current!=null);
+  // Two buttons behind every fitted row: copy-to-next-empty-slot, then Remove.
+  const rowSwipe=useRowSwipe(()=>dragInfo.current!=null,2);
   const[fitError,setFitError]=useState(null);
   const showFitError=msg=>{setFitError(msg);setTimeout(()=>setFitError(null),3000);};
 
@@ -560,7 +573,25 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     }
     return Math.max(0,n);
   };
-  // Copies this module into the first `n` empty slots of its section. Clones the SLOT rather than
+  // The `n` empty slots CLOSEST to the module being copied, taken downwards first and only then
+  // upwards. Not the first `n` in the rack, which is what this used to do: filling a slot ABOVE the
+  // source shifts the source's own row down the screen (and, in a grouped high rack, hands the group
+  // a new first member — see computeDisplayRows' `rkey`). The swipe tray's copy button is meant to
+  // be tapped repeatedly, and a button that walks out from under the thumb after the first tap is
+  // not. Going down first also just reads as what "copy to the next empty slot" should mean.
+  //
+  // Upwards is still the fallback, for a module sitting at the bottom of its rack with nothing below
+  // it. That case does walk the row up the screen a slot per tap, and there is no way around it — the
+  // row moves because the empty above it stops being a row. It stays the rare case, though: modules
+  // pack from the top of a rack, so a source with empties only ABOVE it has to be built deliberately.
+  const nearestEmptyIds=(sec,fromId,n)=>{
+    const from=sec.findIndex(m=>m.id===fromId);
+    const empties=sec.map((m,i)=>({m,i})).filter(x=>x.m.type==="empty");
+    const below=empties.filter(x=>x.i>from);
+    const above=empties.filter(x=>x.i<from).reverse();
+    return[...below,...above].slice(0,n).map(x=>x.m.id);
+  };
+  // Copies this module into the `n` empty slots nearest it. Clones the SLOT rather than
   // re-adding the type, so the copies arrive in the same state and with the same charge, and
   // `orphan` is dropped deliberately: the copies are going into slots the ship genuinely has,
   // whatever the source's own standing.
@@ -578,7 +609,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
     const clone={...mod};delete clone.id;delete clone.orphan;
     setSlots(prev=>{
       const sec=prev[secKey]??[];
-      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,room).map(m=>m.id));
+      const targets=new Set(nearestEmptyIds(sec,mod.id,room));
       if(!targets.size)return prev;
       return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
     });
@@ -795,12 +826,19 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
               );
               const isDragSrc=dragUI?.secKey===sec.key&&dragUI?.fromIdx===rowIdx;
               const isDragOver=dragUI?.secKey===sec.key&&dragUI?.overIdx===rowIdx&&dragUI?.fromIdx!==rowIdx;
-              const rowKey=sec.key+":"+rowIdx;
+              // Keyed on the row's identity, not its position: copying a module into an empty slot
+              // renumbers every row below it, and an index-keyed open tray would then belong to a
+              // different row than the one the thumb is on. See computeDisplayRows' `rkey`.
+              const rowKey=sec.key+":"+row.rkey;
               // Subsystems have no remove path (see ModuleMenu below) — swapping is the only edit,
               // so their row never gets the swipe gesture at all.
               const swipeable=sec.key!=="subsystems";
+              // The real slot behind this row, since a display row also carries count/groupIds/rkey
+              // and those must not be cloned into a fitted slot.
+              const srcMod=swipeable?(slots[sec.key]??[]).find(m=>m.id===row.id):null;
+              const dupRoom=srcMod?duplicateRoom(sec.key,srcMod):0;
               return(
-                <div key={row.id||row.name} style={{position:"relative"}}>
+                <div key={row.rkey||row.id||row.name} style={{position:"relative"}}>
                   {/* Not rendered at all while a reorder is live, on ANY row rather than just the one
                       being dragged. The button sits BEHIND the row and is only ever invisible because
                       the row is opaque — so every way a row can stop being opaque leaks it, and there
@@ -809,7 +847,23 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                       only the first (which is what `!isDragSrc` did) left the drop target showing a
                       red Remove button through itself. Enumerating the ways is the losing move; no row
                       should be offering a delete during a reorder anyway. */}
-                  {swipeable&&!dragUI&&<button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
+                  {swipeable&&!dragUI&&<>
+                  {/* Copy sits OUTSIDE Remove, nearest the screen edge, for two reasons. A reveal
+                      that is still short of COMMIT_PX shows this one and not the destructive one; and
+                      when the rack fills up this greys out in place rather than unmounting, so
+                      Remove can never slide across into the spot a spamming thumb was already
+                      aiming at. It deliberately does NOT close the tray — being tappable repeatedly
+                      is the entire reason it exists, which is also why duplicateMod fills the
+                      NEAREST empty slot rather than the rack's first. */}
+                  <button onClick={()=>{if(!dupRoom)return;haptic();duplicateMod(sec.key,srcMod,1);}}
+                    aria-label={t("Copy to nearest empty slot")} disabled={!dupRoom}
+                    data-rowswipe="open"
+                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
+                            alignItems:"center",justifyContent:"center",opacity:dupRoom?1:.35,
+                            background:C.accent,color:"#fff",cursor:dupRoom?"pointer":"default"}}>
+                    <CopyGlyph/>
+                  </button>
+                  <button onClick={()=>{removeMod(sec.key,row.id,row.groupIds);rowSwipe.closeRowSwipe();}}
                     aria-label={t("Remove")}
                     // This button is a SIBLING of the row, not a child, so useTabSwipe's standDownFor
                     // walks up from it and never meets the row's own data-rowswipe — it read the tap as
@@ -820,11 +874,11 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
                     // "open" (not "closed") because this is only ever reachable once the row IS open,
                     // and a touch here belongs to the row machinery in BOTH directions.
                     data-rowswipe="open"
-                    style={{position:"absolute",top:0,left:0,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
+                    style={{position:"absolute",top:0,left:72,bottom:0,width:72,border:"none",borderRadius:8,display:"flex",
                             alignItems:"center",justifyContent:"center",
                             background:C.danger,color:"#fff",cursor:"pointer"}}>
                     <DeleteX on={rowSwipe.openKey===rowKey}/>
-                  </button>}
+                  </button></>}
                   {/* no-select on the ROW, not just the handle: the press starts on the handle but the
                       drag travels across the module names either side, and those are what the browser
                       was selecting. */}

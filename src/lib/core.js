@@ -616,11 +616,18 @@ function isGroupableModule(m){
   const gn=TYPES[String(m.typeID)]?.gn??'';
   return _TURRET_GROUPS.has(gn)||/^Missile Launcher/i.test(gn);
 }
+// `rkey` is the row's identity ACROSS a re-render, which is not the same thing as `id`: a grouped
+// row's id is whichever member came first in the rack, so copying the module into an empty slot
+// ABOVE it hands the row a new representative and a new id even though it is visibly the same row,
+// one thicker. React would tear the node down and rebuild it, and anything living on that node
+// rather than in state — the swipe tray's directly-written transform (lib/use-row-swipe.js) — goes
+// with it. Keying on the GROUP instead survives the copy, which is what lets the tray's duplicate
+// button be tapped more than once.
 function computeDisplayRows(mods,secKey,grouped){
-  if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id]}));
+  if(!grouped||secKey!=="high")return mods.map(m=>({...m,count:1,groupIds:[m.id],rkey:m.id}));
   const seen=new Map();
   mods.forEach(m=>{
-    if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id]});return;}
+    if(!isGroupableModule(m)){seen.set(m.id,{...m,count:1,groupIds:[m.id],rkey:m.id});return;}
     // `orphan` is part of the key: a module stranded by a subsystem swap must never merge into
     // a group with a live one of the same name, or the red 'no longer have this slot' marking
     // would apply to both — or to neither, depending which landed first.
@@ -632,7 +639,7 @@ function computeDisplayRows(mods,secKey,grouped){
     // for all five — the DMG figure was real for some of the row and wrong for the rest of it.
     const key=m.mutaplasmid?`__abyssal_${m.id}`:`${m.orphan?'__orphan_':''}${m.state}||${m.ammo?`${m.name}||${m.ammo}`:m.name}`;
     if(seen.has(key)){const e=seen.get(key);e.count++;e.groupIds.push(m.id);}
-    else seen.set(key,{...m,count:1,groupIds:[m.id]});
+    else seen.set(key,{...m,count:1,groupIds:[m.id],rkey:key});
   });
   return Array.from(seen.values());
 }

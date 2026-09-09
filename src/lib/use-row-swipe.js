@@ -1,5 +1,5 @@
-// Swipe-to-delete on a fitted-module row, Spotify-style: swipe RIGHT to reveal a Remove button
-// behind the row, tap the row again to close it, tap the button (or swipe far enough) to commit.
+// Swipe-to-act on a fitted-module row, Spotify-style: swipe RIGHT to reveal a tray of buttons
+// behind the row, tap the row again to close it, tap a button (or swipe far enough) to commit.
 //
 // Deliberately the mirror of Spotify's own left-swipe: this row sits inside the Fit tab, which
 // itself swipes left/right against Stats/Graph (useTabSwipe). stopPropagation already keeps a row
@@ -16,7 +16,7 @@
 import { useRef, useState } from "react";
 import { haptic } from "./core.js";
 
-const REVEAL_PX = 72;   // width of the revealed Remove button
+const BUTTON_PX = 72;   // width of one revealed button
 const COMMIT_PX = 40;   // past this on release, snap open instead of springing back
 const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs vertical
 
@@ -26,8 +26,15 @@ const AXIS_LOCK_PX = 8; // movement before the gesture decides horizontal vs ver
  *   and this runs on TOUCH events, two independent streams, so the reorder's own preventDefault and
  *   stopPropagation cannot reach these handlers. Without it, pulling the reorder handle sideways
  *   also slid the row open and brought Remove out from behind it.
+ * @param buttons how many buttons the tray holds, i.e. how far a row slides aside. A fixed count
+ *   for the whole list rather than something asked per row: a row already sitting at its revealed
+ *   offset is only ever moved again by the next drag, so a width that changed underneath it would
+ *   strand it half-open over a tray of a different size. Buttons that don't apply to a given row
+ *   render disabled in place instead of collapsing the tray — which also means the destructive one
+ *   never slides under a thumb that was aiming at its neighbour.
  */
-export function useRowSwipe(isBlocked) {
+export function useRowSwipe(isBlocked, buttons = 1) {
+  const REVEAL_PX = BUTTON_PX * buttons;
   const drag = useRef({ key: null, x: 0, y: 0, axis: null });
   const [openKey, setOpenKey] = useState(null);
   // The currently-revealed row's own DOM node, so a touch starting on a DIFFERENT row can actually

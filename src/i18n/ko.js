@@ -169,6 +169,7 @@ export default {
   "Copy report to clipboard instead": "대신 보고서를 클립보드에 복사",
   "Copy the error report and send it to the developer so this can be fixed. It contains the error message and your device/browser — no fit data.": "오류 보고서를 복사해 개발자에게 보내주시면 수정에 도움이 됩니다. 오류 메시지와 기기/브라우저 정보만 들어 있으며 피팅 데이터는 포함되지 않습니다.",
   "Copy to clipboard": "클립보드에 복사",
+  "Copy to nearest empty slot": "가장 가까운 빈 슬롯에 복제",
   "Couldn't clear: {err}": "삭제하지 못했습니다: {err}",
   "Couldn't copy — use Download instead.": "복사하지 못했습니다 — 대신 다운로드를 사용하세요.",
   "Couldn't copy: {err}. Use {button} instead.": "복사하지 못했습니다: {err}. 대신 「{button}」을 사용하세요.",
