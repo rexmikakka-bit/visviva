@@ -37,7 +37,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
+import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -4046,6 +4046,66 @@ Republic Fleet Command Mindlink`;
   // directly without consulting the budgets) cannot drift away from the new-stack path.
   check('drn', 'the flight size is five', DRONE_FLIGHT, 5, 0);
   check('drn', 'and it is what a tap adds', droneAddQty({...LIGHT,...FIVE,bwFree:75}).qty, DRONE_FLIGHT, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 13r2. CARGO CHARGES-ONLY FILTER — the cargo browser's charge filter narrows the market tree in
+//       place rather than jumping to a flat list, so it needs the tree to stay WALKABLE: every group
+//       it leaves visible must lead somewhere. MT_CHARGE_GROUPS marks ancestors, not just the groups
+//       holding charges, and getting that wrong hides Ammunition & Charges itself — its charges all
+//       live one or more levels down, so a "has charges directly" test empties the root.
+//
+//       The second trap is scope. Charges are category 8, which is far more than ammunition: scripts,
+//       scanner probes, cap booster charges, mining crystals and nanite paste are all charges and all
+//       filed elsewhere in the tree. Pinning the filter to the ammunition root would have silently
+//       dropped them, which is most of what actually goes in a cargo bay.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const cid = n => typeIDByName(n);
+  check('crg', 'antimatter is a charge', String(isChargeType(cid('Antimatter Charge S'))), 'true');
+  check('crg', 'a script is a charge', String(isChargeType(cid('Focused Warp Disruption Script'))), 'true');
+  check('crg', 'a scanner probe is a charge', String(isChargeType(cid('Core Scanner Probe I'))), 'true');
+  check('crg', 'a cap booster charge is a charge', String(isChargeType(cid('Navy Cap Booster 400'))), 'true');
+  check('crg', 'nanite paste is a charge', String(isChargeType(cid('Nanite Repair Paste'))), 'true');
+  check('crg', 'the gun that fires it is not', String(isChargeType(cid('125mm Gatling AutoCannon II'))), 'false');
+  check('crg', 'and neither is a ship', String(isChargeType(cid('Rifter'))), 'false');
+
+  // Nothing but charges survives the filter, anywhere in the tree.
+  const leaked = Object.values(MT_CHARGE_ITEMS).flat().filter(i => !isChargeType(i.typeID));
+  check('crg', 'no non-charge leaks into the filtered items', leaked.length, 0, 0);
+
+  // Every group left visible leads to a charge — either it holds one, or a visible child does.
+  const dangling = [...MT_CHARGE_GROUPS].filter(g =>
+    !MT_CHARGE_ITEMS[g] && !(MT_CHILDREN[g] ?? []).some(c => MT_CHARGE_GROUPS.has(c)));
+  check('crg', 'no visible group is a dead end', dangling.length, 0, 0);
+
+  // ...and it is reachable from a root, which is the ancestor-marking this index exists for.
+  const reachable = new Set();
+  for (const stack = MT_ROOTS.filter(g => MT_CHARGE_GROUPS.has(g)); stack.length; ) {
+    const g = stack.pop();
+    if (reachable.has(g)) continue;
+    reachable.add(g);
+    for (const c of (MT_CHILDREN[g] ?? [])) if (MT_CHARGE_GROUPS.has(c)) stack.push(c);
+  }
+  check('crg', 'every visible group is reachable from a root', MT_CHARGE_GROUPS.size - reachable.size, 0, 0);
+  check('crg', 'and some roots survive the filter', MT_ROOTS.filter(g => MT_CHARGE_GROUPS.has(g)).length > 0 ? 1 : 0, 1, 0);
+
+  // The five kinds above are all findable through the filtered tree, not just the ammunition ones.
+  const visible = new Set(Object.values(MT_CHARGE_ITEMS).flat().map(i => i.typeID));
+  for (const n of ['Antimatter Charge S', 'Focused Warp Disruption Script', 'Core Scanner Probe I',
+                   'Navy Cap Booster 400', 'Nanite Repair Paste', 'Scourge Fury Heavy Missile'])
+    check('crg', `${n} survives the filter`, String(visible.has(cid(n))), 'true');
+
+  // A hull is not reachable through it. Rifter's own market group must be filtered away entirely —
+  // this is the check that fails if the ancestor walk ever marks a whole branch instead of a path.
+  const rifterGroup = Object.entries(MT_ITEMS).find(([, arr]) => arr.some(i => i.typeID === cid('Rifter')))?.[0];
+  check('crg', 'the frigate group is filtered away', String(MT_CHARGE_GROUPS.has(Number(rifterGroup))), 'false');
+
+  // The filter really narrows: charges are a small slice of the market, not most of it.
+  const allItems = Object.values(MT_ITEMS).flat().length;
+  const chargeItems = Object.values(MT_CHARGE_ITEMS).flat().length;
+  check('crg', 'the filter keeps a minority of the market', chargeItems < allItems / 4 ? 1 : 0, 1, 0);
+  check('crg', 'but keeps a useful number of them', chargeItems > 400 ? 1 : 0, 1, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

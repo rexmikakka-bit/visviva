@@ -82,6 +82,27 @@ const MT_ROOTS = Object.keys(marketTreeData.g).filter(g => marketTreeData.g[g].p
   .sort((a, b) => marketTreeData.g[a].n.localeCompare(marketTreeData.g[b].n));
 const MT_ALL_ITEMS = Object.entries(marketTreeData.t).map(([tid, [mgid, name, vol]]) => ({ typeID: Number(tid), name, vol, mgid }));
 
+// The same tree again, keeping only category 8 (Charge), for the cargo browser's charges-only
+// filter. `MT_CHARGE_GROUPS` marks every ANCESTOR of a group holding one, not just the leaf, so the
+// filtered tree is walkable from the roots — filtering on "has charges directly" would hide
+// Ammunition & Charges itself, since all its charges live one or more levels down.
+//
+// Not all charges are ammunition: scripts, probes, cap booster charges, mining crystals and nanite
+// paste are all category 8 and scattered across the tree, which is why this is derived rather than
+// pinned to one root group.
+const isChargeType = tid => ((TYPES[tid] ?? TYPES[String(tid)])?.c ?? (TYPES[tid] ?? TYPES[String(tid)])?.category) === 8;
+const MT_CHARGE_ITEMS = {};
+for (const [gid, arr] of Object.entries(MT_ITEMS)) {
+  const only = arr.filter(i => isChargeType(i.typeID));
+  if (only.length) MT_CHARGE_ITEMS[gid] = only;
+}
+const MT_CHARGE_GROUPS = new Set();
+for (const gid of Object.keys(MT_CHARGE_ITEMS)) {
+  // Stop at the first ancestor already marked: it was reached from another branch, so everything
+  // above it is marked too.
+  for (let g = Number(gid); Number.isFinite(g) && !MT_CHARGE_GROUPS.has(g); g = Number(marketTreeData.g[g]?.p ?? NaN)) MT_CHARGE_GROUPS.add(g);
+}
+
 /**
  * Sibling items for the Variations tab.
  *
@@ -1707,4 +1728,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

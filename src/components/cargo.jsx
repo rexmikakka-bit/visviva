@@ -3,7 +3,7 @@ import marketTreeData from "../data/market-tree.json";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, NumpadModal, SheetSearchBar, useSuppressAccessoryBar } from "./ui.jsx";
-import { MT_ALL_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, cargoUnitVolume, cargoVolume, getCompatibleCharges, haptic } from "../lib/core.js";
+import { MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, cargoUnitVolume, cargoVolume, getCompatibleCharges, haptic, isChargeType } from "../lib/core.js";
 import { TYPES, tidByName } from "../calc.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
 import { t } from "../lib/i18n.js";
@@ -26,9 +26,12 @@ function ItemRow({item,onAdd}){
     <span style={{fontSize:11,color:C.accent,fontWeight:700,flexShrink:0}}>+ {t("Add")}</span>
   </div>);
 }
-function GroupRow({gid,onOpen}){
+function GroupRow({gid,onOpen,chargesOnly}){
   const g=marketTreeData.g[gid];
-  const nSub=(MT_CHILDREN[gid]??[]).length,nItems=(MT_ITEMS[gid]??[]).length;
+  // Counted through the same filter the row opens into, or the subtitle promises 16 groups and
+  // delivers two.
+  const nSub=(MT_CHILDREN[gid]??[]).filter(c=>!chargesOnly||MT_CHARGE_GROUPS.has(c)).length;
+  const nItems=((chargesOnly?MT_CHARGE_ITEMS[gid]:MT_ITEMS[gid])??[]).length;
   return(<div onClick={()=>onOpen(gid)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
     <div style={{width:32,height:32,borderRadius:7,flexShrink:0,overflow:"hidden",background:C.surfaceAlt,border:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
       {g.i?<img className="eve-icon" src={eveIcon(g.i,32)} width={30} height={30} alt="" onError={e=>{e.target.style.display="none";}}/>:null}
@@ -41,9 +44,24 @@ function GroupRow({gid,onOpen}){
   </div>);
 }
 
+// Same 24px tick the drone and fighter rows use, shrunk one step because two of these share a row.
+function FilterCheck({on,muted,label,onClick}){
+  return(<button className="press" onClick={onClick} aria-pressed={on}
+    style={{flex:1,display:"flex",alignItems:"center",gap:7,padding:"7px 9px",background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.border}`,borderRadius:8,cursor:"pointer",textAlign:"left",opacity:on||!muted?1:.55}}>
+    <span style={{width:18,height:18,flexShrink:0,borderRadius:4,background:on?C.accent:"none",border:`1px solid ${on?C.accent:C.borderStrong}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,lineHeight:1,color:"#fff"}}>{on?"✓":""}</span>
+    <span style={{fontSize:11,fontWeight:700,color:on?C.accent:C.textMid}}>{label}</span>
+  </button>);
+}
+
 export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   const[search,setSearch]=useState("");
   const[path,setPath]=useState([]);
+  // Two filters rather than the one "Charges for Active Fit" jump this replaces. That button only
+  // existed at the root and dropped you into a flat list you had to leave to browse again, so it
+  // could not answer "cap booster charges I have no cap booster fitted for yet", which is most of
+  // what a cargo bay is. These stay on across browsing and search, and the fit filter is a NARROWING
+  // of the charge filter — the two can't disagree, so toggling either one keeps that invariant.
+  const[chargesOnly,setChargesOnly]=useState(false);
   const[fitCharges,setFitCharges]=useState(false);
   // Safe here for the same reason it is in the module browser: the search box is this sheet's only
   // focusable field, so nothing else loses its stock Done/chevron while the sheet is open.
@@ -51,13 +69,8 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   const[searchFocused,setSearchFocused]=useState(false);
   useSuppressAccessoryBar();
   const cur=path.length?path[path.length-1]:null;
-  const subGroups=cur==null?MT_ROOTS:(MT_CHILDREN[cur]??[]);
-  const items=cur==null?[]:(MT_ITEMS[cur]??[]);
-  // Per-token, like the module browser: a raw substring needs the punctuation and word order typed
-  // exactly, so "navy antimatter s" and "ec 300" both found nothing.
-  const searchResults=search.trim().length>1
-    ?MT_ALL_ITEMS.filter(i=>nameMatchesQuery(i.name,search)).slice(0,60)
-    :null;
+  const subGroups=(cur==null?MT_ROOTS:(MT_CHILDREN[cur]??[])).filter(g=>!chargesOnly||MT_CHARGE_GROUPS.has(g));
+  const items=cur==null?[]:((chargesOnly?MT_CHARGE_ITEMS[cur]:MT_ITEMS[cur])??[]);
   const crumb=path.map(g=>marketTreeData.g[g]?.n).filter(Boolean).join(" > ");
 
   const fitChargeList=(()=>{
@@ -77,7 +90,26 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
     return Array.from(seen.values()).sort((a,b)=>a.name.localeCompare(b.name));
   })();
 
+  // Per-token, like the module browser: a raw substring needs the punctuation and word order typed
+  // exactly, so "navy antimatter s" and "ec 300" both found nothing.
+  //
+  // Searches the filtered set, not the whole market: a filter you have to remember to turn off
+  // before typing is worse than no filter, and searching within the fit's own charges is how you
+  // pick one ammo type out of the forty a full rack offers.
+  const searchPool=fitCharges?(fitChargeList??[]):MT_ALL_ITEMS;
+  const searchResults=search.trim().length>1
+    ?searchPool.filter(i=>(fitCharges||!chargesOnly||isChargeType(i.typeID))&&nameMatchesQuery(i.name,search)).slice(0,60)
+    :null;
+
   const openGroup=gid=>setPath(p=>[...p,gid]);
+  // Turning the charge filter on inside a branch with no charges in it would leave an empty list and
+  // a breadcrumb pointing at somewhere you can no longer be. Back out to the deepest ancestor that
+  // survives the filter instead, which is a no-op when you were already somewhere charges live.
+  const applyChargesOnly=on=>{
+    setChargesOnly(on);
+    if(!on){setFitCharges(false);return;}
+    setPath(p=>{const out=[...p];while(out.length&&!MT_CHARGE_GROUPS.has(out[out.length-1]))out.pop();return out;});
+  };
 
   // 100vh rather than 86vh, for the same reason the module browser uses it: with fillHeight the
   // box is min(height,100%) where 100% is the keyboard-shrunk frame, so at 86vh the sheet rests
@@ -85,12 +117,24 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
   // pushes the frame under 86vh. 100vh asks BottomSheet for a peek that no keyboard can move.
   return(<BottomSheet title={t("Add Cargo")} onClose={onClose} height="100vh" fillHeight
     headerExtra={
-      // height:0 so this overlays the top of the list instead of reserving a strip that is empty
-      // almost all the time. Header rather than inside the scroller for the same reason the module
-      // browser's toast is: content here needs no scroll-relative positioning.
-      <div style={{position:"relative",height:0}}>
-        {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name} (x{justAdded.count.toLocaleString()})</div>}
-      </div>
+      // In the header, not the scroller, so the filters stay reachable at any depth and through a
+      // search — the button they replace was only rendered at the root.
+      <>
+        <div style={{display:"flex",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+          <FilterCheck on={chargesOnly} label={t("Charges only")}
+            onClick={()=>{haptic("light");applyChargesOnly(!chargesOnly);}}/>
+          {/* Muted rather than disabled while the charge filter is off: it is still the fastest way
+              in, so tapping it turns both on rather than doing nothing and making you tap twice. */}
+          <FilterCheck on={fitCharges} muted={!chargesOnly} label={t("For active fit")}
+            onClick={()=>{haptic("light");const next=!fitCharges;setFitCharges(next);if(next)applyChargesOnly(true);}}/>
+        </div>
+        {/* height:0 so this overlays the top of the list instead of reserving a strip that is empty
+            almost all the time. Header rather than inside the scroller for the same reason the module
+            browser's toast is: content here needs no scroll-relative positioning. */}
+        <div style={{position:"relative",height:0}}>
+          {justAdded&&<div key={justAdded.key} className="vv-in" style={{position:"absolute",top:8,right:10,zIndex:20,background:C.accent,color:"#fff",fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:99,boxShadow:"0 2px 8px rgba(0,0,0,.35)",pointerEvents:"none",maxWidth:"65%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>+ {justAdded.name} (x{justAdded.count.toLocaleString()})</div>}
+        </div>
+      </>
     }
     footerExtra={
       // Footer, not top-of-sheet: cargo is a multi-add browser — you stay in it stacking ammo and
@@ -106,15 +150,10 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
     {/* Sticky, because these now live inside the sheet's own scroller: this used to be a fixed
         header above a NESTED scroller, which meant BottomSheet's onScroll={dismissKeyboardOnScroll}
         never fired here and scrolling the cargo list could not dismiss the keyboard at all. */}
-    {!searchResults&&!fitCharges&&path.length===0&&(
-      <div style={{position:"sticky",top:0,zIndex:3,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surface}}>
-        <button onClick={()=>setFitCharges(true)} style={{width:"100%",padding:"10px 0",background:C.accentLight,border:`1px solid ${C.accentBorder}`,borderRadius:8,color:C.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>{t("Charges for Active Fit")}</button>
-      </div>
-    )}
-    {!searchResults&&(fitCharges||path.length>0)&&(
+    {!searchResults&&!fitCharges&&path.length>0&&(
       <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
-        <button onClick={()=>fitCharges?setFitCharges(false):setPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
-        <span style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{fitCharges?t("Charges for Active Fit"):crumb}</span>
+        <button onClick={()=>setPath(p=>p.slice(0,-1))} style={{background:"none",border:"none",color:C.accent,fontSize:13,fontWeight:700,cursor:"pointer",padding:0}}>&laquo; {t("Back")}</button>
+        <span style={{fontSize:12,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{crumb}</span>
       </div>
     )}
     {searchResults?(
@@ -123,7 +162,7 @@ export function CargoBrowserSheet({onAdd,onClose,slots,justAdded}){
       <div>{(fitChargeList??[]).length===0&&<div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:12}}>{t("No charge-compatible modules fitted")}</div>}{(fitChargeList??[]).map(item=><ItemRow key={item.typeID??item.name} item={item} onAdd={onAdd}/>)}</div>
     ):(
       <div>
-        {subGroups.map(gid=><GroupRow key={gid} gid={gid} onOpen={openGroup}/>)}
+        {subGroups.map(gid=><GroupRow key={gid} gid={gid} onOpen={openGroup} chargesOnly={chargesOnly}/>)}
         {items.map(item=><ItemRow key={item.typeID} item={item} onAdd={onAdd}/>)}
       </div>
     )}
