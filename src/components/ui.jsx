@@ -322,10 +322,16 @@ export function useSuppressAccessoryBar({focusRef}={}){
 // and only the module browser suppresses that bar (see setAccessoryBarVisible there) — drawing our
 // own chevron in a sheet that still has the stock one gives you two of them side by side.
 export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inputRef,inputProps}){
+  // Most callers don't need the input themselves and pass no ref, but the clear button below has to
+  // be able to focus it, so fall back to one of our own. A ref OBJECT either way rather than a
+  // callback ref: a fresh inline callback runs null-then-element on every render, and
+  // useSuppressAccessoryBar reads the caller's ref from a timeout that can land in that gap.
+  const fallbackRef=useRef(null);
+  const ref=inputRef??fallbackRef;
   return(
     <div style={{display:"flex",alignItems:"center",gap:8,background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:"7px 10px"}}>
       <span style={{fontSize:15,color:C.textMute,flexShrink:0}}>&#128269;</span>
-      <input ref={inputRef} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
+      <input ref={ref} autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="search"
         value={value} onChange={e=>onChange(e.target.value)} onPaste={onPaste}
         // enterKeyHint="search" promises the return key does something; results are already
         // live, so the only thing left for it to do is get the keyboard out of the way.
@@ -341,8 +347,16 @@ export function SheetSearchBar({value,onChange,placeholder,onPaste,onDismiss,inp
           footer-placed search bar that blur drops the keyboard, which moves this button ~300px down
           the screen before mouseup — so the click landed on whatever now sat under the thumb and the
           field never actually cleared. Cancelling the blur keeps the keyboard up, keeps the button
-          still, and leaves the caret in the box ready for the next query. */}
-      {!!value&&<button onClick={()=>onChange("")} onMouseDown={e=>e.preventDefault()} aria-label={t("Clear search")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
+          still, and leaves the caret in the box ready for the next query.
+
+          But preventDefault only PRESERVES a focus the input already had — it cannot grant one, and
+          it stops the press from granting one either. Scrolling the results deliberately drops the
+          keyboard (dismissKeyboardOnScroll), which is the normal way to reach a module part-way down
+          a list, so by the time you clear the box to search for the next one the input is usually
+          NOT focused: the field emptied, nothing took focus, and the next thing you typed went
+          nowhere. Focusing explicitly makes "leaves the caret in the box" true in both cases, which
+          is what the comment above always claimed. */}
+      {!!value&&<button onClick={()=>{onChange("");ref.current?.focus();}} onMouseDown={e=>e.preventDefault()} aria-label={t("Clear search")} style={{background:"none",border:"none",color:C.textMute,cursor:"pointer",fontSize:18,lineHeight:1,padding:10,margin:-10,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>}
       {/* Same padding/flex recipe as the x button next to it so the two share a baseline, but a
           POSITIVE left margin instead of the matching -10: the row's gap is 8, so two neighbours
           both pulling in by 10 left their 20px-wide hit areas overlapping by 12px and a thumb
