@@ -537,13 +537,20 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
       return{...prev,[secKey]:reabsorbOrphans(arr)};
     });
   };
-  const duplicateMod=(secKey,mod)=>{
-    const empty=slots[secKey].find(m=>m.type==="empty");
-    if(!empty)return;
-    // preserveCharge: see addMod — carries this module's actual state and loaded charge into the
-    // copy, rather than re-deriving fresh defaults for it.
-    addMod(secKey,empty.id,{name:mod.name,typeID:mod.typeID,mutaplasmid:mod.mutaplasmid,mutations:mod.mutations?{...mod.mutations}:undefined,
-      preserveCharge:true,state:mod.state,ammo:mod.ammo,charges:mod.charges,maxCharges:mod.maxCharges});
+  // Copies this module into the first `n` empty slots of its section. Clones the SLOT rather than
+  // re-adding the type, so the copies arrive in the same state and with the same charge — the same
+  // thing fillHardpoints does, and the reason both take one pure setSlots pass instead of a loop over
+  // addMod (which resolves its target against this render's `slots`, so every iteration would aim at
+  // the same slot, and which StrictMode's double invocation would run twice).
+  const duplicateMod=(secKey,mod,n=1)=>{
+    if(n<1)return;
+    const clone={...mod};delete clone.id;delete clone.orphan;
+    setSlots(prev=>{
+      const sec=prev[secKey]??[];
+      const targets=new Set(sec.filter(m=>m.type==="empty").slice(0,n).map(m=>m.id));
+      if(!targets.size)return prev;
+      return{...prev,[secKey]:sec.map(m=>targets.has(m.id)?{...m,...clone}:m)};
+    });
     setModuleMenu(null);
   };
   // How many more of THIS weapon the hull can still take: the smallest of its free hardpoints of the
@@ -998,7 +1005,7 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?()=>duplicateMod(moduleMenu.secKey,menuMod):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={slots[moduleMenu.secKey]?.some(m=>m.type==="empty")?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} emptyCount={(slots[moduleMenu.secKey]??[]).filter(m=>m.type==="empty").length} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
