@@ -564,10 +564,12 @@ export default function App(){
   // is eight references, not a deep clone.
   const UNDO_LIMIT=50;
   const _undoStack=useRef([]);
+  const _redoStack=useRef([]);
   const _undoPrev=useRef(null);       // last committed snapshot
-  const _undoApplying=useRef(false);  // true while an undo is being applied, so it isn't re-recorded
-  const _undoFitKey=useRef(undefined);// which fit the stack belongs to
+  const _applyingHistory=useRef(false);// true while undo/redo is being applied, so it isn't re-recorded
+  const _undoFitKey=useRef(undefined);// which fit the stacks belong to
   const[undoDepth,setUndoDepth]=useState(0);
+  const[redoDepth,setRedoDepth]=useState(0);
   const _fitSnapshot=useMemo(()=>({slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits}),
     [slots,drones,fighters,cargoItems,implants,boosters,projFits,cmdFits]);
   // Bottom-nav badges, pyfa-style: a count only appears for things currently switched ON, not
@@ -592,11 +594,13 @@ export default function App(){
     if(_undoFitKey.current!==key){
       _undoFitKey.current=key;
       _undoStack.current=[];
-      _undoApplying.current=false;
+      _redoStack.current=[];
+      _applyingHistory.current=false;
       setUndoDepth(0);
+      setRedoDepth(0);
       return;
     }
-    if(_undoApplying.current){_undoApplying.current=false;return;}
+    if(_applyingHistory.current){_applyingHistory.current=false;return;}
     // `prev === _fitSnapshot` means the effect re-ran without the fit actually changing — which
     // StrictMode's deliberate double-invoke does on every mount. Recording that would seed the
     // stack with a no-op entry, so the first Undo press would appear to do nothing.
@@ -604,29 +608,40 @@ export default function App(){
     _undoStack.current.push(prev);
     if(_undoStack.current.length>UNDO_LIMIT)_undoStack.current.shift();
     setUndoDepth(_undoStack.current.length);
+    // Editing after undoing forks the history: what was undone no longer follows on from what is on
+    // screen, so keeping it redoable would splice two different fits together.
+    if(_redoStack.current.length){_redoStack.current=[];setRedoDepth(0);}
   },[_fitSnapshot,activeFit]);
-  const undo=()=>{
-    const snap=_undoStack.current.pop();
+  // `_undoPrev` is whatever is on screen right now, so each direction hands the other the exact state
+  // it is leaving — that symmetry is what makes undo/redo round-trip.
+  const _travel=(from,to)=>{
+    const snap=from.current.pop();
     if(!snap)return;
-    _undoApplying.current=true;  // cleared by the effect this batch triggers
+    to.current.push(_undoPrev.current);
+    _applyingHistory.current=true;  // cleared by the effect this batch triggers
     setSlots(snap.slots);setDrones(snap.drones);setFighters(snap.fighters);
     setCargoItems(snap.cargoItems);setImplants(snap.implants);setBoosters(snap.boosters);
     setProjFits(snap.projFits);setCmdFits(snap.cmdFits);
     setUndoDepth(_undoStack.current.length);
+    setRedoDepth(_redoStack.current.length);
     haptic();
   };
-  // Ctrl/Cmd+Z for the desktop and web builds; the button covers touch.
+  const undo=()=>_travel(_undoStack,_redoStack);
+  const redo=()=>_travel(_redoStack,_undoStack);
+  // Ctrl/Cmd+Z and its two redo spellings for the desktop and web builds; the buttons cover touch.
   useEffect(()=>{
     const onKey=e=>{
-      if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='Z')){
-        const el=e.target;
-        if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable))return; // let the field undo its own text
-        e.preventDefault();undo();
-      }
+      if(!(e.ctrlKey||e.metaKey))return;
+      const z=e.key==='z'||e.key==='Z',y=e.key==='y'||e.key==='Y';
+      if(!z&&!y)return;
+      const el=e.target;
+      if(el&&(el.tagName==='INPUT'||el.tagName==='TEXTAREA'||el.isContentEditable))return; // let the field undo its own text
+      e.preventDefault();
+      if(y||e.shiftKey)redo();else undo();
     };
     window.addEventListener('keydown',onKey);
     return()=>window.removeEventListener('keydown',onKey);
-  });// no dep array: `undo` closes over the current stack each render
+  });// no dep array: `undo`/`redo` close over the current stacks each render
 
   const openFitTabs=resolveTabs(openTabs,fitsDB);
   // Jumping to a fit that some OTHER fit points at — one you projected, one supplying command
@@ -761,7 +776,7 @@ export default function App(){
       {/* minHeight:0 is load-bearing — a flex child defaults to min-height:auto, which refuses to
           shrink below its content and would let the screens push the bottom nav off-screen again. */}
       <div style={{flex:1,minHeight:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} cargoItems={cargoItems} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent} newTabIntent={newTabIntent} autoFillHardpoints={autoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd} onOpenFit={openFitInNewTab} fitSubTab={fitSubTab} setFitSubTab={setFitSubTab}/>}
+        {bottomTab==="fittings"&&<FittingsScreen recents={recentFits} undo={undo} undoDepth={undoDepth} redo={redo} redoDepth={redoDepth} activeFit={activeFit} setActiveFit={setActiveFit} loadFit={loadFit} deleteFit={deleteFit} view={fittingsView} setView={setFittingsView} fitsDB={fitsDB} setFitsDB={setFitsDB} slots={slots} setSlots={setSlots} setDrones={setDrones} setFighters={setFighters} fighters={fighters} cargoItems={cargoItems} setCargoItems={setCargoItems} setImplants={setImplants} setBoosters={setBoosters} setProjFits={setProjFits} setCmdFits={setCmdFits} skills={fitSkills} sourceSkills={sourceSkills} openFitTabs={openFitTabs} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload} setFactorInReload={setFactorInReload} externalBursts={externalBursts} projectedReps={projectedReps} projectedEffects={projectedEffects} dmgProfile={dmgProfile} setDmgProfile={setDmgProfile} tgtProfile={tgtProfile} setTgtProfile={setTgtProfile} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} newFitIntent={newFitIntent} setNewFitIntent={setNewFitIntent} newTabIntent={newTabIntent} autoFillHardpoints={autoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd} onOpenFit={openFitInNewTab} fitSubTab={fitSubTab} setFitSubTab={setFitSubTab}/>}
         {/* Engine capacity first, raw hull attribute only as the fallback for a ship we failed to
             calculate. The hull's own `capacity` ignores cargohold expanders and cargo rigs, so a
             Bestower with one Expanded Cargohold II read 4,800 m³ here and 7,650 m³ on the stats

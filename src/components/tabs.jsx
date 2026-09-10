@@ -323,7 +323,13 @@ function CopyGlyph(){
   );
 }
 
-function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
+// Shared by Undo and Redo so the pair cannot drift apart visually — they sit side by side, where a
+// one-pixel difference in padding or border reads as a mistake.
+const histBtn=depth=>({display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
+  background:"none",border:`1px solid ${depth?C.border:"transparent"}`,
+  color:depth?C.textMid:C.textMute,opacity:depth?1:0.4,cursor:depth?"pointer":"default"});
+
+function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -763,17 +769,23 @@ function FitTab({undo,undoDepth,ship,slots,setSlots,skills,implants,boosters,dro
           varies: hardpoint dots only render on hulls that have them). */}
       <ResourceStrip ship={ship} slots={slots} skills={skills} implants={implants} boosters={boosters} drones={drones} factorInReload={factorInReload}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:6}}>
-          {/* Undo covers every edit to the fit (modules, charges, drones, cargo, implants, boosters,
-              projected/command fits) because the history snapshots the same state App.jsx persists.
-              Disabled rather than hidden so the control doesn't shift position as you edit. */}
-          <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
-            title={undoDepth?t("Undo last change ({n})",{n:undoDepth}):t("Nothing to undo")}
-            style={{display:"flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,
-                    background:"none",border:`1px solid ${undoDepth?C.border:"transparent"}`,
-                    color:undoDepth?C.textMid:C.textMute,opacity:undoDepth?1:0.4,
-                    cursor:undoDepth?"pointer":"default"}}>
-            <span style={{fontSize:12,lineHeight:1}}>&#8630;</span>{t("Undo")}
-          </button>
+          {/* Undo/Redo cover every edit to the fit (modules, charges, drones, cargo, implants,
+              boosters, projected/command fits) because the history snapshots the same state App.jsx
+              persists. Disabled rather than hidden so neither control shifts position as you edit —
+              Redo in particular is disabled most of the time, and a button that appears under your
+              thumb the moment you undo is a button you press by accident. */}
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>undoDepth>0&&undo?.()} disabled={!undoDepth}
+              title={undoDepth?t("Undo last change ({n})",{n:undoDepth}):t("Nothing to undo")}
+              style={histBtn(undoDepth)}>
+              <span style={{fontSize:12,lineHeight:1}}>&#8630;</span>{t("Undo")}
+            </button>
+            <button onClick={()=>redoDepth>0&&redo?.()} disabled={!redoDepth}
+              title={redoDepth?t("Redo last undone change ({n})",{n:redoDepth}):t("Nothing to redo")}
+              style={histBtn(redoDepth)}>
+              <span style={{fontSize:12,lineHeight:1}}>&#8631;</span>{t("Redo")}
+            </button>
+          </div>
           <button onClick={()=>setGrouped(g=>!g)} style={{padding:"3px 10px",borderRadius:6,fontSize:10,fontWeight:700,background:grouped?C.accentLight:"none",border:`1px solid ${grouped?C.accentBorder:C.border}`,color:grouped?C.accent:C.textMute,cursor:"pointer"}}>{grouped?t("Grouped"):t("Ungrouped")}</button>
         </div>
       </ResourceStrip>
