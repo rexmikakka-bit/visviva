@@ -1213,6 +1213,13 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
     const shown=variants.find(v=>v.name===choice)??variants.find(v=>v.name===rack.ammo)??variants.find(v=>v.name===row.name)??row;
     return {...shown,rowKey:row.name,variants};
   });
+  const missileRows=rows.filter(r=>r.missile);
+  const missilePresets=missileRows.length?[
+    {kind:'navy',label:t("NAVY")},
+    {kind:'damage',label:t("T2 damage")},
+    {kind:'application',label:t("T2 application")},
+    {kind:'range',label:t("T2 range")},
+  ].filter(p=>missileRows.every(r=>r.variants.some(v=>v.previewKind===p.kind))):[];
   const best=targeted?displayRows.reduce((a,b)=>!a||b.dps>a.dps?b:a,null):null;
   const fmt=n=>n>=100?n.toFixed(0):n.toFixed(1);
   // What is in the guns RIGHT NOW, which is not the same thing as `row.loaded` — that is a snapshot
@@ -1285,6 +1292,25 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
               background:i===rackIdx?C.accentLight:C.surface,border:`1px solid ${i===rackIdx?C.accent:C.border}`,color:i===rackIdx?C.accent:C.textMute}}>
             {r.name} ×{r.mounts.length}
           </button>))}
+      </div>}
+      {missilePresets.length>1&&<div role="group" aria-label={t("Preview missile ammo")}
+        style={{display:"flex",gap:6,padding:"8px 12px",flexWrap:"wrap"}}>
+        {missilePresets.map(p=>{
+          const selected=missileRows.every(row=>displayRows.find(r=>r.rowKey===row.name)?.previewKind===p.kind);
+          return <button key={p.kind} type="button" aria-pressed={selected}
+            onClick={()=>{
+              haptic();
+              setGradePreviews(prev=>{
+                const choices={...(prev.ship===ship?prev.choices:{})};
+                for(const row of missileRows)choices[`${rackId}|${row.name}`]=row.variants.find(v=>v.previewKind===p.kind).name;
+                return {ship,choices};
+              });
+            }}
+            style={{padding:"7px 9px",minHeight:32,fontSize:10,fontWeight:700,borderRadius:6,cursor:"pointer",
+              color:selected?C.accent:C.textMute,background:selected?C.accentLight:C.surface,border:`1px solid ${selected?C.accent:C.border}`}}>
+            {p.label}
+          </button>;
+        })}
       </div>}
       {/* The delta column only exists WITH a target — there is nothing to be a delta from otherwise —
           so it is dropped rather than reserved, and the numbers move out to the edge. Reserving it

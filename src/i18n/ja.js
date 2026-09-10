@@ -895,4 +895,8 @@ export default {
   "−{pct}% speed": "速度 −{pct}%",
   "−{v} GJ/s": "−{v} GJ/s",
   "Preview next ammo grade": "次の弾薬グレードをプレビュー",
+  "T2 damage": "T2 ダメージ",
+  "T2 application": "T2 命中性能",
+  "T2 range": "T2 射程",
+  "Preview missile ammo": "ミサイル弾薬をプレビュー",
 };

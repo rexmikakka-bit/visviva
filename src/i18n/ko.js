@@ -894,4 +894,8 @@ export default {
   "−{pct}% speed": "속도 −{pct}%",
   "−{v} GJ/s": "−{v} GJ/s",
   "Preview next ammo grade": "다음 탄약 등급 미리보기",
+  "T2 damage": "T2 피해량",
+  "T2 application": "T2 피해 적용",
+  "T2 range": "T2 사거리",
+  "Preview missile ammo": "미사일 탄약 미리보기",
 };

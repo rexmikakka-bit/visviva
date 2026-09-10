@@ -961,4 +961,8 @@ export default {
   "×{n} sq": "×{n} esc.",
   "…or paste the JSON:": "…ou collez le JSON :",
   "Preview next ammo grade": "Prévisualiser la variante de munition suivante",
+  "T2 damage": "T2 dégâts",
+  "T2 application": "T2 application",
+  "T2 range": "T2 portée",
+  "Preview missile ammo": "Prévisualiser les missiles",
 };

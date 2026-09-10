@@ -896,4 +896,8 @@ export default {
   "−{pct}% speed": "−{pct}% скорости",
   "−{v} GJ/s": "−{v} GJ/s",
   "Preview next ammo grade": "Предпросмотр следующего уровня боеприпасов",
+  "T2 damage": "T2 урон",
+  "T2 application": "T2 применение",
+  "T2 range": "T2 дальность",
+  "Preview missile ammo": "Предпросмотр ракет",
 };

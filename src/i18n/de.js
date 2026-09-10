@@ -945,4 +945,8 @@ export default {
   "×{n} sq": "×{n} Staffeln",
   "…or paste the JSON:": "…oder füge das JSON ein:",
   "Preview next ammo grade": "Nächste Munitionsstufe ansehen",
+  "T2 damage": "T2 Schaden",
+  "T2 application": "T2 Anwendung",
+  "T2 range": "T2 Reichweite",
+  "Preview missile ammo": "Raketenmunition ansehen",
 };

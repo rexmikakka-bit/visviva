@@ -271,6 +271,21 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = 
     const base = group.items.reduce(
       (best, c) => (metaOf(c.typeID, "T1") === "T1" ? Math.max(best, damageOf(c.typeID)) : best), 0);
     for (const c of group.items) baseDamage.set(c.name, base);
+    // Missile browser families are damage types. Keep one ordinary-ammo anchor per type,
+    // with T2 damage/application choices in its cycle; auto-targeting remains a separate mechanic.
+    if(cycleGrades && group.range==null && group.order!=null){
+      const anchor=group.items.find(isNavy)??group.items.filter(c=>metaOf(c.typeID,'T1')==='T1')
+        .sort((a,b)=>damageOf(b.typeID)-damageOf(a.typeID))[0];
+      if(anchor){
+        const ordinary=ammoGrades(anchor,group.items);
+        const t2=group.items.filter(c=>metaOf(c.typeID,'T1')==='T2')
+          .sort((a,b)=>damageOf(b.typeID)-damageOf(a.typeID)||a.name.localeCompare(b.name));
+        const grades=[...ordinary.filter(isNavy),...t2,...ordinary.filter(c=>!isNavy(c))];
+        for(const c of grades)seen.add(c.name);
+        picks.push({family:group.family,charge:anchor,grades,missile:true});
+        continue;
+      }
+    }
     for (const c of rowsOfFamily(group)) {
       if (damageOf(c.typeID) <= 0 || seen.has(c.name)) continue;
       seen.add(c.name);
@@ -289,7 +304,7 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = 
   // carries names the list never renders — the auto-targeting rounds end "…Heavy Missile I" where
   // everything else ends "…Heavy Missile" — and one of those is enough to leave the whole column
   // untrimmed for rows that do in fact all share a suffix.
-  const label = labelerFor(picks.map((p) => p.charge));
+  const label = labelerFor(picks.flatMap(p=>p.grades??[p.charge]));
 
   const score = (family, charge) => {
     const { slots: trial, charges } = withAmmo(slots, rack, charge);
@@ -308,13 +323,18 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = 
       loaded: charge.name === rack.ammo,
     };
   };
-  const rows = picks.map(({family,charge})=>{
+  const rows = picks.map(({family,charge,grades:familyGrades,missile})=>{
     const row=score(family,charge);
     if(!row||!cycleGrades)return row;
-    const grades=ammoGrades(charge,rack.charges);
+    const grades=familyGrades??ammoGrades(charge,rack.charges);
+    row.missile=!!missile;
     row.variants=grades.map(c=>{
       const v=c.name===charge.name?{...row}:score(family,c);
-      return v&&{...v,short:abbreviatedAmmo(v.label),grade:gradeLabel(c,grades)};
+      if(!v)return null;
+      const previewKind=isNavy(c)?'navy':missile&&v.meta==='T2'
+        ?v.line==='dmg'?'damage':v.optimal>row.optimal?'range':'application':null;
+      const grade=previewKind==='damage'?'T2 DMG':previewKind==='range'?'T2 RNG':previewKind==='application'?'T2 APP':gradeLabel(c,grades);
+      return {...v,short:abbreviatedAmmo(v.label),grade,previewKind};
     }).filter(Boolean);
     return row;
   }).filter(Boolean);

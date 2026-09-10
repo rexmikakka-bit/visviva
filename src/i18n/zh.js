@@ -889,4 +889,8 @@ export default {
   "−{pct}% speed": "−{pct}% 速度",
   "−{v} GJ/s": "−{v} GJ/s",
   "Preview next ammo grade": "预览下一级弹药",
+  "T2 damage": "T2 伤害",
+  "T2 application": "T2 伤害应用",
+  "T2 range": "T2 射程",
+  "Preview missile ammo": "预览导弹弹药",
 };

@@ -6714,6 +6714,25 @@ Nanofiber Internal Structure II
   check('ammo','navy Scourge cycles only its ordinary grades',missileGrades('Caldari Navy Scourge Heavy Missile').every(n=>!n.includes('Auto-Targeting')&&!n.includes('Fury')&&!n.includes('Precision'))?1:0,1,0);
   check('ammo','navy Scourge can preview pirate ammo',missileGrades('Caldari Navy Scourge Heavy Missile').includes('Dread Guristas Scourge Heavy Missile')?1:0,1,0);
   const hNames = heavy.rows.map(r => r.label);
+  // Compact missile rows retain every combat variant and use the real loaded round as baseline.
+  const heavySlots=gun('Heavy Missile Launcher II','Scourge Fury Heavy Missile',5);
+  const compactHeavy=rankAmmo({typeID:tid('Caracal'),name:'Caracal'},heavySlots,[],null,ARMOUR,weaponRacks(heavySlots)[0],true);
+  check('ammo','compact heavy missiles have four damage rows',compactHeavy.rows.length,4,0);
+  check('ammo','each damage type has one stable row',new Set(compactHeavy.rows.map(r=>r.family)).size,4,0);
+  const scourgeCycle=compactHeavy.rows.find(r=>r.name==='Caldari Navy Scourge Heavy Missile').variants;
+  check('ammo','missile cycle starts navy, damage, application',scourgeCycle.slice(0,3).map(v=>v.grade).join('|'),'NAVY|T2 DMG|T2 APP');
+  check('ammo','missile cycle retains pirates and T1',scourgeCycle.some(v=>v.grade==='PRT 2')&&scourgeCycle.some(v=>v.grade==='T1')?1:0,1,0);
+  check('ammo','T2 loaded baseline survives consolidation',compactHeavy.base,heavy.base,0.0001);
+  check('ammo','only the equipped variant is marked loaded',compactHeavy.rows.flatMap(r=>r.variants).filter(v=>v.loaded).map(v=>v.name).join(','),'Scourge Fury Heavy Missile');
+  check('ammo','all damage types support the shared heavy presets',compactHeavy.rows.every(r=>['navy','damage','application'].every(k=>r.variants.some(v=>v.previewKind===k)))?1:0,1,0);
+  check('ammo','compact calculation leaves fitted ammo alone',heavySlots.high.every(s=>s.ammo==='Scourge Fury Heavy Missile')?1:0,1,0);
+  const compactHam=rankAmmo({typeID:tid('Cerberus'),name:'Cerberus'},ham,[],null,ARMOUR,weaponRacks(ham)[0],true);
+  check('ammo','compact HAMs have four damage rows',compactHam.rows.length,4,0);
+  check('ammo','Javelin is a range preview',compactHam.rows.every(r=>r.variants.some(v=>v.previewKind==='range'&&v.label.includes('Javelin')))?1:0,1,0);
+  check('ammo','Rage is a damage preview',compactHam.rows.every(r=>r.variants.some(v=>v.previewKind==='damage'&&v.label.includes('Rage')))?1:0,1,0);
+  const t1Launcher=gun('Heavy Missile Launcher I','Scourge Heavy Missile',4);
+  const compactT1=rankAmmo({typeID:tid('Caracal'),name:'Caracal'},t1Launcher,[],null,ARMOUR,weaponRacks(t1Launcher)[0],true);
+  check('ammo','T1 launchers never offer incompatible T2 ammo',compactT1.rows.flatMap(r=>r.variants).some(v=>v.meta==='T2')?1:0,0,0);
   check('ammo', 'auto-targeting rounds are left out',
         hNames.some(n => n.includes('Auto-Targeting')) ? 1 : 0, 0, 0);
   check('ammo', 'and so is the Legion line', hNames.some(n => n.startsWith('Legion')) ? 1 : 0, 0, 0);
