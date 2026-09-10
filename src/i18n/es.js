@@ -959,4 +959,5 @@ export default {
   "{v} clip": "{v} por cargador",
   "×{n} sq": "×{n} esc.",
   "…or paste the JSON:": "…o pega el JSON:",
+  "Preview next ammo grade": "Ver la siguiente variante de munición",
 };

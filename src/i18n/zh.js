@@ -888,4 +888,5 @@ export default {
   "…or paste the JSON:": "…或粘贴 JSON：",
   "−{pct}% speed": "−{pct}% 速度",
   "−{v} GJ/s": "−{v} GJ/s",
+  "Preview next ammo grade": "预览下一级弹药",
 };

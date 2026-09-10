@@ -893,4 +893,5 @@ export default {
   "…or paste the JSON:": "…또는 JSON을 붙여넣기:",
   "−{pct}% speed": "속도 −{pct}%",
   "−{v} GJ/s": "−{v} GJ/s",
+  "Preview next ammo grade": "다음 탄약 등급 미리보기",
 };

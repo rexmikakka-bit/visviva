@@ -944,4 +944,5 @@ export default {
   "{v} clip": "{v} Schuss",
   "×{n} sq": "×{n} Staffeln",
   "…or paste the JSON:": "…oder füge das JSON ein:",
+  "Preview next ammo grade": "Nächste Munitionsstufe ansehen",
 };

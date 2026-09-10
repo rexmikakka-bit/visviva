@@ -894,4 +894,5 @@ export default {
   "…or paste the JSON:": "…または JSON を貼り付け:",
   "−{pct}% speed": "速度 −{pct}%",
   "−{v} GJ/s": "−{v} GJ/s",
+  "Preview next ammo grade": "次の弾薬グレードをプレビュー",
 };

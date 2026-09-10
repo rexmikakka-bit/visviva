@@ -895,4 +895,5 @@ export default {
   "…or paste the JSON:": "…или вставьте JSON:",
   "−{pct}% speed": "−{pct}% скорости",
   "−{v} GJ/s": "−{v} GJ/s",
+  "Preview next ammo grade": "Предпросмотр следующего уровня боеприпасов",
 };

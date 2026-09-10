@@ -34,7 +34,7 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { weaponRacks, rankAmmo } from './lib/ammo-compare.js';
+import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -6601,6 +6601,21 @@ Nanofiber Internal Structure II
   check('ammo', 'and it knows it has six mounts', weaponRacks(arty)[0].mounts.length, 6, 0);
 
   const turret = rank('Maelstrom', arty, ARMOUR);
+  const cycling=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},arty,[],null,ARMOUR,weaponRacks(arty)[0],true);
+  const fusion=cycling.rows.find(r=>r.name==='Republic Fleet Fusion L');
+  check('ammo','Fusion cycles navy, pirate grades, then T1',fusion.variants.map(v=>v.name).join('|'),
+    'Republic Fleet Fusion L|Arch Angel Fusion L|Domination Fusion L|Fusion L');
+  check('ammo','Fusion badges describe the grades',fusion.variants.map(v=>v.grade).join('|'),'NAVY|PRT 1|PRT 2|T1');
+  check('ammo','Fusion names retain abbreviated brands',fusion.variants.map(v=>v.short).join('|'),'R. F. Fusion|Arch A. Fusion|Domi. Fusion|Fusion');
+  check('ammo','pirate preview has its own damage',fusion.variants[2].dps>fusion.variants[0].dps?1:0,1,0);
+  check('ammo','T1 preview has its own damage',fusion.variants[3].dps<fusion.variants[0].dps?1:0,1,0);
+  check('ammo','preview grades preserve the actual baseline',cycling.base,turret.base,0.0001);
+  check('ammo','loaded T1 does not create a duplicate family row',cycling.rows.filter(r=>r.variants.some(v=>v.name==='EMP L')).length,1,0);
+  check('ammo','calculating previews does not load ammo',arty.high.every(m=>m.ammo==='EMP L')?1:0,1,0);
+  check('ammo','T2 artillery rounds stay separate',cycling.rows.find(r=>r.name==='Quake L').variants.length,1,0);
+  const pirateSlots=gun('1400mm Howitzer Artillery II','Domination Fusion L',6);
+  const pirateRank=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},pirateSlots,[],null,ARMOUR,weaponRacks(pirateSlots)[0],true);
+  check('ammo','loaded pirate is found within its family',pirateRank.rows.flatMap(r=>r.variants).filter(v=>v.loaded).map(v=>v.name).join(','),'Domination Fusion L');
   const tNames = turret.rows.map(r => r.label);
   // TURRETS: one row per family, at the best grade. The navy round replaces the T1 one — showing
   // both spends a row on a decision nobody makes, since navy carries the same range multiplier and
@@ -6693,6 +6708,11 @@ Nanofiber Internal Structure II
   // I") falls to the T1 rule above and the faction line ("Legion Scourge Auto-Targeting Heavy
   // Missile") to the navy-prefix rule, which is why neither needs a test of its own.
   const heavy = rank('Caracal', gun('Heavy Missile Launcher II', 'Scourge Fury Heavy Missile', 5), ARMOUR);
+  const heavyCharges=weaponRacks(gun('Heavy Missile Launcher II','Scourge Fury Heavy Missile',5))[0].charges;
+  const missileGrades=name=>ammoGrades(heavyCharges.find(c=>c.name===name),heavyCharges).map(c=>c.name);
+  check('ammo','Fury is not a grade of ordinary Scourge',missileGrades('Scourge Fury Heavy Missile').join(','),'Scourge Fury Heavy Missile');
+  check('ammo','navy Scourge cycles only its ordinary grades',missileGrades('Caldari Navy Scourge Heavy Missile').every(n=>!n.includes('Auto-Targeting')&&!n.includes('Fury')&&!n.includes('Precision'))?1:0,1,0);
+  check('ammo','navy Scourge can preview pirate ammo',missileGrades('Caldari Navy Scourge Heavy Missile').includes('Dread Guristas Scourge Heavy Missile')?1:0,1,0);
   const hNames = heavy.rows.map(r => r.label);
   check('ammo', 'auto-targeting rounds are left out',
         hNames.some(n => n.includes('Auto-Targeting')) ? 1 : 0, 0, 0);
