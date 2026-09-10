@@ -499,6 +499,26 @@ function hullIdentity(typeID){
 const strongestSensor=a=>[["Radar",a.scanRadarStrength],["Ladar",a.scanLadarStrength],
   ["Magnetometric",a.scanMagnetometricStrength],["Gravimetric",a.scanGravimetricStrength]]
   .filter(([,v])=>v>0).sort((x,y)=>(y[1]??0)-(x[1]??0));
+// Every hull stat that is a straight read of one dogma attribute, paired with the attribute it comes
+// from. ONE table rather than two lists, because shipFromDogma builds a whole row out of it and
+// lookupShip overrides a stale ships.json row with it — and a field present in one but not the other
+// is precisely how the Maelstrom came to offer 8 turret hardpoints across 7 high slots.
+// Excluded on purpose: `calibration` (defaults to 400 when absent), `rigSlots` (two possible source
+// attributes), warp speed (ships.json's `baseWarpSpeed` field holds the CLASS MULTIPLIER, while the
+// dogma attribute of the same name is a constant 1 — same name, different quantity), the sensor
+// pair (picked by strength, not read) and the resist blocks (derived from resonances).
+const HULL_ATTRS=[
+  ["cpu","cpuOutput"],["pg","powerOutput"],
+  ["hiSlots","hiSlots"],["medSlots","medSlots"],["lowSlots","lowSlots"],["serviceSlots","serviceSlots"],
+  ["turrets","turretSlotsLeft"],["launchers","launcherSlotsLeft"],
+  ["maxVelocity","maxVelocity"],["agility","agility"],["mass","mass"],["volume","volume"],
+  ["shieldHP","shieldCapacity"],["armorHP","armorHP"],["hullHP","hp"],
+  ["shieldRechargeRate","shieldRechargeRate"],
+  ["capCapacity","capacitorCapacity"],["capRechargeRate","rechargeRate"],
+  ["targetRange","maxTargetRange"],["scanRes","scanResolution"],["maxTargets","maxLockedTargets"],
+  ["sigRadius","signatureRadius"],["droneBay","droneCapacity"],["droneBandwidth","droneBandwidth"],
+  ["warpCapNeed","warpCapacitorNeed"],
+];
 // Fallback: build a ships.json-shaped object from dogma TYPES data for ships
 // that are missing from ships.json (e.g. Naga). Fixes blank stats/slots.
 function shipFromDogma(name){
@@ -511,18 +531,10 @@ function shipFromDogma(name){
   const{hullClass,race}=hullIdentity(tid)??{hullClass:"",race:null};
   return{
     typeID:tid,name,hullClass,race,
-    cpu:a.cpuOutput??0,pg:a.powerOutput??0,calibration:a.upgradeCapacity??400,
-    hiSlots:a.hiSlots??0,medSlots:a.medSlots??0,lowSlots:a.lowSlots??0,rigSlots:a.rigSlots??a.upgradeSlotsLeft??0,serviceSlots:a.serviceSlots??0,
-    turrets:a.turretSlotsLeft??0,launchers:a.launcherSlotsLeft??0,
-    maxVelocity:a.maxVelocity??0,agility:a.agility??0,
+    ...Object.fromEntries(HULL_ATTRS.map(([k,attr])=>[k,a[attr]??0])),
+    calibration:a.upgradeCapacity??400,
+    rigSlots:a.rigSlots??a.upgradeSlotsLeft??0,
     warpSpeed:a.baseWarpSpeed??(a.warpSpeedMultiplier??3),baseWarpSpeed:a.baseWarpSpeed??1,
-    mass:a.mass??0,volume:a.volume??0,
-    shieldHP:a.shieldCapacity??0,armorHP:a.armorHP??0,hullHP:a.hp??0,
-    shieldRechargeRate:a.shieldRechargeRate??0,
-    capCapacity:a.capacitorCapacity??0,capRechargeRate:a.rechargeRate??0,
-    targetRange:a.maxTargetRange??0,scanRes:a.scanResolution??0,maxTargets:a.maxLockedTargets??0,
-    sigRadius:a.signatureRadius??0,droneBay:a.droneCapacity??0,droneBandwidth:a.droneBandwidth??0,
-    warpCapNeed:a.warpCapacitorNeed??0,
     sensorStrength:sensors[0]?.[1]??0,sensorType:sensors[0]?.[0]??"",
     resists:{
       shield:{em:rz("shieldEmDamageResonance"),th:rz("shieldThermalDamageResonance"),kin:rz("shieldKineticDamageResonance"),exp:rz("shieldExplosiveDamageResonance")},
@@ -560,16 +572,22 @@ function lookupShip(name){
   //                    leaving these behind is what let the Maelstrom show 8 turret hardpoints in 7
   //                    high slots. A hardpoint count is a hard stop on what can be mounted, so a
   //                    stale one is the same class of quietly-invalid fit as a stale rack.
+  //
+  // Which is the argument for taking the WHOLE numeric row rather than the fields someone has
+  // noticed so far. Patching one field at a time is what produced the Maelstrom: each correction
+  // was right on its own and wrong against the neighbour it left behind. Sweeping the row found
+  // more of exactly the same thing — the Maelstrom's powergrid is 18,000, not the 21,000 ships.json
+  // still carries, which is a fit that powers modules the real hull cannot; the Cenotaph's armor is
+  // 3,500, not 5,000; the Falcon locks to 102 km, not 120. ~25 hulls in all, every one a CCP
+  // rebalance the precomputed bundle predates. Guarded on `!= null` rather than truthiness, since
+  // 0 is the correct value for plenty of these (a T3 cruiser's hiSlots, a Rifter's drone bay).
   const _a=ship.typeID?((TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.attrs??(TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.a):null;
   if(_a){
-    if(!ship.mass)ship.mass=_a.mass??0;
-    if(!ship.volume)ship.volume=_a.volume??0;
     const sen=strongestSensor(_a)[0];
     if(sen){ship.sensorType=sen[0];ship.sensorStrength=sen[1];}
-    for(const[k,v]of[["hiSlots",_a.hiSlots],["medSlots",_a.medSlots],["lowSlots",_a.lowSlots],
-                     ["rigSlots",_a.rigSlots??_a.upgradeSlotsLeft],
-                     ["turrets",_a.turretSlotsLeft],["launchers",_a.launcherSlotsLeft]])
-      if(v!=null)ship[k]=v;
+    for(const[k,attr]of HULL_ATTRS){const v=_a[attr];if(v!=null)ship[k]=v;}
+    const rig=_a.rigSlots??_a.upgradeSlotsLeft;
+    if(rig!=null)ship.rigSlots=rig;
   }
   return ship;
 }
