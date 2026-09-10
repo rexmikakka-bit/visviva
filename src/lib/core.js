@@ -504,9 +504,18 @@ const strongestSensor=a=>[["Radar",a.scanRadarStrength],["Ladar",a.scanLadarStre
 // lookupShip overrides a stale ships.json row with it — and a field present in one but not the other
 // is precisely how the Maelstrom came to offer 8 turret hardpoints across 7 high slots.
 // Excluded on purpose: `calibration` (defaults to 400 when absent), `rigSlots` (two possible source
-// attributes), warp speed (ships.json's `baseWarpSpeed` field holds the CLASS MULTIPLIER, while the
-// dogma attribute of the same name is a constant 1 — same name, different quantity), the sensor
-// pair (picked by strength, not read) and the resist blocks (derived from resonances).
+// attributes), the sensor pair (picked by strength, not read) and the resist blocks (derived from
+// resonances).
+//
+// WARP SPEED was on that excluded list and should not have been. The name `baseWarpSpeed` means two
+// different things on the two sides — a CLASS MULTIPLIER in ships.json's field, a constant 1 in the
+// dogma attribute — so comparing those two reports all 104 hulls that carry it and means nothing.
+// True, but it is the wrong pair: the quantity ships.json's `warpSpeed` field holds is the dogma
+// `warpSpeedMultiplier`, which is what calc.js has always displayed. Excluding the real pair along
+// with the fake one left `warpSpeed` stale at exactly 3x on 104 hulls — every shuttle, hauler,
+// corvette, capital, T3 and tactical destroyer — because ships.json had multiplied it by its own
+// stale `baseWarpSpeed` of 3. The fitted figure was right and the hull's BASE figure was not, so
+// the attributes panel showed a shuttle warping at 15 AU/s next to a fitted 5.
 const HULL_ATTRS=[
   ["cpu","cpuOutput"],["pg","powerOutput"],
   ["hiSlots","hiSlots"],["medSlots","medSlots"],["lowSlots","lowSlots"],["serviceSlots","serviceSlots"],
@@ -517,7 +526,7 @@ const HULL_ATTRS=[
   ["capCapacity","capacitorCapacity"],["capRechargeRate","rechargeRate"],
   ["targetRange","maxTargetRange"],["scanRes","scanResolution"],["maxTargets","maxLockedTargets"],
   ["sigRadius","signatureRadius"],["droneBay","droneCapacity"],["droneBandwidth","droneBandwidth"],
-  ["warpCapNeed","warpCapacitorNeed"],
+  ["warpCapNeed","warpCapacitorNeed"],["warpSpeed","warpSpeedMultiplier"],
 ];
 // Fallback: build a ships.json-shaped object from dogma TYPES data for ships
 // that are missing from ships.json (e.g. Naga). Fixes blank stats/slots.
@@ -534,7 +543,10 @@ function shipFromDogma(name){
     ...Object.fromEntries(HULL_ATTRS.map(([k,attr])=>[k,a[attr]??0])),
     calibration:a.upgradeCapacity??400,
     rigSlots:a.rigSlots??a.upgradeSlotsLeft??0,
-    warpSpeed:a.baseWarpSpeed??(a.warpSpeedMultiplier??3),baseWarpSpeed:a.baseWarpSpeed??1,
+    // `warpSpeed` now comes from HULL_ATTRS above. It used to be read here as `baseWarpSpeed ??
+    // warpSpeedMultiplier`, which prefers the constant — so this fallback would have handed back
+    // 1 AU/s for every hull it built. It fires for hulls missing from ships.json, of which there
+    // are currently none, which is the only reason that never showed.
     sensorStrength:sensors[0]?.[1]??0,sensorType:sensors[0]?.[0]??"",
     resists:{
       shield:{em:rz("shieldEmDamageResonance"),th:rz("shieldThermalDamageResonance"),kin:rz("shieldKineticDamageResonance"),exp:rz("shieldExplosiveDamageResonance")},
@@ -546,6 +558,12 @@ function shipFromDogma(name){
 function lookupShip(name){
   const found=Object.values(shipsData).find(s=>s.name===name);
   const ship=found?{...found}:(shipFromDogma(name)??{name});
+  // ships.json's `baseWarpSpeed` is the ship-class multiplier, while the dogma attribute of the same
+  // name is a constant 1. Nothing reads it, and the one time someone reasoned about the two together
+  // they concluded warp speed could not be compared at all and left it stale on 104 hulls. Deleted
+  // rather than corrected: a field that means two different things under one name has no right
+  // answer to be given, and it is `warpSpeed` (the multiplier) that every caller actually wants.
+  delete ship.baseWarpSpeed;
   const id=hullIdentity(ship.typeID);
   if(id){ship.hullClass=id.hullClass;ship.race=id.race;}
   // ships.json is a legacy precomputed bundle and hullClass/race above are not the only fields it

@@ -4463,11 +4463,17 @@ Republic Fleet Command Mindlink`;
     ['targetRange', 'maxTargetRange'], ['scanRes', 'scanResolution'],
     ['maxTargets', 'maxLockedTargets'], ['sigRadius', 'signatureRadius'],
     ['droneBay', 'droneCapacity'], ['droneBandwidth', 'droneBandwidth'],
-    ['warpCapNeed', 'warpCapacitorNeed'],
+    ['warpCapNeed', 'warpCapacitorNeed'], ['warpSpeed', 'warpSpeedMultiplier'],
   ];
-  // Warp speed is deliberately absent: ships.json's `baseWarpSpeed` field holds the ship-class
-  // MULTIPLIER (3 on a Reaper) while the dogma attribute of the same name is a constant 1. Same
-  // name, different quantity — comparing them reports all 104 hulls that carry it and means nothing.
+  // Warp speed WAS deliberately absent, on the grounds that ships.json's `baseWarpSpeed` field holds
+  // the ship-class MULTIPLIER while the dogma attribute of the same name is a constant 1 — same
+  // name, different quantity, and comparing those two reports all 104 hulls that carry it and means
+  // nothing. All true, and the wrong pair. `warpSpeed` (the ships.json FIELD) against
+  // `warpSpeedMultiplier` (the dogma ATTRIBUTE) is the comparison that means something, and it is
+  // the one calc.js has always displayed. Skipping it hid a real fault of exactly the kind this
+  // section exists to catch: ships.json had already folded its own stale baseWarpSpeed of 3 into
+  // the field, so 104 hulls read 3x high — every shuttle, hauler, corvette, capital, T3 and
+  // tactical destroyer. Excluding a field is what lets one go stale, so exclude only on evidence.
   const staleRow = [];
   for (const [, t] of hulls) {
     const s = lookupShip(t.n);
@@ -4486,6 +4492,20 @@ Republic Fleet Command Mindlink`;
   check('hull', 'the Maelstrom has 18k grid, not 21k', lookupShip('Maelstrom').pg, 18000, 1e-9);
   check('hull', 'the Cenotaph\'s armor came down too', lookupShip('Cenotaph').armorHP, 3500, 1e-9);
   check('hull', 'the Falcon locks to 102km', lookupShip('Falcon').targetRange, 102000, 1e-9);
+  // Named cases from the 3x warp-speed band, one per shape, because the sweep above proves the rows
+  // agree with the bundle and these prove the bundle's number is the one a player would recognise.
+  check('hull', 'a shuttle warps at 5, not 15', lookupShip('Caldari Shuttle').warpSpeed, 5, 1e-9);
+  check('hull', 'a corvette at 3, not 9', lookupShip('Reaper').warpSpeed, 3, 1e-9);
+  check('hull', 'a hauler at 3.5, not 10.5', lookupShip('Iteron Mark V').warpSpeed, 3.5, 1e-9);
+  check('hull', 'a dread at 1.5, not 4.5', lookupShip('Revelation').warpSpeed, 1.5, 1e-9);
+  check('hull', 'a T3 cruiser at 4, not 12', lookupShip('Legion').warpSpeed, 4, 1e-9);
+  // The hulls that were already right have to STAY right — the fix is a re-pairing, not a divide.
+  check('hull', 'a frigate was never wrong', lookupShip('Rifter').warpSpeed, 5, 1e-9);
+  check('hull', 'nor a battleship', lookupShip('Maelstrom').warpSpeed, 3, 1e-9);
+  // The ambiguous field is gone from the object, so nothing can read the class multiplier back out
+  // of a name that means a constant on the other side of the fence.
+  check('hull', 'baseWarpSpeed is not on the hull at all',
+        'baseWarpSpeed' in lookupShip('Reaper') ? 1 : 0, 0, 0);
 
   // A hard stop of the same kind as hardpoints-vs-high-slots, and true whichever source each number
   // came from: a drone bay with no bandwidth launches nothing, and bandwidth with no bay has nothing
