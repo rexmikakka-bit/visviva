@@ -4440,6 +4440,62 @@ Republic Fleet Command Mindlink`;
   const mael = lookupShip('Maelstrom');
   check('hull', 'the Maelstrom mounts 6 turrets in 7 highs', `${mael.turrets}/${mael.hiSlots}`, '6/7', 0);
   check('hull', 'the Redeemer lost one too', lookupShip('Redeemer').turrets, 5, 0);
+
+  // THE REST OF THE ROW. Everything above was found the same way — a user noticed one wrong number,
+  // and the sweep written to cover it turned up four more hulls with the same fault. So rather than
+  // wait for the next report, sweep every numeric stat a hull has. It found ~25 more stale rows:
+  // the Maelstrom's powergrid was 21,000 against the type data's 18,000 (three thousand grid the
+  // real ship does not have, i.e. fits that cannot be flown), the Cenotaph's armor 5,000 against
+  // 3,500, the Falcon's lock range 120 km against 102 km. All CCP rebalances the precomputed
+  // ships.json predates; all now taken from the bundle by lookupShip.
+  //
+  // The field list is written out again here rather than imported from core.js's HULL_ATTRS. That
+  // duplication is the point: importing the table would only prove lookupShip applies its own list,
+  // and a field MISSING from that list is the exact bug this section exists for — it is how a
+  // corrected Maelstrom ended up with hardpoints its high slots could not hold.
+  const ROW = [
+    ['cpu', 'cpuOutput'], ['pg', 'powerOutput'], ['calibration', 'upgradeCapacity'],
+    ['maxVelocity', 'maxVelocity'], ['agility', 'agility'],
+    ['shieldHP', 'shieldCapacity'], ['armorHP', 'armorHP'], ['hullHP', 'hp'],
+    ['shieldRechargeRate', 'shieldRechargeRate'],
+    ['capCapacity', 'capacitorCapacity'], ['capRechargeRate', 'rechargeRate'],
+    ['targetRange', 'maxTargetRange'], ['scanRes', 'scanResolution'],
+    ['maxTargets', 'maxLockedTargets'], ['sigRadius', 'signatureRadius'],
+    ['droneBay', 'droneCapacity'], ['droneBandwidth', 'droneBandwidth'],
+    ['warpCapNeed', 'warpCapacitorNeed'],
+  ];
+  // Warp speed is deliberately absent: ships.json's `baseWarpSpeed` field holds the ship-class
+  // MULTIPLIER (3 on a Reaper) while the dogma attribute of the same name is a constant 1. Same
+  // name, different quantity — comparing them reports all 104 hulls that carry it and means nothing.
+  const staleRow = [];
+  for (const [, t] of hulls) {
+    const s = lookupShip(t.n);
+    if (!s) continue;
+    const a = t.attrs ?? t.a ?? {};
+    for (const [key, attr] of ROW) {
+      const want = a[attr];
+      if (want == null) continue;
+      const got = s[key] ?? 0;
+      // Relative, since these span 0.04 (a dread's agility) to 21,000,000 (a freighter's grid).
+      if (Math.abs(want === 0 ? got : (got - want) / want) > 1e-6) staleRow.push(`${t.n}.${key}`);
+    }
+  }
+  if (staleRow.length) console.log(`      STALE ROW: ${staleRow.slice(0, 8).join(', ')}`);
+  check('hull', 'every hull stat matches the type data', staleRow.length, 0, 0);
+  check('hull', 'the Maelstrom has 18k grid, not 21k', lookupShip('Maelstrom').pg, 18000, 1e-9);
+  check('hull', 'the Cenotaph\'s armor came down too', lookupShip('Cenotaph').armorHP, 3500, 1e-9);
+  check('hull', 'the Falcon locks to 102km', lookupShip('Falcon').targetRange, 102000, 1e-9);
+
+  // A hard stop of the same kind as hardpoints-vs-high-slots, and true whichever source each number
+  // came from: a drone bay with no bandwidth launches nothing, and bandwidth with no bay has nothing
+  // to launch. Either alone is a readout promising a capability the hull does not have.
+  const halfDrone = [];
+  for (const [, t] of hulls) {
+    const s = lookupShip(t.n);
+    if (s && ((s.droneBay ?? 0) > 0) !== ((s.droneBandwidth ?? 0) > 0)) halfDrone.push(t.n);
+  }
+  if (halfDrone.length) console.log(`      HALF A DRONE BAY: ${halfDrone.slice(0, 8).join(', ')}`);
+  check('hull', 'no hull has a bay without bandwidth, or the reverse', halfDrone.length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
