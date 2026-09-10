@@ -1357,7 +1357,7 @@ function missileDamageWord(name){
 // Ordering WITHIN a family. metaGroupID cannot tell a navy faction charge from a pirate one — both
 // are metaGroup 4 — so the navy lines are matched by name, which is the only thing that separates
 // them in the data.
-const NAVY_AMMO_PREFIXES=["Imperial Navy","Republic Fleet","Caldari Navy","Federation Navy"];
+export const NAVY_AMMO_PREFIXES=["Imperial Navy","Republic Fleet","Caldari Navy","Federation Navy"];
 function chargeTierRank(c){
   const meta=metaOf(c.typeID,null);
   if(meta==="T1")return 0;

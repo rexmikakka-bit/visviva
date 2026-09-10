@@ -5,7 +5,7 @@ import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
-import { metaOf } from "../lib/meta.js";
+import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
@@ -143,7 +143,7 @@ function checkFitRestriction(modTypeID, ship, subsystems) {
     ? t('Cannot be fit to {ship}', {ship: ship.hullClass || ship.name})
     : t('Cannot be fit to this ship');
 }
-import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton } from "./ui.jsx";
+import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton, resourceColor } from "./ui.jsx";
 import { fetchPrices, MARKET_HUBS } from "../prices.js";
 
 // A module stranded by a subsystem swap sits past the end of its rack flagged `orphan`. Freeing a real
@@ -1150,28 +1150,85 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
 // off the render path in a timeout and lands a beat later. That latency is why the line fades in
 // rather than appearing — an element that pops into the middle of a card the user is already reading
 // moves everything under it.
+// The round's damage mix as a colour spine down the left of its row, in the app's existing EM /
+// thermal / kinetic / explosive palette.
+//
+// This is the one thing about a round you cannot read off a ranked list of names and numbers, and it
+// is the thing the ranking is FOR — against an armour-tanked target the winner is whichever round is
+// explosive-heavy, and the list currently asks you to know from memory that that means Fusion. A
+// missile comes out solid in one colour, which turns a twelve-row list into four scannable blocks; a
+// turret round shows its two, so EMP reads blue-over-orange and Fusion orange-over-grey.
+//
+// Segments under 8% are dropped rather than drawn as a sliver: several turret rounds carry a token
+// few points of a third type, and at 18 px tall those land as a 1 px line that reads as an artifact.
+function DamageSpine({split}){
+  const parts=split?[["em",split.em],["th",split.th],["kin",split.kin],["exp",split.exp]]
+    .filter(([,v])=>v>0.08):[];
+  const total=parts.reduce((s,[,v])=>s+v,0)||1;
+  return(
+    <span style={{width:3,height:18,borderRadius:2,overflow:"hidden",flexShrink:0,display:"flex",
+      flexDirection:"column",background:parts.length?"transparent":`${C.border}`}}>
+      {parts.map(([k,v])=>(<span key={k} style={{flex:v/total,background:DMG[k].color}}/>))}
+    </span>);
+}
+
+// Optimal and falloff as "24+18 km", the way every range readout in the app and in game writes them,
+// because on a turret they are different kinds of metre — inside optimal you hit for full, through
+// falloff you hit for less — and one summed number claims a reach the gun does not have. Missiles
+// carry no falloff, so they collapse to the single figure naturally.
+const ammoRange=r=>r.falloff>0?`${Math.round(r.optimal)}+${Math.round(r.falloff)} km`:`${Math.round(r.optimal)} km`;
+
 function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
   const [open,setOpen]=useViewMemory("Stats:ammoOpen",false);
   const [rackIdx,setRackIdx]=useViewMemory("Stats:ammoRack",0);
   const [result,setResult]=useState(null);
   const racks=useMemo(()=>weaponRacks(slots),[slots]);
   const rack=racks[Math.min(rackIdx,Math.max(0,racks.length-1))];
-  const rackKey=rack?`${rack.name}|${rack.ammo}|${rack.mounts.length}`:"";
+  // Two keys, and the difference between them is the whole reason this does not flicker. `rackId` is
+  // WHICH GUNS, `rackKey` adds what is loaded in them. Loading a round changes the key (so the sweep
+  // reruns) but not the id (so the rows already on screen are still the right rows to be looking at).
+  const rackId =rack?`${rack.name}|${rack.mounts.length}`:"";
+  const rackKey=rack?`${rackId}|${rack.ammo}`:"";
   useEffect(()=>{
-    if(!rack){setResult(null);return;}
+    if(!rack)return;
     let cancelled=false;
-    setResult(null);
-    const id=setTimeout(()=>{ if(!cancelled) setResult(rankAmmo(ship,slots,drones,skills,opts,rack)); },0);
+    // Deliberately NOT cleared first. The sweep takes ~180 ms, and blanking `result` while it runs
+    // unmounted the whole card — bar, open list and all — so tapping a round made the thing you
+    // tapped vanish and come back, taking the page's scroll position with it. Holding the previous
+    // ranking means the only thing that changes is the numbers, a beat later.
+    const id=setTimeout(()=>{
+      if(!cancelled){const r=rankAmmo(ship,slots,drones,skills,opts,rack);setResult(r&&{...r,rackId});}
+    },0);
     return()=>{cancelled=true;clearTimeout(id);};
   },[ship,slots,drones,skills,opts,rackKey]);// eslint-disable-line react-hooks/exhaustive-deps
-  if(!rack||!result)return null;
+  // A DIFFERENT rack is the one case where holding the old rows would be lying — they are another
+  // gun's ammo — so that, and only that, falls back to showing nothing until the sweep lands.
+  if(!rack||!result||result.rackId!==rackId)return null;
 
   const {rows,targeted}=result;
   const best=rows.find(r=>r.best);
   const fmt=n=>n>=100?n.toFixed(0):n.toFixed(1);
+  // What is in the guns RIGHT NOW, which is not the same thing as `row.loaded` — that is a snapshot
+  // from the last sweep and is a beat behind. `rack` is rebuilt from `slots` every render, so reading
+  // the marker off it moves the highlight on the tap instead of when the recalculation lands.
+  const isLoaded=r=>r.name===rack.ammo;
+  const loadedRow=rows.find(isLoaded);
+  const loadedName=loadedRow?.label??result.loadedName;
+  // The reach the rack actually has right now. It belongs on the collapsed line because it is the
+  // other half of what the loaded round decides — the list below shows it per row, but a closed card
+  // was answering "what am I carrying" and only ever half-answering it. Absent rather than zero when
+  // the loaded round is not among the ranked rows, which is an empty rack.
+  const loadedRange=loadedRow?ammoRange(loadedRow):null;
+  // Deltas are recomputed here rather than read off the row, and that is what makes a swap change
+  // nothing but the numbers it should. A row's `dps` is what THAT round would do — it does not
+  // depend on which round is currently loaded — so the whole table stays valid across a swap and
+  // only the baseline moves. Subtracting the new baseline here lands the correct deltas on the tap,
+  // instead of the list showing "+127" on the round you just loaded until the sweep catches up.
+  const base=loadedRow?.dps??result.base;
+  const deltaOf=r=>r.dps-base;
   // Below a percent of the rack's output the swap is noise, and a line recommending it would be
   // permanently lit on fits where nothing is actually wrong.
-  const worthIt=best&&!best.loaded&&best.delta>Math.max(1,result.base*0.01);
+  const worthIt=best&&!isLoaded(best)&&deltaOf(best)>Math.max(1,base*0.01);
 
   const load=row=>{
     haptic();
@@ -1194,11 +1251,11 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
         ?<>
           <span style={{fontSize:11,color:C.accent}}>⚡</span>
           <span style={{fontSize:10.5,color:C.text,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-            <span style={{fontWeight:800}}>{best.name}</span>
+            <span style={{fontWeight:800}}>{best.label??best.name}</span>
             <span style={{color:C.textMute}}> {t("would do")} </span>
             <span style={{fontWeight:800}}>{fmt(best.dps)}</span>
             <span style={{color:C.textMute}}> {t("here")} </span>
-            <span style={{color:C.good??"#22c55e",fontWeight:800}}>+{fmt(best.delta)}</span>
+            <span style={{color:C.good??"#22c55e",fontWeight:800}}>+{fmt(deltaOf(best))}</span>
           </span>
           <button onClick={e=>{e.stopPropagation();load(best);}}
             style={{padding:"3px 9px",borderRadius:6,fontSize:9.5,fontWeight:800,cursor:"pointer",background:C.accent,border:"none",color:"#0b1220"}}>{t("Load")}</button>
@@ -1206,7 +1263,8 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
         :<>
           <span style={{fontSize:10,color:C.textMute,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
             {targeted?t("Best ammo for this target"):t("Ammo")}
-            <span style={{color:C.text,fontWeight:700}}> · {result.loadedName??t("empty")}</span>
+            <span style={{color:C.text,fontWeight:700}}> · {loadedName??t("empty")}</span>
+            {loadedRange&&<span style={{color:C.rig}}> · {loadedRange}</span>}
           </span>
         </>}
       <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
@@ -1221,24 +1279,66 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
             {r.name} ×{r.mounts.length}
           </button>))}
       </div>}
+      {/* The delta column only exists WITH a target — there is nothing to be a delta from otherwise —
+          so it is dropped rather than reserved, and the numbers move out to the edge. Reserving it
+          left a column of blank against the right rule on every untargeted list. */}
+      <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px 1px 8px",fontSize:7.5,letterSpacing:.5,
+        textTransform:"uppercase",fontWeight:700,color:C.textMute,opacity:.75}}>
+        <span style={{width:3,flexShrink:0}}/><span style={{width:10,flexShrink:0}}/><span style={{flex:1,minWidth:0}}/>
+        <span style={{width:76,textAlign:"right"}}>{t("range")}</span>
+        <span style={{width:64,textAlign:"right"}}>{t("dps")} · {t("vol")}</span>
+        {targeted&&<span style={{width:36,flexShrink:0}}/>}
+      </div>
       {rows.map(r=>{
-        // With no target the headline is REACH, because that is what the list is sorted by and a DPS
-        // column at the top of a range ranking reads like the ranking is wrong. Falloff is folded in
-        // rather than shown separately — missiles have none, so a second figure would be blank on
-        // half the fits that see this.
-        const head=targeted?fmt(r.dps):`${Math.round(r.optimal+r.falloff)} km`;
-        const sub =targeted?`${Math.round(r.optimal+r.falloff)} km`:`${fmt(r.dps)} ${t("DPS")}`;
+        const range=ammoRange(r);
+        const on=isLoaded(r),d=deltaOf(r);
+        // Grade as a badge rather than as words in the name. Only navy faction survives the ranking,
+        // so Faction here always means navy, and T1 gets nothing — an unmarked row IS the plain
+        // round, and a list where most rows carry a badge does not need the majority case labelled.
+        const tier=r.meta==="T2"?"T2":r.meta==="Faction"?t("NAVY"):null;
+        const tierCol=META_COLORS[r.meta]??C.textMute;
+        // The two T2 lines, coloured onto the word that names them: "Scourge Fury" in the same amber
+        // the T2 badge uses, "Scourge Precision" in blue. Colour rather than a second badge because
+        // the word is already there and already the thing being compared — Fury against Precision is
+        // the whole question a missile list asks, and the answer should not need a legend beside it.
+        //
+        // The variant is the LAST word by construction: `labelerFor` has trimmed the words every
+        // charge in the rack shares (" Heavy Assault Missile"), which leaves "<damage type> <variant>"
+        // on exactly the rounds that have a variant. A round with no line keeps one colour throughout.
+        //
+        // The resource strip's powergrid red and C.low's blue, rather than anything derived from C.
+        // Both are per-theme tables tuned for contrast on each background — the reason the strip has
+        // one — where C.accent is gold on the Amarr theme and would have landed a few degrees from
+        // the T2 amber, collapsing the only distinction being drawn.
+        const lineCol=r.line==="dmg"?resourceColor("pg"):r.line==="app"?C.low:null;
+        const nm=r.short??r.label??r.name;
+        const cut=lineCol?nm.lastIndexOf(" "):-1;
         return(
-        <div key={r.name} onClick={()=>load(r)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",cursor:"pointer",
-          borderTop:`1px solid ${C.border}55`,background:r.loaded?`${C.accentLight}66`:"transparent"}}>
-          <span style={{width:10,fontSize:9,color:r.loaded?C.accent:(r.best?(C.good??"#22c55e"):"transparent")}}>{r.loaded?"◉":(r.best?"★":"·")}</span>
-          <span style={{flex:1,minWidth:0,fontSize:10.5,fontWeight:r.loaded?800:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
-          <span style={{fontSize:8.5,color:C.textMute,width:52,textAlign:"right"}}>{sub}</span>
-          <span style={{fontSize:11,fontWeight:800,color:r.loaded?C.accent:C.text,width:42,textAlign:"right"}}>{head}</span>
-          <span style={{fontSize:9,fontWeight:700,width:40,textAlign:"right",
-            color:!targeted||Math.abs(r.delta)<0.05?"transparent":(r.delta>0?(C.good??"#22c55e"):C.textMute)}}>
-            {r.delta>0?"+":""}{fmt(r.delta)}
+        <div key={r.name} onClick={()=>load(r)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px 6px 8px",cursor:"pointer",
+          borderTop:`1px solid ${C.border}55`,background:on?`${C.accentLight}66`:"transparent"}}>
+          <DamageSpine split={r.dmg}/>
+          <span style={{width:10,fontSize:9,color:on?C.accent:(r.best?(C.good??"#22c55e"):"transparent")}}>{on?"◉":(r.best?"★":"·")}</span>
+          <span style={{flex:1,minWidth:0,fontSize:10.5,fontWeight:on?800:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {cut>0?<>{nm.slice(0,cut+1)}<span style={{color:lineCol}}>{nm.slice(cut+1)}</span></>:nm}
           </span>
+          {tier&&<span style={{fontSize:10.5,fontWeight:800,letterSpacing:.4,color:tierCol,flexShrink:0}}>{tier}</span>}
+          {/* The columns sit in a FIXED order in both modes; only the weight moves. Swapping which
+              column held which number bought a bold headline but cost the reader the ability to scan
+              one column down the list, and there is no room for a third arrangement now that volley
+              rides along with DPS. Whichever value the list is sorted by is the bold one. */}
+          {/* Wide enough for the worst case a turret rack produces — "145+105 km", six digits — and
+              nowrap so it can never buy the width back by dropping to a second line and doubling the
+              row height. The name beside it is flex and gives the space up; ammo names are short. */}
+          <span style={{width:76,textAlign:"right",flexShrink:0,whiteSpace:"nowrap",fontSize:targeted?9:10.5,fontWeight:targeted?600:800,
+            color:targeted?C.textMute:(on?C.accent:C.text)}}>{range}</span>
+          <span style={{width:64,textAlign:"right",flexShrink:0,whiteSpace:"nowrap"}}>
+            <span style={{fontSize:targeted?11:10,fontWeight:targeted?800:700,color:targeted?(on?C.accent:C.text):C.textMute}}>{fmt(r.dps)}</span>
+            <span style={{fontSize:8.5,color:C.textMute}}> {fmtN(r.volley)}</span>
+          </span>
+          {targeted&&<span style={{fontSize:9,fontWeight:700,width:36,flexShrink:0,textAlign:"right",
+            color:Math.abs(d)<0.05?"transparent":(d>0?(C.good??"#22c55e"):C.textMute)}}>
+            {d>0?"+":""}{fmt(d)}
+          </span>}
         </div>);
       })}
       {!targeted&&<div onClick={onPickTarget} style={{padding:"6px 12px",fontSize:9.5,color:C.accent,cursor:"pointer",borderTop:`1px solid ${C.border}55`}}>
@@ -1264,6 +1364,40 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   // someone flying a Rapid launcher cares about the clip on every fit they open, not just this one.
   const [volleyMode,setVolleyMode]=useViewMemory("Stats:volleyMode","volley");
   const [capDeltaMode,setCapDeltaMode]=useViewMemory("Stats:capDeltaMode","net");
+  // Every fitted gun the Heat toggle can reach. "Gun" is CCP's own turretFitted/launcherFitted
+  // marker, the same predicate the resource strip's hardpoint dots use, so the toggle and the
+  // hardpoint readout cannot disagree about what a weapon is — and a weapon class CCP has not
+  // shipped yet lands on the right side of it with no list to maintain.
+  //
+  // Filtered by validStatesFor rather than assumed: overheating needs heatDamage on the type, and a
+  // few things that occupy a hardpoint have none (civilian guns, the Bosonic Field Generator). A
+  // module with no overheated state would otherwise be written into one the state picker cannot
+  // show and the engine will not read.
+  const heatMounts=useMemo(()=>{
+    const out=[];
+    for(const key of ["high","mid","low"]) (slots?.[key]??[]).forEach((m,index)=>{
+      if(!m?.typeID||m.name==="[Empty]")return;
+      if(!(isTurretWeapon(m.typeID)||isMissileLauncher(m.typeID)))return;
+      if(!validStatesFor(m).includes("overheated"))return;
+      out.push({key,index});
+    });
+    return out;
+  },[slots]);
+  // Lit only when EVERY gun is hot, so the pill reports the rack's state rather than one module's.
+  // That also fixes what the tap means on a half-hot rack: it finishes the job instead of toggling
+  // each gun to its opposite and leaving the split intact.
+  const allHot=heatMounts.length>0&&heatMounts.every(({key,index})=>slots[key][index].state==="overheated");
+  const toggleHeat=()=>{
+    haptic();
+    setSlots(prev=>{
+      const next={...prev};
+      // Copy each rack ONCE, before writing any gun. Copying inside the mount loop re-reads `prev`
+      // and discards every gun written before it, so a seven-gun rack heats one gun.
+      for(const{key}of heatMounts) if(next[key]===prev[key]) next[key]=(prev[key]??[]).slice();
+      for(const{key,index}of heatMounts) next[key][index]={...next[key][index],state:allHot?"active":"overheated"};
+      return next;
+    });
+  };
   const [peakMode,setPeakMode]=useViewMemory("Stats:peakMode","regen");
   // Incoming damage profile is lifted to FittingsScreen (shared with the Fit tab's readouts).
   const [showProfilePicker,setShowProfilePicker]=useState(false);
@@ -1691,12 +1825,26 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       {/* Firepower */}
       <div style={card}>
         <SectionHead id="firepower" title={t("Firepower")} right={
-          <button onClick={e=>{e.stopPropagation();setFactorInReload&&setFactorInReload(v=>!v);}}
-            style={{display:"flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:6,fontSize:9,fontWeight:700,cursor:"pointer",
-              background:factorInReload?C.accentLight:C.surface,border:`1px solid ${factorInReload?C.accent:C.border}`,color:factorInReload?C.accent:C.textMute}}>
-            <span style={{width:7,height:7,borderRadius:"50%",background:factorInReload?C.accent:C.textMute,display:"inline-block"}}/>
-            {t("Reload")}
-          </button>
+          <span style={{display:"flex",alignItems:"center",gap:5}}>
+            {/* Overload every gun at once. It sits here rather than only in the module menu for the
+                same reason the ammo picker does: heat is a question about this card's numbers, and
+                setting it one gun at a time from another screen is seven taps to see one figure.
+                Hidden, not disabled, when the fit has no gun that can be overheated — a permanently
+                dead control is a question the header should not be asking. */}
+            {heatMounts.length>0&&
+              <button onClick={e=>{e.stopPropagation();toggleHeat();}}
+                style={{display:"flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:6,fontSize:9,fontWeight:700,cursor:"pointer",
+                  background:allHot?`${C.overheat}1f`:C.surface,border:`1px solid ${allHot?C.overheat:C.border}`,color:allHot?C.overheat:C.textMute}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:allHot?C.overheat:C.textMute,display:"inline-block"}}/>
+                {t("Heat")}
+              </button>}
+            <button onClick={e=>{e.stopPropagation();setFactorInReload&&setFactorInReload(v=>!v);}}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"2px 7px",borderRadius:6,fontSize:9,fontWeight:700,cursor:"pointer",
+                background:factorInReload?C.accentLight:C.surface,border:`1px solid ${factorInReload?C.accent:C.border}`,color:factorInReload?C.accent:C.textMute}}>
+              <span style={{width:7,height:7,borderRadius:"50%",background:factorInReload?C.accent:C.textMute,display:"inline-block"}}/>
+              {t("Reload")}
+            </button>
+          </span>
         }/>
         {isOpen("firepower")&&<div onClick={()=>setShowTargetPicker(true)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"5px 12px",borderBottom:`1px solid ${C.border}`,background:`${C.surfaceAlt}88`,cursor:"pointer"}}>
           <span style={{fontSize:10,color:C.textMute}}>{t("Target resists")}</span>

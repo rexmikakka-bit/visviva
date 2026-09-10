@@ -436,7 +436,7 @@ const RESOURCE_COLORS={
 };
 // Read at call time, not module scope: the palettes are live and a theme switch has to be picked up
 // on the next render, same reasoning as C's Proxy.
-const resourceColor=k=>(RESOURCE_COLORS[getTheme()]??RESOURCE_COLORS.dark)[k];
+export const resourceColor=k=>(RESOURCE_COLORS[getTheme()]??RESOURCE_COLORS.dark)[k];
 
 function ResourceStrip({ship,slots,skills,implants,boosters,drones,factorInReload,children}){
   // Memoised because this strip is the module browser's header: without it, every keystroke in the

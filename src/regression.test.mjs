@@ -34,6 +34,7 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
+import { weaponRacks, rankAmmo } from './lib/ammo-compare.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -6559,6 +6560,170 @@ Nanofiber Internal Structure II
   // added, so a CCP volume change would otherwise never reach an already-saved fit.
   check('cargo', 'live type data beats a stale stored volume',
         cargoVolume([{ ...paste, vol: 999 }]), 1.0);
+}
+
+// 25. AMMO ADVISOR — the Firepower card's ammo ranking. Everything here is a RULE about which
+// rounds get a row, and every one of them is invisible in the numbers: a wrong rule still produces
+// a plausible-looking sorted list, just of the wrong ammo. The DPS values themselves are already
+// covered by the fit baselines above, so these check the SHAPE of the ranking.
+{
+  const gun = (name, ammo, n) =>
+    ({ high: Array.from({ length: n }, () => ({ typeID: tid(name), name, ammo, state: 'active' })), mid: [], low: [], rigs: [] });
+  const rank = (shipName, slots, opts) => {
+    const rack = weaponRacks(slots)[0];
+    return rankAmmo({ typeID: tid(shipName), name: shipName }, slots, [], null, opts ?? {}, rack);
+  };
+  const ARMOUR = { targetResists: [0.5, 0.35, 0.25, 0.1] };
+
+  // A rack is every copy of the SAME gun, because that is the unit ammo is chosen for.
+  const arty = gun('1400mm Howitzer Artillery II', 'EMP L', 6);
+  check('ammo', 'six guns are one rack', weaponRacks(arty).length, 1, 0);
+  check('ammo', 'and it knows it has six mounts', weaponRacks(arty)[0].mounts.length, 6, 0);
+
+  const turret = rank('Maelstrom', arty, ARMOUR);
+  const tNames = turret.rows.map(r => r.label);
+  // TURRETS: one row per family, at the best grade. The navy round replaces the T1 one — showing
+  // both spends a row on a decision nobody makes, since navy carries the same range multiplier and
+  // simply hits harder.
+  check('ammo', 'the navy round is what a turret family offers',
+        tNames.includes('Republic Fleet Phased Plasma') ? 1 : 0, 1, 0);
+  check('ammo', 'and its T1 sibling does not also get a row',
+        tNames.includes('Phased Plasma') ? 1 : 0, 0, 0);
+  // T2 turret rounds are singleton families, so the grading above must leave them alone.
+  check('ammo', 'T2 rounds survive the grading', tNames.includes('Quake') && tNames.includes('Tremor') ? 1 : 0, 1, 0);
+  // The loaded round is the baseline every delta is measured from, so it appears even when the
+  // grading would not have chosen it — here plain EMP, which Republic Fleet EMP displaced.
+  check('ammo', 'the loaded round is listed even when outgraded', tNames.includes('EMP') ? 1 : 0, 1, 0);
+  check('ammo', 'exactly one row is marked loaded', turret.rows.filter(r => r.loaded).length, 1, 0);
+  check('ammo', 'and its delta is zero', turret.rows.find(r => r.loaded).delta, 0, 0);
+  // Sorted by what it does to the TARGET, not by raw damage: against an armour-tanked Amarr profile
+  // the explosive round wins, where a raw ranking would put Quake on top of every list.
+  check('ammo', 'a target ranks by effective DPS', tNames[0], 'Republic Fleet Fusion');
+  check('ammo', 'and stars the winner', turret.rows[0].best ? 1 : 0, 1, 0);
+  // Turret ranges are two different kinds of metre and the row shows both.
+  check('ammo', 'turret rows carry a falloff', turret.rows.every(r => r.falloff > 0) ? 1 : 0, 1, 0);
+
+  // With no profile there is nothing to weight damage against, so "best DPS" would be Quake every
+  // time — the answer to a question the game does not ask. Ranked by reach instead, SHORTEST first,
+  // and nothing is starred, which makes the list a picker rather than advice.
+  const untargeted = rank('Maelstrom', arty, {});
+  check('ammo', 'no target ranks by reach', untargeted.rows[0].label, 'Quake');
+  check('ammo', 'and the longest reach is last', untargeted.rows.at(-1).label, 'Tremor');
+  check('ammo', 'and recommends nothing', untargeted.rows.filter(r => r.best).length, 0, 0);
+
+  const ham = gun('Heavy Assault Missile Launcher II', 'Scourge Heavy Assault Missile', 5);
+  const missile = rank('Cerberus', ham, ARMOUR);
+  const mNames = missile.rows.map(r => r.label);
+  // MISSILES are the opposite case. A family IS a damage type, and its members trade against each
+  // other along the axis that matters, so every one gets a row — "Fury versus Navy" is the whole
+  // question, and collapsing the family to one row is exactly what hid it.
+  check('ammo', 'a missile family shows its tiers',
+        ['Caldari Navy Scourge', 'Scourge Rage', 'Scourge Javelin'].every(n => mNames.includes(n)) ? 1 : 0, 1, 0);
+  check('ammo', 'all four damage types are present',
+        ['Mjolnir', 'Inferno', 'Scourge', 'Nova'].every(w => mNames.some(n => n.includes(w))) ? 1 : 0, 1, 0);
+  // Pirate faction is dropped on both sides: Dread Guristas Scourge is the navy round with a few
+  // percent more damage at many times the price, and there are two per damage type — eight rows all
+  // repeating what the navy round above them already said.
+  check('ammo', 'pirate faction is left out',
+        mNames.some(n => n.startsWith('Guristas') || n.startsWith('Dread Guristas')) ? 1 : 0, 0, 0);
+  // T1 comes out of a missile family too — the navy round is the same missile that hits harder, so
+  // the T1 row is not a choice. Four damage types by three grades, plus the loaded T1 round, which
+  // is exempt because it is the baseline every delta is measured from.
+  check('ammo', 'four damage types by three grades, plus the loaded round', missile.rows.length, 13, 0);
+  check('ammo', 'the loaded T1 round is the only T1 row',
+        missile.rows.filter(r => r.meta === 'T1').map(r => r.label).join(','), 'Scourge');
+  check('ammo', 'and it is the one marked loaded', missile.rows.filter(r => r.loaded).length, 1, 0);
+  // Missiles carry no falloff — calc.js files their expected flight distance under `optimal` — so
+  // the row renders a single figure rather than a permanently blank second column.
+  check('ammo', 'missile rows have no falloff', missile.rows.every(r => r.falloff === 0) ? 1 : 0, 1, 0);
+  check('ammo', 'and a real flight range', missile.rows.every(r => r.optimal > 0) ? 1 : 0, 1, 0);
+
+  // The label drops the words EVERY charge in the rack ends with — " Heavy Assault Missile" here,
+  // " L" on the artillery above. They are what the WEAPON is, identical on every row, and they eat
+  // the width that tells Rage from Javelin.
+  check('ammo', 'the weapon name is trimmed off the label',
+        missile.rows.find(r => r.name === 'Scourge Rage Heavy Assault Missile').label, 'Scourge Rage');
+  check('ammo', 'and the size letter off a turret round',
+        turret.rows.find(r => r.name === 'Republic Fleet EMP L').label, 'Republic Fleet EMP');
+  check('ammo', 'trimming never empties a label', missile.rows.every(r => r.label.length > 0) ? 1 : 0, 1, 0);
+  // `short` additionally drops the faction words, because the row shows the grade as a badge. The
+  // pair has to stay separate: the collapsed one-line recommendation has no badge, so it says
+  // "Republic Fleet Fusion" where the list row says "Fusion".
+  check('ammo', 'the list name drops the faction words',
+        turret.rows.find(r => r.name === 'Republic Fleet EMP L').short, 'EMP');
+  check('ammo', 'and the recommendation line keeps them',
+        turret.rows.find(r => r.name === 'Republic Fleet EMP L').label, 'Republic Fleet EMP');
+  check('ammo', 'a T2 round has no faction words to drop',
+        turret.rows.find(r => r.name === 'Quake L').short, 'Quake');
+
+  // The damage MIX drives the row's colour spine. Read off the charge, so it is the round's identity
+  // rather than the fit's output, and normalised so the spine can render it directly.
+  const emp = turret.rows.find(r => r.name === 'Republic Fleet EMP L').dmg;
+  check('ammo', 'a turret round splits across damage types', emp.em > 0 && emp.exp > 0 ? 1 : 0, 1, 0);
+  check('ammo', 'EMP is mostly EM', emp.em > 0.5 ? 1 : 0, 1, 0);
+  check('ammo', 'and the split sums to one', emp.em + emp.th + emp.kin + emp.exp, 1);
+  // A missile is one damage type, which is what makes the spine a solid block and a twelve-row list
+  // scannable as four groups.
+  const scourge = missile.rows.find(r => r.name === 'Scourge Rage Heavy Assault Missile').dmg;
+  check('ammo', 'a Scourge is pure kinetic', scourge.kin, 1);
+  check('ammo', 'every row has a split', missile.rows.every(r => r.dmg) ? 1 : 0, 1, 0);
+
+  // Auto-targeting rounds only exist on the launchers that have them, and a HAM is not one — so the
+  // rule is checked where it can actually fire. The T1 line ("Scourge Auto-Targeting Heavy Missile
+  // I") falls to the T1 rule above and the faction line ("Legion Scourge Auto-Targeting Heavy
+  // Missile") to the navy-prefix rule, which is why neither needs a test of its own.
+  const heavy = rank('Caracal', gun('Heavy Missile Launcher II', 'Scourge Fury Heavy Missile', 5), ARMOUR);
+  const hNames = heavy.rows.map(r => r.label);
+  check('ammo', 'auto-targeting rounds are left out',
+        hNames.some(n => n.includes('Auto-Targeting')) ? 1 : 0, 0, 0);
+  check('ammo', 'and so is the Legion line', hNames.some(n => n.startsWith('Legion')) ? 1 : 0, 0, 0);
+  // Loaded with a T2 round, nothing is exempt, so the list is exactly four types by three grades.
+  check('ammo', 'a T2-loaded rack lists twelve', heavy.rows.length, 12, 0);
+  check('ammo', 'Fury and Navy sit in the same list',
+        ['Scourge Fury', 'Caldari Navy Scourge', 'Scourge Precision'].every(n => hNames.includes(n)) ? 1 : 0, 1, 0);
+
+  // Which of the two T2 lines a round belongs to, which the row renders by colouring the variant
+  // word. The lines trade in opposite directions against the T1 round of their own family: Fury and
+  // Rage buy damage and pay in application, Precision and Javelin pay in damage and buy the hit or
+  // the reach back. So the sign of the damage difference is the line.
+  const lineOfRow = (rows, label) => rows.find(r => r.label === label)?.line ?? 'none';
+  check('ammo', 'Fury is a damage round', lineOfRow(heavy.rows, 'Scourge Fury'), 'dmg');
+  check('ammo', 'Rage is a damage round', lineOfRow(missile.rows, 'Scourge Rage'), 'dmg');
+  // This one doubles as the pin on the BASELINE. Precision is dead level with the plain T1 round at
+  // 149 damage, so it lands on the damage line the moment the baseline slips — which it did, because
+  // the auto-targeting round is metaGroup 1 as well and carries only 107. It has to be the strongest
+  // T1 member of the family, not the first one found. Checked on the Caracal because a HAM launcher
+  // has no auto-targeting round to trip over.
+  check('ammo', 'Precision is on the other line', lineOfRow(heavy.rows, 'Scourge Precision'), 'app');
+  // Javelin is why the line is read off DAMAGE and not off explosion radius, which is the more
+  // descriptive quantity. Javelin's explosion stats are identical to T1 to the metre — 125m/101 m/s
+  // on a HAM — because what it actually buys is missile velocity, so a radius test puts it on
+  // neither side. Damage is the axis both lines really pay in.
+  check('ammo', 'and so is Javelin', lineOfRow(missile.rows, 'Scourge Javelin'), 'app');
+  // Faction ammo out-damages its T1 round too, and gives up nothing for it — 171 against 149 at no
+  // cost but ISK. That is an upgrade, not a trade, so it is not one of the lines.
+  check('ammo', 'navy ammo is on neither line', lineOfRow(heavy.rows, 'Caldari Navy Scourge'), 'none');
+  // Turret T2 rounds are singleton families with no T1 sibling to measure against, so they fall out
+  // with no weapon-class test.
+  check('ammo', 'turret rounds are on neither', turret.rows.every(r => r.line === null) ? 1 : 0, 1, 0);
+
+  // VOLLEY rides in the same cell as the DPS beside it, so it MUST be read off the same side of the
+  // resist fence. A row showing effective DPS next to a raw volley answers two different questions
+  // in one line, and the gap between them looks like a bug on any target with real resists.
+  check('ammo', 'every row carries a volley', turret.rows.every(r => r.volley > 0) ? 1 : 0, 1, 0);
+  check('ammo', 'missiles too', missile.rows.every(r => r.volley > 0) ? 1 : 0, 1, 0);
+  const empRow = (rows) => rows.find(r => r.label === 'EMP');
+  const rawEmp = empRow(untargeted.rows), hitEmp = empRow(turret.rows);
+  // ARMOUR resists EM 50%, and EMP is mostly EM — so the targeted volley must be visibly lower.
+  check('ammo', 'a target weights the volley', hitEmp.volley < rawEmp.volley * 0.75 ? 1 : 0, 1, 0);
+  // …by exactly the ratio the DPS moved. Same charge, same rack, same profile: one divisor apart.
+  check('ammo', 'volley and DPS move together',
+        hitEmp.volley / rawEmp.volley, hitEmp.dps / rawEmp.dps, 0.0001);
+
+  // A gun that takes charges is not a weapon unless those charges do DAMAGE — a cap booster, an
+  // ancillary repairer and a probe launcher all take charges.
+  const booster = { high: [], mid: [{ typeID: tid('Heavy Capacitor Booster II'), name: 'Heavy Capacitor Booster II', state: 'active' }], low: [], rigs: [] };
+  check('ammo', 'a cap booster is not a weapon rack', weaponRacks(booster).length, 0, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { TYPES, calcFitStats } from "../calc.js";
-import { getCompatibleCharges, groupChargesForBrowser } from "./core.js";
+import { getCompatibleCharges, groupChargesForBrowser, NAVY_AMMO_PREFIXES } from "./core.js";
 import { metaOf } from "./meta.js";
 
 const SLOT_KEYS = ["high", "mid", "low"];
@@ -7,10 +7,59 @@ const attrsOf = (typeID) => {
   const td = typeID != null ? (TYPES[typeID] ?? TYPES[String(typeID)]) : null;
   return td ? (td.attrs ?? td.a ?? {}) : {};
 };
-const damageOf = (typeID) => {
+const damagePartsOf = (typeID) => {
   const a = attrsOf(typeID);
-  return (a["114"] ?? a.emDamage ?? 0) + (a["118"] ?? a.thermalDamage ?? 0)
-       + (a["117"] ?? a.kineticDamage ?? 0) + (a["116"] ?? a.explosiveDamage ?? 0);
+  return { em:  a["114"] ?? a.emDamage ?? 0,        th:  a["118"] ?? a.thermalDamage ?? 0,
+           kin: a["117"] ?? a.kineticDamage ?? 0,   exp: a["116"] ?? a.explosiveDamage ?? 0 };
+};
+const damageOf = (typeID) => {
+  const d = damagePartsOf(typeID);
+  return d.em + d.th + d.kin + d.exp;
+};
+// The round's damage MIX, as fractions summing to 1. Taken off the charge's own attributes rather
+// than the engine's output because this is the round's identity, not the fit's — a Scourge is
+// kinetic on every hull, and the row's job is to say which round this is, not what the hull does
+// with it. A missile comes out solid in one colour; a turret round shows its two.
+const damageSplitOf = (typeID) => {
+  const d = damagePartsOf(typeID);
+  const total = d.em + d.th + d.kin + d.exp;
+  if (!(total > 0)) return null;
+  return { em: d.em / total, th: d.th / total, kin: d.kin / total, exp: d.exp / total };
+};
+// Which of the two T2 ammo lines a round belongs to, as "dmg" | "app" | null. The row colours the
+// variant word with it — Fury and Rage in the T2 amber, Precision and Javelin in blue.
+//
+// Every T2 round is a trade against the T1 round of its own family, and the two lines trade in
+// OPPOSITE directions. Fury and Rage buy raw damage (201 against 149 on a heavy missile, 155
+// against 100 on a HAM) and pay for it in the hit: a 241m explosion radius where the T1 round runs
+// 140m. Precision and Javelin pay in damage and buy the hit back — Precision as a smaller cloud
+// (125m), Javelin as missile velocity (3375 m/s against 2250). So the SIGN of the damage difference
+// is the line, on one attribute, with no name list to keep in step with CCP.
+//
+// Damage rather than explosion radius, though radius is the more descriptive quantity, because
+// Javelin's explosion stats are identical to T1 to the metre — it is a reach round, not an
+// application one — and measuring the cloud puts it on neither side. Damage is the axis both lines
+// actually pay or are paid in.
+//
+// Gated to T2, because faction ammo also out-damages its T1 round and gives up nothing for it:
+// Caldari Navy Scourge is 171 against 149 at no cost but ISK. That is an upgrade, not a trade, and
+// colouring it as one would say there is a decision here that there isn't.
+//
+// Turret rounds fall out on their own. Their T2 members (Quake, Hail, Barrage, Void) are singleton
+// families with no T1 sibling in the group, so there is no baseline and no line — no weapon-class
+// test needed.
+function lineOf(typeID, baseDamage) {
+  if (!(baseDamage > 0) || metaOf(typeID, "T1") !== "T2") return null;
+  return damageOf(typeID) > baseDamage ? "dmg" : "app";
+}
+
+// "Republic Fleet Fusion" -> "Fusion". The faction words are the round's GRADE, which the row shows
+// as a badge, so repeating them in the name only pushes the part that differs off the end of a
+// narrow column — a list reading "Republic Fleet Fusion / Republic Fleet Phased Plasma / Republic
+// Fleet Depleted Uranium" is three rows of the same two words and one word that matters.
+const stripNavy = (n) => {
+  for (const p of NAVY_AMMO_PREFIXES) if (n.startsWith(p + " ")) return n.slice(p.length + 1);
+  return n;
 };
 // Strip the "(1200)" a quantity-tagged ammo name carries in a slot.
 const bareName = (n) => (n || "").replace(/\s*\(\d+\)$/, "");
@@ -48,26 +97,78 @@ export function weaponRacks(slots) {
   return [...byName.values()].sort((a, b) => b.mounts.length - a.mounts.length);
 }
 
-// What is left of a charge's name once the words its whole family shares are taken out — "Rage" from
-// "Scourge Rage Heavy Assault Missile", "Republic Fleet" from "Republic Fleet EMP L", "" from the
-// plain T1 round.
+// Every charge a rack can take repeats the words naming the WEAPON — " L" on every artillery round,
+// " Heavy Assault Missile" on every HAM round — and in a list where all rows share them they carry
+// no information while eating the width that tells Rage from Javelin. Strip the longest run of
+// trailing words that literally every charge in the rack ends with, leaving "EMP", "Republic Fleet
+// EMP", "Quake", "Scourge Rage", "Caldari Navy Scourge".
 //
-// This is how a family gets compared against the loaded round on equal terms. Matching on meta group
-// alone is not enough and gets it visibly wrong: Rage and Javelin are both T2 members of every
-// missile family, so a rack loaded with Scourge Rage was answered with Inferno JAVELIN — a
-// short-range round measured against a long-range one, every family losing DPS, and the loaded round
-// itself missing from its own ranking. The signature separates the two because the words that
-// survive are exactly the ones naming the round's ROLE; the damage type is what the family already
-// is, so it always cancels.
+// Trailing rather than shared-anywhere: a round's grade is a PREFIX ("Republic Fleet", "Caldari
+// Navy") or an infix ("Rage", "Javelin"), so cutting from the end never removes the distinguishing
+// word. The `min - 1` bound keeps at least one word of the shortest name, so a family whose members
+// differ only by a leading word cannot be reduced to nothing.
 const wordsOf = (n) => (n || "").split(/\s+/).filter(Boolean);
-function signaturesIn(items) {
-  let shared = null;
-  for (const i of items) {
-    const w = new Set(wordsOf(i.name));
-    if (shared === null) shared = w;
-    else for (const s of [...shared]) if (!w.has(s)) shared.delete(s);
+function labelerFor(charges) {
+  const words = charges.map((c) => wordsOf(c.name)).filter((w) => w.length);
+  if (!words.length) return (n) => n;
+  const min = Math.min(...words.map((w) => w.length));
+  let keep = 0;
+  while (keep < min - 1) {
+    const w = words[0][words[0].length - 1 - keep];
+    if (!words.every((ws) => ws[ws.length - 1 - keep] === w)) break;
+    keep++;
   }
-  return new Map(items.map((i) => [i.name, wordsOf(i.name).filter((w) => !shared.has(w)).sort().join(" ")]));
+  return (name) => {
+    const ws = wordsOf(name);
+    return ws.slice(0, Math.max(1, ws.length - keep)).join(" ") || name;
+  };
+}
+
+// Which members of a family get a row of their own.
+//
+// A TURRET family is a GRADE ladder, not a choice: Republic Fleet EMP carries the same range
+// multiplier as plain EMP and simply hits harder, so showing both spends a row on a decision nobody
+// makes. One row per family, at the best grade the family has — navy if there is one, then
+// storyline, then T1. The T2 rounds (Quake, Hail, Barrage, Void, Scorch…) are singleton families
+// already, so they are untouched.
+//
+// A MISSILE family is the opposite. The family IS the damage type, and its members trade against
+// each other along the axis that matters — Fury/Rage buy damage with application, Precision/Javelin
+// buy reach with damage, Navy sits between — so collapsing it to one row hid the only comparison
+// worth making. Every member above T1 gets a row.
+//
+// The two are told apart by weaponRangeMultiplier (attr 120), which turret charges carry and
+// missiles do not. That is the same discriminator `groupChargesForBrowser` already sorts families
+// on, so a weapon class CCP has not shipped yet lands on the right side with no list to maintain.
+// Faction ammo that is not a NAVY line is dropped on both sides. Dread Guristas Scourge is Caldari
+// Navy Scourge with a few percent more damage at many times the price, and there are two pirate
+// lines per damage type — eight extra rows on a missile rack, every one of them repeating what the
+// navy round above it already said. The Legion auto-targeting rounds land here too. metaGroupID
+// cannot tell navy from pirate (both are metaGroup 4), so the name is the only discriminator, which
+// is why core.js keeps the prefix list.
+const isOffNavyFaction = (c) =>
+  metaOf(c.typeID, "T1") === "Faction" && !NAVY_AMMO_PREFIXES.some((p) => c.name.startsWith(p));
+
+const TURRET_GRADE = { Faction: 0, Storyline: 1, T1: 2 };
+function rowsOfFamily(group) {
+  const items = group.items.filter((c) => !isOffNavyFaction(c));
+  if (group.range == null) {
+    // T1 comes out of a missile family for the same reason it comes out of a turret one: the navy
+    // round is the same missile that hits harder, so the T1 row is not a choice. It takes the T1
+    // auto-targeting rounds with it — they are named "<type> Auto-Targeting <size> Missile I" and
+    // are strictly worse than the round they shadow, bought for a mechanic (firing without a lock)
+    // that no fit being optimised on a DPS list is using.
+    //
+    // Guarded rather than unconditional: a launcher whose whole ammo line is T1 would otherwise
+    // rank nothing at all.
+    const graded = items.filter((c) => metaOf(c.typeID, "T1") !== "T1");
+    return graded.length ? graded : items;
+  }
+  const gradeOf = (c) => TURRET_GRADE[metaOf(c.typeID, "T1")] ?? 3;
+  // `items` is already sorted best-name-first, and Array.sort is stable, so the two identical navy
+  // hybrid lines (Caldari Navy / Federation Navy Antimatter) resolve to one of them predictably.
+  const best = [...items].sort((a, b) => gradeOf(a) - gradeOf(b))[0];
+  return best ? [best] : [];
 }
 
 function withAmmo(slots, rack, charge) {
@@ -95,15 +196,15 @@ function rackRangeKm(cs, slots, rack) {
 /**
  * Every ammo the rack can take, scored by what it would actually do to the selected target.
  *
- * Ranked by DPS when a target profile is set and by range when it is not — because without resists
+ * Ranked by DPS when a target profile is set, and by reach ascending when it is not — because without resists
  * to weight against, "best DPS" is Quake or Hail every time, which is the answer to a question the
  * game does not ask. Measured on a 7x 1400mm Maelstrom: Quake leads on raw damage at 412 and lands
  * 108 against an armour-tanked Amarr target, where Phased Plasma lands 213. Recommending the raw
  * winner would be recommending the worst real choice, near enough twice over.
  *
- * One calcFitStats per family — pure, and ~10-18 ms for a battleship rack, so a full ten-family
- * sweep is ~150 ms. That is too slow for a render pass and fine for an idle callback, which is how
- * the Firepower card drives it.
+ * One calcFitStats per row — pure, and ~10-18 ms for a battleship rack, so a ten-row turret sweep is
+ * ~150 ms and a sixteen-row missile one ~215 ms. Too slow for a render pass and fine for an idle
+ * callback, which is how the Firepower card drives it.
  */
 export function rankAmmo(ship, slots, drones, skills, opts, rack) {
   if (!ship || !rack) return null;
@@ -112,25 +213,67 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack) {
     const w = (targeted ? cs?.effective?.weaponDps : cs?.weaponDps) ?? {};
     return w.total ?? 0;
   };
+  // Read off the same side of the fence as the DPS beside it. A row showing effective DPS next to a
+  // raw volley would be two different questions answered in one line, and the gap between them would
+  // look like a bug on any target with real resists.
+  const volleyOf = (cs) => {
+    const v = (targeted ? cs?.effective?.weaponVolley : cs?.weaponVolley) ?? {};
+    return v.total ?? 0;
+  };
 
-  const groups = groupChargesForBrowser(rack.charges).map((g) => ({ ...g, sigs: signaturesIn(g.items) }));
-  // The role the rack is currently loaded with, which every family is then asked for its version of.
-  // An empty gun has none, and each family falls back to items[0] — already sorted best-first.
-  const wantSig = rack.ammo ? groups.find((g) => g.sigs.has(rack.ammo))?.sigs.get(rack.ammo) : null;
+  const picks = [];
+  const seen = new Set();
+  // The T2 trade is measured against the T1 round of the SAME family, so the baseline is taken here
+  // — while the family is still whole — and kept by name. `rowsOfFamily` drops the T1 member from a
+  // missile family, and the loaded-round fallback below reaches outside the picks entirely, so by
+  // row-build time the round a Fury should be compared against is no longer in hand.
+  //
+  // The STRONGEST T1 member, not the first one found: a family can hold more than one metaGroup-1
+  // round, and the auto-targeting round is one of them ("Scourge Auto-Targeting Heavy Missile I",
+  // mg 1, 107 damage against the plain round's 149). Taking whichever came first made that the
+  // baseline on the launchers that have one, which put Precision — dead level with the plain round
+  // at 149 — above its own baseline and onto the damage line.
+  const baseDamage = new Map();
+  for (const group of groupChargesForBrowser(rack.charges)) {
+    const base = group.items.reduce(
+      (best, c) => (metaOf(c.typeID, "T1") === "T1" ? Math.max(best, damageOf(c.typeID)) : best), 0);
+    for (const c of group.items) baseDamage.set(c.name, base);
+    for (const c of rowsOfFamily(group)) {
+      if (damageOf(c.typeID) <= 0 || seen.has(c.name)) continue;
+      seen.add(c.name);
+      picks.push({ family: group.family, charge: c });
+    }
+  }
+  // The loaded round is the baseline every delta is measured from, so it has to appear even when the
+  // grading above would not have picked it — a rack sitting on plain EMP still needs to read its own
+  // 133 next to Republic Fleet's 152, or the "+19" has nothing visible to be relative to.
+  if (rack.ammo && !seen.has(rack.ammo)) {
+    const c = rack.charges.find((x) => x.name === rack.ammo);
+    if (c && damageOf(c.typeID) > 0) picks.push({ family: c.name, charge: c });
+  }
+
+  // Trimmed against what is SHOWN, not against every compatible charge. A rack's full charge list
+  // carries names the list never renders — the auto-targeting rounds end "…Heavy Missile I" where
+  // everything else ends "…Heavy Missile" — and one of those is enough to leave the whole column
+  // untrimmed for rows that do in fact all share a suffix.
+  const label = labelerFor(picks.map((p) => p.charge));
 
   const rows = [];
-  for (const group of groups) {
-    const pick = (wantSig != null && group.items.find((i) => group.sigs.get(i.name) === wantSig)) || group.items[0];
-    if (!pick || damageOf(pick.typeID) <= 0) continue;
-    const { slots: trial, charges } = withAmmo(slots, rack, pick);
+  for (const { family, charge } of picks) {
+    const { slots: trial, charges } = withAmmo(slots, rack, charge);
     const cs = calcFitStats(ship, trial, drones ?? [], skills, opts);
     if (!cs) continue;
+    // Two names, because the two places this is read need different things. `label` keeps the grade
+    // words and is what the collapsed one-line recommendation says, where there is no badge and
+    // "Fusion would do 304 here" would not name a buyable round. `short` drops them for the list,
+    // where the badge beside it already says NAVY.
+    const label_ = label(charge.name);
     rows.push({
-      family: group.family, name: pick.name, typeID: pick.typeID,
-      meta: metaOf(pick.typeID, "T1"), dps: dpsOf(cs), charges,
+      family, name: charge.name, label: label_, short: stripNavy(label_), typeID: charge.typeID,
+      meta: metaOf(charge.typeID, "T1"), dps: dpsOf(cs), volley: volleyOf(cs), charges,
+      dmg: damageSplitOf(charge.typeID), line: lineOf(charge.typeID, baseDamage.get(charge.name) ?? 0),
       ...rackRangeKm(cs, trial, rack),
-      loaded: pick.name === rack.ammo,
-      variants: group.items.length,
+      loaded: charge.name === rack.ammo,
     });
   }
   if (!rows.length) return null;
@@ -144,10 +287,10 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack) {
 
   rows.sort(targeted
     ? (a, b) => b.dps - a.dps || b.optimal - a.optimal
-    : (a, b) => (b.optimal + b.falloff) - (a.optimal + a.falloff) || b.dps - a.dps);
+    : (a, b) => (a.optimal + a.falloff) - (b.optimal + b.falloff) || b.dps - a.dps);
   // Only a target makes one round BEST; range alone does not. Ranked by reach with no profile set,
-  // the head of the list is Tremor at a third of the rack's damage — true as a range answer and a
-  // terrible thing to recommend, so nothing is starred and the list is a picker rather than advice.
+  // the head of the list is whatever reaches least far — Quake on a 1400mm rack — which is a true
+  // range answer and a terrible recommendation, so nothing is starred and the list stays a picker.
   if (targeted && rows[0]) rows[0].best = true;
-  return { rows, targeted, loadedName: rack.ammo || null, base };
+  return { rows, targeted, loadedName: rack.ammo ? label(rack.ammo) : null, base };
 }
