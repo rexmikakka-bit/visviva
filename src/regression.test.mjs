@@ -4418,6 +4418,28 @@ Republic Fleet Command Mindlink`;
   check('hull', 'every sensor strength matches its type', mismatched.length, 0, 0);
   check('hull', 'the Minmatar sensor is Ladar, not Laser', String(lookupShip('Vargur').sensorType), 'Ladar', 0);
   check('hull', 'Cenotaph sensor strength is the type data\'s', lookupShip('Cenotaph').sensorStrength, 15, 1e-9);
+
+  // HARDPOINTS: the same stale rows, and the pair that actually showed. Slot counts were taken from
+  // the bundle and turret/launcher counts were left on the ships.json row, so a corrected Maelstrom
+  // offered 8 turret hardpoints across the 7 high slots it had just been cut to — a hardpoint with
+  // no rack to sit in. Five rows disagree (Maelstrom, Redeemer, both Stratios, Maulus Navy Issue);
+  // sweeping is what stops the next eve.db refresh quietly reintroducing one.
+  const staleHp = [], overHp = [];
+  for (const [, t] of hulls) {
+    const s = lookupShip(t.n);
+    const a = t.attrs ?? t.a ?? {};
+    if (a.turretSlotsLeft   != null && s?.turrets   !== a.turretSlotsLeft)   staleHp.push(t.n);
+    if (a.launcherSlotsLeft != null && s?.launchers !== a.launcherSlotsLeft) staleHp.push(t.n);
+    // True whichever source each number came from: a weapon needs a high slot as well as a
+    // hardpoint, so more hardpoints than highs means at least one of the two is wrong.
+    if ((s?.turrets ?? 0) > (s?.hiSlots ?? 0) || (s?.launchers ?? 0) > (s?.hiSlots ?? 0)) overHp.push(t.n);
+  }
+  if (staleHp.length) console.log(`      STALE HARDPOINTS: ${staleHp.slice(0, 8).join(', ')}`);
+  check('hull', 'every hardpoint count matches the type data', staleHp.length, 0, 0);
+  check('hull', 'no hull has more hardpoints than high slots', overHp.length, 0, 0);
+  const mael = lookupShip('Maelstrom');
+  check('hull', 'the Maelstrom mounts 6 turrets in 7 highs', `${mael.turrets}/${mael.hiSlots}`, '6/7', 0);
+  check('hull', 'the Redeemer lost one too', lookupShip('Redeemer').turrets, 5, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

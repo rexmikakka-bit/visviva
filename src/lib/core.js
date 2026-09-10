@@ -556,6 +556,10 @@ function lookupShip(name){
   //                    module into that the real ship cannot mount, so the fit is quietly invalid.
   //                    Guarded on `!= null` rather than truthiness: 0 is the correct hiSlots for a
   //                    T3 cruiser, whose racks come from its subsystems instead.
+  //   hardpoints     — five hulls are stale the same way, and taking the racks from the bundle while
+  //                    leaving these behind is what let the Maelstrom show 8 turret hardpoints in 7
+  //                    high slots. A hardpoint count is a hard stop on what can be mounted, so a
+  //                    stale one is the same class of quietly-invalid fit as a stale rack.
   const _a=ship.typeID?((TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.attrs??(TYPES[ship.typeID]??TYPES[String(ship.typeID)])?.a):null;
   if(_a){
     if(!ship.mass)ship.mass=_a.mass??0;
@@ -563,7 +567,8 @@ function lookupShip(name){
     const sen=strongestSensor(_a)[0];
     if(sen){ship.sensorType=sen[0];ship.sensorStrength=sen[1];}
     for(const[k,v]of[["hiSlots",_a.hiSlots],["medSlots",_a.medSlots],["lowSlots",_a.lowSlots],
-                     ["rigSlots",_a.rigSlots??_a.upgradeSlotsLeft]])
+                     ["rigSlots",_a.rigSlots??_a.upgradeSlotsLeft],
+                     ["turrets",_a.turretSlotsLeft],["launchers",_a.launcherSlotsLeft]])
       if(v!=null)ship[k]=v;
   }
   return ship;
