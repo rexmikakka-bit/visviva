@@ -6,6 +6,7 @@ import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf } from "../lib/meta.js";
+import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
@@ -1136,8 +1137,119 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
   );
 }
 
+// ═══ AMMO ADVISOR ═══════════════════════════════════════════════
+// Ammo from inside the Firepower card. The reason it belongs here rather than only in the module
+// menu is that ammo is a question about the TARGET, and the target profile is already on this card,
+// two rows above — from the module menu the same choice is made blind, against a list of names.
+//
+// It stays quiet on purpose. One line, and only when there is something to say: the round that would
+// gain the most against the selected profile, or a muted acknowledgement when the loaded round
+// already is that. Tapping opens the full ranking; loading is one more tap from there.
+//
+// The ranking costs a full recalculation per ammo family (~150 ms for a battleship rack), so it runs
+// off the render path in a timeout and lands a beat later. That latency is why the line fades in
+// rather than appearing — an element that pops into the middle of a card the user is already reading
+// moves everything under it.
+function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
+  const [open,setOpen]=useViewMemory("Stats:ammoOpen",false);
+  const [rackIdx,setRackIdx]=useViewMemory("Stats:ammoRack",0);
+  const [result,setResult]=useState(null);
+  const racks=useMemo(()=>weaponRacks(slots),[slots]);
+  const rack=racks[Math.min(rackIdx,Math.max(0,racks.length-1))];
+  const rackKey=rack?`${rack.name}|${rack.ammo}|${rack.mounts.length}`:"";
+  useEffect(()=>{
+    if(!rack){setResult(null);return;}
+    let cancelled=false;
+    setResult(null);
+    const id=setTimeout(()=>{ if(!cancelled) setResult(rankAmmo(ship,slots,drones,skills,opts,rack)); },0);
+    return()=>{cancelled=true;clearTimeout(id);};
+  },[ship,slots,drones,skills,opts,rackKey]);// eslint-disable-line react-hooks/exhaustive-deps
+  if(!rack||!result)return null;
+
+  const {rows,targeted}=result;
+  const best=rows.find(r=>r.best);
+  const fmt=n=>n>=100?n.toFixed(0):n.toFixed(1);
+  // Below a percent of the rack's output the swap is noise, and a line recommending it would be
+  // permanently lit on fits where nothing is actually wrong.
+  const worthIt=best&&!best.loaded&&best.delta>Math.max(1,result.base*0.01);
+
+  const load=row=>{
+    haptic();
+    setSlots(prev=>{
+      const next={...prev};
+      // Copy each rack ONCE, before writing any gun. Copying inside the mount loop re-reads `prev`
+      // and discards every gun written before it, so a seven-gun rack loads one gun.
+      for(const{key}of rack.mounts) if(next[key]===prev[key]) next[key]=(prev[key]??[]).slice();
+      for(const{key,index}of rack.mounts){
+        next[key][index]={...next[key][index],ammo:row.name,charges:row.charges,maxCharges:row.charges};
+      }
+      return next;
+    });
+  };
+
+  const bar={display:"flex",alignItems:"center",gap:7,padding:"6px 12px",borderTop:`1px solid ${C.border}`,cursor:"pointer",background:worthIt?`${C.accentLight}`:`${C.surfaceAlt}88`};
+  return(<>
+    <div onClick={()=>setOpen(o=>!o)} style={bar}>
+      {worthIt
+        ?<>
+          <span style={{fontSize:11,color:C.accent}}>⚡</span>
+          <span style={{fontSize:10.5,color:C.text,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            <span style={{fontWeight:800}}>{best.name}</span>
+            <span style={{color:C.textMute}}> {t("would do")} </span>
+            <span style={{fontWeight:800}}>{fmt(best.dps)}</span>
+            <span style={{color:C.textMute}}> {t("here")} </span>
+            <span style={{color:C.good??"#22c55e",fontWeight:800}}>+{fmt(best.delta)}</span>
+          </span>
+          <button onClick={e=>{e.stopPropagation();load(best);}}
+            style={{padding:"3px 9px",borderRadius:6,fontSize:9.5,fontWeight:800,cursor:"pointer",background:C.accent,border:"none",color:"#0b1220"}}>{t("Load")}</button>
+        </>
+        :<>
+          <span style={{fontSize:10,color:C.textMute,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {targeted?t("Best ammo for this target"):t("Ammo")}
+            <span style={{color:C.text,fontWeight:700}}> · {result.loadedName??t("empty")}</span>
+          </span>
+        </>}
+      <span style={{fontSize:10,color:C.textMute,transform:open?"rotate(90deg)":"none",transition:"transform .15s"}}>›</span>
+    </div>
+
+    {open&&<div style={{borderTop:`1px solid ${C.border}`,background:`${C.surfaceAlt}55`}}>
+      {racks.length>1&&<div style={{display:"flex",gap:5,padding:"6px 12px 2px",overflowX:"auto"}}>
+        {racks.map((r,i)=>(
+          <button key={r.name} onClick={()=>setRackIdx(i)}
+            style={{padding:"3px 8px",borderRadius:6,fontSize:9,fontWeight:700,whiteSpace:"nowrap",cursor:"pointer",
+              background:i===rackIdx?C.accentLight:C.surface,border:`1px solid ${i===rackIdx?C.accent:C.border}`,color:i===rackIdx?C.accent:C.textMute}}>
+            {r.name} ×{r.mounts.length}
+          </button>))}
+      </div>}
+      {rows.map(r=>{
+        // With no target the headline is REACH, because that is what the list is sorted by and a DPS
+        // column at the top of a range ranking reads like the ranking is wrong. Falloff is folded in
+        // rather than shown separately — missiles have none, so a second figure would be blank on
+        // half the fits that see this.
+        const head=targeted?fmt(r.dps):`${Math.round(r.optimal+r.falloff)} km`;
+        const sub =targeted?`${Math.round(r.optimal+r.falloff)} km`:`${fmt(r.dps)} ${t("DPS")}`;
+        return(
+        <div key={r.name} onClick={()=>load(r)} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",cursor:"pointer",
+          borderTop:`1px solid ${C.border}55`,background:r.loaded?`${C.accentLight}66`:"transparent"}}>
+          <span style={{width:10,fontSize:9,color:r.loaded?C.accent:(r.best?(C.good??"#22c55e"):"transparent")}}>{r.loaded?"◉":(r.best?"★":"·")}</span>
+          <span style={{flex:1,minWidth:0,fontSize:10.5,fontWeight:r.loaded?800:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</span>
+          <span style={{fontSize:8.5,color:C.textMute,width:52,textAlign:"right"}}>{sub}</span>
+          <span style={{fontSize:11,fontWeight:800,color:r.loaded?C.accent:C.text,width:42,textAlign:"right"}}>{head}</span>
+          <span style={{fontSize:9,fontWeight:700,width:40,textAlign:"right",
+            color:!targeted||Math.abs(r.delta)<0.05?"transparent":(r.delta>0?(C.good??"#22c55e"):C.textMute)}}>
+            {r.delta>0?"+":""}{fmt(r.delta)}
+          </span>
+        </div>);
+      })}
+      {!targeted&&<div onClick={onPickTarget} style={{padding:"6px 12px",fontSize:9.5,color:C.accent,cursor:"pointer",borderTop:`1px solid ${C.border}55`}}>
+        {t("Set a target to rank by damage")} ›
+      </div>}
+    </div>}
+  </>);
+}
+
 // ═══ STATS TAB ══════════════════════════════════════════════════
-function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItems,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
+function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,cargoItems,factorInReload,setFactorInReload,externalBursts,projectedReps,projectedEffects,dmgProfile,setDmgProfile,tgtProfile,setTgtProfile,priceHub,setPriceHub,priceSource}){
   const _scroll=useScrollMemory("Stats");
   // Per-section collapse state — all open by default.
   // Everything on this page that you SET rather than read goes through useViewMemory, because this
@@ -1254,7 +1366,13 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItem
   const togglePriceGroup=k=>setOpenPriceGroups(o=>({...o,[k]:!o[k]}));
   const fmtISK=n=>{if(!n)return'—';if(n>=1e12)return`${(n/1e12).toFixed(2)}T ISK`;if(n>=1e9)return`${(n/1e9).toFixed(2)}B ISK`;if(n>=1e6)return`${(n/1e6).toFixed(2)}M ISK`;if(n>=1e3)return`${(n/1e3).toFixed(1)}K ISK`;return`${Math.round(n).toLocaleString()} ISK`;};
   // The selected profile also drives any Reactive Armor Hardener set to "fit pattern" (damageProfile).
-  const cs=calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))})??{};
+  // Hoisted into a memo rather than written inline, because the ammo advisor recalculates the fit
+  // with a different round loaded and has to do it under EXACTLY these conditions — a comparison run
+  // without the fit's implants, drugs or command bursts would rank ammo against a ship nobody is
+  // flying. One object, so the two cannot drift.
+  const csOpts=useMemo(()=>({implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))}),
+    [implants,boosters,factorInReload,externalBursts,projectedEffects,dmgProfile,tgtProfile,slots,fighters]);
+  const cs=calcFitStats(ship,slots,drones??[],skills,csOpts)??{};
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;
@@ -1631,6 +1749,8 @@ function StatsTab({ship,slots,skills,implants,boosters,drones,fighters,cargoItem
               <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
             ))}
           </div>}
+        <AmmoAdvisor ship={ship} slots={slots} setSlots={setSlots} drones={drones??[]} skills={skills}
+          opts={csOpts} onPickTarget={()=>setShowTargetPicker(true)}/>
         </>}
       </div>
 
