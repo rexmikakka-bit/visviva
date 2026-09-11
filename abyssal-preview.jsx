@@ -17,7 +17,7 @@ async function samples(remove=false){
   for(let n=0;n<3;n++){
    const dogma_attributes=Object.entries(m.a).map(([key,range],i)=>({attribute_id:Number(key),value:(attrs[ATTR_ID_TO_NAME[key]]??attrs[key]??0)*(range[0]+(range[1]-range[0])*(((i*3+n*5)%11)/10))}));
    const owner=n===1?'Preview Combat Pilot':'Preview Storage Alt';
-   const row=dynamicItemToModule({item_id:1,type_id:m.r,location_id:60003760},{source_type_id:baseId,mutator_type_id:Number(id),dogma_attributes},{characterId:-1,characterName:owner},'Jita 4-4 / Sample abyssal container');
+   const row=dynamicItemToModule({item_id:1,type_id:m.r,location_id:n===2?9002:9001},{source_type_id:baseId,mutator_type_id:Number(id),dogma_attributes},{characterId:n===1?-2:-1,characterName:owner},n===2?'Jita 4-4 / Spare rolls':'Jita 4-4 / Sample abyssal container');
    rows.push({...row,itemId:prefix+m.r+'-'+n,favorite:n===0,available:n!==2});
   }
  }

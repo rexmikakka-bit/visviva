@@ -128,7 +128,7 @@ function attrsOf(typeID) {
 // them fell off the end exactly when you were comparing grades of the same drug.
 export function differingAttributes(typeIDs, { limit = 6, extraAttrs = null } = {}) {
   const ids = [...new Set(typeIDs.filter(Boolean))];
-  if (ids.length < 2) return [];
+  if (ids.length < 2 && !extraAttrs) return [];
   // Subsystems get an ALLOWLIST rather than the usual exclusions — see SUBSYSTEM_FITTING_ATTRS. The
   // cap is lifted with it: the allowlist is nine attributes long, so there is nothing to crowd out,
   // and truncating at six could hide a slot change, which is the most important row here.
@@ -137,7 +137,7 @@ export function differingAttributes(typeIDs, { limit = 6, extraAttrs = null } = 
   // `extraAttrs` is the MUTATED baseline (see compareRows). It scores as one more candidate so that
   // a rolled attribute still surfaces when every stock variant in the family agrees on it — which is
   // the common case for the attributes mutaplasmids touch, and would otherwise hide the roll itself.
-  const maps = extraAttrs ? [...ids.map(attrsOf), extraAttrs] : ids.map(attrsOf);
+  const maps = extraAttrs ? [...ids.map(attrsOf), ...(Array.isArray(extraAttrs)?extraAttrs:[extraAttrs])] : ids.map(attrsOf);
   const keys = new Set();
   for (const m of maps) for (const k of Object.keys(m)) {
     if (subsystemMode) { if (SUBSYSTEM_FITTING_ATTRS.has(k)) keys.add(k); continue; }
@@ -395,15 +395,12 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutati
  * Sorts comparison rows for display. The fitted module is always pinned first — it is the thing
  * every other row is measured against, so burying it mid-list makes the deltas unreadable.
  *
- * `by`: 'price' (cheapest first, unpriced last) or 'meta' (pyfa's order — see `compareByMeta`).
- *
- * There is deliberately NO "best stat" sort: with several differing attributes on screen, a control
- * labelled that way cannot say WHICH stat it ranked by, so the ordering looks arbitrary. Meta level
- * is the ordering EVE players already carry in their heads, and it correlates with the thing being
- * traded off anyway.
+ * `by`: 'price', 'meta', or a named attribute. Attribute ordering uses displayed values;
+ * missing attributes and unknown prices remain last in either direction.
  */
-export function sortCompareRows(rows, { by = 'price', dir = 'asc', prices } = {}) {
+export function sortCompareRows(rows, { by = 'price', dir = 'asc', prices, toDisplay=(_key,value)=>value } = {}) {
   const price = r => {
+    if(r.mod?.mutations)return Infinity;
     const p = prices?.get?.(Number(r.typeID));
     return (typeof p === 'number' && p > 0) ? p : Infinity;   // unpriced sinks, never sorts as free
   };
@@ -412,6 +409,12 @@ export function sortCompareRows(rows, { by = 'price', dir = 'asc', prices } = {}
     // The fitted module stays pinned at the top in BOTH directions — it is the baseline every
     // delta is measured from, so flipping the sort must not bury it halfway down the list.
     if (a.isBaseline !== b.isBaseline) return a.isBaseline ? -1 : 1;
+    if(by!=='price'&&by!=='meta'){
+      const av=a.values?.[by],bv=b.values?.[by];
+      const valid=v=>typeof v==='number'&&Number.isFinite(v);
+      if(valid(av)!==valid(bv))return valid(av)?-1:1;
+      return valid(av)?sign*(toDisplay(by,av)-toDisplay(by,bv)):0;
+    }
     const cmp = by === 'meta' ? (compareByMeta(a, b) || (price(a) - price(b))) : (price(a) - price(b));
     // Unpriced rows sort as Infinity, which would float them to the TOP when reversed. Keep them
     // last either way: "we don't know" is not the most expensive thing on the list.

@@ -6,13 +6,15 @@ import { beginLogin, listCharacters, onCharactersChanged, getLastLoginError } fr
 import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-library.js';
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel } from '../lib/abyssal-browser.js';
+import { AttributeSort } from './attribute-sort.jsx';
 
-export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attributeLabel,renderRow}){
+export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,onPathChange,onBack,backSwipe,formatValue,attributeLabel,sortValue,renderRow,renderGroup,renderInfo,Sheet}){
   const [records,setRecords]=useState([]),[characters,setCharacters]=useState(listCharacters);
   const [characterId,setCharacterId]=useState(''),[scan,setScan]=useState(null),[selected,setSelected]=useState([]);
   const [busy,setBusy]=useState(false),[progress,setProgress]=useState(null),[error,setError]=useState(''),[report,setReport]=useState(null);
-  const [favorites,setFavorites]=useState(false),[allSlots,setAllSlots]=useState(false),[sort,setSort]=useState(''),[descending,setDescending]=useState(false);
-  const [limit,setLimit]=useState(40),[expanded,setExpanded]=useState(null),[typeFilter,setTypeFilter]=useState('');
+  const [favorites,setFavorites]=useState(false),[groupBy,setGroupBy]=useState('market'),[sort,setSort]=useState(''),[descending,setDescending]=useState(false);
+  const [limit,setLimit]=useState(40),[infoId,setInfoId]=useState(null);
   const controller=useRef(null),mounted=useRef(true);
   useEffect(()=>{
     mounted.current=true;
@@ -44,23 +46,37 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
   const byId=new Map((scan?.assets??[]).map(a=>[a.item_id,a]));
   const locations=new Map();
   for(const a of scan?.candidates??[]){const key=String(a.location_id),old=locations.get(key);locations.set(key,{name:assetLocation(a,byId,scan.names),count:(old?.count??0)+1});}
-  const eligible=records.filter(r=>allSlots||r.slot===slotType||(slotType==='rigs'&&r.slot==='rig'));
-  const names=[...new Set(eligible.map(r=>r.name))].sort();
+  const eligible=abyssalsForSlot(records,slotType);
   const words=search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const filtered=eligible.filter(r=>(!favorites||r.favorite)&&(!typeFilter||r.name===typeFilter)&&
+  const matching=eligible.filter(r=>(!favorites||r.favorite)&&
     words.every(w=>`${r.name} ${r.label??''} ${r.characterName} ${r.location} ${r.itemId}`.toLowerCase().includes(w)));
+  const group=rows=>groupBy==='market'?abyssalMarketGroups(rows,marketTree):abyssalContainerGroups(rows);
+  // Use the full market tree for breadcrumbs: opening My Abyssals from a standard
+  // category with no owned rolls must still name that category and allow Back.
+  // Container breadcrumbs similarly survive removing the last favorite.
+  const {breadcrumb}=abyssalBrowseLevel(groupBy==='market'?marketTree:group(eligible),path);
+  const level=abyssalBrowseLevel(group(matching),path);
+  const nodes=words.length?[]:level.nodes;
+  const filtered=words.length?matching:level.records;
+  const visibleCount=filtered.length+nodes.reduce((n,node)=>n+node.count,0);
+  const nodeName=node=>node.other?t('Other modules'):node.name;
+  const navigate=next=>{onPathChange(next);setLimit(40);};
+  const info=records.find(r=>r.itemId===infoId);
   const attributes=[...new Set(filtered.flatMap(r=>Object.keys(r.mutations)))].sort();
+  const activeSort=attributes.includes(sort)?sort:'';
   filtered.sort((a,b)=>{
-    if(sort){const av=a.mutations[sort],bv=b.mutations[sort];if(av==null)return bv==null?0:1;if(bv==null)return -1;const diff=(av-bv)*(descending?-1:1);if(diff)return diff;}
-    return (a.name.localeCompare(b.name)||a.itemId.localeCompare(b.itemId))*(descending&&!sort?-1:1);
+    if(activeSort){const av=a.mutations[activeSort],bv=b.mutations[activeSort];if(av==null)return bv==null?0:1;if(bv==null)return -1;const diff=(sortValue(activeSort,av)-sortValue(activeSort,bv))*(descending?-1:1);if(diff)return diff;}
+    return (a.name.localeCompare(b.name)||a.itemId.localeCompare(b.itemId))*(descending&&!activeSort?-1:1);
   });
   const fitted=new Set(Object.values(slots??{}).flatMap(v=>Array.isArray(v)?v:[]).map(m=>m?.abyssalItemId).filter(Boolean));
-  const button={padding:'9px 12px',borderRadius:7,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,cursor:'pointer',fontSize:12};
-  const input={...button,minWidth:0,boxSizing:'border-box',fontSize:12,padding:'6px 8px'};
-  return <div style={{color:C.text,fontSize:12}}>
+  // Share the mobile sort sheet with Variations.
+  const button={padding:'5px 9px',borderRadius:6,border:`1px solid ${C.border}`,background:'none',color:C.textMid,cursor:'pointer',fontSize:11,fontWeight:700};
+  const input={...button,width:'100%',minWidth:0,boxSizing:'border-box',background:C.surface,fontWeight:500,color:C.text,padding:'5px 6px'};
+  const toggle=on=>({...button,background:on?C.accentLight:'none',borderColor:on?C.accentBorder:C.border,color:on?C.accent:C.textMute});
+  return <><div style={{color:C.text,fontSize:12,flex:1}} {...backSwipe}>
     <details open={records.length===0||busy||!!error} style={{padding:'10px 16px',borderBottom:`1px solid ${C.border}`}}>
-    <summary style={{color:C.accent,cursor:'pointer',fontWeight:600}}>{t('Import')} · {character?.characterName}</summary>
-    <p style={{color:C.textMute}}>{t('Import your rolled modules from EVE. Saved rolls stay available offline.')}</p>
+    <summary style={{color:C.textMid,cursor:'pointer',fontSize:12,fontWeight:700,overflowWrap:'anywhere'}}>{t('Import')}{character&&` · ${character.characterName}`}</summary>
+    <p style={{color:C.textMute,fontSize:11,margin:'8px 0'}}>{t('Import your rolled modules from EVE. Saved rolls stay available offline.')}</p>
     <select aria-label={t('Character')} style={input} disabled={busy||!characters.length} value={String(character?.characterId??'')}
       onChange={e=>{setCharacterId(e.target.value);setScan(null);setReport(null);}}>
       {!characters.length&&<option value="">{t('No linked characters')}</option>}
@@ -72,7 +88,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
       {allowed&&<button style={button} disabled={busy} onClick={scanAssets}>{t('Scan character assets')}</button>}
       {busy&&<button style={button} onClick={()=>controller.current?.abort()}>{t('Cancel')}</button>}
     </div>
-    <div role="status" style={{margin:'8px 0',color:C.textMute}}>
+    <div role="status" style={{margin:progress||report?'8px 0':0,color:C.textMute}}>
       {progress&&`${progress.stage==='scan'?t('Scanning assets'):t('Importing modules')} ${progress.done} / ${progress.total}`}
       {report&&t('Imported {n}; failed {failed}.',{n:report.imported,failed:report.failures.length})}
     </div>
@@ -92,22 +108,23 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
     </details>}
     </details>
     <div style={{padding:'8px 16px',borderBottom:`1px solid ${C.border}`}}>
-    <div style={{display:'flex',gap:12,margin:'4px 0 8px',flexWrap:'wrap'}}>
-      <label><input type="checkbox" checked={allSlots} onChange={e=>{setAllSlots(e.target.checked);setTypeFilter('');}}/> {t('All slot types')}</label>
-      <label><input type="checkbox" checked={favorites} onChange={e=>setFavorites(e.target.checked)}/> {t('Favorites')}</label>
+    <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:8,flexWrap:'wrap'}}>
+      <button style={toggle(groupBy==='market')} aria-pressed={groupBy==='market'} onClick={()=>{setGroupBy('market');navigate([]);}}>{t('Browser')}</button>
+      <button style={toggle(groupBy==='container')} aria-pressed={groupBy==='container'} onClick={()=>{setGroupBy('container');navigate([]);}}>{t('Containers')}</button>
+      <button style={{...toggle(favorites),marginLeft:'auto'}} aria-pressed={favorites} onClick={()=>setFavorites(v=>!v)}>{t('Favorites')}</button>
     </div>
-    <select aria-label={t('Module type')} style={input} value={typeFilter} onChange={e=>setTypeFilter(e.target.value)}>
-      <option value="">{t('All modules')}</option>{names.map(n=><option key={n}>{n}</option>)}
-    </select>
-    <div style={{display:'flex',gap:6,margin:'8px 0'}}>
-      <select aria-label={t('Sort by attribute')} style={{...input,flex:1}} value={sort} onChange={e=>setSort(e.target.value)}>
-        <option value="">{t('Name')}</option>{attributes.map(a=><option key={a} value={a}>{attributeLabel(a)}</option>)}
-      </select>
-      <button style={button} aria-label={t('Reverse sort order')} onClick={()=>setDescending(d=>!d)}>{descending?'↓':'↑'}</button>
+    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+      <span style={{fontSize:10,color:C.textMute,marginRight:'auto'}}>{t('Saved modules')}: {visibleCount}</span>
+      {!!filtered.length&&<AttributeSort Sheet={Sheet} value={activeSort} direction={descending?'desc':'asc'} onChange={setSort} onReverse={()=>setDescending(d=>!d)}
+        options={[{value:'',label:t('Name')},...attributes.map(a=>({value:a,label:attributeLabel(a)}))]}/>}
     </div>
-    <div style={{fontSize:10,color:C.textMute}}>{t('Saved modules')}: {filtered.length}</div>
     </div>
-    {!filtered.length&&<p>{t('No saved modules match this slot or search.')}</p>}
+    {(path.length>0||words.length>0)&&<div style={{position:'sticky',top:0,zIndex:3,display:'flex',alignItems:'center',gap:10,padding:'10px 14px',borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
+      <button onClick={onBack} style={{background:'none',border:'none',color:C.accent,fontSize:14,fontWeight:700,cursor:'pointer',padding:0,flexShrink:0}}>‹ {t('Back')}</button>
+      <span style={{fontSize:12,color:C.textMute,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{words.length?t('Search results'):breadcrumb.map(nodeName).join(' / ')}</span>
+    </div>}
+    {!visibleCount&&<div style={{textAlign:'center',color:C.textMute,padding:'32px 16px',fontSize:14}}>{t('No saved modules match this slot or search.')}</div>}
+    {nodes.map(node=><div key={node.id}>{renderGroup({node:{...node,name:nodeName(node)},count:node.count,onOpen:()=>navigate([...path,node.id]),wrapName:groupBy==='container'})}</div>)}
     {filtered.slice(0,limit).map(item=>{
       const compatible=item.slot===slotType||(item.slot==='rig'&&slotType==='rigs');
       const isFitted=fitted.has(item.itemId);
@@ -115,7 +132,11 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
         mod:{...libraryModule(item),name:item.label||item.name},
         disabled:!compatible||isFitted||busy,
         onAdd:()=>onSelect(libraryModule(item)),
-        onInfo:()=>setExpanded(expanded===item.itemId?null:item.itemId),
+        onInfo:()=>setInfoId(item.itemId),
+        actions:<button style={{background:'none',border:'none',padding:0,width:44,height:44,flexShrink:0,fontSize:20,color:item.favorite?C.accent:C.textMute,cursor:'pointer'}}
+          disabled={busy} title={item.favorite?t('Remove from favorites'):t('Add to favorites')}
+          aria-label={t('Favorite')} aria-pressed={!!item.favorite}
+          onClick={()=>edit(item,{favorite:!item.favorite})}>{item.favorite?'★':'☆'}</button>,
         subtitle:`${isFitted?t('Fitted')+' · ':''}${item.characterName} · ${item.location}`,
         children:<>
           {!item.available&&<div style={{color:C.danger,fontSize:10,marginTop:4}}>{t('Not found in last asset scan')}</div>}
@@ -123,18 +144,15 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
             {Object.entries(item.mutations).filter(([a])=>!['cpu','power'].includes(a)).map(([a,v])=>
               <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
           </div>
-          {expanded===item.itemId&&<div style={{paddingTop:8}}>
-            <div style={{color:C.textMid,fontSize:11,overflowWrap:'anywhere'}}>{item.name} · #{item.itemId}</div>
-            <div style={{color:C.textMute,fontSize:10,margin:'4px 0 8px'}}>{item.characterName} · {item.location}<br/>{t('Last seen')}: {new Date(item.lastSeen).toLocaleString()}</div>
-            <div style={{display:'flex',gap:8}}>
-              <input aria-label={t('Label')} placeholder={t('Label')} style={{...input,flex:1}} disabled={busy} defaultValue={item.label??''} maxLength={120}
-                onBlur={e=>{if(e.target.value!==(item.label??''))edit(item,{label:e.target.value});}}/>
-              <button style={button} disabled={busy} aria-label={t('Favorite')} aria-pressed={!!item.favorite} onClick={()=>edit(item,{favorite:!item.favorite})}>{item.favorite?'★':'☆'}</button>
-            </div>
-          </div>}
         </>
       })}</div>;
     })}
-    {filtered.length>limit&&<button style={button} onClick={()=>setLimit(n=>n+40)}>{t('Show more')}</button>}
-  </div>;
+    {filtered.length>limit&&<button style={{...button,display:'block',margin:'12px auto'}} onClick={()=>setLimit(n=>n+40)}>{t('Show more')}</button>}
+  </div>{info&&renderInfo({item:info,onClose:()=>setInfoId(null),children:<div style={{paddingTop:12,borderTop:`1px solid ${C.border}`,overflowWrap:'anywhere'}}>
+    <div style={{color:C.textMid,fontSize:12}}>{info.characterName} · {info.location}</div>
+    <div style={{color:C.textMute,fontSize:11}}>#{info.itemId}<br/>{t('Last seen')}: {new Date(info.lastSeen).toLocaleString()}</div>
+    {!info.available&&<div style={{color:C.danger,fontSize:11}}>{t('Not found in last asset scan')}</div>}
+    <input aria-label={t('Label')} placeholder={t('Label')} style={{...input,fontSize:16,marginTop:8}} disabled={busy} defaultValue={info.label??''} maxLength={120}
+      onBlur={e=>{if(e.target.value!==(info.label??''))edit(info,{label:e.target.value});}}/>
+  </div>})}</>;
 }

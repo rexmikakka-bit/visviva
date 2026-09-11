@@ -10,6 +10,14 @@
 // phrases are plain strings here rather than form maps — Korean nouns do not inflect for number, and
 // a map would only ever reach its `other` branch.
 export default {
+  "Owned only": "보유 모듈만",
+  "Fitted elsewhere in this fit": "이 피팅의 다른 슬롯에 장착됨",
+  "Browser": "브라우저",
+  "Containers": "컨테이너",
+  "Other modules": "기타 모듈",
+  "Add to favorites": "즐겨찾기에 추가",
+  "Remove from favorites": "즐겨찾기에서 제거",
+  "Search results": "검색 결과",
   "\"{name}\" has no implants saved.": "「{name}」에 저장된 임플란트가 없습니다.",
   "% increase": "% 증가",
   "% reduction": "% 감소",
@@ -901,8 +909,6 @@ export default {
   "My Abyssals": "내 어비설 모듈",
   "Back to module browser": "모듈 목록으로 돌아가기",
   "Add character": "캐릭터 추가",
-  "All modules": "모든 모듈",
-  "All slot types": "모든 슬롯 유형",
   "Character": "캐릭터",
   "Connect with asset access": "자산 접근 권한으로 연결",
   "Containers and locations": "컨테이너 및 위치",
@@ -915,7 +921,6 @@ export default {
   "Importing modules": "모듈 가져오는 중",
   "Label": "라벨",
   "Last seen": "마지막 확인",
-  "Module type": "모듈 유형",
   "No linked characters": "연결된 캐릭터 없음",
   "No saved modules match this slot or search.": "이 슬롯이나 검색에 맞는 저장된 모듈이 없습니다.",
   "Not found in last asset scan": "마지막 자산 검색에서 발견되지 않음",
@@ -929,4 +934,8 @@ export default {
   "Sort by attribute": "속성으로 정렬",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "EVE에서 변이 모듈을 가져옵니다. 저장한 수치는 오프라인에서도 사용할 수 있습니다.",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "ESI 자산은 약 1시간 동안 캐시될 수 있습니다. 확인되지 않은 위치는 ID로 표시됩니다.",
+"Abyssal sources": "어비설 출처",
+"All saved containers": "저장된 모든 컨테이너",
+"Show abyssals": "어비설 표시",
+"Edit abyssal sources": "어비설 출처 편집",
 };

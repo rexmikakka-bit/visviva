@@ -10,6 +10,14 @@
 // A value may be a form MAP instead of a string where the phrase counts something. Spanish takes the
 // same two forms as English, so `one` and `other` are all that appear here.
 export default {
+  "Owned only": "Solo propios",
+  "Fitted elsewhere in this fit": "Equipado en otra ranura de este fit",
+  "Browser": "Explorador",
+  "Containers": "Contenedores",
+  "Other modules": "Otros módulos",
+  "Add to favorites": "Añadir a favoritos",
+  "Remove from favorites": "Quitar de favoritos",
+  "Search results": "Resultados de búsqueda",
   "\"{name}\" has no implants saved.": "«{name}» no tiene implantes guardados.",
   "% increase": "% de aumento",
   "% reduction": "% de reducción",
@@ -967,8 +975,6 @@ export default {
   "My Abyssals": "Mis módulos abisales",
   "Back to module browser": "Volver al buscador de módulos",
   "Add character": "Añadir personaje",
-  "All modules": "Todos los módulos",
-  "All slot types": "Todos los tipos de ranura",
   "Character": "Personaje",
   "Connect with asset access": "Conectar con acceso a bienes",
   "Containers and locations": "Contenedores y ubicaciones",
@@ -981,7 +987,6 @@ export default {
   "Importing modules": "Importando módulos",
   "Label": "Etiqueta",
   "Last seen": "Última detección",
-  "Module type": "Tipo de módulo",
   "No linked characters": "No hay personajes vinculados",
   "No saved modules match this slot or search.": "Ningún módulo guardado coincide con la ranura o la búsqueda.",
   "Not found in last asset scan": "No encontrado en el último análisis",
@@ -995,4 +1000,8 @@ export default {
   "Sort by attribute": "Ordenar por atributo",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "Importa tus módulos mutados de EVE. Los valores guardados están disponibles sin conexión.",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "ESI puede almacenar los bienes en caché durante una hora. Las ubicaciones no resueltas muestran su ID.",
+"Abyssal sources": "Fuentes de abisales",
+"All saved containers": "Todos los contenedores guardados",
+"Show abyssals": "Mostrar abisales",
+"Edit abyssal sources": "Editar fuentes de abisales",
 };

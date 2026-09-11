@@ -12,6 +12,14 @@
 // four. `other` is still the catalog lookup key — the shape of the plural belongs to Russian, not to
 // English's idea of it.
 export default {
+  "Owned only": "Только свои",
+  "Fitted elsewhere in this fit": "Установлен в другом слоте этого фита",
+  "Browser": "Браузер",
+  "Containers": "Контейнеры",
+  "Other modules": "Другие модули",
+  "Add to favorites": "Добавить в избранное",
+  "Remove from favorites": "Убрать из избранного",
+  "Search results": "Результаты поиска",
   "\"{name}\" has no implants saved.": "В «{name}» не сохранено ни одного импланта.",
   "% increase": "% прироста",
   "% reduction": "% снижения",
@@ -903,8 +911,6 @@ export default {
   "My Abyssals": "Мои бездновые модули",
   "Back to module browser": "Назад к модулям",
   "Add character": "Добавить персонажа",
-  "All modules": "Все модули",
-  "All slot types": "Все типы слотов",
   "Character": "Персонаж",
   "Connect with asset access": "Подключить доступ к имуществу",
   "Containers and locations": "Контейнеры и места хранения",
@@ -917,7 +923,6 @@ export default {
   "Importing modules": "Импорт модулей",
   "Label": "Метка",
   "Last seen": "Последнее обнаружение",
-  "Module type": "Тип модуля",
   "No linked characters": "Нет подключённых персонажей",
   "No saved modules match this slot or search.": "Нет сохранённых модулей для этого слота или запроса.",
   "Not found in last asset scan": "Не найдено при последнем сканировании",
@@ -931,4 +936,8 @@ export default {
   "Sort by attribute": "Сортировать по атрибуту",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "Импортируйте мутированные модули из EVE. Сохранённые параметры доступны без сети.",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "Данные имущества ESI могут кэшироваться около часа. Для неизвестных мест показаны ID.",
+"Abyssal sources": "Источники бездновых модулей",
+"All saved containers": "Все сохранённые контейнеры",
+"Show abyssals": "Показать бездновые модули",
+"Edit abyssal sources": "Изменить источники бездновых модулей",
 };

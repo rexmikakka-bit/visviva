@@ -2,6 +2,10 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { AbyssalLibrary } from './abyssal-library.jsx';
+import { AttributeSort } from './attribute-sort.jsx';
+import { AbyssalSources } from './abyssal-sources.jsx';
+import { readAbyssals, editAbyssal } from '../lib/abyssal-store.js';
+import { variationItems, variationRoll, filterVariationItems } from '../lib/variation-items.js';
 import { createPortal } from "react-dom";
 import { C, getTheme } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -14,7 +18,7 @@ import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_M
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
-import { compareRows, sortCompareRows, directionOf } from "../lib/compare.js";
+import { sortCompareRows, directionOf } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
@@ -43,13 +47,13 @@ function useTypeDescriptions() {
 // because a bundled face is the stronger version of that guarantee than a font we hope is installed.
 // The default is a DEFAULT PARAMETER, evaluated per call rather than at module scope, so a plain
 // t() is safe here — see lib/i18n.js.
-function InfoButton({onClick,title=t("Item info")}){
+function InfoButton({onClick,title=t("Item info"),touchSize=19}){
   return(
     <button onClick={onClick} title={title} aria-label={title}
-      style={{width:19,height:19,flexShrink:0,padding:0,borderRadius:"50%",
-              border:`1.5px solid ${C.accent}`,background:C.accentLight,color:C.accent,
+      style={{width:touchSize,height:touchSize,flexShrink:0,padding:0,borderRadius:touchSize===19?'50%':8,
+              border:touchSize===19?`1.5px solid ${C.accent}`:'none',background:touchSize===19?C.accentLight:'none',color:C.accent,
               display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",
-              fontSize:12,fontWeight:700,lineHeight:1}}>i</button>
+              fontSize:12,fontWeight:700,lineHeight:1}}>{touchSize===19?'i':<span style={{width:19,height:19,boxSizing:'border-box',border:`1.5px solid ${C.accent}`,borderRadius:'50%',background:C.accentLight,display:'flex',alignItems:'center',justifyContent:'center'}}>i</span>}</button>
   );
 }
 
@@ -627,7 +631,7 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
 // whenever the browser re-renders. Tapping a row with the keyboard up blurs the search input, which
 // re-renders the sheet BETWEEN touchstart and click — the row's node was replaced mid-tap, so the
 // click had no surviving target and the first tap on a module only collapsed the keyboard.
-function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,children}){
+function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,children,largeInfo=false}){
   const rowMeta=metaOf(mod.typeID,mod.meta);
   const grade=mod.mutations?abyssalGrade(mod.mutaplasmid):null;
   return(
@@ -655,16 +659,37 @@ function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,children}){
       <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
         <SkillMark typeID={mod.typeID}/>
         <span style={{fontSize:11,color:grade?C.danger:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{grade||rowMeta}</span>
-        {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();onInfo(mod);}}/>}
+        {!largeInfo&&actions}
+        {mod.typeID&&<div onClick={e=>e.stopPropagation()} style={{paddingLeft:largeInfo?8:0}}><InfoButton touchSize={largeInfo?44:19} onClick={e=>{e.stopPropagation();onInfo(mod);}}/></div>}
       </div>
-      {children&&<div style={{width:"100%",paddingLeft:38,boxSizing:"border-box"}}>{children}</div>}
+      {children&&<div style={{width:"100%",paddingLeft:38,boxSizing:"border-box",display:'flex',alignItems:'center',gap:8}}><div style={{flex:1,minWidth:0}}>{children}</div>{largeInfo&&actions}</div>}
     </div>
   );
+}
+
+// Shared category rows keep the owned library's market/container navigation in the
+// same visual and interaction pattern as the standard module browser.
+function ModuleGroupRow({node,count,onOpen,wrapName=false}){
+  return <div role="button" tabIndex={0} onClick={onOpen}
+    onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();onOpen();}}}
+    style={{display:'flex',alignItems:'center',gap:10,padding:'14px 16px',cursor:'pointer',borderBottom:`1px solid ${C.border}`}}>
+    <div style={{width:28,height:28,flexShrink:0}}>
+      {node.iconTid&&<img className="eve-icon" src={eveIcon(node.iconTid,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility='hidden';}}/>}
+    </div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:14,fontWeight:600,color:C.text,whiteSpace:wrapName?'normal':'nowrap',overflow:'hidden',textOverflow:'ellipsis',overflowWrap:'anywhere'}}>{node.name}</div>
+      <div style={{fontSize:11,color:C.textMute,marginTop:2,overflowWrap:'anywhere'}}>{node.subtitle&&`${node.subtitle} · `}{t({one:'{n} module',other:'{n} modules'},{n:count})}</div>
+    </div>
+    <span aria-hidden="true" style={{fontSize:20,color:C.textMute,flexShrink:0}}>{'>'}</span>
+  </div>;
 }
 
 function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload,dismissRequested}){
   const[search,setSearch]=useState("");
   const[library,setLibrary]=useState(false);
+  const[libraryNav,setLibraryNav]=useState({slot:slotType,path:[]});
+  const libraryPath=libraryNav.slot===slotType?libraryNav.path:[];
+  const setLibraryPath=path=>setLibraryNav({slot:slotType,path});
   const[infoItem,setInfoItem]=useState(null);
   // clipboardData still has the real newlines here; the value that would land in a single-line
   // <input> after a default paste does not — the browser collapses them, which is exactly why an
@@ -692,7 +717,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const[navPath,setNavPath]=useState([]);
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
-  const goBack=()=>{if(library){setLibrary(false);return;}if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
+  const goBack=()=>{if(library){if(search.trim()){setSearch('');return;}if(libraryPath.length){setLibraryPath(libraryPath.slice(0,-1));return;}setLibrary(false);return;}if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
   // Back climbs the market tree before it closes the sheet, matching the header's ‹. The hardware
   // button and the left-to-right swipe are one hook so a browser cannot end up with only one of them
   // — which is exactly how the cargo and drone browsers ended up with neither.
@@ -834,11 +859,16 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           swipe worked in the top inch of the sheet and nowhere else, which reads as the gesture
           being broken rather than as a target you missed. */}
       <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-      {!isStructure&&<button onClick={()=>{setLibrary(v=>!v);setSearch('');searchInputRef.current?.blur();}}
-        style={{padding:12,background:C.surfaceAlt,color:C.accent,border:'none',borderBottom:`1px solid ${C.border}`,fontWeight:700,cursor:'pointer'}}>
-        {library?t('Back to module browser'):t('My Abyssals')}
+      {!isStructure&&<button onClick={()=>{setLibrary(v=>!v);setLibraryPath(library?[]:navPath);setSearch('');searchInputRef.current?.blur();}}
+        style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 16px',background:C.surfaceAlt,color:C.accent,border:'none',borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,textAlign:'left',cursor:'pointer'}}>
+        <span>{library?`‹ ${t('Back to module browser')}`:t('My Abyssals')}</span>
+        {!library&&<span aria-hidden="true" style={{color:C.textMute,fontSize:14}}>›</span>}
       </button>}
-      {library?<AbyssalLibrary slotType={slotType} search={search} onSelect={addMod} slots={slots} formatValue={fmtMutaVal} attributeLabel={mutaLabel} renderRow={props=><ModRow {...props} headroom={resourceHeadroom}/>}/>:<>
+      {library?<AbyssalLibrary Sheet={BottomSheet} key={slotType} slotType={slotType} search={search} onSelect={addMod} slots={slots}
+        marketTree={tree} path={libraryPath} onPathChange={setLibraryPath} onBack={goBack} backSwipe={backSwipe}
+        formatValue={fmtMutaVal} attributeLabel={mutaLabel} sortValue={mutaToDisplay} renderRow={props=><ModRow {...props} largeInfo headroom={resourceHeadroom}/>}
+        renderInfo={({item,onClose,children})=><ItemInfoSheet typeID={item.typeID} baseOverrides={item.mutations} mutaplasmid={item.mutaplasmid} onClose={onClose}>{children}</ItemInfoSheet>}
+        renderGroup={props=><ModuleGroupRow {...props}/>}/>:<>
       {!searchResults&&navPath.length>0&&(
         <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; {t("Back")}</button>
@@ -860,21 +890,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
              style={{flex:1}}
              className={navDir>0?"vv-from-right":navDir<0?"vv-from-left":undefined}>
           {currentLevel.mods.map(mod=><ModRow key={mod.typeID??mod.name} mod={mod} onAdd={addMod} onInfo={setInfoItem} headroom={resourceHeadroom}/>)}
-          {currentLevel.nodes.map(node=>(
-            <div key={node.id} onClick={()=>goInto(node.id)} style={{display:"flex",alignItems:"center",gap:10,padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`}}>
-              {/* Category icon, same idea as pyfa: a real item from the group reads faster than
-                  its name alone. Reserve the space even when there is no icon, so every row's
-                  text starts at the same x. */}
-              <div style={{width:28,height:28,flexShrink:0}}>
-                {node.iconTid&&<img className="eve-icon" src={eveIcon(node.iconTid,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
-              </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontSize:14,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{node.name}</div>
-                <div style={{fontSize:11,color:C.textMute,marginTop:2}}>{t({one:"{n} module",other:"{n} modules"},{n:countAll(node)})}</div>
-              </div>
-              <span style={{fontSize:20,color:C.textMute,flexShrink:0}}>{">"}</span>
-            </div>
-          ))}
+          {currentLevel.nodes.map(node=><ModuleGroupRow key={node.id} node={node} count={countAll(node)} onOpen={()=>goInto(node.id)}/>)}
           {currentLevel.nodes.length===0&&currentLevel.mods.length===0&&(
             <div style={{textAlign:"center",color:C.textMute,padding:"32px 0",fontSize:14}}>{t("No modules for this slot type")}</div>
           )}
@@ -1208,7 +1224,7 @@ export function ModifierBreakdown({attr, ex, bleed, fmt}) {
 // `hideName` is for the one host that already prints the name in a sheet header of its own
 // (ItemInfoSheet) — the icon, group and badges still earn their place, the name would just be the
 // same string twice at the same size, one line apart.
-function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName}) {
+function ItemInfoPanel({typeID, item, mutaplasmid, overrides,baseOverrides, bleed=14, hideName}) {
   const typeDescriptions = useTypeDescriptions();
   // Which rows are showing their modifier breakdown, and the traced twin of `item` that supplies it.
   // Both must be declared before the `!td` bail below — they are hooks.
@@ -1220,7 +1236,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
   const [traced, setTraced] = useState(null);
   const td = TYPES[String(typeID)] ?? TYPES[typeID];
   if (!td) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No data available")}</div>;
-  const attrs = td.attrs ?? td.a ?? {};
+  const attrs = {...(td.attrs ?? td.a ?? {}),...baseOverrides};
   const skills = getItemSkills(typeID);
   const meta = metaOf(typeID, null);
   // An `item` for a DIFFERENT type would silently print another module's numbers under this one's
@@ -1357,7 +1373,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides, bleed=14, hideName
         </div>
       )}
       {/* Under the description, above the skills — it is a fact about the item, not a stat. */}
-      <ItemPrice typeID={typeID}/>
+      {mutaplasmid?<div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t('no price')}</div>:<ItemPrice typeID={typeID}/>}
       {/* Required skills */}
       {skills.length > 0 && (
         <div style={{marginBottom:12}}>
@@ -1442,7 +1458,7 @@ function TraitsPanel({typeID, empty=t("No trait data available.")}){
 }
 
 // Standalone bottom sheet for item info (triggered from browser or charge list)
-function ItemInfoSheet({typeID, onClose, item, overrides}) {
+function ItemInfoSheet({typeID, onClose, item, overrides,baseOverrides,mutaplasmid,children}) {
   const sheet=useSheetDrag(onClose);
   const td=TYPES[String(typeID)]??TYPES[typeID];
   return (
@@ -1462,7 +1478,8 @@ function ItemInfoSheet({typeID, onClose, item, overrides}) {
         <div style={{flex:1,overflowY:'auto',padding:'12px 16px 20px'}}>
           {/* hideName because the header above now carries it — the panel's own header would have
               printed the same name at the same size directly underneath. */}
-          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} bleed={16} hideName/>
+          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} baseOverrides={baseOverrides} mutaplasmid={mutaplasmid} bleed={16} hideName/>
+          {children}
         </div>
       </div>
     </div>
@@ -1636,8 +1653,8 @@ function DeltaMark({dir, text, better}) {
 // `mutations` (optional): the FITTED module's abyssal roll. It describes the module every row is
 // measured against, so it applies to `b` on every variant row, and to `v` only on the fitted module's
 // own row — a variant is an unrolled item.
-function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
-  const v = fitCostParts({typeID}, baseTypeID == null ? mutations : null);
+function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations,candidateMutations}) {
+  const v = fitCostParts({typeID}, candidateMutations??(baseTypeID == null ? mutations : null));
   const b = baseTypeID != null ? fitCostParts({typeID: baseTypeID}, mutations) : v;
   const g = 11;
   // Inner span: glyph + number only — no DeltaMark inside the flex row so the delta gets the
@@ -1675,29 +1692,30 @@ function FitCostDelta({typeID, baseTypeID, resourceHeadroom, mutations}) {
 }
 
 // Validated on read rather than trusted: this is the one setting written as a compound string, and a
-// stale or hand-edited value would otherwise reach sortCompareRows as an unknown `by` and silently
-// fall through to the price branch.
+// stale or hand-edited value is also checked against the current family's attributes below.
 const VAR_SORT_KEY='axis_varsort';
 function readSort(){
   try{
     const [by,dir]=String(localStorage.getItem(VAR_SORT_KEY)??'').split(':');
-    if((by==='price'||by==='meta')&&(dir==='asc'||dir==='desc')) return {by,dir};
+    if((by==='price'||by==='meta'||/^[a-zA-Z][a-zA-Z0-9]*$/.test(by))&&(dir==='asc'||dir==='desc')) return {by,dir};
   }catch{/* private mode */}
   return {by:'price',dir:'asc'};
 }
 
-function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid}) {
+function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid,baseItemId,usedAbyssalIds=new Set()}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
   // Persisted: the tab is opened one module at a time, so a session-local choice meant re-picking
   // "meta level, highest first" on every single module you looked at.
   const [sortBy, setSortBy] = useState(()=>readSort().by);
-  // Tapping the ACTIVE sort flips direction; tapping the other one switches to it at its natural
-  // default (cheapest first, lowest meta first) rather than inheriting the previous direction,
-  // which would otherwise silently hand you a reversed list you did not ask for.
+  // Choosing a different attribute starts ascending; the adjacent arrow reverses it.
   const [sortDir, setSortDir] = useState(()=>readSort().dir);
   useEffect(()=>{try{localStorage.setItem(VAR_SORT_KEY,`${sortBy}:${sortDir}`);}catch{/* private mode */}},[sortBy,sortDir]);
   const [prices, setPrices] = useState(null);
+  const [owned,setOwned]=useState([]),[ownedError,setOwnedError]=useState('');
+  const [showAbyssals,setShowAbyssals]=useState(true),[source,setSource]=useState('owned'),[editSources,setEditSources]=useState(false);
+  useEffect(()=>{let active=true;readAbyssals().then(rows=>{if(active)setOwned(rows);}).catch(e=>{if(active)setOwnedError(e.message);});return()=>{active=false;};},[]);
+  const favorite=async record=>{try{setOwned(await editAbyssal(record.itemId,{favorite:!record.favorite}));}catch(e){setOwnedError(e.message);}};
 
   // One batched request for the whole variant set — fetchPrices dedupes and serves from cache, so
   // reopening the tab (or an item already priced as part of the fit total) costs nothing.
@@ -1712,69 +1730,68 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
     return()=>{cancelled=true;};
   },[idKey]);// eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!vars.length) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No variation data available.")}</div>;
+  if (!typeID) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No variation data available.")}</div>;
 
   // Deltas are measured against the module ACTUALLY FITTED — including its abyssal roll, since an
   // abyssal module keeps its base typeID and comparing against the unrolled item answers a question
   // nobody asked.
   const abyssal = !!baseMutations && Object.keys(baseMutations).length > 0;
-  const rows = sortCompareRows(compareRows(vars.map(v=>v.typeID), typeID, {baselineMutations:baseMutations}),
-                               {by:sortBy, dir:sortDir, prices});
-  const byID = new Map(vars.map(v=>[String(v.typeID), v]));
+  const comparison=variationItems(vars,{name:currentName??TYPES[typeID]?.n,typeID,mutations:abyssal?baseMutations:undefined,mutaplasmid:baseMutaplasmid,abyssalItemId:baseItemId},owned);
+  const activeSort=['price','meta',...comparison.attributes].includes(sortBy)?sortBy:'price';
+  const rows = sortCompareRows(filterVariationItems(comparison.rows,showAbyssals,source),
+                               {by:activeSort, dir:sortDir, prices,toDisplay:mutaToDisplay});
   // An abyssal module has no market price — its worth is the roll, which spans orders of magnitude
   // on contracts. The base item's Jita price is not a stand-in for it, so there is nothing honest to
   // subtract and the price delta is suppressed rather than guessed at.
   const basePrice = abyssal ? null : prices?.get(Number(typeID));
-  const grade = abyssalGrade(baseMutaplasmid);
-
-  // `label` arrives already translated. The direction is two literal keys rather than one word
-  // substituted into a shared sentence, both so the catalog audit can see them and because the
-  // adjective inflects with the noun in several of the target languages.
-  const Sort = ({k,label}) => {
-    const on=sortBy===k;
-    const title=on?(sortDir==='asc'?t("{label}, lowest first — tap to reverse",{label})
-                                   :t("{label}, highest first — tap to reverse",{label}))
-                  :t("Sort by {label}",{label});
-    return(
-    <button onClick={()=>{haptic();if(on)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(k);setSortDir('asc');}}}
-      title={title}
-      style={{display:"flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",
-      background:on?C.accentLight:"none",border:`1px solid ${on?C.accentBorder:C.border}`,
-      color:on?C.accent:C.textMute}}>{label}
-      {/* The arrow only shows on the ACTIVE control: a direction on an inactive sort would imply
-          it is doing something. */}
-      {on&&<span style={{fontSize:9}}>{sortDir==='asc'?'↑':'↓'}</span>}
-    </button>);
-  };
 
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:'6px 0 9px'}}>
+      {ownedError&&<div role="alert" style={{color:C.danger,fontSize:11}}>{ownedError}</div>}
+      <div style={{display:'flex',alignItems:'center',gap:8,padding:'2px 4px 0'}}>
         {/* Two whole sentences rather than one with an appended " roll": the clause is the object of
             "vs", and a language that puts the object elsewhere cannot bolt it on at the end. */}
         <span style={{fontSize:10,color:C.textMute}}>
           {abyssal?t({one:"{n} variant · vs fitted roll",other:"{n} variants · vs fitted roll"},{n:rows.length})
                   :t({one:"{n} variant · vs fitted",other:"{n} variants · vs fitted"},{n:rows.length})}
         </span>
-        <div style={{display:"flex",gap:5}}><Sort k="price" label={t("Price")}/><Sort k="meta" label={t("Meta Level")}/></div>
       </div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,paddingBottom:3,borderBottom:`1px solid ${C.border}`}}>
+        {TYPES[typeID]?.c===7&&<div style={{display:'flex',gap:0}}>
+          <button aria-label={t('Show abyssals')} title={t('Show abyssals')} aria-pressed={showAbyssals} onClick={()=>setShowAbyssals(v=>!v)} style={{width:44,height:44,padding:0,border:'none',background:'none',color:C.danger,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <span style={{width:28,height:26,borderRadius:6,background:showAbyssals?'rgba(239,68,68,.09)':'none',display:'flex',alignItems:'center',justifyContent:'center'}}><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16"><path d="M8 2 14 13H2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill={showAbyssals?'currentColor':'none'}/></svg></span>
+          </button>
+          <button aria-label={t('Edit abyssal sources')} title={t('Edit abyssal sources')} onClick={()=>setEditSources(true)} style={{width:44,height:44,padding:0,background:'none',border:'none',color:C.textMute,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"><path d="m12.5 3.5 4 4M3 17l1-5L13.5 2.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L8 16Z"/></svg></button>
+        </div>}
+        <AttributeSort Sheet={BottomSheet} value={activeSort} direction={sortDir} onChange={value=>{setSortBy(value);setSortDir('asc');}} onReverse={()=>setSortDir(d=>d==='asc'?'desc':'asc')}
+        options={[{value:'price',label:t('Price')},{value:'meta',label:t('Meta Level')},...comparison.attributes.map(a=>({value:a,label:mutaLabel(a)}))]}/></div>
+      {editSources&&<AbyssalSources Sheet={BottomSheet} records={owned} selection={source} onChange={value=>{setSource(value);setShowAbyssals(true);}} onClose={()=>setEditSources(false)}/>}
       {rows.map(r => {
-        const v = byID.get(String(r.typeID)); if(!v) return null;
+        const v = r.mod,record=r.record;
+        const grade=abyssalGrade(v.mutaplasmid);
+        const meta=metaOf(v.typeID,v.meta);
+        const inUse=!!v.abyssalItemId&&usedAbyssalIds.has(v.abyssalItemId);
+        const disabled=readOnly||r.isBaseline||inUse;
+        const visibleStats=r.stats.filter(st=>hasDelta(st)||st.key===activeSort).slice(0,6);
+        const selectedStat=r.stats.find(st=>st.key===activeSort);
+        if(selectedStat&&!visibleStats.includes(selectedStat))visibleStats.push(selectedStat);
         // The fitted abyssal row's own "price" would be the base item's — the one number that is
         // certainly not what this module is worth.
-        const price = (abyssal&&r.isBaseline)?null:prices?.get(Number(r.typeID));
+        const price = v.mutations?null:prices?.get(Number(r.typeID));
         const dPrice = (price!=null&&basePrice!=null)?price-basePrice:null;
         return (
           // The stock row shares a typeID with the fitted abyssal one, so the flag has to be in the key.
-          <div key={`${r.typeID}${r.isStockBase?':stock':''}`} onClick={()=>{if(!readOnly&&!r.isBaseline)onSwap(v);}}
+          <div key={r.key}
             style={{padding:'9px 4px',borderBottom:`1px solid ${C.border}`,
-                    cursor:(readOnly||r.isBaseline)?'default':'pointer',
                     background:r.isBaseline?C.accentLight:'transparent'}}>
+            <div role="button" aria-disabled={disabled} tabIndex={disabled?-1:0} onClick={()=>{if(!disabled)onSwap(v);}}
+              onKeyDown={e=>{if(!disabled&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onSwap(v);}}}
+              style={{cursor:disabled?'default':'pointer'}}>
             <div style={{display:'flex',alignItems:'center',gap:9}}>
               {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.display="none";}}/>}
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,color:r.isBaseline?C.accent:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                  {v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>{t("FITTED")}</span>}
+                  {record?.label||v.name}{r.isBaseline&&<span style={{fontSize:9,color:C.accent,marginLeft:6}}>{t("FITTED")}</span>}
                   {/* Same name as the row above it, so without this the two read as a duplicate. */}
                   {r.isStockBase&&<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{t("UNMUTATED")}</span>}
                 </div>
@@ -1783,7 +1800,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                   {/* The fitted abyssal row has no price to show, so it carries the same red grade
                       badge the snapshot card uses — which says WHY there is no number, and names the
                       mutaplasmid, rather than leaving the row to read as missing data. */}
-                  {(abyssal&&r.isBaseline&&grade)
+                  {(v.mutations&&grade)
                     ? <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
                                     color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
                                     borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>
@@ -1792,17 +1809,17 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                     <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
                 </div>
               </div>
-              <span style={{fontSize:10,color:META_COLORS[v.meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{v.meta}</span>
+              <span style={{fontSize:10,color:META_COLORS[meta]??C.textMid,background:`${C.border}88`,borderRadius:99,padding:'1px 7px',fontWeight:700,flexShrink:0}}>{meta}</span>
             </div>
             {/* Fitting cost leads, on its own line: it is the constraint, not one attribute among
                 several. Shown on every row including the fitted one, where it reads as a reference
                 value with no delta beside it. */}
-            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID} resourceHeadroom={resourceHeadroom} mutations={baseMutations}/>
+            <FitCostDelta typeID={r.typeID} baseTypeID={r.isBaseline?null:typeID} resourceHeadroom={resourceHeadroom} mutations={baseMutations} candidateMutations={v.mutations}/>
             {/* Only the attributes that DIFFER across this variant set, as deltas. `better` is null
                 for an unchanged value, and those stay neutral — no change is not an improvement. */}
-            {!r.isBaseline&&r.stats.some(hasDelta)&&(
+            {visibleStats.length>0&&(
               <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,marginLeft:35,fontSize:10}}>
-                {r.stats.filter(hasDelta).map(st=>{
+                {visibleStats.map(st=>{
                   // The delta is taken in DISPLAY space, not raw, so that the arrow always describes
                   // the number printed beside it (DeltaMark's contract). It matters wherever the two
                   // spaces disagree about direction: rate of fire is stored as a cycle-time
@@ -1810,16 +1827,26 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                   // difference points the opposite way from what is shown. For every other attribute
                   // the transform is the identity and this is just `st.delta`.
                   const val=fmtMutaVal(st.key,st.value);
-                  const dRaw=mutaToDisplay(st.key,st.value)-mutaToDisplay(st.key,st.value-st.delta);
+                  const dRaw=st.delta==null?null:mutaToDisplay(st.key,st.value)-mutaToDisplay(st.key,st.value-st.delta);
                   const dTxt=fmtMutaDisplay(st.key,Math.abs(dRaw));
                   return(
                   <span key={st.key} style={{color:C.textMid}}>
                     {mutaLabel(st.key)} <span style={{fontWeight:700,color:C.text}}>{val}</span>
-                    <DeltaMark dir={(/[Rr]esonance/.test(st.key)&&st.better!=null)?(st.better?1:-1):Math.sign(dRaw)} text={dTxt} better={st.better}/>
+                    {!r.isBaseline&&dRaw!=null&&<DeltaMark dir={(/[Rr]esonance/.test(st.key)&&st.better!=null)?(st.better?1:-1):Math.sign(dRaw)} text={dTxt} better={st.better}/>}
                   </span>);
                 })}
               </div>
             )}
+            </div>
+            {record&&<div style={{display:'flex',alignItems:'center',gap:8,marginLeft:35}}>
+              <div style={{flex:1,minWidth:0,fontSize:10,color:C.textMute,overflowWrap:'anywhere'}}>
+                {record.characterName} · {record.location}
+                {!record.available&&<div style={{color:C.danger}}>{t('Not found in last asset scan')}</div>}
+                {inUse&&!r.isBaseline&&<div style={{color:C.warning}}>{t('Fitted elsewhere in this fit')}</div>}
+              </div>
+              <button aria-label={t('Favorite')} aria-pressed={!!record.favorite} title={record.favorite?t('Remove from favorites'):t('Add to favorites')} onClick={()=>favorite(record)}
+                style={{width:44,height:44,flexShrink:0,background:'none',border:'none',color:record.favorite?C.accent:C.textMute,fontSize:20,cursor:'pointer'}}>{record.favorite?'★':'☆'}</button>
+            </div>}
           </div>
         );
       })}
@@ -2282,7 +2309,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
 // `chargeStats` is calc.js' effective-charge map for THIS slot — see `fittedChargeStats` there. Only
 // the loaded charge gets it: the ammo list offers every compatible charge, but the others aren't on
 // the fit, so type data alone is the honest answer for them.
-function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats}){
+function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onReplaceMod,onRemove,onDuplicate,onFillHardpoints,fillCount=0,resourceHeadroom,engineItem,chargeStats,usedAbyssalIds}){
   const _hasMuta=(MUTA_BY_TYPE[mod.typeID]??MUTA_BY_TYPE[String(mod.typeID)]??[]).length>0||mod.mutaplasmid;
   const[tab,setTab]=useState("state");
   const[chargeInfo,setChargeInfo]=useState(null);
@@ -2478,7 +2505,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
             would have been clipped by it 14px short. */}
         {tab==="info"&&<ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem} bleed={14}/>}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
-                                baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} onSwap={v=>{
+                                baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} baseItemId={mod.abyssalItemId} usedAbyssalIds={usedAbyssalIds} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
           let nc=mod.charges;
           if(mod.ammo&&v.typeID){
@@ -2488,13 +2515,10 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRemo
             const vol=cTid?(TYPES[cTid]?.attrs?.volume??1):1;
             nc=cap>0&&vol>0?Math.floor(cap/vol):undefined;
           }
-          // The roll is dropped, always. `updateMod` MERGES this into the existing module, so anything
-          // left out here survives — and a mutaplasmid that survives lands on a module it was never
-          // applicable to, silently reapplying the old module's rolled numbers to a different type.
-          // It is also what makes the UNMUTATED row do anything: that row's typeID is the fitted one,
-          // so clearing the roll is the entire swap.
-          onUpdateMod({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc,
-                       mutaplasmid:undefined,mutations:undefined});onClose();}} />)}
+          // updateMod merges fields. Carry the selected physical roll, or explicitly clear
+          // all roll/ownership fields when choosing stock, including the UNMUTATED row.
+          (onReplaceMod||onUpdateMod)({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc,
+                       ...variationRoll(v)});onClose();}} />)}
         {/* No wrapper here either, same reasoning as the info tab above: a second overflowY:auto
             nested inside this one already-scrolling tab body is redundant, and on iOS it stopped
             WebKit's native "scroll the focused input above the keyboard" from finding the right

@@ -11,6 +11,14 @@
 // phrases are written as plain strings here rather than form maps — a Japanese counted noun does not
 // inflect, and a map would only ever reach its `other` branch.
 export default {
+  "Owned only": "所有済みのみ",
+  "Fitted elsewhere in this fit": "このフィットの別のスロットに装備済み",
+  "Browser": "ブラウザー",
+  "Containers": "コンテナ",
+  "Other modules": "その他のモジュール",
+  "Add to favorites": "お気に入りに追加",
+  "Remove from favorites": "お気に入りから削除",
+  "Search results": "検索結果",
   "\"{name}\" has no implants saved.": "「{name}」にはインプラントが保存されていません。",
   "% increase": "% 増加",
   "% reduction": "% 減少",
@@ -902,8 +910,6 @@ export default {
   "My Abyssals": "所有アビサルモジュール",
   "Back to module browser": "モジュール一覧に戻る",
   "Add character": "キャラクターを追加",
-  "All modules": "すべてのモジュール",
-  "All slot types": "すべてのスロット種別",
   "Character": "キャラクター",
   "Connect with asset access": "資産へのアクセスを許可して接続",
   "Containers and locations": "コンテナと保管場所",
@@ -916,7 +922,6 @@ export default {
   "Importing modules": "モジュールをインポート中",
   "Label": "ラベル",
   "Last seen": "最終確認",
-  "Module type": "モジュール種別",
   "No linked characters": "連携済みキャラクターなし",
   "No saved modules match this slot or search.": "このスロットまたは検索に一致する保存済みモジュールはありません。",
   "Not found in last asset scan": "前回の資産スキャンで未検出",
@@ -930,4 +935,8 @@ export default {
   "Sort by attribute": "属性で並べ替え",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "EVEから変異済みモジュールをインポートします。保存した値はオフラインでも利用できます。",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "ESIの資産情報は約1時間キャッシュされる場合があります。名前を取得できない場所はIDで表示します。",
+"Abyssal sources": "アビサルの取得元",
+"All saved containers": "保存済みの全コンテナ",
+"Show abyssals": "アビサルを表示",
+"Edit abyssal sources": "アビサルの取得元を編集",
 };

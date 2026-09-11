@@ -9,6 +9,14 @@
 // ⚠ NO PLURAL FORMS. `Intl.PluralRules('zh')` answers `other` for every count, so the 44 counted
 // phrases are plain strings here rather than form maps — Chinese nouns do not inflect for number.
 export default {
+  "Owned only": "仅已拥有",
+  "Fitted elsewhere in this fit": "已装配在此配置的其他槽位",
+  "Browser": "浏览器",
+  "Containers": "容器",
+  "Other modules": "其他装备",
+  "Add to favorites": "添加到收藏",
+  "Remove from favorites": "取消收藏",
+  "Search results": "搜索结果",
   "\"{name}\" has no implants saved.": "“{name}”未保存任何植入体。",
   "% increase": "% 提升",
   "% reduction": "% 降低",
@@ -896,8 +904,6 @@ export default {
   "My Abyssals": "我的深渊装备",
   "Back to module browser": "返回装备浏览器",
   "Add character": "添加角色",
-  "All modules": "所有装备",
-  "All slot types": "所有槽位类型",
   "Character": "角色",
   "Connect with asset access": "授权资产访问并连接",
   "Containers and locations": "货柜与存放位置",
@@ -910,7 +916,6 @@ export default {
   "Importing modules": "正在导入装备",
   "Label": "标签",
   "Last seen": "上次发现",
-  "Module type": "装备类型",
   "No linked characters": "没有已关联的角色",
   "No saved modules match this slot or search.": "没有符合此槽位或搜索条件的已保存装备。",
   "Not found in last asset scan": "上次资产扫描中未发现",
@@ -924,4 +929,8 @@ export default {
   "Sort by attribute": "按属性排序",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "从 EVE 导入变异装备。保存的属性可离线使用。",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "ESI 资产数据可能缓存约一小时。无法解析的位置显示其 ID。",
+"Abyssal sources": "深渊装备来源",
+"All saved containers": "所有已保存的容器",
+"Show abyssals": "显示深渊装备",
+"Edit abyssal sources": "编辑深渊装备来源",
 };

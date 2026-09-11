@@ -37,6 +37,8 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
 import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel } from './lib/abyssal-browser.js';
+import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems } from './lib/variation-items.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -6843,6 +6845,79 @@ Nanofiber Internal Structure II
   const abort=new AbortController();abort.abort();let cancelled=false;
   try{await importAbyssals(scan,['9001'],[],{api,signal:abort.signal});}catch(e){cancelled=e.name==='AbortError';}
   check('abyssal','cancel stops before importing items',cancelled?1:0,1,0);
+}
+// Owned browsing must preserve every physical item and the existing market paths.
+{
+  const base={itemId:'one',typeID:5975,name:'Example',slot:'mid',characterId:1,characterName:'Alt',locationId:'10',location:'Jita / Stock'};
+  const items=[base,{...base,itemId:'two',locationId:'11'},
+    {...base,itemId:'three',characterId:2,characterName:'Pilot'},
+    {...base,itemId:'four',available:false},
+    {...base,itemId:'high',slot:'high'}, {...base,itemId:'rig',slot:'rig'}];
+  check('abyssal-browser','slot filtering excludes other racks',abyssalsForSlot(items,'mid').map(r=>r.itemId).join(','),'one,two,three,four');
+  check('abyssal-browser','rigs picker includes stored rig records',abyssalsForSlot(items,'rigs')[0]?.itemId,'rig');
+  const groups=abyssalContainerGroups(abyssalsForSlot(items,'mid'));
+  check('abyssal-browser','same-named containers and different owners stay distinct',groups.length,3,0);
+  check('abyssal-browser','missing items stay in their last known container',groups.find(g=>g.records.includes(base)).count,2,0);
+  check('abyssal-browser','same-named containers have distinct visible labels',new Set(groups.map(g=>g.name+g.subtitle)).size,3,0);
+  const renamed=abyssalContainerGroups([{...base,location:'Renamed',characterName:'Renamed pilot'}]);
+  check('abyssal-browser','container identity survives display-name changes',renamed[0].id,groups.find(g=>g.records.includes(base)).id);
+  const unknown={...base,itemId:'off-market',typeID:-1};
+  const tree=abyssalMarketGroups([...abyssalsForSlot(items,'mid'),unknown],REAL_MODULE_BROWSER.mid);
+  const flattened=nodes=>nodes.flatMap(n=>[...n.records,...flattened(n.children)]);
+  check('abyssal-browser','market tree preserves all rolls of a base type',flattened(tree).filter(r=>r.typeID===5975).length,4,0);
+  check('abyssal-browser','off-market record remains browsable',tree.find(n=>n.other)?.records[0].itemId,'off-market');
+  check('abyssal-browser','category counts count physical items',tree.reduce((n,g)=>n+g.count,0),5,0);
+  const pathTo=(nodes,typeID,path=[])=>{for(const n of nodes){if(n.mods.some(m=>m.typeID===typeID))return [...path,n.id];const found=pathTo(n.children,typeID,[...path,n.id]);if(found)return found;}};
+  const path=pathTo(REAL_MODULE_BROWSER.mid,5975);
+  check('abyssal-browser','standard category breadcrumb survives an empty owned library',abyssalBrowseLevel(REAL_MODULE_BROWSER.mid,path).breadcrumb.map(n=>n.id).join(','),path.join(','));
+  check('abyssal-browser','owned item follows the exact standard browser path',abyssalBrowseLevel(tree,path).records.includes(base)?1:0,1,0);
+  check('abyssal-browser','removed favorite leaves empty category rather than other items',abyssalBrowseLevel(abyssalMarketGroups([],REAL_MODULE_BROWSER.mid),path).records.length,0,0);
+  check('abyssal-browser','grouping does not mutate source record order',items.map(r=>r.itemId).join(','),'one,two,three,four,high,rig');
+  // Totality over the actual catalog catches omitted / duplicated branches, including
+  // synthetic propulsion-size groups, without hard-coding a catalog size.
+  for(const [slot,nodes] of Object.entries(REAL_MODULE_BROWSER)){
+    const collect=ns=>ns.flatMap(n=>[...n.mods,...collect(n.children)]);
+    const catalog=[...new Map(collect(nodes).map(m=>[m.typeID,m])).values()];
+    const records=catalog.map(m=>({...base,typeID:m.typeID,itemId:String(m.typeID),slot}));
+    const result=flattened(abyssalMarketGroups(records,nodes));
+    check('abyssal-browser',`${slot}: every catalog type is reachable exactly once`,result.map(r=>r.itemId).sort().join(','),records.map(r=>r.itemId).sort().join(','));
+  }
+}
+// Instance-aware comparisons: identical type IDs do not mean identical physical rolls.
+{
+  const baseline={name:'Warp Disruptor II',typeID:3244,mutaplasmid:47297,abyssalItemId:'fitted',mutations:{maxRange:25000,cpu:40,speedMultiplier:.9}};
+  const record=(itemId,range,cpu)=>({itemId,typeID:3244,name:baseline.name,mutaplasmid:47297,mutations:{maxRange:range,cpu,speedMultiplier:.8},characterId:1,characterName:'Alt',locationId:'1',location:'Jita'});
+  const owned=[record('fitted',99999,99),record('long',30000,44),record('short',20000,35),{...record('unrelated',40000,40),typeID:5975}];
+  const result=variationItems([{name:baseline.name,typeID:3244}],baseline,owned);
+  check('variations-owned','each roll and the stock base have distinct identities',new Set(result.rows.map(r=>r.key)).size,4,0);
+  check('variations-owned','refresh cannot replace the fitted snapshot',result.rows[0].values.maxRange,25000,0);
+  check('variations-owned','exact candidate minus fitted range',result.rows.find(r=>r.key==='owned:long').stats.find(s=>s.key==='maxRange').delta,5000,0);
+  check('variations-owned','candidate CPU uses the roll',result.rows.find(r=>r.key==='owned:short').values.cpu,35,0);
+  check('variations-owned','outside-family records excluded',result.rows.some(r=>r.key==='owned:unrelated')?1:0,0,0);
+  check('variations-owned','attributes include variation between rolls of one base',result.attributes.includes('maxRange')?1:0,1,0);
+  const byRange=sortCompareRows(result.rows,{by:'maxRange',dir:'desc'});
+  check('variations-owned','baseline remains pinned for attribute sort',byRange[0].key,'fitted');
+  check('variations-owned','longest roll sorts ahead of shorter',byRange.indexOf(result.rows.find(r=>r.key==='owned:long'))<byRange.indexOf(result.rows.find(r=>r.key==='owned:short'))?1:0,1,0);
+  for(const dir of ['asc','desc']){
+    const priceSorted=sortCompareRows(result.rows,{by:'price',dir,prices:new Map([[3244,123]])});
+    check('variations-owned',`${dir}: owned rolls never inherit the base market price`,priceSorted[1].key,'stock:3244');
+    const unknown=sortCompareRows([{key:'known',values:{maxRange:1}},{key:'missing',values:{}}],{by:'maxRange',dir});
+    check('variations-owned',`${dir}: missing attribute stays last`,unknown[1].key,'missing');
+  }
+  const displaySorted=sortCompareRows([{key:'fast',values:{speedMultiplier:.8}},{key:'slow',values:{speedMultiplier:.9}}],{by:'speedMultiplier',dir:'desc',toDisplay:(_k,v)=>(1/v-1)*100});
+  check('variations-owned','sort follows displayed rate of fire rather than inverted raw multiplier',displaySorted[0].key,'fast');
+  const copied=variationRoll(result.rows.find(r=>r.key==='owned:long').mod);copied.mutations.maxRange=1;
+  check('variations-owned','swapping copies the roll instead of mutating library data',owned[1].mutations.maxRange,30000,0);
+  const stock={...baseline,...variationRoll({name:baseline.name,typeID:3244})};
+  check('variations-owned','returning to stock clears the old roll and physical identity',!stock.mutations&&!stock.mutaplasmid&&!stock.abyssalItemId?1:0,1,0);
+  const occupied=fittedAbyssalIds({high:[{id:1,abyssalItemId:'one'}],mid:[{id:2,abyssalItemId:'two'}]},1);
+  check('variations-owned','duplicate check excludes only the slot being replaced',[...occupied].join(','),'two');
+  check('variations-owned','hiding abyssals preserves fitted roll and stock alternatives',filterVariationItems(result.rows,false).map(r=>r.key).join(','),'fitted,stock:3244');
+  const otherOwner={...result.rows.find(r=>r.key==='owned:long'),key:'other-owner',record:{...record('other',31000,44),characterId:2}};
+  const scoped=filterVariationItems([...result.rows,otherOwner],true,JSON.stringify(['1','1']));
+  check('variations-owned','container scope uses owner and location identities',scoped.some(r=>r.key==='other-owner')?1:0,0,0);
+  check('variations-owned','container scope retains its matching physical rolls',scoped.filter(r=>r.key.startsWith('owned:')).length,2,0);
+  check('variations-owned','missing container still retains baseline and stock',filterVariationItems(result.rows,true,'missing').map(r=>r.key).join(','),'fitted,stock:3244');
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

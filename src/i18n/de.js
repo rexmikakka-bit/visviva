@@ -14,6 +14,14 @@
 // A value may be a form MAP instead of a string where the phrase counts something. German takes the
 // same two forms as English, so `one` and `other` are all that appear here.
 export default {
+  "Owned only": "Nur eigene",
+  "Fitted elsewhere in this fit": "An anderer Stelle in diesem Fit eingebaut",
+  "Browser": "Browser",
+  "Containers": "Container",
+  "Other modules": "Andere Module",
+  "Add to favorites": "Zu Favoriten hinzufügen",
+  "Remove from favorites": "Aus Favoriten entfernen",
+  "Search results": "Suchergebnisse",
   "\"{name}\" has no implants saved.": "„{name}“ hat keine gespeicherten Implantate.",
   "% increase": "% Erhöhung",
   "% reduction": "% Reduzierung",
@@ -952,8 +960,6 @@ export default {
   "My Abyssals": "Meine Abyssal-Module",
   "Back to module browser": "Zurück zum Modulbrowser",
   "Add character": "Charakter hinzufügen",
-  "All modules": "Alle Module",
-  "All slot types": "Alle Slottypen",
   "Character": "Charakter",
   "Connect with asset access": "Mit Inventarzugriff verbinden",
   "Containers and locations": "Container und Standorte",
@@ -966,7 +972,6 @@ export default {
   "Importing modules": "Module werden importiert",
   "Label": "Bezeichnung",
   "Last seen": "Zuletzt gefunden",
-  "Module type": "Modultyp",
   "No linked characters": "Keine verbundenen Charaktere",
   "No saved modules match this slot or search.": "Keine gespeicherten Module passen zum Slot oder zur Suche.",
   "Not found in last asset scan": "Beim letzten Inventarscan nicht gefunden",
@@ -980,4 +985,8 @@ export default {
   "Sort by attribute": "Nach Attribut sortieren",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "Importiere deine mutierten Module aus EVE. Gespeicherte Werte sind offline verfügbar.",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "ESI-Inventardaten können etwa eine Stunde zwischengespeichert sein. Unbekannte Standorte zeigen ihre IDs.",
+"Abyssal sources": "Abyssal-Quellen",
+"All saved containers": "Alle gespeicherten Container",
+"Show abyssals": "Abyssal-Module anzeigen",
+"Edit abyssal sources": "Abyssal-Quellen bearbeiten",
 };

@@ -11,6 +11,14 @@
 // A value may be a form MAP instead of a string where the phrase counts something. French takes the
 // same two forms as English (with 0 taking `one`), so `one` and `other` are all that appear here.
 export default {
+  "Owned only": "Possédés uniquement",
+  "Fitted elsewhere in this fit": "Déjà équipé ailleurs dans ce fit",
+  "Browser": "Navigateur",
+  "Containers": "Conteneurs",
+  "Other modules": "Autres modules",
+  "Add to favorites": "Ajouter aux favoris",
+  "Remove from favorites": "Retirer des favoris",
+  "Search results": "Résultats de recherche",
   "\"{name}\" has no implants saved.": "Aucun implant n'est enregistré pour « {name} ».",
   "% increase": "% d'augmentation",
   "% reduction": "% de réduction",
@@ -968,8 +976,6 @@ export default {
   "My Abyssals": "Mes modules abyssaux",
   "Back to module browser": "Retour aux modules",
   "Add character": "Ajouter un personnage",
-  "All modules": "Tous les modules",
-  "All slot types": "Tous les emplacements",
   "Character": "Personnage",
   "Connect with asset access": "Autoriser l’accès aux biens",
   "Containers and locations": "Conteneurs et emplacements",
@@ -982,7 +988,6 @@ export default {
   "Importing modules": "Importation des modules",
   "Label": "Libellé",
   "Last seen": "Dernière détection",
-  "Module type": "Type de module",
   "No linked characters": "Aucun personnage lié",
   "No saved modules match this slot or search.": "Aucun module enregistré ne correspond à cet emplacement ou à cette recherche.",
   "Not found in last asset scan": "Absent lors de la dernière analyse des biens",
@@ -996,4 +1001,8 @@ export default {
   "Sort by attribute": "Trier par attribut",
   "Import your rolled modules from EVE. Saved rolls stay available offline.": "Importez vos modules mutés depuis EVE. Les valeurs enregistrées restent disponibles hors ligne.",
   "ESI assets can be cached for about an hour. Unresolved locations show their IDs.": "Les biens ESI peuvent être en cache pendant environ une heure. Les lieux non résolus affichent leur identifiant.",
+"Abyssal sources": "Sources abyssales",
+"All saved containers": "Tous les conteneurs enregistrés",
+"Show abyssals": "Afficher les modules abyssaux",
+"Edit abyssal sources": "Modifier les sources abyssales",
 };

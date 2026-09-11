@@ -7,6 +7,7 @@ import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_R
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
+import { fittedAbyssalIds } from '../lib/variation-items.js';
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
@@ -496,10 +497,11 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
   const _rigsAffected = (slots.rigs ?? []).some(r =>
     r?.typeID && TYPES[r.typeID]?.a?.nullSecModifier != null);
 
-  const updateMod=(secKey,modId,updated,keepOpen=false)=>{
+  const updateMod=(secKey,modId,updated,keepOpen=false,replace=false)=>{
     setSlots(prev=>{
       const sec=[...prev[secKey]],idx=sec.findIndex(m=>m.id===modId);
       if(idx<0)return prev;
+      if(updated.abyssalItemId&&fittedAbyssalIds(prev,modId).has(updated.abyssalItemId))return prev;
       // Loading a charge fans out to every identical module in the rack — but only for things
       // that are actually GROUPED. It used to match on name alone, so two Skirmish Command
       // Bursts always ended up with the same charge and running two different scripts was
@@ -513,7 +515,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
       // of the same ammo now show as two rows (see computeDisplayRows), and a charge change made
       // from one of them must not silently reach into the other. `origAmmo`/`origState` are the OLD
       // values, which is what the row's members still carry at this point.
-      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){
+      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&!replace&&isGroupableModule(sec[idx])){
         const origName=sec[idx].name, origAmmo=sec[idx].ammo, origState=sec[idx].state;
         return{...prev,[secKey]:sec.map(m=>m.name===origName&&m.ammo===origAmmo&&m.state===origState&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};
       }
@@ -1091,7 +1093,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onReplaceMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,false,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)} usedAbyssalIds={fittedAbyssalIds(slots,menuMod.id)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
