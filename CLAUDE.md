@@ -17,7 +17,7 @@
 
 Before continuing the abyssal module work, read [docs/abyssal-handoff.md](docs/abyssal-handoff.md).
 It records the tested iOS build, newer browser styling, local preview, and Owen's decisions for future work.
-The active feature branch is `codex/abyssal-library`; it is not merged into `main`.
+The abyssal library and reviewed browser/comparison improvements are merged into `main`.
 
 ## UI consistency
 
