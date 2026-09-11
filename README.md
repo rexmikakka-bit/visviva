@@ -1,110 +1,83 @@
 # Axis
 
-A ship-fitting calculator for **EVE Online**, built for your phone.
+Axis is a free ship-fitting calculator for EVE Online, available on iOS and Android. Build and save fits, compare equipment, and check performance from your phone. Fitting calculations work offline, with no ads or account required.
 
-Axis implements EVE's dogma system in JavaScript, so you get the same numbers pyfa gives you —
-stacking penalties, hull and subsystem bonuses, implant sets, command bursts, environment effects,
-overheating — on a screen you actually have with you. pyfa v2.68.0 is the reference implementation:
-where Axis disagrees with pyfa, Axis is treated as wrong until proven otherwise. It is free, has no
-ads, needs no account, and works with no signal.
+- [Download on the App Store](https://apps.apple.com/us/app/axis-mobile-fitting-tool/id6798416488)
+- [Download the Android APK](https://github.com/rexmikakka-bit/visviva/releases)
 
-Formerly *Vis Viva*.
+Android installation may require permission to install apps from outside the Play Store.
 
-## Getting it
+Axis was previously called Vis Viva. The repository still uses the original name.
 
-- **iOS** — [App Store](https://apps.apple.com/us/app/axis-mobile-fitting-tool/id6798416488).
-- **Android** — the APK on the [Releases page](https://github.com/rexmikakka-bit/visviva/releases).
-  Sideload it; you may need to allow installs from unknown sources.
+Axis is built with substantial help from AI coding tools, including Claude and OpenAI Codex. AI is part of the development process; the app's fitting calculations run locally using its bundled engine and game data.
 
-## What it does
+## Fitting and analysis
 
-**Find a ship.** A nested browser that follows the way people actually talk about hulls —
-Battleships → Faction Battleships → Pirate Faction — with every fittable hull in the game reachable,
-including structures. Search by name if you already know what you want.
+Browse ships and structures by class, or search for a hull by name. Fits support high, mid, low, rig, subsystem, and service slots, along with drones, fighters, cargo, implants, and boosters. Modules can be offline, online, active, or overheated. Resource readouts update as you make changes and highlight exceeded limits, including powergrid, CPU, calibration, drone capacity, and bandwidth.
 
-**Fit it.** High/mid/low slots, rigs, subsystems and service slots, with module states you can cycle
-(offline, online, active, overheated). Drag in drones and fighters, load charges, stock the cargo
-hold, and plug in implants and boosters. Fitting resources, slot counts, powergrid, CPU, calibration
-and drone bay/bandwidth all update as you go, and turn red when you have gone over.
+The stats panel shows damage and volley, resistances and effective HP, active tank and passive regeneration, capacitor stability, speed, agility, targeting, sensor strength, scan resolution, warp speed, and align time.
 
-**See what it does.** A stats panel covering DPS and volley, effective HP and resist profile, active
-and passive tank, capacitor stability, speed and agility, targeting, sensor strength, scan
-resolution, warp speed and align time.
+You can also:
 
-**Graph it.** Damage, EWAR, reps, shield regen, capacitor, mobility, warp time and lock time — each
-plottable against distance, time, target speed or target signature radius, aimed at a frigate,
-cruiser or battleship profile or at another one of your saved fits.
+- **Compare ammunition.** Preview ammo grades in the Firepower panel before loading them. Missile comparisons use one row per damage type, with shared controls for navy and T2 variants.
+- **Plot performance.** Graph damage, EWAR, repairs, shield regeneration, capacitor, mobility, warp time, and lock time. Available axes include distance, time, target speed, and signature radius. Use a frigate, cruiser, or battleship target profile, or another saved fit.
+- **Include fleet support and environment effects.** Apply links, command bursts, remote repairs, webs, neutralizers, target painters, and other EWAR from saved fits. Model wormhole class effects, metaliminal storms, and event beacons.
+- **Choose a pilot.** Use all level V skills, an Alpha clone profile, or skills synced from your EVE character. The fit header identifies unmet skill requirements.
+- **Work with abyssal modules.** Roll and save mutated modules with their individual attributes, and compare module variations side by side.
+- **Inspect equipment.** View descriptions, traits, attributes, prices, and T1, T2, faction, storyline, deadspace, and officer variants.
+- **Compare costs.** Request market prices for individual items or an entire fit. The price optimizer finds cheaper module variants with identical stats.
 
-**Fly it with someone else's help.** Project other saved fits onto this one as links, command
-bursts, remote reps, webs, neuts, paints or EWAR, and set the system you are sitting in — wormhole
-class effects, metaliminal storms and event beacons are all modelled.
+## Saving and sharing
 
-**Fly it with your skills.** Every fit records whose skills it is flown with: all level V, an Alpha
-clone, or your real character synced from EVE. The skill check in the fit header tells you whether
-you can actually fly what you have drawn, and what you are missing.
+Fits are saved on your device. Import and export EFT text, exchange saved fittings with your EVE character through ESI, or share a fit as an image. Saved data can be backed up to a file and restored.
 
-**Abyssal modules.** Roll and store mutated modules with their real rolled attributes, and compare
-variations of any module side by side.
+## Offline use and privacy
 
-**Look things up.** Tap any item for its description, traits, full attribute list, market price and
-every variation of it — T1, T2, faction, storyline, deadspace and officer.
+Game data, ship and module art, and the fitting engine are bundled with the app. Your fits, skills, and settings remain on your device. Axis has no application server, separate account system, or telemetry.
 
-**Move fits around.** Import and export EFT text, import and export directly against your
-character's in-game saved fittings over ESI, and share a fit as a rendered image. Everything you
-save can be backed up to a file and restored.
+Network access is used for optional EVE character connections and market-price requests. Character connections use CCP's official login through ESI; prices are fetched when requested. Neither is needed to build or evaluate a fit.
 
-**Prices.** Optional market pricing per module and for the whole fit, plus a one-tap optimizer that
-swaps every module for its cheapest **stat-identical** variant — same numbers, less ISK.
+## Calculation accuracy
 
-## Accuracy
+Axis implements EVE's dogma attribute and effect system in JavaScript, including stacking penalties, hull and subsystem bonuses, implant sets, command bursts, environment effects, and overheating.
 
-pyfa v2.68.0 (EVE client build 3424810) is the reference implementation. Where Axis disagrees with
-pyfa, Axis is treated as wrong until proven otherwise.
+[pyfa](https://github.com/pyfa-org/Pyfa) v2.68.0, using EVE client build 3424810, is the calculation reference. Discrepancies are investigated against pyfa before changing expected results.
 
-Correctness is held in place by a regression suite of **1,151 checks** — real fits whose every number
-was validated by hand against pyfa, and in many cases against pyfa's `eos` engine driven directly as
-a library. It runs on every change. A number in this app is not "whatever the code currently
-prints"; it is a value someone confirmed.
+The regression suite includes fit values checked manually against pyfa and through its `eos` engine, as well as checks for fitting rules and application behavior. Automated validation also checks imports, translations, production builds, and offline dependencies.
 
-## Offline and private
+## Development
 
-All ship and module art is bundled into the app (~6.5 MB), so nothing is fetched while you fit. Your
-fits, skills and settings live on your device — there is no server, no account and no telemetry.
-Connecting an EVE character over ESI is entirely optional, uses CCP's official login, and is the
-only thing that ever talks to the network besides market prices, which are fetched only when you ask
-for them.
+Axis is built with React and Vite, with native mobile projects managed through Capacitor.
 
-## Contributing
+```sh
+npm install
+npm run dev
+```
 
-The engine internals, the data pipeline and the hard-won gotchas are documented in
-[CLAUDE.md](./CLAUDE.md). Start there.
+Run the full validation suite before submitting changes:
 
----
+```sh
+npm run verify
+```
 
-## Credits and third-party material
+[CLAUDE.md](./CLAUDE.md) contains the project conventions and links to documentation for the calculation engine, data pipeline, and validation tools. See [the release guide](./docs/release.md) for Android and iOS builds.
 
-**[pyfa](https://github.com/pyfa-org/Pyfa) (GPLv3)** is this project's reference implementation, and
-one piece of shipped data is derived from it. Fenris Creations publishes no `modifierInfo` for Effect Beacon
-(group 920) environment effects — wormhole class effects, metaliminal storms, event beacons — so
-there is nothing to extract from `eve.db` and every engine that models them relies on pyfa's
-hand-written handlers. `src/data/system-effects.json` is generated from those handlers by
-`scripts/build-system-effects.py`.
+## Credits and data sources
 
-What that file contains is a wiring table — `{effectID, target, operation, attribute}` using Fenris
-Creations' own attribute names. It carries no pyfa source, no comments and no magnitudes; every value
-is read from the game data at runtime. Roughly 42% of its rows fall directly out of those naming
-conventions;
-the remainder encodes mappings pyfa's authors worked out.
+### pyfa
 
-pyfa itself is **not** redistributed here — neither this repository nor the built app contains any
-pyfa code.
+[pyfa](https://github.com/pyfa-org/Pyfa), licensed under GPLv3, is Axis's calculation reference and the source for part of its environment-effect data.
 
-This has not been cleared with pyfa's maintainers. If you are one of them and would rather this data
-were not used, please open an issue — it will be removed.
+Fenris Creations does not publish `modifierInfo` for Effect Beacon environment effects (group 920), including wormhole class effects, metaliminal storms, and event beacons. Axis generates `src/data/system-effects.json` from pyfa's handwritten handlers using `scripts/build-system-effects.py`.
 
-**EVE Online** and all related materials are the intellectual property of Fenris Creations. Axis is
-an unofficial, free, fan-made tool, not affiliated with or endorsed by Fenris Creations. Static game
-data is used under Fenris Creations' developer terms.
+The generated file contains mappings of effect IDs, targets, operations, and attributes. It uses Fenris Creations' attribute names and contains no pyfa source code, comments, or effect magnitudes; values are read from game data at runtime. Approximately 42% of the mappings follow the attribute naming conventions. The remaining mappings reflect work by pyfa's authors.
 
-**Market prices** come from [Fuzzwork](https://market.fuzzwork.co.uk/) and
-[ceve-market](https://www.ceve-market.org/), fetched only when you ask for them.
+pyfa itself is not redistributed in the repository or app. This use of the derived data has not been cleared with pyfa's maintainers. Maintainers who would prefer it removed can open an issue, and it will be removed.
+
+### EVE Online
+
+EVE Online and related materials are the intellectual property of Fenris Creations. Axis is a free, unofficial fan tool and is not affiliated with or endorsed by Fenris Creations. Static game data is used under Fenris Creations' developer terms.
+
+### Market data
+
+Optional market prices are provided by [Fuzzwork](https://market.fuzzwork.co.uk/) and [ceve-market](https://www.ceve-market.org/).
