@@ -7,6 +7,7 @@ import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_R
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
+import { fittedAbyssalIds } from '../lib/variation-items.js';
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
@@ -496,10 +497,11 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
   const _rigsAffected = (slots.rigs ?? []).some(r =>
     r?.typeID && TYPES[r.typeID]?.a?.nullSecModifier != null);
 
-  const updateMod=(secKey,modId,updated,keepOpen=false)=>{
+  const updateMod=(secKey,modId,updated,keepOpen=false,replace=false)=>{
     setSlots(prev=>{
       const sec=[...prev[secKey]],idx=sec.findIndex(m=>m.id===modId);
       if(idx<0)return prev;
+      if(updated.abyssalItemId&&fittedAbyssalIds(prev,modId).has(updated.abyssalItemId))return prev;
       // Loading a charge fans out to every identical module in the rack — but only for things
       // that are actually GROUPED. It used to match on name alone, so two Skirmish Command
       // Bursts always ended up with the same charge and running two different scripts was
@@ -513,7 +515,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
       // of the same ammo now show as two rows (see computeDisplayRows), and a charge change made
       // from one of them must not silently reach into the other. `origAmmo`/`origState` are the OLD
       // values, which is what the row's members still carry at this point.
-      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&isGroupableModule(sec[idx])){
+      if(grouped&&secKey==="high"&&updated.ammo!==undefined&&!replace&&isGroupableModule(sec[idx])){
         const origName=sec[idx].name, origAmmo=sec[idx].ammo, origState=sec[idx].state;
         return{...prev,[secKey]:sec.map(m=>m.name===origName&&m.ammo===origAmmo&&m.state===origState&&isGroupableModule(m)?{...m,...updated,id:m.id}:m)};
       }
@@ -692,7 +694,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
     // (for the browser's "+ Module (x5)" toast) is provably the same set of ids actually filled,
     // not two independent calculations that could drift apart.
     let fillIds=[];
-    if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
+    if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&!modData.abyssalItemId&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
       const match=isTurretWeapon(modData.typeID)?isTurretWeapon:isMissileLauncher;
       const total=(isTurretWeapon(modData.typeID)?ship.turrets:ship.launchers)??0;
       const high=slots.high??[];
@@ -704,7 +706,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
         groupFittedRoom(slots,_cs.groupLimits,modData.typeID)));
       fillIds=high.filter(s=>s.type==="empty"&&s.id!==id).slice(0,roomTotal-1).map(s=>s.id);
     }
-    const clone={name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined};
+    const clone={name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined,abyssalItemId:modData.abyssalItemId??undefined};
     setSlots(prev=>{
       const targets=new Set([id,...fillIds]);
       const next={...prev,[secKey]:prev[secKey].map(m=>targets.has(m.id)?{...m,...clone}:m)};
@@ -1091,7 +1093,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onReplaceMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,false,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)} usedAbyssalIds={fittedAbyssalIds(slots,menuMod.id)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
@@ -1182,6 +1184,7 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
   const [open,setOpen]=useViewMemory("Stats:ammoOpen",false);
   const [rackIdx,setRackIdx]=useViewMemory("Stats:ammoRack",0);
   const [result,setResult]=useState(null);
+  const [gradePreviews,setGradePreviews]=useState({ship:null,choices:{}});
   const racks=useMemo(()=>weaponRacks(slots),[slots]);
   const rack=racks[Math.min(rackIdx,Math.max(0,racks.length-1))];
   // Two keys, and the difference between them is the whole reason this does not flicker. `rackId` is
@@ -1197,7 +1200,7 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
     // tapped vanish and come back, taking the page's scroll position with it. Holding the previous
     // ranking means the only thing that changes is the numbers, a beat later.
     const id=setTimeout(()=>{
-      if(!cancelled){const r=rankAmmo(ship,slots,drones,skills,opts,rack);setResult(r&&{...r,rackId});}
+      if(!cancelled){const r=rankAmmo(ship,slots,drones,skills,opts,rack,true);setResult(r&&{...r,rackId});}
     },0);
     return()=>{cancelled=true;clearTimeout(id);};
   },[ship,slots,drones,skills,opts,rackKey]);// eslint-disable-line react-hooks/exhaustive-deps
@@ -1206,13 +1209,26 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
   if(!rack||!result||result.rackId!==rackId)return null;
 
   const {rows,targeted}=result;
-  const best=rows.find(r=>r.best);
+  const displayRows=rows.map(row=>{
+    const variants=row.variants??[row];
+    const choice=gradePreviews.ship===ship?gradePreviews.choices[`${rackId}|${row.name}`]:null;
+    const shown=variants.find(v=>v.name===choice)??variants.find(v=>v.name===rack.ammo)??variants.find(v=>v.name===row.name)??row;
+    return {...shown,rowKey:row.name,variants};
+  });
+  const missileRows=rows.filter(r=>r.missile);
+  const missilePresets=missileRows.length?[
+    {kind:'navy',label:t("NAVY")},
+    {kind:'damage',label:t("T2 damage")},
+    {kind:'application',label:t("T2 application")},
+    {kind:'range',label:t("T2 range")},
+  ].filter(p=>missileRows.every(r=>r.variants.some(v=>v.previewKind===p.kind))):[];
+  const best=targeted?displayRows.reduce((a,b)=>!a||b.dps>a.dps?b:a,null):null;
   const fmt=n=>n>=100?n.toFixed(0):n.toFixed(1);
   // What is in the guns RIGHT NOW, which is not the same thing as `row.loaded` — that is a snapshot
   // from the last sweep and is a beat behind. `rack` is rebuilt from `slots` every render, so reading
   // the marker off it moves the highlight on the tap instead of when the recalculation lands.
   const isLoaded=r=>r.name===rack.ammo;
-  const loadedRow=rows.find(isLoaded);
+  const loadedRow=rows.flatMap(r=>r.variants??[r]).find(isLoaded);
   const loadedName=loadedRow?.label??result.loadedName;
   // The reach the rack actually has right now. It belongs on the collapsed line because it is the
   // other half of what the loaded round decides — the list below shows it per row, but a closed card
@@ -1279,6 +1295,25 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
             {r.name} ×{r.mounts.length}
           </button>))}
       </div>}
+      {missilePresets.length>1&&<div role="group" aria-label={t("Preview missile ammo")}
+        style={{display:"flex",gap:6,padding:"8px 12px",flexWrap:"wrap"}}>
+        {missilePresets.map(p=>{
+          const selected=missileRows.every(row=>displayRows.find(r=>r.rowKey===row.name)?.previewKind===p.kind);
+          return <button key={p.kind} type="button" aria-pressed={selected}
+            onClick={()=>{
+              haptic();
+              setGradePreviews(prev=>{
+                const choices={...(prev.ship===ship?prev.choices:{})};
+                for(const row of missileRows)choices[`${rackId}|${row.name}`]=row.variants.find(v=>v.previewKind===p.kind).name;
+                return {ship,choices};
+              });
+            }}
+            style={{padding:"7px 9px",minHeight:32,fontSize:10,fontWeight:700,borderRadius:6,cursor:"pointer",
+              color:selected?C.accent:C.textMute,background:selected?C.accentLight:C.surface,border:`1px solid ${selected?C.accent:C.border}`}}>
+            {p.label}
+          </button>;
+        })}
+      </div>}
       {/* The delta column only exists WITH a target — there is nothing to be a delta from otherwise —
           so it is dropped rather than reserved, and the numbers move out to the edge. Reserving it
           left a column of blank against the right rule on every untargeted list. */}
@@ -1289,13 +1324,10 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
         <span style={{width:64,textAlign:"right"}}>{t("dps")} · {t("vol")}</span>
         {targeted&&<span style={{width:36,flexShrink:0}}/>}
       </div>
-      {rows.map(r=>{
+      {displayRows.map(r=>{
         const range=ammoRange(r);
         const on=isLoaded(r),d=deltaOf(r);
-        // Grade as a badge rather than as words in the name. Only navy faction survives the ranking,
-        // so Faction here always means navy, and T1 gets nothing — an unmarked row IS the plain
-        // round, and a list where most rows carry a badge does not need the majority case labelled.
-        const tier=r.meta==="T2"?"T2":r.meta==="Faction"?t("NAVY"):null;
+        const tier=r.grade==='NAVY'?t("NAVY"):r.grade??r.meta;
         const tierCol=META_COLORS[r.meta]??C.textMute;
         // The two T2 lines, coloured onto the word that names them: "Scourge Fury" in the same amber
         // the T2 badge uses, "Scourge Precision" in blue. Colour rather than a second badge because
@@ -1314,14 +1346,24 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
         const nm=r.short??r.label??r.name;
         const cut=lineCol?nm.lastIndexOf(" "):-1;
         return(
-        <div key={r.name} onClick={()=>load(r)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px 6px 8px",cursor:"pointer",
+        <div key={r.rowKey} onClick={()=>load(r)} style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px 6px 8px",cursor:"pointer",
           borderTop:`1px solid ${C.border}55`,background:on?`${C.accentLight}66`:"transparent"}}>
           <DamageSpine split={r.dmg}/>
-          <span style={{width:10,fontSize:9,color:on?C.accent:(r.best?(C.good??"#22c55e"):"transparent")}}>{on?"◉":(r.best?"★":"·")}</span>
-          <span style={{flex:1,minWidth:0,fontSize:10.5,fontWeight:on?800:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+          <span style={{width:10,fontSize:9,color:on?C.accent:(r.name===best?.name?(C.good??"#22c55e"):"transparent")}}>{on?"◉":(r.name===best?.name?"★":"·")}</span>
+          <span title={r.name} style={{flex:1,minWidth:0,fontSize:10.5,lineHeight:"13px",fontWeight:on?800:600,color:C.text,overflowWrap:"anywhere"}}>
             {cut>0?<>{nm.slice(0,cut+1)}<span style={{color:lineCol}}>{nm.slice(cut+1)}</span></>:nm}
           </span>
-          {tier&&<span style={{fontSize:10.5,fontWeight:800,letterSpacing:.4,color:tierCol,flexShrink:0}}>{tier}</span>}
+          {r.variants.length>1?<button type="button"
+            title={t("Preview next ammo grade")}
+            aria-label={t("Preview next ammo grade")+": "+r.name}
+            onClick={e=>{
+              e.stopPropagation();haptic();
+              const next=r.variants[(r.variants.findIndex(v=>v.name===r.name)+1)%r.variants.length];
+              setGradePreviews(prev=>({ship,choices:{...(prev.ship===ship?prev.choices:{}),[`${rackId}|${r.rowKey}`]:next.name}}));
+            }}
+            style={{fontSize:9,fontWeight:800,color:tierCol,flexShrink:0,minWidth:51,minHeight:32,padding:"4px 3px",border:`1px solid ${C.border}`,borderRadius:5,background:C.surface,cursor:"pointer"}}>
+            {tier} ↻
+          </button>:<span style={{fontSize:10.5,fontWeight:800,letterSpacing:.4,color:tierCol,flexShrink:0}}>{tier}</span>}
           {/* The columns sit in a FIXED order in both modes; only the weight moves. Swapping which
               column held which number bought a bold headline but cost the reader the ability to scan
               one column down the list, and there is no room for a third arrangement now that volley

@@ -99,3 +99,35 @@ public client / PKCE. Two of its settings are mirrored in this repo and must sta
   existing tokens, so every already-logged-in character has to log in again to pick it up.
 
 Changing the client ID or either callback is a re-registration, not an edit.
+
+## My Abyssals
+
+Open an empty module slot and choose **My Abyssals**. Connect a character with
+`esi-assets.read_assets.v1`, scan its personal assets, then select the containers
+or locations to import. Existing logins need a new grant for this optional scope.
+The importing character is selected separately from the fitted pilot. Import each
+storage character to browse their modules together, including characters on other accounts.
+
+Axis reads every asset page before updating availability and fetches each new
+module's original type, mutaplasmid, and raw rolled attributes through
+`/dogma/dynamic/items/{type_id}/{item_id}/`. Rolls are keyed by unique item ID:
+importing a transferred item updates its owner and location while preserving its
+label and favorite. Missing items remain in the library with a warning. ESI asset
+caching can delay ownership and location changes by about an hour. Unresolved
+locations display their IDs. Corporate assets and abyssal drones are not included.
+
+The library is stored locally in IndexedDB `axis-abyssals`, independently of
+character login and fit storage. Imports save in batches of 20 so large imports
+can resume after cancellation. Fitting copies the raw roll into the fit; refreshing
+the library cannot change an existing fit. The same owned item cannot be added
+twice through the library picker in one fit.
+
+The current fit backup does not include the library or its labels and favorites.
+Fitted rolls are embedded in saved fits and retain the existing fit backup behavior.
+
+Implementation: `abyssal-library.js` handles conversion and merging,
+`abyssal-import.js` handles ESI scanning and retries, `abyssal-store.js` handles
+storage, and `components/abyssal-library.jsx` provides the picker. Regression
+fixtures cover pagination, raw attribute precision, transfers, missing items,
+duplicate imports, failures, and cancellation. Live account authorization and
+inventory import still need device testing.

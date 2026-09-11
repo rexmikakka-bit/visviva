@@ -150,6 +150,39 @@ const isOffNavyFaction = (c) =>
   metaOf(c.typeID, "T1") === "Faction" && !NAVY_AMMO_PREFIXES.some((p) => c.name.startsWith(p));
 
 const TURRET_GRADE = { Faction: 0, Storyline: 1, T1: 2 };
+const AMMO_BRANDS = {
+  'Republic Fleet':'R. F.', 'Imperial Navy':'I. N.', 'Caldari Navy':'C. N.', 'Federation Navy':'F. N.',
+  'Arch Angel':'Arch A.', 'Domination':'Domi.', 'Guristas':'Guri.', 'Dread Guristas':'D. G.',
+  'Shadow Serpentis':'S. S.', 'Serpentis':'Serp.', 'Dark Blood':'D. B.', 'Blood':'Blood',
+  'True Sansha':'T. S.', 'Sanshas':'Sanshas',
+};
+const isNavy = c => NAVY_AMMO_PREFIXES.some(p=>c.name.startsWith(p+' '));
+
+// Match an exact T1 name suffix, not just the damage word. Fury, Precision and auto-targeting
+// missiles must never become grades of the ordinary missile, even though their browser group is shared.
+export function ammoGrades(charge, charges) {
+  const base=charges.find(c=>metaOf(c.typeID,'T1')==='T1' &&
+    (charge.name===c.name || charge.name.endsWith(' '+c.name)));
+  if(!base)return [charge];
+  const family=charges.filter(c=>(c.name===base.name || c.name.endsWith(' '+base.name)) &&
+    ['T1','Faction','Storyline'].includes(metaOf(c.typeID,'T1')));
+  const order=c=>isNavy(c)?0:metaOf(c.typeID,'T1')==='T1'?2:1;
+  return family.sort((a,b)=>order(a)-order(b)||damageOf(a.typeID)-damageOf(b.typeID)||a.name.localeCompare(b.name));
+}
+
+function gradeLabel(charge, grades) {
+  const meta=metaOf(charge.typeID,'T1');
+  if(isNavy(charge))return 'NAVY';
+  if(meta!=='Faction')return meta;
+  const strengths=[...new Set(grades.filter(c=>metaOf(c.typeID,'T1')==='Faction'&&!isNavy(c)).map(c=>damageOf(c.typeID)))].sort((a,b)=>a-b);
+  return `PRT ${strengths.indexOf(damageOf(charge.typeID))+1}`;
+}
+
+function abbreviatedAmmo(name) {
+  for(const [brand,short] of Object.entries(AMMO_BRANDS))if(name.startsWith(brand+' '))return short+name.slice(brand.length);
+  return name;
+}
+
 function rowsOfFamily(group) {
   const items = group.items.filter((c) => !isOffNavyFaction(c));
   if (group.range == null) {
@@ -206,7 +239,7 @@ function rackRangeKm(cs, slots, rack) {
  * ~150 ms and a sixteen-row missile one ~215 ms. Too slow for a render pass and fine for an idle
  * callback, which is how the Firepower card drives it.
  */
-export function rankAmmo(ship, slots, drones, skills, opts, rack) {
+export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = false) {
   if (!ship || !rack) return null;
   const targeted = Array.isArray(opts?.targetResists) && opts.targetResists.some((v) => v > 0);
   const dpsOf = (cs) => {
@@ -238,6 +271,21 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack) {
     const base = group.items.reduce(
       (best, c) => (metaOf(c.typeID, "T1") === "T1" ? Math.max(best, damageOf(c.typeID)) : best), 0);
     for (const c of group.items) baseDamage.set(c.name, base);
+    // Missile browser families are damage types. Keep one ordinary-ammo anchor per type,
+    // with T2 damage/application choices in its cycle; auto-targeting remains a separate mechanic.
+    if(cycleGrades && group.range==null && group.order!=null){
+      const anchor=group.items.find(isNavy)??group.items.filter(c=>metaOf(c.typeID,'T1')==='T1')
+        .sort((a,b)=>damageOf(b.typeID)-damageOf(a.typeID))[0];
+      if(anchor){
+        const ordinary=ammoGrades(anchor,group.items);
+        const t2=group.items.filter(c=>metaOf(c.typeID,'T1')==='T2')
+          .sort((a,b)=>damageOf(b.typeID)-damageOf(a.typeID)||a.name.localeCompare(b.name));
+        const grades=[...ordinary.filter(isNavy),...t2,...ordinary.filter(c=>!isNavy(c))];
+        for(const c of grades)seen.add(c.name);
+        picks.push({family:group.family,charge:anchor,grades,missile:true});
+        continue;
+      }
+    }
     for (const c of rowsOfFamily(group)) {
       if (damageOf(c.typeID) <= 0 || seen.has(c.name)) continue;
       seen.add(c.name);
@@ -247,7 +295,7 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack) {
   // The loaded round is the baseline every delta is measured from, so it has to appear even when the
   // grading above would not have picked it — a rack sitting on plain EMP still needs to read its own
   // 133 next to Republic Fleet's 152, or the "+19" has nothing visible to be relative to.
-  if (rack.ammo && !seen.has(rack.ammo)) {
+  if (rack.ammo && !seen.has(rack.ammo) && !(cycleGrades && picks.some(p=>ammoGrades(p.charge,rack.charges).some(c=>c.name===rack.ammo)))) {
     const c = rack.charges.find((x) => x.name === rack.ammo);
     if (c && damageOf(c.typeID) > 0) picks.push({ family: c.name, charge: c });
   }
@@ -256,32 +304,46 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack) {
   // carries names the list never renders — the auto-targeting rounds end "…Heavy Missile I" where
   // everything else ends "…Heavy Missile" — and one of those is enough to leave the whole column
   // untrimmed for rows that do in fact all share a suffix.
-  const label = labelerFor(picks.map((p) => p.charge));
+  const label = labelerFor(picks.flatMap(p=>p.grades??[p.charge]));
 
-  const rows = [];
-  for (const { family, charge } of picks) {
+  const score = (family, charge) => {
     const { slots: trial, charges } = withAmmo(slots, rack, charge);
     const cs = calcFitStats(ship, trial, drones ?? [], skills, opts);
-    if (!cs) continue;
+    if (!cs) return null;
     // Two names, because the two places this is read need different things. `label` keeps the grade
     // words and is what the collapsed one-line recommendation says, where there is no badge and
     // "Fusion would do 304 here" would not name a buyable round. `short` drops them for the list,
     // where the badge beside it already says NAVY.
     const label_ = label(charge.name);
-    rows.push({
+    return {
       family, name: charge.name, label: label_, short: stripNavy(label_), typeID: charge.typeID,
       meta: metaOf(charge.typeID, "T1"), dps: dpsOf(cs), volley: volleyOf(cs), charges,
       dmg: damageSplitOf(charge.typeID), line: lineOf(charge.typeID, baseDamage.get(charge.name) ?? 0),
       ...rackRangeKm(cs, trial, rack),
       loaded: charge.name === rack.ammo,
-    });
-  }
+    };
+  };
+  const rows = picks.map(({family,charge,grades:familyGrades,missile})=>{
+    const row=score(family,charge);
+    if(!row||!cycleGrades)return row;
+    const grades=familyGrades??ammoGrades(charge,rack.charges);
+    row.missile=!!missile;
+    row.variants=grades.map(c=>{
+      const v=c.name===charge.name?{...row}:score(family,c);
+      if(!v)return null;
+      const previewKind=isNavy(c)?'navy':missile&&v.meta==='T2'
+        ?v.line==='dmg'?'damage':v.optimal>row.optimal?'range':'application':null;
+      const grade=previewKind==='damage'?'T2 DMG':previewKind==='range'?'T2 RNG':previewKind==='application'?'T2 APP':gradeLabel(c,grades);
+      return {...v,short:abbreviatedAmmo(v.label),grade,previewKind};
+    }).filter(Boolean);
+    return row;
+  }).filter(Boolean);
   if (!rows.length) return null;
 
   // The loaded round is the baseline every delta is measured from. It can be absent from the ranked
   // rows — an empty gun, or a tier the family swap did not pick — in which case the fit's own
   // current DPS stands in, so an unloaded rack still gets an honest "+412".
-  const current = rows.find((r) => r.loaded);
+  const current = rows.flatMap(r=>r.variants??[r]).find((r) => r.loaded);
   const base = current ? current.dps : dpsOf(calcFitStats(ship, slots, drones ?? [], skills, opts));
   for (const r of rows) r.delta = r.dps - base;
 

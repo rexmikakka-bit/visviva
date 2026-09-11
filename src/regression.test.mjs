@@ -34,7 +34,11 @@ import { targetFitProfile } from './lib/graph-target.js';
 import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
-import { weaponRacks, rankAmmo } from './lib/ammo-compare.js';
+import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
+import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE } from './lib/abyssal-library.js';
+import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel } from './lib/abyssal-browser.js';
+import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems } from './lib/variation-items.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -6601,6 +6605,21 @@ Nanofiber Internal Structure II
   check('ammo', 'and it knows it has six mounts', weaponRacks(arty)[0].mounts.length, 6, 0);
 
   const turret = rank('Maelstrom', arty, ARMOUR);
+  const cycling=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},arty,[],null,ARMOUR,weaponRacks(arty)[0],true);
+  const fusion=cycling.rows.find(r=>r.name==='Republic Fleet Fusion L');
+  check('ammo','Fusion cycles navy, pirate grades, then T1',fusion.variants.map(v=>v.name).join('|'),
+    'Republic Fleet Fusion L|Arch Angel Fusion L|Domination Fusion L|Fusion L');
+  check('ammo','Fusion badges describe the grades',fusion.variants.map(v=>v.grade).join('|'),'NAVY|PRT 1|PRT 2|T1');
+  check('ammo','Fusion names retain abbreviated brands',fusion.variants.map(v=>v.short).join('|'),'R. F. Fusion|Arch A. Fusion|Domi. Fusion|Fusion');
+  check('ammo','pirate preview has its own damage',fusion.variants[2].dps>fusion.variants[0].dps?1:0,1,0);
+  check('ammo','T1 preview has its own damage',fusion.variants[3].dps<fusion.variants[0].dps?1:0,1,0);
+  check('ammo','preview grades preserve the actual baseline',cycling.base,turret.base,0.0001);
+  check('ammo','loaded T1 does not create a duplicate family row',cycling.rows.filter(r=>r.variants.some(v=>v.name==='EMP L')).length,1,0);
+  check('ammo','calculating previews does not load ammo',arty.high.every(m=>m.ammo==='EMP L')?1:0,1,0);
+  check('ammo','T2 artillery rounds stay separate',cycling.rows.find(r=>r.name==='Quake L').variants.length,1,0);
+  const pirateSlots=gun('1400mm Howitzer Artillery II','Domination Fusion L',6);
+  const pirateRank=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},pirateSlots,[],null,ARMOUR,weaponRacks(pirateSlots)[0],true);
+  check('ammo','loaded pirate is found within its family',pirateRank.rows.flatMap(r=>r.variants).filter(v=>v.loaded).map(v=>v.name).join(','),'Domination Fusion L');
   const tNames = turret.rows.map(r => r.label);
   // TURRETS: one row per family, at the best grade. The navy round replaces the T1 one — showing
   // both spends a row on a decision nobody makes, since navy carries the same range multiplier and
@@ -6693,7 +6712,31 @@ Nanofiber Internal Structure II
   // I") falls to the T1 rule above and the faction line ("Legion Scourge Auto-Targeting Heavy
   // Missile") to the navy-prefix rule, which is why neither needs a test of its own.
   const heavy = rank('Caracal', gun('Heavy Missile Launcher II', 'Scourge Fury Heavy Missile', 5), ARMOUR);
+  const heavyCharges=weaponRacks(gun('Heavy Missile Launcher II','Scourge Fury Heavy Missile',5))[0].charges;
+  const missileGrades=name=>ammoGrades(heavyCharges.find(c=>c.name===name),heavyCharges).map(c=>c.name);
+  check('ammo','Fury is not a grade of ordinary Scourge',missileGrades('Scourge Fury Heavy Missile').join(','),'Scourge Fury Heavy Missile');
+  check('ammo','navy Scourge cycles only its ordinary grades',missileGrades('Caldari Navy Scourge Heavy Missile').every(n=>!n.includes('Auto-Targeting')&&!n.includes('Fury')&&!n.includes('Precision'))?1:0,1,0);
+  check('ammo','navy Scourge can preview pirate ammo',missileGrades('Caldari Navy Scourge Heavy Missile').includes('Dread Guristas Scourge Heavy Missile')?1:0,1,0);
   const hNames = heavy.rows.map(r => r.label);
+  // Compact missile rows retain every combat variant and use the real loaded round as baseline.
+  const heavySlots=gun('Heavy Missile Launcher II','Scourge Fury Heavy Missile',5);
+  const compactHeavy=rankAmmo({typeID:tid('Caracal'),name:'Caracal'},heavySlots,[],null,ARMOUR,weaponRacks(heavySlots)[0],true);
+  check('ammo','compact heavy missiles have four damage rows',compactHeavy.rows.length,4,0);
+  check('ammo','each damage type has one stable row',new Set(compactHeavy.rows.map(r=>r.family)).size,4,0);
+  const scourgeCycle=compactHeavy.rows.find(r=>r.name==='Caldari Navy Scourge Heavy Missile').variants;
+  check('ammo','missile cycle starts navy, damage, application',scourgeCycle.slice(0,3).map(v=>v.grade).join('|'),'NAVY|T2 DMG|T2 APP');
+  check('ammo','missile cycle retains pirates and T1',scourgeCycle.some(v=>v.grade==='PRT 2')&&scourgeCycle.some(v=>v.grade==='T1')?1:0,1,0);
+  check('ammo','T2 loaded baseline survives consolidation',compactHeavy.base,heavy.base,0.0001);
+  check('ammo','only the equipped variant is marked loaded',compactHeavy.rows.flatMap(r=>r.variants).filter(v=>v.loaded).map(v=>v.name).join(','),'Scourge Fury Heavy Missile');
+  check('ammo','all damage types support the shared heavy presets',compactHeavy.rows.every(r=>['navy','damage','application'].every(k=>r.variants.some(v=>v.previewKind===k)))?1:0,1,0);
+  check('ammo','compact calculation leaves fitted ammo alone',heavySlots.high.every(s=>s.ammo==='Scourge Fury Heavy Missile')?1:0,1,0);
+  const compactHam=rankAmmo({typeID:tid('Cerberus'),name:'Cerberus'},ham,[],null,ARMOUR,weaponRacks(ham)[0],true);
+  check('ammo','compact HAMs have four damage rows',compactHam.rows.length,4,0);
+  check('ammo','Javelin is a range preview',compactHam.rows.every(r=>r.variants.some(v=>v.previewKind==='range'&&v.label.includes('Javelin')))?1:0,1,0);
+  check('ammo','Rage is a damage preview',compactHam.rows.every(r=>r.variants.some(v=>v.previewKind==='damage'&&v.label.includes('Rage')))?1:0,1,0);
+  const t1Launcher=gun('Heavy Missile Launcher I','Scourge Heavy Missile',4);
+  const compactT1=rankAmmo({typeID:tid('Caracal'),name:'Caracal'},t1Launcher,[],null,ARMOUR,weaponRacks(t1Launcher)[0],true);
+  check('ammo','T1 launchers never offer incompatible T2 ammo',compactT1.rows.flatMap(r=>r.variants).some(v=>v.meta==='T2')?1:0,0,0);
   check('ammo', 'auto-targeting rounds are left out',
         hNames.some(n => n.includes('Auto-Targeting')) ? 1 : 0, 0, 0);
   check('ammo', 'and so is the Legion line', hNames.some(n => n.startsWith('Legion')) ? 1 : 0, 0, 0);
@@ -6747,6 +6790,135 @@ Nanofiber Internal Structure II
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Personal abyssal inventory: exact rolls, complete scans, multi-character ownership and retries.
+{
+  const character={characterId:1001,characterName:'Storage pilot',scopes:[ASSET_SCOPE]};
+  const container={item_id:9001,type_id:3293,location_id:60003760,location_type:'station',is_singleton:true};
+  const asset={item_id:99001,type_id:47408,location_id:9001,location_type:'item',is_singleton:true};
+  const payload={source_type_id:5975,mutator_type_id:47297,dogma_attributes:[
+    {attribute_id:6,value:123.456789},{attribute_id:20,value:555.123456},
+    {attribute_id:30,value:140.001},{attribute_id:50,value:34.56789},{attribute_id:554,value:-20.12345}]};
+  const names={9001:'Abyssal stock',60003760:'Jita'},assets=[container,asset];
+  const location=assetLocation(asset,new Map(assets.map(a=>[a.item_id,a])),names);
+  check('abyssal','container ancestry resolves to station',location,'Jita / Abyssal stock');
+  check('abyssal','only mutated singleton modules are candidates',abyssalAssets([...assets,{...asset,item_id:9,is_singleton:false}]).length,1,0);
+  const record=dynamicItemToModule(asset,payload,character,location,1234);
+  check('abyssal','uses original module rather than result shell',record.typeID,5975,0);
+  check('abyssal','stores exact rolled CPU',record.mutations.cpu,34.56789,0);
+  check('abyssal','keeps negative rolls',record.mutations.signatureRadiusBonus,-20.12345,0);
+  let rejected=false;try{dynamicItemToModule(asset,{...payload,dogma_attributes:[]},character,location);}catch{rejected=true;}
+  check('abyssal','incomplete rolls are rejected',rejected?1:0,1,0);
+  const fitted=libraryModule(record);fitted.mutations.cpu=1;
+  check('abyssal','fitting copies rather than edits library attributes',record.mutations.cpu,34.56789,0);
+  check('abyssal','fitting retains inventory identity',fitted.abyssalItemId,'99001');
+  const labeled={...record,label:'Fast one',favorite:true};
+  const absent=mergeAbyssalScan([labeled],[],[],character);
+  check('abyssal','missing modules remain saved',absent.length,1,0);
+  check('abyssal','missing modules are flagged',absent[0].available?1:0,0,0);
+  const other={characterId:1002,characterName:'Combat pilot',scopes:[ASSET_SCOPE]};
+  const moved={...record,characterId:other.characterId,characterName:other.characterName};
+  const transferred=mergeAbyssalScan([labeled],[moved],assets,other,names);
+  check('abyssal','character transfers deduplicate by item ID',transferred.length,1,0);
+  check('abyssal','new owner is recorded',transferred[0].characterId,1002,0);
+  check('abyssal','transfers retain personal labels',transferred[0].label,'Fast one');
+  check('abyssal','scanning one character preserves another',mergeAbyssalScan(transferred,[],[],character)[0].available?1:0,1,0);
+  const calls=[];
+  const api={assets:async(id,page)=>{calls.push(page);return {items:page===1?[container]:[asset],pages:2};},
+    names:async()=>[{item_id:9001,name:'Abyssal stock'}],station:async()=>({name:'Jita'}),dynamic:async()=>payload};
+  const scan=await scanAbyssals(character,{api});
+  check('abyssal','scan fetches all asset pages',calls.join(','),'1,2');
+  check('abyssal','scan finds modules inside containers',scan.candidates.length,1,0);
+  let saved=[];
+  const report=await importAbyssals(scan,['9001'],[],{api,onBatch:async batch=>{saved.push(...batch);}});
+  check('abyssal','bulk import saves actual rolls',saved[0].mutations.cpu,34.56789,0);
+  check('abyssal','bulk import reports success',report.imported,1,0);
+  let fetches=0;
+  await importAbyssals(scan,['9001'],saved,{api:{...api,dynamic:async()=>{fetches++;return payload;}}});
+  check('abyssal','refresh reuses immutable cached rolls',fetches,0,0);
+  const unselected=await importAbyssals(scan,[],[],{api});
+  check('abyssal','unselected containers are not imported',unselected.imported,0,0);
+  const failed=await importAbyssals(scan,['9001'],[],{api:{...api,dynamic:async()=>{throw Object.assign(new Error('gone'),{status:404});}}});
+  check('abyssal','unavailable roll is reported without inventing stats',failed.failures.length,1,0);
+  let partialRejected=false;
+  try{await scanAbyssals(character,{api:{...api,assets:async(id,page)=>{if(page===2)throw Object.assign(new Error('denied'),{status:403});return {items:[container],pages:2};}}});}catch{partialRejected=true;}
+  check('abyssal','failed asset page never becomes a complete scan',partialRejected?1:0,1,0);
+  const abort=new AbortController();abort.abort();let cancelled=false;
+  try{await importAbyssals(scan,['9001'],[],{api,signal:abort.signal});}catch(e){cancelled=e.name==='AbortError';}
+  check('abyssal','cancel stops before importing items',cancelled?1:0,1,0);
+}
+// Owned browsing must preserve every physical item and the existing market paths.
+{
+  const base={itemId:'one',typeID:5975,name:'Example',slot:'mid',characterId:1,characterName:'Alt',locationId:'10',location:'Jita / Stock'};
+  const items=[base,{...base,itemId:'two',locationId:'11'},
+    {...base,itemId:'three',characterId:2,characterName:'Pilot'},
+    {...base,itemId:'four',available:false},
+    {...base,itemId:'high',slot:'high'}, {...base,itemId:'rig',slot:'rig'}];
+  check('abyssal-browser','slot filtering excludes other racks',abyssalsForSlot(items,'mid').map(r=>r.itemId).join(','),'one,two,three,four');
+  check('abyssal-browser','rigs picker includes stored rig records',abyssalsForSlot(items,'rigs')[0]?.itemId,'rig');
+  const groups=abyssalContainerGroups(abyssalsForSlot(items,'mid'));
+  check('abyssal-browser','same-named containers and different owners stay distinct',groups.length,3,0);
+  check('abyssal-browser','missing items stay in their last known container',groups.find(g=>g.records.includes(base)).count,2,0);
+  check('abyssal-browser','same-named containers have distinct visible labels',new Set(groups.map(g=>g.name+g.subtitle)).size,3,0);
+  const renamed=abyssalContainerGroups([{...base,location:'Renamed',characterName:'Renamed pilot'}]);
+  check('abyssal-browser','container identity survives display-name changes',renamed[0].id,groups.find(g=>g.records.includes(base)).id);
+  const unknown={...base,itemId:'off-market',typeID:-1};
+  const tree=abyssalMarketGroups([...abyssalsForSlot(items,'mid'),unknown],REAL_MODULE_BROWSER.mid);
+  const flattened=nodes=>nodes.flatMap(n=>[...n.records,...flattened(n.children)]);
+  check('abyssal-browser','market tree preserves all rolls of a base type',flattened(tree).filter(r=>r.typeID===5975).length,4,0);
+  check('abyssal-browser','off-market record remains browsable',tree.find(n=>n.other)?.records[0].itemId,'off-market');
+  check('abyssal-browser','category counts count physical items',tree.reduce((n,g)=>n+g.count,0),5,0);
+  const pathTo=(nodes,typeID,path=[])=>{for(const n of nodes){if(n.mods.some(m=>m.typeID===typeID))return [...path,n.id];const found=pathTo(n.children,typeID,[...path,n.id]);if(found)return found;}};
+  const path=pathTo(REAL_MODULE_BROWSER.mid,5975);
+  check('abyssal-browser','standard category breadcrumb survives an empty owned library',abyssalBrowseLevel(REAL_MODULE_BROWSER.mid,path).breadcrumb.map(n=>n.id).join(','),path.join(','));
+  check('abyssal-browser','owned item follows the exact standard browser path',abyssalBrowseLevel(tree,path).records.includes(base)?1:0,1,0);
+  check('abyssal-browser','removed favorite leaves empty category rather than other items',abyssalBrowseLevel(abyssalMarketGroups([],REAL_MODULE_BROWSER.mid),path).records.length,0,0);
+  check('abyssal-browser','grouping does not mutate source record order',items.map(r=>r.itemId).join(','),'one,two,three,four,high,rig');
+  // Totality over the actual catalog catches omitted / duplicated branches, including
+  // synthetic propulsion-size groups, without hard-coding a catalog size.
+  for(const [slot,nodes] of Object.entries(REAL_MODULE_BROWSER)){
+    const collect=ns=>ns.flatMap(n=>[...n.mods,...collect(n.children)]);
+    const catalog=[...new Map(collect(nodes).map(m=>[m.typeID,m])).values()];
+    const records=catalog.map(m=>({...base,typeID:m.typeID,itemId:String(m.typeID),slot}));
+    const result=flattened(abyssalMarketGroups(records,nodes));
+    check('abyssal-browser',`${slot}: every catalog type is reachable exactly once`,result.map(r=>r.itemId).sort().join(','),records.map(r=>r.itemId).sort().join(','));
+  }
+}
+// Instance-aware comparisons: identical type IDs do not mean identical physical rolls.
+{
+  const baseline={name:'Warp Disruptor II',typeID:3244,mutaplasmid:47297,abyssalItemId:'fitted',mutations:{maxRange:25000,cpu:40,speedMultiplier:.9}};
+  const record=(itemId,range,cpu)=>({itemId,typeID:3244,name:baseline.name,mutaplasmid:47297,mutations:{maxRange:range,cpu,speedMultiplier:.8},characterId:1,characterName:'Alt',locationId:'1',location:'Jita'});
+  const owned=[record('fitted',99999,99),record('long',30000,44),record('short',20000,35),{...record('unrelated',40000,40),typeID:5975}];
+  const result=variationItems([{name:baseline.name,typeID:3244}],baseline,owned);
+  check('variations-owned','each roll and the stock base have distinct identities',new Set(result.rows.map(r=>r.key)).size,4,0);
+  check('variations-owned','refresh cannot replace the fitted snapshot',result.rows[0].values.maxRange,25000,0);
+  check('variations-owned','exact candidate minus fitted range',result.rows.find(r=>r.key==='owned:long').stats.find(s=>s.key==='maxRange').delta,5000,0);
+  check('variations-owned','candidate CPU uses the roll',result.rows.find(r=>r.key==='owned:short').values.cpu,35,0);
+  check('variations-owned','outside-family records excluded',result.rows.some(r=>r.key==='owned:unrelated')?1:0,0,0);
+  check('variations-owned','attributes include variation between rolls of one base',result.attributes.includes('maxRange')?1:0,1,0);
+  const byRange=sortCompareRows(result.rows,{by:'maxRange',dir:'desc'});
+  check('variations-owned','baseline remains pinned for attribute sort',byRange[0].key,'fitted');
+  check('variations-owned','longest roll sorts ahead of shorter',byRange.indexOf(result.rows.find(r=>r.key==='owned:long'))<byRange.indexOf(result.rows.find(r=>r.key==='owned:short'))?1:0,1,0);
+  for(const dir of ['asc','desc']){
+    const priceSorted=sortCompareRows(result.rows,{by:'price',dir,prices:new Map([[3244,123]])});
+    check('variations-owned',`${dir}: owned rolls never inherit the base market price`,priceSorted[1].key,'stock:3244');
+    const unknown=sortCompareRows([{key:'known',values:{maxRange:1}},{key:'missing',values:{}}],{by:'maxRange',dir});
+    check('variations-owned',`${dir}: missing attribute stays last`,unknown[1].key,'missing');
+  }
+  const displaySorted=sortCompareRows([{key:'fast',values:{speedMultiplier:.8}},{key:'slow',values:{speedMultiplier:.9}}],{by:'speedMultiplier',dir:'desc',toDisplay:(_k,v)=>(1/v-1)*100});
+  check('variations-owned','sort follows displayed rate of fire rather than inverted raw multiplier',displaySorted[0].key,'fast');
+  const copied=variationRoll(result.rows.find(r=>r.key==='owned:long').mod);copied.mutations.maxRange=1;
+  check('variations-owned','swapping copies the roll instead of mutating library data',owned[1].mutations.maxRange,30000,0);
+  const stock={...baseline,...variationRoll({name:baseline.name,typeID:3244})};
+  check('variations-owned','returning to stock clears the old roll and physical identity',!stock.mutations&&!stock.mutaplasmid&&!stock.abyssalItemId?1:0,1,0);
+  const occupied=fittedAbyssalIds({high:[{id:1,abyssalItemId:'one'}],mid:[{id:2,abyssalItemId:'two'}]},1);
+  check('variations-owned','duplicate check excludes only the slot being replaced',[...occupied].join(','),'two');
+  check('variations-owned','hiding abyssals preserves fitted roll and stock alternatives',filterVariationItems(result.rows,false).map(r=>r.key).join(','),'fitted,stock:3244');
+  const otherOwner={...result.rows.find(r=>r.key==='owned:long'),key:'other-owner',record:{...record('other',31000,44),characterId:2}};
+  const scoped=filterVariationItems([...result.rows,otherOwner],true,JSON.stringify(['1','1']));
+  check('variations-owned','container scope uses owner and location identities',scoped.some(r=>r.key==='other-owner')?1:0,0,0);
+  check('variations-owned','container scope retains its matching physical rolls',scoped.filter(r=>r.key.startsWith('owned:')).length,2,0);
+  check('variations-owned','missing container still retains baseline and stock',filterVariationItems(result.rows,true,'missing').map(r=>r.key).join(','),'fitted,stock:3244');
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
