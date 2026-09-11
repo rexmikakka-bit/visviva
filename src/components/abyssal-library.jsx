@@ -7,7 +7,7 @@ import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-librar
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
 
-export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attributeLabel}){
+export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attributeLabel,renderRow}){
   const [records,setRecords]=useState([]),[characters,setCharacters]=useState(listCharacters);
   const [characterId,setCharacterId]=useState(''),[scan,setScan]=useState(null),[selected,setSelected]=useState([]);
   const [busy,setBusy]=useState(false),[progress,setProgress]=useState(null),[error,setError]=useState(''),[report,setReport]=useState(null);
@@ -56,9 +56,11 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
   });
   const fitted=new Set(Object.values(slots??{}).flatMap(v=>Array.isArray(v)?v:[]).map(m=>m?.abyssalItemId).filter(Boolean));
   const button={padding:'9px 12px',borderRadius:7,border:`1px solid ${C.border}`,background:C.surfaceAlt,color:C.text,cursor:'pointer',fontSize:12};
-  const input={...button,width:'100%',boxSizing:'border-box',fontSize:16};
-  return <div style={{padding:12,color:C.text,fontSize:12}}>
-    <p style={{marginTop:0,color:C.textMute}}>{t('Import your rolled modules from EVE. Saved rolls stay available offline.')}</p>
+  const input={...button,minWidth:0,boxSizing:'border-box',fontSize:12,padding:'6px 8px'};
+  return <div style={{color:C.text,fontSize:12}}>
+    <details open={records.length===0||busy||!!error} style={{padding:'10px 16px',borderBottom:`1px solid ${C.border}`}}>
+    <summary style={{color:C.accent,cursor:'pointer',fontWeight:600}}>{t('Import')} · {character?.characterName}</summary>
+    <p style={{color:C.textMute}}>{t('Import your rolled modules from EVE. Saved rolls stay available offline.')}</p>
     <select aria-label={t('Character')} style={input} disabled={busy||!characters.length} value={String(character?.characterId??'')}
       onChange={e=>{setCharacterId(e.target.value);setScan(null);setReport(null);}}>
       {!characters.length&&<option value="">{t('No linked characters')}</option>}
@@ -88,7 +90,9 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
       </label>)}
       <button style={button} disabled={busy||(locations.size>0&&!selected.length)} onClick={importSelected}>{t('Import selected locations')}</button>
     </details>}
-    <div style={{display:'flex',gap:12,margin:'12px 0',flexWrap:'wrap'}}>
+    </details>
+    <div style={{padding:'8px 16px',borderBottom:`1px solid ${C.border}`}}>
+    <div style={{display:'flex',gap:12,margin:'4px 0 8px',flexWrap:'wrap'}}>
       <label><input type="checkbox" checked={allSlots} onChange={e=>{setAllSlots(e.target.checked);setTypeFilter('');}}/> {t('All slot types')}</label>
       <label><input type="checkbox" checked={favorites} onChange={e=>setFavorites(e.target.checked)}/> {t('Favorites')}</label>
     </div>
@@ -101,28 +105,35 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,formatValue,attri
       </select>
       <button style={button} aria-label={t('Reverse sort order')} onClick={()=>setDescending(d=>!d)}>{descending?'↓':'↑'}</button>
     </div>
-    <p style={{color:C.textMute}}>{t('Saved modules')}: {filtered.length}</p>
+    <div style={{fontSize:10,color:C.textMute}}>{t('Saved modules')}: {filtered.length}</div>
+    </div>
     {!filtered.length&&<p>{t('No saved modules match this slot or search.')}</p>}
     {filtered.slice(0,limit).map(item=>{
       const compatible=item.slot===slotType||(item.slot==='rig'&&slotType==='rigs');
-      return <div key={item.itemId} style={{padding:'12px 0',borderTop:`1px solid ${C.border}`}}>
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <button style={{...button,flex:1,textAlign:'left'}} onClick={()=>setExpanded(expanded===item.itemId?null:item.itemId)}>{item.label||item.name}<br/><small>#{item.itemId}</small></button>
-          <button style={button} disabled={busy} aria-label={t('Favorite')} aria-pressed={!!item.favorite} onClick={()=>edit(item,{favorite:!item.favorite})}>{item.favorite?'★':'☆'}</button>
-          <button style={button} disabled={!compatible||fitted.has(item.itemId)||busy} onClick={()=>onSelect(libraryModule(item))}>{fitted.has(item.itemId)?t('Fitted'):t('Fit')}</button>
-        </div>
-        <div style={{marginTop:6,color:C.textMute,overflowWrap:'anywhere'}}>{item.characterName} · {item.location}</div>
-        {!item.available&&<div style={{color:C.danger}}>{t('Not found in last asset scan')}</div>}
-        {expanded===item.itemId&&<>
-          <p>{item.name} · {t('Last seen')}: {new Date(item.lastSeen).toLocaleString()}</p>
-          <input aria-label={t('Label')} placeholder={t('Label')} style={input} disabled={busy} defaultValue={item.label??''} maxLength={120}
-            onBlur={e=>{if(e.target.value!==(item.label??''))edit(item,{label:e.target.value});}}/>
-        </>}
-        <div style={{display:'grid',gridTemplateColumns:'1fr auto',gap:5,marginTop:8}}>
-          {Object.entries(item.mutations).filter(([a])=>expanded===item.itemId||a===sort||['cpu','power','maxRange','speedFactor','maxVelocityBonus','shieldBonus','armorDamageAmount'].includes(a)).map(([a,v])=>
-            <div key={a} style={{display:'contents'}}><span style={{color:C.textMute}}>{attributeLabel(a)}</span><span>{formatValue(a,v)}</span></div>)}
-        </div>
-      </div>;
+      const isFitted=fitted.has(item.itemId);
+      return <div key={item.itemId}>{renderRow({
+        mod:{...libraryModule(item),name:item.label||item.name},
+        disabled:!compatible||isFitted||busy,
+        onAdd:()=>onSelect(libraryModule(item)),
+        onInfo:()=>setExpanded(expanded===item.itemId?null:item.itemId),
+        subtitle:`${isFitted?t('Fitted')+' · ':''}${item.characterName} · ${item.location}`,
+        children:<>
+          {!item.available&&<div style={{color:C.danger,fontSize:10,marginTop:4}}>{t('Not found in last asset scan')}</div>}
+          <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,fontSize:10}}>
+            {Object.entries(item.mutations).filter(([a])=>!['cpu','power'].includes(a)).map(([a,v])=>
+              <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
+          </div>
+          {expanded===item.itemId&&<div style={{paddingTop:8}}>
+            <div style={{color:C.textMid,fontSize:11,overflowWrap:'anywhere'}}>{item.name} · #{item.itemId}</div>
+            <div style={{color:C.textMute,fontSize:10,margin:'4px 0 8px'}}>{item.characterName} · {item.location}<br/>{t('Last seen')}: {new Date(item.lastSeen).toLocaleString()}</div>
+            <div style={{display:'flex',gap:8}}>
+              <input aria-label={t('Label')} placeholder={t('Label')} style={{...input,flex:1}} disabled={busy} defaultValue={item.label??''} maxLength={120}
+                onBlur={e=>{if(e.target.value!==(item.label??''))edit(item,{label:e.target.value});}}/>
+              <button style={button} disabled={busy} aria-label={t('Favorite')} aria-pressed={!!item.favorite} onClick={()=>edit(item,{favorite:!item.favorite})}>{item.favorite?'★':'☆'}</button>
+            </div>
+          </div>}
+        </>
+      })}</div>;
     })}
     {filtered.length>limit&&<button style={button} onClick={()=>setLimit(n=>n+40)}>{t('Show more')}</button>}
   </div>;

@@ -13,6 +13,12 @@
 > (`lib/storage-migrate.js`). Saved fits were always `pyfa-*` and were untouched. Backup files now
 > tag `"app": "axis"` but `isBackupApp()` still accepts `"visviva"`, so old backups restore.
 
+## Current work handoff
+
+Before continuing the abyssal module work, read [docs/abyssal-handoff.md](docs/abyssal-handoff.md).
+It records the tested iOS build, newer browser styling, local preview, and Owen's decisions for future work.
+The active feature branch is `codex/abyssal-library`; it is not merged into `main`.
+
 A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It implements EVE's dogma
 system in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
 numbers disagree with pyfa, we are wrong until proven otherwise.

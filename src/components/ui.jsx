@@ -627,10 +627,11 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
 // whenever the browser re-renders. Tapping a row with the keyboard up blurs the search input, which
 // re-renders the sheet BETWEEN touchstart and click — the row's node was replaced mid-tap, so the
 // click had no surviving target and the first tap on a module only collapsed the keyboard.
-function ModRow({mod,onAdd,onInfo,headroom}){
+function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,children}){
   const rowMeta=metaOf(mod.typeID,mod.meta);
+  const grade=mod.mutations?abyssalGrade(mod.mutaplasmid):null;
   return(
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",padding:"12px 16px",borderBottom:`1px solid ${C.border}`}}>
       {/* preventDefault on mousedown keeps the keyboard up while you fill a rack. Blurring the
           focused input is the DEFAULT ACTION of pressing another element, so cancelling it holds
           focus in the search box and the click still fires normally. Without this, adding a module
@@ -639,7 +640,7 @@ function ModRow({mod,onAdd,onInfo,headroom}){
           deliberately: by scrolling the list (BottomSheet's dismissKeyboardOnScroll) or by the
           chevron in the search bar. Not on the info button beside this — that opens a detail sheet
           over the whole browser, where the keyboard has nothing left to type into. */}
-      <div onClick={()=>onAdd(mod)} onMouseDown={e=>e.preventDefault()} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+      <div role="button" title={disabled?undefined:t("Fit")} tabIndex={disabled?-1:0} aria-disabled={disabled} onKeyDown={e=>{if(!disabled&&(e.key==="Enter"||e.key===" ")){e.preventDefault();onAdd(mod);}}} onClick={()=>{if(!disabled)onAdd(mod);}} onMouseDown={e=>e.preventDefault()} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:10,cursor:disabled?"default":"pointer"}}>
         {/* Fixed-size box, not a bare img: with `display:none` on a failed icon the text jumped
             left and rows stopped lining up with each other. */}
         <div style={{width:28,height:28,flexShrink:0}}>
@@ -648,13 +649,15 @@ function ModRow({mod,onAdd,onInfo,headroom}){
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
           <FitCost item={mod} headroom={headroom}/>
+          {subtitle&&<div style={{fontSize:10,color:C.textMute,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{subtitle}</div>}
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
         <SkillMark typeID={mod.typeID}/>
-        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
+        <span style={{fontSize:11,color:grade?C.danger:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{grade||rowMeta}</span>
         {mod.typeID&&<InfoButton onClick={e=>{e.stopPropagation();onInfo(mod);}}/>}
       </div>
+      {children&&<div style={{width:"100%",paddingLeft:38,boxSizing:"border-box"}}>{children}</div>}
     </div>
   );
 }
@@ -835,7 +838,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
         style={{padding:12,background:C.surfaceAlt,color:C.accent,border:'none',borderBottom:`1px solid ${C.border}`,fontWeight:700,cursor:'pointer'}}>
         {library?t('Back to module browser'):t('My Abyssals')}
       </button>}
-      {library?<AbyssalLibrary slotType={slotType} search={search} onSelect={addMod} slots={slots} formatValue={fmtMutaVal} attributeLabel={mutaLabel}/>:<>
+      {library?<AbyssalLibrary slotType={slotType} search={search} onSelect={addMod} slots={slots} formatValue={fmtMutaVal} attributeLabel={mutaLabel} renderRow={props=><ModRow {...props} headroom={resourceHeadroom}/>}/>:<>
       {!searchResults&&navPath.length>0&&(
         <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; {t("Back")}</button>
@@ -1548,7 +1551,7 @@ const RES_INK = new Proxy({},{ get(_,key){ return { pg:"#e0a44a", cpu:"#5fb8d8",
 // same group (a fifth launcher, a second plate) and best-effort otherwise, which is the common case
 // for the first module of its kind.
 function FitCost({item, size=11, headroom}) {
-  const {cpu,pg,calib} = fitCostParts(item);
+  const {cpu,pg,calib} = fitCostParts(item,item?.mutations);
   const ratio = fitCostRatioOf(headroom, item?.typeID);
   const fits = (key, val) => fitCostFits(headroom?.[key], val, 0, ratio?.[key]);
   // Same glyph size FitCostDelta uses in the Variations tab (no size*0.95 shrink) — at ~10px the
