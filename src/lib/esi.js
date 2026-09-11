@@ -241,11 +241,12 @@ async function getValidAccessToken(characterId) {
   return rec.accessToken;
 }
 
-async function esiRequest(characterId, method, path, body) {
+async function esiRequest(characterId, method, path, body, options = {}) {
   const token = await getValidAccessToken(characterId);
   const sep = path.includes('?') ? '&' : '?';
   const resp = await fetch(`${ESI_BASE}${path}${sep}datasource=tranquility`, {
     method,
+    signal: options.signal,
     headers: {
       Authorization: `Bearer ${token}`,
       ...(body ? { 'Content-Type': 'application/json' } : {}),
@@ -254,9 +255,20 @@ async function esiRequest(characterId, method, path, body) {
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
-    throw Object.assign(new Error(`ESI ${method} ${path} failed: ${resp.status} ${text}`), { status: resp.status });
+    throw Object.assign(new Error(`ESI ${method} ${path} failed: ${resp.status} ${text}`), { status: resp.status, retryAfter: resp.headers.get('Retry-After') });
   }
-  return resp.status === 204 ? null : resp.json();
+  const data = resp.status === 204 ? null : await resp.json();
+  return options.headers ? {data,headers:resp.headers} : data;
+}
+
+export async function getCharacterAssetsPage(characterId, page, signal) {
+  const {data,headers}=await esiRequest(characterId,'GET',`/characters/${characterId}/assets/?page=${page}`,undefined,{signal,headers:true});
+  const pages=Number(headers.get('X-Pages'));
+  if(!Array.isArray(data)||!Number.isInteger(pages)||pages<1)throw new Error('ESI asset pagination is unavailable. Please try again.');
+  return {items:data,pages};
+}
+export function getCharacterAssetNames(characterId, ids, signal) {
+  return esiRequest(characterId,'POST',`/characters/${characterId}/assets/names/`,ids,{signal});
 }
 
 // { skills: [{skill_id, trained_skill_level, active_skill_level, skillpoints_in_skill}], total_sp, unallocated_sp }

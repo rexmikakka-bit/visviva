@@ -35,6 +35,8 @@ import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
+import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE } from './lib/abyssal-library.js';
+import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -6786,6 +6788,62 @@ Nanofiber Internal Structure II
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Personal abyssal inventory: exact rolls, complete scans, multi-character ownership and retries.
+{
+  const character={characterId:1001,characterName:'Storage pilot',scopes:[ASSET_SCOPE]};
+  const container={item_id:9001,type_id:3293,location_id:60003760,location_type:'station',is_singleton:true};
+  const asset={item_id:99001,type_id:47408,location_id:9001,location_type:'item',is_singleton:true};
+  const payload={source_type_id:5975,mutator_type_id:47297,dogma_attributes:[
+    {attribute_id:6,value:123.456789},{attribute_id:20,value:555.123456},
+    {attribute_id:30,value:140.001},{attribute_id:50,value:34.56789},{attribute_id:554,value:-20.12345}]};
+  const names={9001:'Abyssal stock',60003760:'Jita'},assets=[container,asset];
+  const location=assetLocation(asset,new Map(assets.map(a=>[a.item_id,a])),names);
+  check('abyssal','container ancestry resolves to station',location,'Jita / Abyssal stock');
+  check('abyssal','only mutated singleton modules are candidates',abyssalAssets([...assets,{...asset,item_id:9,is_singleton:false}]).length,1,0);
+  const record=dynamicItemToModule(asset,payload,character,location,1234);
+  check('abyssal','uses original module rather than result shell',record.typeID,5975,0);
+  check('abyssal','stores exact rolled CPU',record.mutations.cpu,34.56789,0);
+  check('abyssal','keeps negative rolls',record.mutations.signatureRadiusBonus,-20.12345,0);
+  let rejected=false;try{dynamicItemToModule(asset,{...payload,dogma_attributes:[]},character,location);}catch{rejected=true;}
+  check('abyssal','incomplete rolls are rejected',rejected?1:0,1,0);
+  const fitted=libraryModule(record);fitted.mutations.cpu=1;
+  check('abyssal','fitting copies rather than edits library attributes',record.mutations.cpu,34.56789,0);
+  check('abyssal','fitting retains inventory identity',fitted.abyssalItemId,'99001');
+  const labeled={...record,label:'Fast one',favorite:true};
+  const absent=mergeAbyssalScan([labeled],[],[],character);
+  check('abyssal','missing modules remain saved',absent.length,1,0);
+  check('abyssal','missing modules are flagged',absent[0].available?1:0,0,0);
+  const other={characterId:1002,characterName:'Combat pilot',scopes:[ASSET_SCOPE]};
+  const moved={...record,characterId:other.characterId,characterName:other.characterName};
+  const transferred=mergeAbyssalScan([labeled],[moved],assets,other,names);
+  check('abyssal','character transfers deduplicate by item ID',transferred.length,1,0);
+  check('abyssal','new owner is recorded',transferred[0].characterId,1002,0);
+  check('abyssal','transfers retain personal labels',transferred[0].label,'Fast one');
+  check('abyssal','scanning one character preserves another',mergeAbyssalScan(transferred,[],[],character)[0].available?1:0,1,0);
+  const calls=[];
+  const api={assets:async(id,page)=>{calls.push(page);return {items:page===1?[container]:[asset],pages:2};},
+    names:async()=>[{item_id:9001,name:'Abyssal stock'}],station:async()=>({name:'Jita'}),dynamic:async()=>payload};
+  const scan=await scanAbyssals(character,{api});
+  check('abyssal','scan fetches all asset pages',calls.join(','),'1,2');
+  check('abyssal','scan finds modules inside containers',scan.candidates.length,1,0);
+  let saved=[];
+  const report=await importAbyssals(scan,['9001'],[],{api,onBatch:async batch=>{saved.push(...batch);}});
+  check('abyssal','bulk import saves actual rolls',saved[0].mutations.cpu,34.56789,0);
+  check('abyssal','bulk import reports success',report.imported,1,0);
+  let fetches=0;
+  await importAbyssals(scan,['9001'],saved,{api:{...api,dynamic:async()=>{fetches++;return payload;}}});
+  check('abyssal','refresh reuses immutable cached rolls',fetches,0,0);
+  const unselected=await importAbyssals(scan,[],[],{api});
+  check('abyssal','unselected containers are not imported',unselected.imported,0,0);
+  const failed=await importAbyssals(scan,['9001'],[],{api:{...api,dynamic:async()=>{throw Object.assign(new Error('gone'),{status:404});}}});
+  check('abyssal','unavailable roll is reported without inventing stats',failed.failures.length,1,0);
+  let partialRejected=false;
+  try{await scanAbyssals(character,{api:{...api,assets:async(id,page)=>{if(page===2)throw Object.assign(new Error('denied'),{status:403});return {items:[container],pages:2};}}});}catch{partialRejected=true;}
+  check('abyssal','failed asset page never becomes a complete scan',partialRejected?1:0,1,0);
+  const abort=new AbortController();abort.abort();let cancelled=false;
+  try{await importAbyssals(scan,['9001'],[],{api,signal:abort.signal});}catch(e){cancelled=e.name==='AbortError';}
+  check('abyssal','cancel stops before importing items',cancelled?1:0,1,0);
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);

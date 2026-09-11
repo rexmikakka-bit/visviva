@@ -692,7 +692,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
     // (for the browser's "+ Module (x5)" toast) is provably the same set of ids actually filled,
     // not two independent calculations that could drift apart.
     let fillIds=[];
-    if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
+    if(secKey==='high'&&autoFillHardpoints&&!modData.preserveCharge&&!modData.abyssalItemId&&ship&&(isTurretWeapon(modData.typeID)||isMissileLauncher(modData.typeID))){
       const match=isTurretWeapon(modData.typeID)?isTurretWeapon:isMissileLauncher;
       const total=(isTurretWeapon(modData.typeID)?ship.turrets:ship.launchers)??0;
       const high=slots.high??[];
@@ -704,7 +704,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
         groupFittedRoom(slots,_cs.groupLimits,modData.typeID)));
       fillIds=high.filter(s=>s.type==="empty"&&s.id!==id).slice(0,roomTotal-1).map(s=>s.id);
     }
-    const clone={name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined};
+    const clone={name:modData.name,icon:null,typeID:modData.typeID,type:modType,state,ammo,charges,maxCharges,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:modData.mutaplasmid??undefined,mutations:modData.mutations??undefined,abyssalItemId:modData.abyssalItemId??undefined};
     setSlots(prev=>{
       const targets=new Set([id,...fillIds]);
       const next={...prev,[secKey]:prev[secKey].map(m=>targets.has(m.id)?{...m,...clone}:m)};

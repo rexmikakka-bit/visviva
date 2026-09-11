@@ -1,6 +1,7 @@
 // UI primitives, module/subsystem pickers, resource strip, damage-profile sheet.
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import { AbyssalLibrary } from './abyssal-library.jsx';
 import { createPortal } from "react-dom";
 import { C, getTheme } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -660,6 +661,7 @@ function ModRow({mod,onAdd,onInfo,headroom}){
 
 function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,resourceHeadroom,ship,slots,skills,implants,boosters,drones,factorInReload,dismissRequested}){
   const[search,setSearch]=useState("");
+  const[library,setLibrary]=useState(false);
   const[infoItem,setInfoItem]=useState(null);
   // clipboardData still has the real newlines here; the value that would land in a single-line
   // <input> after a default paste does not — the browser collapses them, which is exactly why an
@@ -687,11 +689,11 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   const[navPath,setNavPath]=useState([]);
   // Drill-down direction, so a level slides in from the side you came from.
   const[navDir,setNavDir]=useState(0);
-  const goBack=()=>{if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
+  const goBack=()=>{if(library){setLibrary(false);return;}if(!navPath.length)return;setNavDir(-1);setNavPath(navPath.slice(0,-1));haptic();};
   // Back climbs the market tree before it closes the sheet, matching the header's ‹. The hardware
   // button and the left-to-right swipe are one hook so a browser cannot end up with only one of them
   // — which is exactly how the cargo and drone browsers ended up with neither.
-  const backSwipe=useSwipeBack(goBack,navPath.length>0);
+  const backSwipe=useSwipeBack(goBack,library||navPath.length>0);
   const goInto=id=>{setNavDir(1);setNavPath([...navPath,id]);};
   const baseTree=(isStructure?REAL_STRUCTURE_MODULE_BROWSER:REAL_MODULE_BROWSER)[slotType]??[];
   // A hull can only ever mount one rig size (rigSize must match exactly — checkFitRestriction
@@ -829,6 +831,11 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           swipe worked in the top inch of the sheet and nowhere else, which reads as the gesture
           being broken rather than as a target you missed. */}
       <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+      {!isStructure&&<button onClick={()=>{setLibrary(v=>!v);setSearch('');searchInputRef.current?.blur();}}
+        style={{padding:12,background:C.surfaceAlt,color:C.accent,border:'none',borderBottom:`1px solid ${C.border}`,fontWeight:700,cursor:'pointer'}}>
+        {library?t('Back to module browser'):t('My Abyssals')}
+      </button>}
+      {library?<AbyssalLibrary slotType={slotType} search={search} onSelect={addMod} slots={slots} formatValue={fmtMutaVal} attributeLabel={mutaLabel}/>:<>
       {!searchResults&&navPath.length>0&&(
         <div style={{position:"sticky",top:0,zIndex:3,display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
           <button onClick={goBack} style={{background:"none",border:"none",color:C.accent,fontSize:14,fontWeight:700,cursor:"pointer",padding:0}}>&#8249; {t("Back")}</button>
@@ -870,6 +877,7 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           )}
         </div>
       )}
+      </>}
       </div>
     </BottomSheet>
     {infoItem&&<ItemInfoSheet typeID={infoItem.typeID} onClose={()=>setInfoItem(null)}/>}
