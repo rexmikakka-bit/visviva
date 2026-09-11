@@ -19,7 +19,12 @@ all current feature work to main, followed by an iOS-only 1.25.1 release.
   The log confirmed **UPLOAD SUCCEEDED with no errors**. Apple processing/tester availability
   was not checked. Local `npm run verify` passed all **1,563** checks; main CI also passed:
   https://github.com/rexmikakka-bit/visviva/actions/runs/34577711842
-- Android remains 1.24.2 (93); this release was explicitly iOS-only.
+- Owen subsequently requested Android **1.25.1 (94)** as well. It is published from main
+  commit `456504d` at https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.1
+  with `Axis-1.25.1.apk`. All 1,563 verification checks passed, Gradle completed successfully,
+  and aapt2 confirmed the APK's versionName/versionCode. The uploaded SHA-256 matches the
+  local APK: `5cdd4fb06a3a9f23ee0a581a520db2ee4d04445d880f978315d5488d8f9656bc`.
+  This is the standard sideload APK release; no Google Play upload was performed.
 - Revised README with AI disclosure is now on main as `99e1b0c` (cherry-picked from `1b1f82f`).
   Earlier ammo changes remain in this feature branch's ancestry; do not accidentally drop them.
 
