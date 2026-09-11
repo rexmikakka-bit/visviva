@@ -13,9 +13,13 @@ all current feature work to main, followed by an iOS-only 1.25.1 release.
 - Owen enabled `esi-assets.read_assets.v1` on the existing EVE developer application after an
   `invalid_scope` error. He confirmed real authentication and seeing his character's modules on his phone.
   Do not change the client ID or callback URLs. Additional characters need the optional asset grant.
-- The newer browser appearance changes described below are included in the iOS 1.25.1
-  release candidate; see the release result below when the upload completes.
-- Android remains 1.24.2 (93); no Android 1.25.0 release was requested.
+- iOS **1.25.1 (120)** includes the reviewed browser/comparison improvements below.
+  It was built from main commit `e6ab37d` and uploaded successfully on September 11, 2026:
+  https://github.com/rexmikakka-bit/visviva/actions/runs/34577722830
+  The log confirmed **UPLOAD SUCCEEDED with no errors**. Apple processing/tester availability
+  was not checked. Local `npm run verify` passed all **1,563** checks; main CI also passed:
+  https://github.com/rexmikakka-bit/visviva/actions/runs/34577711842
+- Android remains 1.24.2 (93); this release was explicitly iOS-only.
 - Revised README with AI disclosure is now on main as `99e1b0c` (cherry-picked from `1b1f82f`).
   Earlier ammo changes remain in this feature branch's ancestry; do not accidentally drop them.
 
