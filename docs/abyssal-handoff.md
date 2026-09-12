@@ -599,3 +599,10 @@ Mixed-state grouping and the Firepower heat toggle remain unchanged. Seven added
 regression checks cover remount history, held flags, merges and group/rack isolation.
 Running-app gesture verification was unavailable: the in-app browser timed out
 loading localhost. Device double-tap and hold/release still need verification.
+### iOS 1.25.6 gesture review upload
+
+iOS **1.25.6 (125)** uploaded for Owen's device review from `831cf1c` on
+`codex/weapon-dot-gestures` (not merged):
+https://github.com/rexmikakka-bit/visviva/actions/runs/34695272316
+Full verification passed 1,849 checks. Upload succeeded; Apple processing and
+tester availability are not independently verified. Android remains 1.25.5 (97).
