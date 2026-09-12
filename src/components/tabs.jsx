@@ -2176,7 +2176,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
                      borderBottom:(last&&j===items.length-1)?"none":`1px solid ${C.border}`}}>
                   <span style={{fontSize:11,color:C.textMid,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {it.qty>1&&<span style={{color:C.textMute,fontWeight:700}}>{it.qty}x </span>}{it.name}
-                    <span style={{display:'block',fontSize:9,color:C.textMute}}>{it.abyssal?({ask:t('MutaMarket asking price'),owned:t('Owned · value unknown'),custom:t('Custom · value unknown'),expired:t('Expired contract'),unknown:t('No confirmed price')}[it.source]):`${priceHub} · ${priceSource}`}</span>
+                    {it.abyssal&&<span style={{display:'block',fontSize:9,color:C.textMute}}>{{ask:t('MutaMarket asking price'),owned:t('Owned · value unknown'),custom:t('Custom · value unknown'),expired:t('Expired contract'),unknown:t('No confirmed price')}[it.source]}</span>}
                   </span>
                   <span title={it.abyssal?t("Abyssal module — value depends on the roll, not the base type"):undefined}
                         style={{fontSize:11,fontWeight:600,color:it.total==null?C.textMute:C.text,flexShrink:0}}>{it.total==null?'—':fmtISK(it.total)}</span>

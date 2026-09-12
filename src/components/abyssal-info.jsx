@@ -8,6 +8,7 @@ import { mutaMarketUrl, JITA_4_4_STATION_ID } from '../lib/mutamarket.js';
 import { listCharacters, onCharactersChanged, openContractWindow, UI_SCOPE } from '../lib/esi.js';
 import { useOnline } from '../lib/use-online.js';
 import { SourceBadge } from './source-badge.jsx';
+import { PriceCard } from './price-card.jsx';
 
 const isk=value=>`${value.toLocaleString(undefined,{maximumFractionDigits:2})} ISK`;
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0;
@@ -41,6 +42,7 @@ export function AbyssalInfo({mod,initialRecord,onChanged,onSaved}){
   const line=(name,value)=><div style={{display:'flex',gap:12,padding:'4px 0',fontSize:12}}><span style={{color:C.textMute,flexShrink:0}}>{name}</span><span style={{color:C.text,marginLeft:'auto',textAlign:'right',overflowWrap:'anywhere',minWidth:0}}>{value}</span></div>;
   const badge=(text,color=C.textMute)=><span style={{fontSize:10,fontWeight:700,color,border:`1px solid ${color}55`,borderRadius:5,padding:'2px 5px'}}>{text}</span>;
   return <section aria-label={t('Abyssal details')} style={{padding:'0 0 12px',marginBottom:12,borderBottom:`1px solid ${C.border}`}}>
+    {state===BUYABLE&&positive(listing.price)&&<PriceCard value={listing.price} source={t('MutaMarket')}/>}
     {(record||listing)&&<div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:6,marginBottom:8}}>
       {record?<SourceBadge label={record.manual?t('Custom'):t('Owned')} color={C.accent}/>:<SourceBadge label={t('MutaMarket')}/>}
       {!record&&listing?.contractKind==='bid'&&badge(t('Auction'),C.warning)}
@@ -64,7 +66,7 @@ export function AbyssalInfo({mod,initialRecord,onChanged,onSaved}){
       {expiresAt!=null&&line(t('Expires'),new Date(expiresAt).toLocaleString())}
     </>}
     {id&&!record?.manual&&line(t('Item ID'),id)}
-    {state===BUYABLE&&positive(listing.price)?line(t('Asking price'),isk(listing.price)):
+    {!(state===BUYABLE&&positive(listing.price))&&
       <div style={{padding:'4px 0',fontSize:12,color:C.textMute}}>{t('No confirmed price')}</div>}
     {state===EXPIRED&&<div style={{fontSize:11,color:C.danger}}>{t('Saved contract has expired or is unavailable.')}</div>}
     {!record&&listing?.contractKind==='bid'&&positive(listing.cost)&&line(t('Auction bid'),isk(listing.cost))}

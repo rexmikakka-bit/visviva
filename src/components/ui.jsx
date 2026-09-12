@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { AbyssalLibrary } from './abyssal-library.jsx';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalInfo } from './abyssal-info.jsx';
+import { PriceCard } from './price-card.jsx';
 import { AbyssalSources } from './abyssal-sources.jsx';
 import { readAbyssals, readListings, editAbyssal, rememberListings } from '../lib/abyssal-store.js';
 import { variationItems, variationRoll, filterVariationItems, withinPriceCeiling, MARKET_SOURCE } from '../lib/variation-items.js';
@@ -1107,16 +1108,7 @@ function ItemPrice({typeID}) {
     return()=>{cancelled=true;};
   },[typeID]);
   if(state.status==='none')return null;
-  return (
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:8,
-                 marginBottom:14,padding:'8px 12px',background:C.surfaceAlt,borderRadius:8,border:`1px solid ${C.border}`}}>
-      {/* `state.hub` is a station name (Jita, Amarr) and stays as it is. */}
-      <span style={{fontSize:11,color:C.textMute}}>{t("Price")} <span style={{color:C.textMute,opacity:.7}}>· {state.hub}</span></span>
-      <span style={{fontSize:13,fontWeight:700,color:C.text,fontVariantNumeric:'tabular-nums'}}>
-        {state.status==='loading'?'…':`${fmtResource(state.value)} ISK`}
-      </span>
-    </div>
-  );
+  return <PriceCard value={state.value} source={state.hub} loading={state.status==='loading'}/>;
 }
 
 // Compact color-coded resist grid — same visual language as the fit Stats tab's Resistances card
