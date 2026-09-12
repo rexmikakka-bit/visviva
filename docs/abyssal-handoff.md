@@ -567,3 +567,11 @@ https://github.com/rexmikakka-bit/visviva/actions/runs/34693222568
 Log confirms `UPLOAD SUCCEEDED with no errors`; Apple processing is not separately
 verified. Full verification passed 1,842 checks. Branch remains unmerged pending
 Owen's home-screen review. Android remains 1.25.3 (96) with the original icon.
+
+### Variations price ceiling restored for standard modules
+
+Owen approved the revised iOS icon and requested that standard modules once again
+obey the price ceiling configured in Abyssal Sources. Removed their exemption in
+ModuleVariationsTab's existing affordability filter. The fitted baseline remains
+visible; unknown prices remain visible, and no ceiling hides nothing. Existing
+over-budget counts include excluded standard modules. No controls or layout changed.
