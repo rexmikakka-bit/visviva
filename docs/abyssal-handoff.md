@@ -512,3 +512,24 @@ Full verification passed 1,837 checks. Cumulative notes since 1.22.6 are in
 - Android notes were corrected to cover **since 1.25.1** (`docs/android-release-1.25.2.md`).
   The App Store submission notes remain cumulative **since 1.22.6** (`docs/whats-new-1.25.2.md`).
 - The rejected Android adaptation, `.claude` lock and `output/` scratch artifacts remain untracked.
+
+### Post-release contract access and price polish (September 12)
+
+Local branch `codex/contract-access-price-polish`, not released:
+- Shopping List now selects a character with UI scope, retaining an explicitly selected
+  authorized character. Previously reauthorization appended its character to storage while
+  the sheet used the first character, leaving contract access apparently unchanged with
+  multiple characters. The picker contains only authorized characters; login errors are
+  surfaced in the sheet and offline authorization is disabled.
+- Standard Fit Value rows omit source subtext entirely; abyssal provenance remains.
+- ItemPrice and AbyssalInfo share `price-card.jsx`. Confirmed MutaMarket asking prices sit
+  after the description with the standard card styling and compact ISK formatting.
+  Auction bids, bundle totals, estimates and unknown prices retain their distinct meaning.
+- `npm run verify` passes all 1,842 checks, including five character-selection regressions.
+  Actual info sheets compared at 390px in dark/light; abyssal card also inspected at 320px.
+  Standard Fit Value module breakdown was checked via rendered DOM: name and price only.
+  Native SSO round trip still requires device verification; the detected selection bug is
+  covered locally. Browser used the existing saved MutaMarket listing after a live 404.
+  Screenshots: visualization directory for this task, `price-standard-{dark,light}.png`,
+  `price-abyssal-{dark,light,narrow}.png`. Temporary in-app fit `Price review` deletion was
+  attempted, but browser timed out before cleanup could be confirmed.

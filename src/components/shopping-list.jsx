@@ -3,7 +3,7 @@ import { C } from '../theme.js';
 import { t } from '../lib/i18n.js';
 import { fmtResource } from '../lib/fmt.js';
 import { ESI_SCOPES } from '../esi-config.js';
-import { beginLogin, listCharacters, onCharactersChanged, openContractWindow, UI_SCOPE } from '../lib/esi.js';
+import { beginLogin, listCharacters, onCharactersChanged, openContractWindow, UI_SCOPE, contractCharacter, getLastLoginError, setLastLoginError } from '../lib/esi.js';
 import { readAbyssals, readListings } from '../lib/abyssal-store.js';
 import { shoppingList, BUYABLE, OWNED, EXPIRED } from '../lib/shopping-list.js';
 import { contractLinkList, stationSystems } from '../lib/contract-links.js';
@@ -38,6 +38,7 @@ export function ShoppingListSheet({slots,onClose}){
   const [listings,setListings]=useState([]),[owned,setOwned]=useState([]);
   const [characters,setCharacters]=useState(listCharacters),[characterId,setCharacterId]=useState('');
   const [error,setError]=useState(''),[opened,setOpened]=useState({}),[copied,setCopied]=useState(false);
+  const [loginError,setLoginError]=useState(getLastLoginError);
   const [systems,setSystems]=useState(new Map()),[resolving,setResolving]=useState(false);
   const mounted=useRef(true);
   useEffect(()=>{
@@ -45,12 +46,13 @@ export function ShoppingListSheet({slots,onClose}){
     Promise.all([readListings(),readAbyssals()])
       .then(([l,o])=>{if(mounted.current){setListings(l);setOwned(o);}})
       .catch(e=>{if(mounted.current)setError(e.message);});
-    const off=onCharactersChanged(()=>setCharacters(listCharacters()));
+    const off=onCharactersChanged(()=>{setCharacters(listCharacters());setLoginError(getLastLoginError());});
     return()=>{mounted.current=false;off();};
   },[]);
 
-  const character=characters.find(c=>String(c.characterId)===characterId)??characters[0];
-  const allowed=character?.scopes?.includes(UI_SCOPE);
+  const character=contractCharacter(characters,characterId);
+  const allowed=!!character;
+  const permitted=characters.filter(c=>c.scopes?.includes(UI_SCOPE));
   const {rows,total,buyable,owned:ownedCount,unresolved}=shoppingList(slots,listings,{owned});
   // Buyable first: it is the only group that is a to-do list. The rest are there so the screen is
   // honest about what it could not price, not because you are meant to act on them.
@@ -149,16 +151,18 @@ export function ShoppingListSheet({slots,onClose}){
 
       <div style={{padding:'12px 20px 20px',borderTop:`1px solid ${C.border}`}}>
         {error&&<p role="alert" style={{fontSize:11,color:C.danger,margin:'0 0 8px'}}>{error}</p>}
+        {loginError&&<p role="alert" style={{fontSize:11,color:C.danger,margin:'0 0 8px'}}>{loginError}</p>}
         {/* The contract window is opened in the client a CHARACTER is logged into, so it needs a
             character even though nothing here is read from ESI. Asking for the scope is deferred to
             this screen for the same reason asset access is: most people never buy through the app. */}
         {!!buyable&&!allowed&&<button style={{...button,width:'100%',marginBottom:8}}
-          onClick={()=>beginLogin([...new Set([...ESI_SCOPES,UI_SCOPE,...(character?.scopes??[])])])}>
+          disabled={!online}
+          onClick={()=>{setLastLoginError(null);beginLogin([...new Set([...ESI_SCOPES,UI_SCOPE,...characters.flatMap(c=>c.scopes??[])])]).catch(setLastLoginError);}}>
           {characters.length?t('Connect with contract access'):t('Link an EVE character')}</button>}
-        {allowed&&characters.length>1&&<select aria-label={t('Character')} value={String(character?.characterId??'')}
+        {allowed&&permitted.length>1&&<select aria-label={t('Character')} value={String(character?.characterId??'')}
           onChange={e=>setCharacterId(e.target.value)}
           style={{...button,width:'100%',boxSizing:'border-box',marginBottom:8,fontWeight:500,color:C.text,background:C.surfaceAlt}}>
-          {characters.map(c=><option key={c.characterId} value={String(c.characterId)}>{c.characterName}</option>)}
+          {permitted.map(c=><option key={c.characterId} value={String(c.characterId)}>{c.characterName}</option>)}
         </select>}
         {!!buyable&&<>
           <button style={{...button,width:'100%',marginBottom:8}} disabled={resolving||!contractExport.count} onClick={()=>copyList()}>

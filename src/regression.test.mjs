@@ -27,7 +27,8 @@ import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits } from './lib/core.js';
-import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
+import { esiSkillsToAppSkills, esiSkillsToFullSkillMap, contractCharacter, UI_SCOPE } from './lib/esi.js';
+
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
 import { targetFitProfile } from './lib/graph-target.js';
@@ -132,6 +133,19 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Login replaces its character at the END of storage. Contract actions must
+// survive that reorder, another account's grant, and a removed grant.
+{
+  const unscoped={characterId:1,scopes:[]};
+  const authorized={characterId:2,scopes:[UI_SCOPE]};
+  const other={characterId:3,scopes:[UI_SCOPE]};
+  check('contract character','new grant after existing unscoped character',contractCharacter([unscoped,authorized],'')?.characterId,2,0);
+  check('contract character','stale unscoped selection recovers',contractCharacter([unscoped,authorized],'1')?.characterId,2,0);
+  check('contract character','explicit authorized selection retained',contractCharacter([authorized,other],'3')?.characterId,3,0);
+  check('contract character','removed character falls back',contractCharacter([authorized],'3')?.characterId,2,0);
+  check('contract character','no grant keeps connect action',contractCharacter([unscoped],'1')===undefined?1:0,1,0);
+}
+
 // 1. ASTARTE — RAH + command bursts + Asklepian implants + boosters
 //    Exercises: RAH adapting to POST-burst resonances (two-pass), booster passive resists applied
 //    UNPENALISED, and the Asklepian set multiplier (Alpha–Epsilon only — see CLAUDE.md).

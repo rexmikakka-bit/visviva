@@ -275,6 +275,13 @@ export function getCharacterAssetNames(characterId, ids, signal) {
 // wants skill sync is never asked for permission to drive their game client.
 export const UI_SCOPE = 'esi-ui.open_window.v1';
 
+// Reauthorization moves a character to the end of storage. Never let that reorder
+// leave contract actions using an unscoped character, including after a web reload.
+export function contractCharacter(characters, selectedId) {
+  const permitted = characters.filter(c => c.scopes?.includes(UI_SCOPE));
+  return permitted.find(c => String(c.characterId) === String(selectedId)) ?? permitted[0];
+}
+
 // Opens the contract window in the EVE client the character is currently logged into — the only way
 // an app that is not the game can put a player in front of a Buy button. It acts on the RUNNING
 // client, so it does nothing if the character is offline; the caller has to say so rather than let
