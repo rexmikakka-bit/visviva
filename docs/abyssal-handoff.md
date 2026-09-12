@@ -575,3 +575,15 @@ obey the price ceiling configured in Abyssal Sources. Removed their exemption in
 ModuleVariationsTab's existing affordability filter. The fitted baseline remains
 visible; unknown prices remain visible, and no ceiling hides nothing. Existing
 over-budget counts include excluded standard modules. No controls or layout changed.
+
+### 1.25.5 shipped on both platforms
+
+Owen authorized both releases. PR #73 merged at `21ef0f4`; local verification
+passed 1,842 checks and both CI jobs passed. Both launchers now use the approved
+smaller inset triangle master. Android 1.25.5 (97) is published:
+https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.5
+APK metadata verified with aapt2; uploaded SHA-256 matches the local build:
+`a2e8d50efd66238710122be689a010e84150172202b15a5aeaf014facab840d8`.
+iOS 1.25.5 (124) uploaded successfully:
+https://github.com/rexmikakka-bit/visviva/actions/runs/34693942562
+Apple processing/tester availability is not independently verified.
