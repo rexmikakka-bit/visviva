@@ -561,3 +561,9 @@ then an iOS patch to inspect it on the home screen. The selected preview is
 `codex/ios-icon-corner`. The launcher generator now preserves that iOS source;
 Android retains its approved original master. In-app artwork is unchanged.
 The revised iOS master is verified opaque and 1024px square.
+
+iOS **1.25.4 (123)** uploaded successfully from commit `2203bf8`:
+https://github.com/rexmikakka-bit/visviva/actions/runs/34693222568
+Log confirms `UPLOAD SUCCEEDED with no errors`; Apple processing is not separately
+verified. Full verification passed 1,842 checks. Branch remains unmerged pending
+Owen's home-screen review. Android remains 1.25.3 (96) with the original icon.
