@@ -40,6 +40,16 @@
 import { TYPES, ATTR_ID_TO_NAME } from '../calc.js';
 import mutators from '../data/mutaplasmids.json' with { type: 'json' };
 import { guessSlotFromDogma } from './core.js';
+import { contractExpiry } from './shopping-list.js';
+
+export function savedMarketListings(listings,{typeIds,regionId,stationId=null,maxPrice=null,individuallyPriced=true,singleItem,showAuctions,now=Date.now()}){
+  return listings.filter(l=>{
+    const expires=contractExpiry(l.expiresAt);
+    return typeIds.includes(l.dynamicTypeId)&&l.contractId!=null&&expires!=null&&expires>now&&
+      (l.regionId===regionId||(regionId===FORGE_REGION_ID&&l.stationId===JITA_4_4_STATION_ID))&&
+      (stationId==null||l.stationId===stationId)&&matchesContractFilters(l,{individuallyPriced,singleItem,showAuctions})&&withinBudget(l,{maxPrice});
+  });
+}
 
 export const MUTAMARKET_API='https://mutamarket.com/api';
 // The public page for one module, e.g. /modules/abyssal-warp-disruptor-1055169244217. It is the
@@ -87,10 +97,14 @@ function range(value){
 
 // Builds the request path. `attribute` is deliberately singular — see trap 1 above. There is no
 // price option on purpose: every spelling of one is trap 5, so a budget belongs in `withinBudget`.
-export function mutaMarketQuery({typeId,individuallyPriced=true,attribute,metaGroup,sort,regionId}={}){
+export function mutaMarketQuery({typeId,individuallyPriced=true,singleItem,showAuctions,attribute,metaGroup,sort,regionId}={}){
   if(!Number.isInteger(typeId))throw new Error('A MutaMarket query needs an abyssal type ID');
   const segments=[`type/${typeId}`];
-  if(individuallyPriced)segments.push(...INDIVIDUAL_SEGMENTS);
+  if(singleItem!==undefined){
+    segments.push('contracts-only');
+    if(!showAuctions)segments.push('item-exchange');
+    if(singleItem)segments.push('no-multi-item-contracts','without-other-items');
+  }else if(individuallyPriced)segments.push(...INDIVIDUAL_SEGMENTS);
   if(metaGroup)segments.push(`meta-group/${metaGroup}`);
   if(attribute){
     if(Array.isArray(attribute))throw new Error('MutaMarket applies only one attribute filter per request; filter the rest on device');
@@ -194,6 +208,15 @@ export function contractKind(contract){
 }
 
 export function isIndividuallyPriced(contract){return contractKind(contract)==='ask';}
+
+// Independent dimensions: an auction may itself hold either one item or a bundle.
+// Recheck responses because unknown API segments can fail open.
+export function matchesContractFilters(listing,{individuallyPriced=true,singleItem,showAuctions}={}){
+  if(singleItem===undefined)return !individuallyPriced||listing.contractKind==='ask';
+  return ['ask','bid','bundle'].includes(listing.contractKind)&&
+    (showAuctions||listing.contractKind!=='bid')&&
+    (!singleItem||listing.contractItems===1);
+}
 
 // What the CONTRACT costs, whatever kind of number that is. `public_asset.price` is 0.0 for
 // anything not contracted, so a non-positive number here is absence, not free.

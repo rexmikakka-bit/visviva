@@ -408,3 +408,93 @@ Owen's stated point ("without authing a character"), so it cannot depend on `UI_
   proxy; it works natively via CapacitorHttp.
 - Owen is on iPhone. Every release ships **both** platforms (Android GitHub APK *and* iOS TestFlight),
   patch bumps by default, and **never** a Play-signed AAB unless he explicitly asks.
+
+## Codex continuation — September 11, 2026
+
+The #20–24 implementation described above is now in the working tree on `abyssal-mutamarket`.
+It has not been committed, pushed, merged, or released. The older “next action” sections above
+describe the starting point; do not implement them again.
+
+- **#20:** Shared `AbyssalInfo` lives inside the existing item info panel, with provenance,
+  asking price versus labelled estimate, market/EVE links, custom labels, and reversible local
+  custom-roll storage. Manual records have their own synthetic owner and cryptographic ID;
+  asset scans cannot retire them. Editing a fitted roll clears its original physical item ID.
+- **#21:** Shopping-list export produces EVE contract links without authentication. Public
+  station lookups resolve and cache solar system IDs; unresolved locations are skipped visibly,
+  never guessed. Duplicate contracts are exported once.
+- **#22:** Fit stats and snapshot values include confirmed live asking prices. Owned/custom,
+  expired, and unknown-price abyssals remain explicitly unknown (`+ ?`). Estimates, auction bids,
+  and bundle totals do not become individual module values. Stats show price provenance.
+- **#23:** Bounded network requests and offline guards preserve saved data. Market failures can
+  fall back to selected listings already cached, respecting source filters and expiry. Offline
+  status explains that availability is stale; local collection viewing/editing remains usable.
+- **#24:** README and ESI settings explain optional access, local storage, MutaMarket and pricing.
+
+Validation: final `npm run verify` passed after copy/link-layout polish, including the production
+build and all 1,808 regression checks. Four critical invariants were mutation-tested in memory: independent
+manual owner, copied mutations, rejecting unknown link systems, and owned provenance precedence.
+Browser review covered owned/custom sheets at 390px and 320px, saving/renaming/removing a custom
+roll, and the live market info sheet in dark and light themes. A live 10M ISK afterburner brought
+the fit total from 9.20M to 19.20M. With no linked character, Copy EVE contract links produced
+`<url=contract:30000142//235739208>Contract 235739208 (1MN Y-S8 Compact Afterburner) ISK 10,000,000</url>`.
+Temporary custom record and fitted review module were removed; the isolated preview retains the
+selected listing cache and MutaMarket source preference. User Chrome tabs were untouched.
+
+Still needs device validation before release: iPhone keyboard/safe-area behavior, native
+Capacitor network/offline behavior, actual EVE window opening with a scoped character, and
+snapshot export visual review. Offline failure behavior has automated coverage, not a physical
+airplane-mode test. The deferred tags migration remains deferred. Leave unrelated `.claude/`
+lock, `output/`, and `promotional-assets/` artifacts alone.
+
+### Owen's pre-push review fixes — September 11, 2026
+
+All nine requested changes are implemented locally, still uncommitted/unpushed:
+
+- Removing a mutaplasmid clears its item ID. `variationItems` also ignores stale provenance on
+  unmutated legacy modules, so the baseline gets the stock price and the original roll is selectable.
+- Info badges distinguish Owned, locally saved Custom, and MutaMarket; listing badges distinguish
+  item exchange, auction, and multi-item contracts (a multi-item auction gets both relevant badges).
+  Auction bids and bundle totals have explicit labels and remain excluded from confirmed value.
+- `showAuctions` is independent of `allContracts` (the single-item/all choice), defaults false,
+  persists through settings normalization, and is enforced on live and cached listings. Client-side
+  checks defend against MutaMarket ignoring a filter segment.
+- Heat Damage and Overload Speed Factor Bonus are excluded from sortable attributes. Their normal
+  item stats remain available. Stock modules ignore the abyssal budget, including officer modules.
+- Sorting no longer narrows network requests against the fitted attribute. Explicit attribute locks
+  still filter locally. The bounded listing-fetch budget and partial-result notice remain.
+- Each live shopping-list contract has its own Copy EVE contract link action, alongside bulk copy.
+- GraphTab now forwards `externalBursts` into outgoing projections and includes it in memo deps.
+  Orthrus Warp Scrambler II range with a 33.75% Interdiction Maneuvers burst is 18,056.25m, matching
+  the fitted info value (13,500m without it). The user's exact saved Malediction graph was not opened.
+- Fitting probes divide effective costs by raw type costs, not `getBase()`: bomber PreMul bonuses
+  already alter that base. The old denominator incorrectly returned 1,538.1 MW for Torpedo Launcher II
+  instead of 5.38335 MW on a Hound. The regression sweep now covers all 21 launcher variants on
+  Hound, Manticore, Purifier, and Nemesis in addition to the existing hulls.
+
+Final `npm run verify` passes (production build and 1,834 checks); `git diff --check` is clean.
+In-memory reversions demonstrated failures for the bomber denominator, stale item identity, and
+auction exclusion. Browser review used the existing source sheet/info/shopping components:
+390px dark/light source controls, dark info badges, 320px shopping actions, live single/bulk EVE
+link copying, mutaplasmid removal returning to a 32.95k stock baseline, and an 8.75B stock officer
+module visible under the 250M abyssal ceiling. Hound browser showed regular torpedo launchers in
+normal text and capital launchers red. Auction/bundle filter combinations have automated coverage;
+their info-badge combinations have not all been visually checked against live listings.
+
+### Badge/switch polish and explicit price units
+
+Info and Variations now share `source-badge.jsx`: MutaMarket keeps the existing green badge,
+Owned uses the same style in accent blue. Source selection is labelled My Abyssals. Multi-item
+contracts and Auctions use independent accessible button switches matching Settings' track/thumb.
+The max-price text field is numeric millions with `M ISK` outside it: 20 → 20M, 2000 → 2B.
+Blank means Any; the existing slider bounds remain. `parsePriceMillions` has conversion, blank,
+and invalid-unit checks. Verification passes 1,837 checks. Browser review covered 390px dark/light
+source controls, 320px dark controls, 20/2000 input and switch independence, and the shared market
+badge in the actual info sheet. No push or release has been performed.
+
+### 1.25.2 release authorized
+
+Owen approved shipping all work and selected the original promotional icon for BOTH iOS and
+Android, rejecting the separate Android adaptation. Launcher assets are generated by
+`scripts/build-launcher-icons.mjs`; in-app marks, favicon and splash remain unchanged.
+Full verification passed 1,837 checks. Cumulative notes since 1.22.6 are in
+`docs/whats-new-1.25.2.md`. Release results will be recorded after publishing.

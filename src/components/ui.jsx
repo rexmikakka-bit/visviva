@@ -3,10 +3,13 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { AbyssalLibrary } from './abyssal-library.jsx';
 import { AttributeSort } from './attribute-sort.jsx';
+import { AbyssalInfo } from './abyssal-info.jsx';
 import { AbyssalSources } from './abyssal-sources.jsx';
-import { readAbyssals, editAbyssal, rememberListings } from '../lib/abyssal-store.js';
+import { readAbyssals, readListings, editAbyssal, rememberListings } from '../lib/abyssal-store.js';
 import { variationItems, variationRoll, filterVariationItems, withinPriceCeiling, MARKET_SOURCE } from '../lib/variation-items.js';
-import { abyssalTypeIds, listingCost, attrFilterFor, JITA_4_4_STATION_ID } from '../lib/mutamarket.js';
+import { SourceBadge, BADGE_STYLE } from './source-badge.jsx';
+import { abyssalTypeIds, listingCost, JITA_4_4_STATION_ID, savedMarketListings } from '../lib/mutamarket.js';
+import { useOnline } from '../lib/use-online.js';
 import { contractExpiry } from '../lib/shopping-list.js';
 import { fetchListings } from '../lib/mutamarket-client.js';
 import { contractIndexFor, withStations } from '../lib/mutamarket-contracts.js';
@@ -23,7 +26,7 @@ import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_M
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
-import { sortCompareRows, directionOf, filterLockedRows, bestFirstDirection, DERIVED_KEYS } from "../lib/compare.js";
+import { sortCompareRows, directionOf, filterLockedRows, bestFirstDirection } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
@@ -639,16 +642,8 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
 // The abyssal marker in one place. It had drifted on the variations tab's listing rows to a bare red
 // "▲ Gravid" with no cell around it, which next to a column of DeltaMarks reads as another delta
 // arrow rather than as the same badge the info panel and snapshot card use.
-const BADGE={fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
-  borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'};
 function AbyssalBadge({grade}){
-  return <span style={{...BADGE,color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)'}}>▲ {grade}</span>;
-}
-// Green, not red, and deliberately a separate pill from the grade: the grade is a property of the
-// module, where it is listed is a property of this moment. A single combined badge would make a
-// contract roll and an identical owned roll indistinguishable once the contract expired.
-function SourceBadge({label,color=C.success}){
-  return <span style={{...BADGE,color,background:`${color}1f`,border:`1px solid ${color}55`}}>{label}</span>;
+  return <span style={{...BADGE_STYLE,color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)'}}>▲ {grade}</span>;
 }
 
 function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,children,badges,largeInfo=false}){
@@ -1257,7 +1252,7 @@ export function ModifierBreakdown({attr, ex, bleed, fmt}) {
 // `hideName` is for the one host that already prints the name in a sheet header of its own
 // (ItemInfoSheet) — the icon, group and badges still earn their place, the name would just be the
 // same string twice at the same size, one line apart.
-function ItemInfoPanel({typeID, item, mutaplasmid, overrides,baseOverrides, bleed=14, hideName}) {
+function ItemInfoPanel({typeID, item, mutaplasmid, overrides,baseOverrides, bleed=14, hideName,priceContent}) {
   const typeDescriptions = useTypeDescriptions();
   // Which rows are showing their modifier breakdown, and the traced twin of `item` that supplies it.
   // Both must be declared before the `!td` bail below — they are hooks.
@@ -1404,7 +1399,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides,baseOverrides, blee
         </div>
       )}
       {/* Under the description, above the skills — it is a fact about the item, not a stat. */}
-      {mutaplasmid?<div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t('no price')}</div>:<ItemPrice typeID={typeID}/>}
+      {priceContent??(mutaplasmid?<div style={{fontSize:11,color:C.textMute,marginBottom:12}}>{t('no price')}</div>:<ItemPrice typeID={typeID}/>)}
       {/* Required skills */}
       {skills.length > 0 && (
         <div style={{marginBottom:12}}>
@@ -1509,8 +1504,7 @@ function ItemInfoSheet({typeID, onClose, item, overrides,baseOverrides,mutaplasm
         <div style={{flex:1,overflowY:'auto',padding:'12px 16px 20px'}}>
           {/* hideName because the header above now carries it — the panel's own header would have
               printed the same name at the same size directly underneath. */}
-          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} baseOverrides={baseOverrides} mutaplasmid={mutaplasmid} bleed={16} hideName/>
-          {children}
+          <ItemInfoPanel typeID={typeID} item={item} overrides={overrides} baseOverrides={baseOverrides} mutaplasmid={mutaplasmid} bleed={16} hideName priceContent={children}/>
         </div>
       </div>
     </div>
@@ -1520,9 +1514,10 @@ function ItemInfoSheet({typeID, onClose, item, overrides,baseOverrides,mutaplasm
 // `engineItem` is the module's DogmaItem on the fit it is sitting in (calcFitStats' `fittedItems`,
 // keyed by slot id). The abyssal roll rides in on `mod` and is only a BADGE here — the rolled numbers
 // themselves are already the engine item's base values, so there is nothing to merge.
-function ModuleInfoTab({typeID, mod, engineItem, bleed}) {
-  return <ItemInfoPanel typeID={typeID ?? mod?.typeID} item={engineItem}
-                        mutaplasmid={mod?.mutaplasmid} bleed={bleed}/>;
+function ModuleInfoTab({typeID, mod, engineItem, bleed,onSaved}) {
+  const abyssal=!!mod?.mutaplasmid&&!!mod?.mutations;
+  return <ItemInfoPanel typeID={typeID ?? mod?.typeID} item={engineItem} baseOverrides={!engineItem?mod?.mutations:undefined}
+                        mutaplasmid={mod?.mutaplasmid} bleed={bleed} priceContent={abyssal?<AbyssalInfo key={mod.abyssalItemId??mod.id} mod={mod} onSaved={onSaved}/>:undefined}/>;
 }
 
 // Shared by the module browser, the structure module browser and the Variations tab, so the three
@@ -1750,6 +1745,7 @@ function ListingWhere({record}){
 }
 
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid,baseItemId,usedAbyssalIds=new Set()}) {
+  const online=useOnline();
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
   // Persisted: the tab is opened one module at a time, so a session-local choice meant re-picking
@@ -1800,26 +1796,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   const marketTypes=abyssalTypeIds([typeID,...ids]);
   const marketKey=marketTypes.join(',');
   const marketOn=showAbyssals&&sources.includes(MARKET_SOURCE)&&marketTypes.length>0;
-  // The anchor for the server-side attribute filter: the fitted module's own value for whatever the
-  // list is sorted by, its roll included. Read from the type rather than from `comparison` because
-  // that is built from the listings this effect fetches, and depending on it would close the loop.
-  // A derived key is excluded here as well as price and meta: it is a RATIO we compute, MutaMarket
-  // has never heard of it, and there is no anchor to bound it with. `attrFilterFor` would return
-  // null for it anyway, but naming it would put it in this effect's dependencies — so switching
-  // between two derived sorts would re-walk every page of the market to re-fetch the same rows.
-  const sortedAttr=sortBy==='price'||sortBy==='meta'||DERIVED_KEYS.has(sortBy)?null:sortBy;
-  const fittedAttrs=(TYPES[typeID]?.attrs??TYPES[String(typeID)]?.attrs??{});
-  const sortAnchor=sortedAttr?(baseMutations?.[sortedAttr]??fittedAttrs[sortedAttr]??null):null;
-  // XOR: the sort direction is in DISPLAY units and the filter bound is in raw ones, and a rate-of-
-  // fire or resist attribute reverses between the two — "highest first" on shield resist is the most
-  // NEGATIVE damageResistanceBonus. Getting this backwards builds a filter that keeps precisely the
-  // rolls the user was sorting away from, and it would look like a short market rather than a bug.
-  const sortKeepHigh=sortedAttr?((sortDir==='desc')!==mutaDisplayInverted(sortedAttr)):false;
-  // Whether the request actually narrowed. `attrFilterFor` returns null for an attribute nothing
-  // rolls and for an anchor past the far end, so asking it is the only way to know — deriving it
-  // from `sortedAttr` alone would claim a filter on sorts that were sent unfiltered.
-  const attrFiltered=marketOn&&marketTypes.some(id=>
-    !!attrFilterFor({abyssalTypeId:id,name:sortedAttr,anchor:sortAnchor,keepHigh:sortKeepHigh}));
+  // Sorting changes order only. Attribute exclusions are explicit locks on the device.
   useEffect(()=>{
     if(!marketOn){setListings([]);setMarketState({busy:false,error:'',truncated:false});return;}
     let active=true;const ctrl=new AbortController();
@@ -1828,8 +1805,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
       try{
         const pages=await Promise.all(marketKey.split(',').map(id=>fetchListings(
           {typeId:Number(id),regionId:market.regionId,maxPrice:market.maxPrice,
-            individuallyPriced:!market.allContracts,
-            attribute:attrFilterFor({abyssalTypeId:Number(id),name:sortedAttr,anchor:sortAnchor,keepHigh:sortKeepHigh})},
+            singleItem:!market.allContracts,showAuctions:market.showAuctions},
           {signal:ctrl.signal})));
         // Stations are joined even when the filter is off, so a kept listing can still SAY where it
         // is. `withStations` drops the unresolvable ones only when a station is actually demanded.
@@ -1837,15 +1813,15 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
           {stationId:marketStationId(market)});
         if(active){setListings(located);setMarketState({busy:false,error:'',truncated:pages.some(p=>p.truncated)});}
       }catch(e){
-        if(active&&e.name!=='AbortError')setMarketState({busy:false,error:e.message,truncated:false});
+        if(active&&e.name!=='AbortError'){
+          let saved=[];try{saved=savedMarketListings(await readListings(),{typeIds:marketTypes,regionId:market.regionId,stationId:marketStationId(market),maxPrice:market.maxPrice,singleItem:!market.allContracts,showAuctions:market.showAuctions});}catch{}
+          if(active){setListings(saved);setMarketState({busy:false,error:e.message,truncated:false,cached:true});}
+        }
       }
     })();
     return()=>{active=false;ctrl.abort();};
-    // The sort is a dependency because it is now part of the REQUEST, not just the ordering. Three
-    // scalars rather than the filter object so that re-sorting within one attribute's own direction
-    // — which changes neither bound — does not re-walk the market.
   },[marketOn,marketKey,market.regionId,market.maxPrice,market.jitaOnly,market.allContracts,
-     sortedAttr,sortAnchor,sortKeepHigh]);
+     market.showAuctions,online]);
 
   if (!typeID) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No variation data available.")}</div>;
 
@@ -1878,7 +1854,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   // Price first, then fitting, so the two counts below are disjoint and add up to what is missing.
   // The fitted module is exempt from both: it is the reference every delta is measured against, and
   // a comparison with nothing to compare to is worse than one showing an overrun.
-  const affordable=visible.filter(r=>r.isBaseline||withinPriceCeiling(rowPrice(r),market.maxPrice));
+  const affordable=visible.filter(r=>r.isBaseline||!r.mod.mutations||withinPriceCeiling(rowPrice(r),market.maxPrice));
   const overBudget=visible.length-affordable.length;
   const shown=fitsOnly
     ? affordable.filter(r=>r.isBaseline||variantCostFits(fitCostParts({typeID:r.typeID},r.mod.mutations),baseCost,resourceHeadroom,costRatio)!==false)
@@ -1956,17 +1932,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
           <span>{marketState.error||(marketState.busy?t('Checking contracts…')
             :t('Showing the cheapest listings only — narrow the price range to see the rest.'))}</span>
         </div>}
-      {/* Said out loud, because the contract walk stops at a page budget and the rows it never
-          reaches are the expensive ones — which on an attribute sort are the good rolls. Spending
-          the request's one attribute range on the half the sort points at fixes that, but it also
-          shortens the list, and a shortened list with no explanation reads as a thin market.
-          Phrased in DISPLAY terms — above/below what you can see — since the raw bound is reversed
-          for rate-of-fire and resist attributes and the user is not holding the raw number. */}
-      {attrFiltered&&!marketState.error&&
-        <div role="status" style={{padding:'0 4px 6px',fontSize:11,color:C.textMute}}>
-          {sortDir==='desc'?t("Contracts below the fitted {attr} aren't listed.",{attr:mutaLabel(sortedAttr)})
-                           :t("Contracts above the fitted {attr} aren't listed.",{attr:mutaLabel(sortedAttr)})}
-        </div>}
+      {marketState.cached&&<div style={{padding:'4px',fontSize:11,color:C.textMute}}>{t('Showing saved listings only. Availability has not been refreshed.')}</div>}
       {rows.map(r => {
         const v = r.mod,record=r.record;
         const grade=abyssalGrade(v.mutaplasmid);
@@ -2413,7 +2379,7 @@ function MutaplasmidEditor({mod,onUpdateMod}){
   return(<div style={{padding:"10px 12px"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
       <span style={{fontSize:11,fontWeight:700,color:C.accent}}>{m.n}</span>
-      <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>{t("Remove")}</button>
+      <button onClick={()=>{pushHistory('remove');onUpdateMod({...mod,mutaplasmid:undefined,mutations:undefined,abyssalItemId:undefined});}} style={{background:"none",border:`1px solid ${C.danger}`,color:C.danger,borderRadius:6,padding:"3px 8px",fontSize:10,fontWeight:700,cursor:"pointer"}}>{t("Remove")}</button>
     </div>
     {ranges.map(r=>{
       const cur=drag?.name===r.name?drag.value:(mod.mutations?.[r.name]??r.base);
@@ -2743,7 +2709,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
         {/* No wrapper: this used to add a second overflowY:auto (redundant — the tab body above
             already scrolls) plus 2px of side padding, and a row bleeding out to the screen edge
             would have been clipped by it 14px short. */}
-        {tab==="info"&&<ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem} bleed={14}/>}
+        {tab==="info"&&<ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem} bleed={14} onSaved={record=>onUpdateModLive({...mod,abyssalItemId:record.itemId})}/>}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
                                 baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} baseItemId={mod.abyssalItemId} usedAbyssalIds={usedAbyssalIds} onSwap={v=>{
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
@@ -2763,7 +2729,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
             nested inside this one already-scrolling tab body is redundant, and on iOS it stopped
             WebKit's native "scroll the focused input above the keyboard" from finding the right
             scroll container — typing into a mutaplasmid's value box left it under the keyboard. */}
-        {tab==="mutate"&&<MutaplasmidEditor mod={mod} onUpdateMod={onUpdateModLive||onUpdateMod}/>}
+        {tab==="mutate"&&<MutaplasmidEditor mod={mod} onUpdateMod={next=>(onUpdateModLive||onUpdateMod)({...next,abyssalItemId:undefined})}/>}
       </div>
     </BottomSheet>
     {/* The ammo list offers every compatible charge, but only the LOADED one exists on the fit — so

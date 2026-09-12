@@ -3,6 +3,29 @@ import mutators from '../data/mutaplasmids.json' with { type: 'json' };
 import { guessSlotFromDogma } from './core.js';
 
 export const ASSET_SCOPE='esi-assets.read_assets.v1';
+export const MANUAL_OWNER='axis-manual';
+
+export function manualAbyssalId(){
+  const bytes=globalThis.crypto.getRandomValues(new Uint8Array(16));
+  return `axis-manual:${Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('')}`;
+}
+
+// A simulated roll is a separate saved copy, never a claim to own a market item.
+export function customAbyssal(mod,{itemId=manualAbyssalId(),label='',ownerName,locationName,now=Date.now()}={}){
+  if(!/^axis-manual:[a-zA-Z0-9-]+$/.test(itemId))throw new Error('Invalid custom module identity');
+  const m=mutators[mod?.mutaplasmid],base=TYPES[mod?.typeID];
+  if(!m||base?.c!==7||!m.t.includes(mod.typeID))throw new Error('Unsupported module or mutaplasmid');
+  const mutations={};
+  for(const id of Object.keys(m.a)){
+    const name=ATTR_ID_TO_NAME[id],value=mod.mutations?.[name];
+    if(!name||typeof value!=='number'||!Number.isFinite(value))throw new Error(`Missing rolled attribute ${id}`);
+    mutations[name]=value;
+  }
+  return {itemId,dynamicTypeId:m.r,typeID:mod.typeID,name:base.n,mutaplasmid:mod.mutaplasmid,mutations,
+    slot:guessSlotFromDogma(mod.typeID),characterId:MANUAL_OWNER,characterName:ownerName,
+    locationId:MANUAL_OWNER,location:locationName,label:String(label).trim().slice(0,120),favorite:false,
+    manual:true,available:true,lastSeen:now,importedAt:now};
+}
 const resultTypes=new Set(Object.values(mutators).filter(m=>m.t.some(id=>TYPES[id]?.c===7)).map(m=>m.r));
 export function abyssalAssets(assets){return assets.filter(a=>a.is_singleton&&resultTypes.has(a.type_id));}
 

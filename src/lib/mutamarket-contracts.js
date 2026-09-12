@@ -11,15 +11,14 @@
 // took 2.1s fetched 8 pages at a time. ESI caches it for 30 minutes, so the index is reused for the
 // whole session — `expiresAt` is exposed so the UI can show when it was last checked.
 import { retryESI } from './abyssal-import.js';
+import { networkJSON } from './network-request.js';
 
 export const ESI_BASE='https://esi.evetech.net/latest';
 const PAGE_CONCURRENCY=8;
 
 async function fetchPage(regionId,page,signal){
-  const resp=await fetch(`${ESI_BASE}/contracts/public/${regionId}/?page=${page}`,{signal});
-  if(!resp.ok)throw Object.assign(new Error(`ESI contract lookup failed (${resp.status})`),
-    {status:resp.status,retryAfter:resp.headers.get('Retry-After')});
-  return {rows:await resp.json(),pages:Number(resp.headers.get('x-pages'))||1,expires:resp.headers.get('expires')};
+  const {response,body}=await networkJSON(`${ESI_BASE}/contracts/public/${regionId}/?page=${page}`,{signal});
+  return {rows:body,pages:Number(response.headers.get('x-pages'))||1,expires:response.headers.get('expires')};
 }
 
 // A partially fetched index is worse than none: a contract missing from it is indistinguishable from

@@ -22,13 +22,10 @@ export const MARKET_KEY='axis_market';
 // to have open. It defaults OFF because it can only ever hide rows, and a list that silently omitted
 // the variant you were looking for would be read as "that module does not exist".
 //
-// `allContracts` admits auctions and multi-item contracts. It defaults OFF because their price is a
-// bid or a bundle total rather than this module's price, and a wrong number shown without comment is
-// worse than a shorter list. It is a setting rather than a permanent exclusion because the listings
-// themselves are real — that IS where the roll is — so the honest fix was to label them, not to
-// pretend they do not exist. `contractKind` carries the label and the row badges it.
+// `allContracts` admits multi-item contracts; `showAuctions` independently admits auctions.
+// Both default off. Bids and bundle totals remain labelled rather than becoming module prices.
 export const MARKET_DEFAULTS={maxPrice:250_000_000,jitaOnly:true,regionId:FORGE_REGION_ID,
-  showAbyssals:false,sources:['owned'],fitsOnly:false,allContracts:false};
+  showAbyssals:false,sources:['owned'],fitsOnly:false,allContracts:false,showAuctions:false};
 
 // A container source is a JSON pair keyed by character and location, so any non-empty string is
 // structurally valid here. A source naming a character who has since been disconnected simply
@@ -56,6 +53,7 @@ export function normalizeMarketSettings(raw){
     showAbyssals:raw?.showAbyssals===true,
     fitsOnly:raw?.fitsOnly===true,
     allContracts:raw?.allContracts===true,
+    showAuctions:raw?.showAuctions===true,
     sources:normalizeSources(raw)};
 }
 
@@ -120,6 +118,14 @@ export function parsePriceInput(text){
 
 export function marketStationId(settings){
   return settings.jitaOnly?JITA_4_4_STATION_ID:null;
+}
+
+// The source editor exposes one explicit unit: millions of ISK.
+export function parsePriceMillions(text){
+  const value=String(text??'').trim().replace(/[\s,_]/g,'');
+  if(!value)return null;
+  if(!/^\d+(?:\.\d+)?$/.test(value))return undefined;
+  return parsePriceInput(`${value}m`);
 }
 
 export function readMarketSettings(storage=globalThis.localStorage){

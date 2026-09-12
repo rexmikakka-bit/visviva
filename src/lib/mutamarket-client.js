@@ -15,7 +15,8 @@
 //      with all four applied contained zero auctions, bundles or multi-item contracts. They are
 //      still re-checked on the response by `isIndividuallyPriced`, because trap 4 in `mutamarket.js`
 //      means a future rename of any one of them would fail open rather than error.
-import { MUTAMARKET_API, MUTAMARKET_USER_AGENT, mutaMarketQuery, mutaMarketListings, overBudget, withinBudget } from './mutamarket.js';
+import { MUTAMARKET_API, MUTAMARKET_USER_AGENT, mutaMarketQuery, mutaMarketListings, overBudget, withinBudget, matchesContractFilters } from './mutamarket.js';
+import { networkJSON } from './network-request.js';
 
 const PAGE_SIZE=100;
 
@@ -29,10 +30,7 @@ function apiBase(){
 }
 
 async function fetchPage(path,signal){
-  const resp=await fetch(`${apiBase()}${path}`,{signal,headers:{'User-Agent':MUTAMARKET_USER_AGENT,Accept:'application/json'}});
-  if(!resp.ok)throw Object.assign(new Error(`MutaMarket lookup failed (${resp.status})`),
-    {status:resp.status,retryAfter:resp.headers.get('Retry-After')});
-  const body=await resp.json();
+  const {body}=await networkJSON(`${apiBase()}${path}`,{signal,headers:{'User-Agent':MUTAMARKET_USER_AGENT,Accept:'application/json'}});
   return {rows:body?.data??[],cursor:body?.meta?.next_cursor??null};
 }
 
@@ -41,12 +39,12 @@ async function fetchPage(path,signal){
 // comparison list. Hitting it sets `truncated`, so the UI can say the list is partial rather than
 // letting it read as "that is everything on the market".
 export async function fetchListings({typeId,attribute,metaGroup,regionId,maxPrice=null,minPrice=null,
-  individuallyPriced=true,maxPages=8,now=Date.now()}={},{signal,onProgress=()=>{},api={page:fetchPage}}={}){
+  individuallyPriced=true,singleItem,showAuctions,maxPages=8,now=Date.now()}={},{signal,onProgress=()=>{},api={page:fetchPage}}={}){
   // Ascending price is not a display choice — it is what makes the budget ceiling cheap, by letting
   // the walk stop at the first row over budget instead of reading the rest of the type. The region
   // lives in the path `mutaMarketQuery` builds, and the cursor is appended to THAT, never taken from
   // `links.next` — see trap 1 above.
-  const path=mutaMarketQuery({typeId,attribute,metaGroup,regionId,individuallyPriced,sort:{by:'price',dir:'asc'}});
+  const path=mutaMarketQuery({typeId,attribute,metaGroup,regionId,individuallyPriced,singleItem,showAuctions,sort:{by:'price',dir:'asc'}});
   const budget={maxPrice,minPrice};
   const listings=[],skipped=[];
   let cursor=null,page=0,truncated=false,stopped=false;
@@ -57,7 +55,7 @@ export async function fetchListings({typeId,attribute,metaGroup,regionId,maxPric
     skipped.push(...converted.skipped);
     for(const listing of converted.listings){
       if(overBudget(listing,budget)){stopped=true;break;}
-      if(withinBudget(listing,budget))listings.push(listing);
+      if(matchesContractFilters(listing,{individuallyPriced,singleItem,showAuctions})&&withinBudget(listing,budget))listings.push({...listing,regionId});
     }
     onProgress({stage:'listings',done:listings.length,page});
     if(stopped||!result.cursor||result.rows.length<PAGE_SIZE){cursor=null;break;}

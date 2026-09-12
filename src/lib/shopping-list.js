@@ -70,10 +70,10 @@ function fittedModules(slots){
 
 export function shoppingList(slots,listings=[],{owned=[],now=Date.now()}={}){
   const rows=fittedModules(slots).map(({slot,mod})=>{
-    const {itemId,listing,expiresAt,state}=abyssalProvenance(mod.abyssalItemId,{owned,listings,now});
+    const {itemId,listing,record,expiresAt,state}=abyssalProvenance(mod.abyssalItemId,{owned,listings,now});
     // The fit itself is the only place that knows what an unlisted module is called.
     const name=listing?.name??mod.name??null;
-    if(state===OWNED||state===UNKNOWN)return {itemId,slot,name,state,price:null,contractId:null};
+    if(state===OWNED||state===UNKNOWN)return {itemId,slot,name,state,price:null,contractId:null,...(record?.manual?{custom:true}:{})};
     return {itemId,slot,name,state,price:listing.price??null,
       contractId:listing.contractId??null,sellerName:listing.sellerName??null,
       stationId:listing.stationId??null,slug:listing.slug??null,expiresAt};

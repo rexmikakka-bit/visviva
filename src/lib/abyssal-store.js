@@ -1,4 +1,4 @@
-import { mergeAbyssalScan } from './abyssal-library.js';
+import { mergeAbyssalScan, MANUAL_OWNER } from './abyssal-library.js';
 
 // Version 2 adds `listings`: the contract a market module was chosen from, so a saved fit's
 // `abyssalItemId` can still be turned into something buyable long after the session that picked it.
@@ -27,6 +27,28 @@ function readAll(name,failure){
   }));
 }
 export function readAbyssals(){return readAll('modules','Unable to read abyssal library');}
+export async function saveCustomAbyssal(record){
+  if(record?.characterId!==MANUAL_OWNER||!String(record.itemId).startsWith('axis-manual:'))throw new Error('Invalid custom module');
+  const db=await open();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('modules','readwrite'),store=tx.objectStore('modules');
+    store.add(record);
+    const req=store.getAll();
+    tx.oncomplete=()=>resolve(req.result);
+    tx.onerror=tx.onabort=()=>reject(tx.error??new Error('Unable to save custom module'));
+  });
+}
+
+export async function forgetAbyssal(itemId){
+  const db=await open();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction('modules','readwrite'),store=tx.objectStore('modules');
+    store.delete(String(itemId));
+    const req=store.getAll();
+    tx.oncomplete=()=>resolve(req.result);
+    tx.onerror=tx.onabort=()=>reject(tx.error??new Error('Unable to update abyssal library'));
+  });
+}
 async function update(transform){
   const db=await open();
   return new Promise((resolve,reject)=>{

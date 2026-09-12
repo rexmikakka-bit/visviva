@@ -105,6 +105,13 @@ export function EsiSettingsPanel({ setSkills }) {
         <div style={{ fontSize: 11, color: C.textMute, marginBottom: 10 }}>
           {t("Connect an EVE character to sync skills and import/export saved fits directly from the game.")}
         </div>
+        <details style={{fontSize:11,color:C.textMute,marginBottom:12}}>
+          <summary style={{cursor:'pointer',color:C.textMid}}>{t('Abyssal modules and market access')}</summary>
+          <p>{t('My Abyssals can read personal assets and item names with your permission. Choose which locations to import. It cannot move your items or read corporate assets.')}</p>
+          <p>{t('Imported rolls stay on this device and remain usable offline. Unlinking a character keeps its saved modules; forgetting them is a separate action. Library records and saved contracts are not included in fit backups.')}</p>
+          <p>{t('MutaMarket browsing needs no character login. Axis sends module types and filters, not your inventory. Public ESI lookups resolve contract locations; prices and availability can be delayed.')}</p>
+          <p>{t('Copy EVE contract links from the shopping list without logging in. Opening a contract in a running EVE client requires optional contract access.')}</p>
+        </details>
 
         {characters.length === 0 ? (
           <>

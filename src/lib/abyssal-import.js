@@ -1,5 +1,6 @@
 import { getCharacterAssetsPage, getCharacterAssetNames } from './esi.js';
 import { abyssalAssets, assetLocation, dynamicItemToModule, ASSET_SCOPE } from './abyssal-library.js';
+import { requireOnline } from './network-request.js';
 
 function cancelled(signal){if(signal?.aborted)throw new DOMException('Import cancelled','AbortError');}
 function pause(ms,signal){return new Promise((resolve,reject)=>{
@@ -9,6 +10,7 @@ function pause(ms,signal){return new Promise((resolve,reject)=>{
 });}
 export async function retryESI(request,signal){
   for(let attempt=0;;attempt++){
+    requireOnline();
     cancelled(signal);
     const controller=new AbortController();
     const abort=()=>controller.abort();

@@ -35,7 +35,7 @@ import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
-import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE } from './lib/abyssal-library.js';
+import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE, MANUAL_OWNER, customAbyssal, manualAbyssalId } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
 import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
@@ -44,6 +44,10 @@ import { fetchContractIndex, stationOf, withStations, contractIndexExpired } fro
 import { fetchListings } from './lib/mutamarket-client.js';
 import { normalizeMarketSettings, MARKET_DEFAULTS, priceAtStop, stopAtPrice, parsePriceInput, PRICE_MIN, PRICE_MAX, PRICE_STOPS } from './lib/market-settings.js';
 import { shoppingList, contractExpiry, abyssalProvenance } from './lib/shopping-list.js';
+import { contractLinkList, stationSystems } from './lib/contract-links.js';
+import { abyssalValue } from './lib/abyssal-value.js';
+import { savedMarketListings } from './lib/mutamarket.js';
+import { networkJSON } from './lib/network-request.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -5049,7 +5053,11 @@ Medium Capacitor Control Circuit II
   // reduction (Megathron/Guardian) and a family that straddles two groups.
   for (const [hull, rack, seed] of [['Scimitar', 'high', PITHUM],
                                     ['Megathron', 'high', 'Heavy Neutron Blaster II'],
-                                    ['Guardian',  'high', 'Large Remote Armor Repairer II']]) {
+                                    ['Guardian',  'high', 'Large Remote Armor Repairer II'],
+                                    ['Hound', 'high', 'Torpedo Launcher II'],
+                                    ['Manticore', 'high', 'Torpedo Launcher II'],
+                                    ['Purifier', 'high', 'Torpedo Launcher II'],
+                                    ['Nemesis', 'high', 'Torpedo Launcher II']]) {
     const ship = lookupShip(hull);
     const probed = computeFitCostRatios(ship, EMPTY, null, {});
     const fam = variantsOf(tid(seed));
@@ -5060,7 +5068,7 @@ Medium Capacitor Control Circuit II
       const r = fitCostRatioOf({ratios: probed}, v.typeID);
       if (!item || !r) continue;
       for (const [slot, attr] of [['cpu', 'cpu'], ['pg', 'power'], ['cal', 'upgradeCost']]) {
-        const b = item.getBase(attr) ?? 0;
+        const b = TYPES[v.typeID]?.attrs?.[attr] ?? 0;
         if (b <= 0) continue;              // costs nothing, so it cannot fail on this resource
         compared++;
         if (Math.abs((item.get(attr) ?? 0) / b - r[slot]) > 1e-9) disagreed++;
@@ -7604,6 +7612,98 @@ Nanofiber Internal Structure II
   // An id arriving as a number from one store and a string from the other must still be one module.
   check('shopping','the item id is compared as a string, whichever store it came from',
     abyssalProvenance(1055169244217,{owned:[{itemId:'1055169244217'}],now}).state,'owned');
+}
+{
+  const typeID=tid('1MN Afterburner II');
+  const {default:mutators}=await import('./data/mutaplasmids.json',{with:{type:'json'}});
+  const mutaplasmid=Number(Object.keys(mutators).find(k=>mutators[k].t.includes(typeID)));
+  const {ATTR_ID_TO_NAME}=await import('./calc.js');
+  const mutations=Object.fromEntries(Object.keys(mutators[mutaplasmid].a).map(id=>[ATTR_ID_TO_NAME[id],TYPES[typeID].attrs[ATTR_ID_TO_NAME[id]]]));
+  const mod={typeID,mutaplasmid,mutations,abyssalItemId:'12345'};
+  const copy=customAbyssal(mod,{itemId:'axis-manual:test',label:'  My roll  ',ownerName:'Custom',locationName:'Local',now:123});
+  check('custom-abyssal','custom copy never reuses physical market identity',copy.itemId,'axis-manual:test');
+  check('custom-abyssal','custom owner cannot match a real character',copy.characterId,MANUAL_OWNER);
+  check('custom-abyssal','custom roll survives an unrelated complete asset scan',mergeAbyssalScan([copy],[],[],{characterId:123}, {},999)[0].available?1:0,1,0);
+  check('custom-abyssal','display strings and label survive conversion',[copy.characterName,copy.location,copy.label].join('|'),'Custom|Local|My roll');
+  check('custom-abyssal','save timestamp is retained',copy.importedAt,123,0);
+  const key=Object.keys(mutations)[0],old=mutations[key];copy.mutations[key]=999;
+  check('custom-abyssal','saved roll is a copy, not an alias into the fit',mutations[key],old,0);
+  let rejected=0;
+  for(const options of [{itemId:'12345'},{itemId:'axis-manual:test'}]){
+    try{customAbyssal(options.itemId==='12345'?mod:{...mod,mutations:{...mutations,[key]:NaN}},options);}catch{rejected++;}
+  }
+  check('custom-abyssal','reject numeric identities and invalid roll values',rejected,2,0);
+  const ids=Array.from({length:100},manualAbyssalId);
+  check('custom-abyssal','generated identities are distinct and outside the EVE namespace',new Set(ids).size===100&&ids.every(id=>id.startsWith('axis-manual:'))?1:0,1,0);
+}
+{
+  const now=Date.parse('2026-09-11T00:00:00Z');
+  const listing={itemId:'one',contractId:235822605,contractKind:'ask',price:270000000,name:'Abyssal Ballistic Control System',stationId:60003760,regionId:10000002,dynamicTypeId:1,expiresAt:'2026-10-01T00:00:00Z'};
+  const row={...listing,state:'buyable'},systems=new Map([[60003760,30000142]]);
+  check('contract-export','EVE format uses the resolved solar system',contractLinkList([row],systems).text,'<url=contract:30000142//235822605>Contract 235822605 (Abyssal Ballistic Control System) ISK 270,000,000</url>');
+  check('contract-export','unknown systems are omitted and reported',contractLinkList([row]).unresolved,1,0);
+  check('contract-export','station ids cannot masquerade as system ids',contractLinkList([row],new Map([[60003760,60003760]])).count,0,0);
+  check('contract-export','contracts are exported once even with multiple module rows',contractLinkList([row,{...row,name:'second'}],systems).count,1,0);
+  check('contract-export','expired contracts are omitted',contractLinkList([{...row,state:'expired'}],systems).count,0,0);
+  check('contract-export','module names cannot inject EVE markup',contractLinkList([{...row,name:'<url=bad>\n&'}],systems).text.includes('&lt;url=bad&gt; &amp;')?1:0,1,0);
+  let stored='{}',requests=0;
+  const storage={getItem:()=>stored,setItem:(_k,v)=>{stored=v;}};
+  const fetcher=async()=>{requests++;return {ok:true,json:async()=>({system_id:30000142})};};
+  await stationSystems([60003760,60003760],{storage,fetcher});
+  const cached=await stationSystems([60003760,null,1000000000001],{storage,fetcher});
+  check('contract-export','public station resolution is cached and skips structures',requests,1,0);
+  check('contract-export','cached system survives subsequent offline export',cached.systems.get(60003760),30000142,0);
+  const failed=await stationSystems([60000001],{storage,fetcher:async()=>{throw new Error('offline');}});
+  check('contract-export','failed lookup never invents Jita',failed.systems.size,0,0);
+  check('contract-export','failed lookup remains retryable',failed.failed,1,0);
+  const data={listings:[listing],now};
+  check('abyssal-value','live individual asking price contributes to fit value',abyssalValue({abyssalItemId:'one'},data).price,270000000,0);
+  check('abyssal-value','owned modules cannot inherit a stale market offer',abyssalValue({abyssalItemId:'one'},{...data,owned:[{itemId:'one'}]}).price===null?1:0,1,0);
+  check('abyssal-value','auction estimates never become a confirmed price',abyssalValue({abyssalItemId:'one'},{...data,listings:[{...listing,price:null,cost:999,estimatedValue:1000,contractKind:'bid'}]}).price===null?1:0,1,0);
+  check('abyssal-value','expired asking price is unknown',abyssalValue({abyssalItemId:'one'},{...data,now:Date.parse('2027-01-01')}).source,'expired');
+  const scope={typeIds:[1],regionId:10000002,stationId:60003760,now};
+  check('offline-market','matching cached listing remains usable',savedMarketListings([listing],scope).length,1,0);
+  check('offline-market','cached fallback respects station, family, expiry and budget',savedMarketListings([listing,{...listing,stationId:null},{...listing,dynamicTypeId:2},{...listing,expiresAt:'2020-01-01'}],{...scope,maxPrice:1}).length,0,0);
+  const savedFetch=globalThis.fetch;
+  try{
+    globalThis.fetch=()=>new Promise(()=>{});
+    let timedOut=false;try{await networkJSON('https://example.invalid',{timeout:5});}catch(e){timedOut=e.message.includes('timed out');}
+    check('offline-market','hung native fetch cannot leave the UI loading forever',timedOut?1:0,1,0);
+  }finally{globalThis.fetch=savedFetch;}
+}
+{
+  const {matchesContractFilters}=await import('./lib/mutamarket.js');
+  const choices=[{contractKind:'ask',contractItems:1},{contractKind:'bundle',contractItems:2},
+    {contractKind:'bid',contractItems:1},{contractKind:'bid',contractItems:2}];
+  for(const [singleItem,showAuctions,expected] of [[true,false,'ask:1'],[true,true,'ask:1,bid:1'],
+    [false,false,'ask:1,bundle:2'],[false,true,'ask:1,bundle:2,bid:1,bid:2']]){
+    check('contracts',`independent single-item=${singleItem} auctions=${showAuctions}`,
+      choices.filter(l=>matchesContractFilters(l,{singleItem,showAuctions})).map(l=>`${l.contractKind}:${l.contractItems}`).join(','),expected);
+    const query=mutaMarketQuery({typeId:49738,singleItem,showAuctions});
+    check('contracts',`query preserves auction choice ${singleItem}/${showAuctions}`,query.includes('/item-exchange')?1:0,showAuctions?0:1,0);
+    check('contracts',`query preserves item-count choice ${singleItem}/${showAuctions}`,query.includes('/no-multi-item-contracts')?1:0,singleItem?1:0,0);
+  }
+  check('contracts','auction preference persists independently',normalizeMarketSettings({allContracts:false,showAuctions:true}).showAuctions?1:0,1,0);
+  const typeID=tid('1MN Afterburner II');
+  const record={itemId:'stale',typeID,name:'1MN Afterburner II',source:'mutamarket',mutaplasmid:1,mutations:{power:50}};
+  const cleared=variationItems([{typeID}],{typeID,abyssalItemId:'stale'},[record]);
+  check('variations','removed roll loses its market provenance',cleared.rows[0].record?1:0,0,0);
+  check('variations','original market roll is selectable again',cleared.rows.filter(r=>r.record?.itemId==='stale'&&!r.isBaseline).length,1,0);
+  const variants=variationItems([{typeID:tid('1MN Monopropellant Enduring Afterburner')}],{typeID});
+  check('variations','heat attributes never enter the sort picker',variants.attributes.some(k=>['heatDamage','overloadSpeedFactorBonus'].includes(k))?1:0,0,0);
+  const ship=lookupShip('Orthrus'),slots={high:[],mid:[{id:'s',typeID:tid('Warp Scrambler II'),state:'active'}],low:[],rigs:[]};
+  const externalBursts=[{buffID:21,value:33.75}];
+  const projected=computeProjectedReps(ship,slots,null,{externalBursts});
+  check('scram','external Interdiction Maneuvers extends Orthrus tackle',projected.scrams[0].optimal,18056.25,1e-9);
+  check('scram','projection and fitted info use identical boosted range',projected.scrams[0].optimal,
+    calcFitStats(ship,slots,[],null,{externalBursts}).fittedItems.get('s').get('maxRange'),1e-9);
+}
+{
+  const {parsePriceMillions}=await import('./lib/market-settings.js');
+  check('market-input','bare numbers in the editor are millions',
+    [parsePriceMillions('20'),parsePriceMillions('2000'),parsePriceMillions('20.5')].join(','),'20000000,2000000000,20500000');
+  check('market-input','clearing the millions field removes the ceiling',parsePriceMillions('')===null?1:0,1,0);
+  check('market-input','invalid units cannot silently change the ceiling',parsePriceMillions('2b')===undefined?1:0,1,0);
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

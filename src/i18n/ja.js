@@ -11,7 +11,6 @@
 // phrases are written as plain strings here rather than form maps — a Japanese counted noun does not
 // inflect, and a map would only ever reach its `other` branch.
 export default {
-  "Owned only": "所有済みのみ",
   "Fitted elsewhere in this fit": "このフィットの別のスロットに装備済み",
   "Browser": "ブラウザー",
   "Containers": "コンテナ",

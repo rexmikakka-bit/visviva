@@ -8,7 +8,19 @@ import { ASSET_SCOPE } from '../lib/abyssal-library.js';
 import { forgetCharacterAbyssals } from '../lib/abyssal-store.js';
 import { abyssalSourceTree, abyssalBrowseLevel, mergeLinkedCharacters, CHARACTER_SOURCE } from '../lib/abyssal-browser.js';
 import { MARKET_SOURCE } from '../lib/variation-items.js';
-import { PRICE_MIN, PRICE_STOPS, priceAtStop, stopAtPrice, parsePriceInput } from '../lib/market-settings.js';
+import { PRICE_MIN, PRICE_STOPS, priceAtStop, stopAtPrice, parsePriceMillions } from '../lib/market-settings.js';
+
+// Settings' switch track and thumb, in the source sheet's compact, borderless row.
+function MarketSwitch({label,on,onChange}){
+  return <button type="button" role="switch" aria-checked={!!on} aria-label={label} onClick={onChange}
+    style={{display:'flex',alignItems:'center',gap:12,width:'100%',minHeight:44,padding:'6px 4px',border:0,background:'none',cursor:'pointer'}}>
+    <span style={{flex:1,textAlign:'left',fontSize:11,color:C.textMute}}>{label}</span>
+    <span aria-hidden="true" style={{flexShrink:0,width:38,height:22,borderRadius:99,background:on?C.accent:C.surfaceAlt,
+      border:`1px solid ${on?C.accent:C.borderStrong}`,padding:2,display:'flex',justifyContent:on?'flex-end':'flex-start',alignItems:'center',transition:'background .15s'}}>
+      <span style={{width:18,height:18,borderRadius:99,background:on?'#0e0e10':C.textMute}}/>
+    </span>
+  </button>;
+}
 
 // Picking WHICH rolls to compare against. The old version listed every container flat, which is fine
 // for one pilot with a hangar and unusable for a player with several characters and years of loot —
@@ -51,9 +63,9 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
   // null means "follow the setting". A committed value is never held here, so dragging the slider or
   // reopening the sheet cannot leave a stale number sitting in the field.
   const [priceText,setPriceText]=useState(null);
-  const priceField=priceText??(market.maxPrice==null?t('Any'):fmtResource(market.maxPrice,3));
+  const priceField=priceText??(market.maxPrice==null?'':String(market.maxPrice/1_000_000));
   const commitPrice=()=>{
-    const next=priceText==null?undefined:parsePriceInput(priceText);
+    const next=priceText==null?undefined:parsePriceMillions(priceText);
     if(next!==undefined)onMarketChange({...market,maxPrice:next});
     setPriceText(null);   // unparseable input snaps back to the live setting rather than sticking
   };
@@ -63,7 +75,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
   const heading=text=><div style={{padding:'18px 4px 4px',fontSize:11,fontWeight:700,color:C.textMute}}>{text}</div>;
 
   const on=id=>selection.includes(id);
-  // "Owned only" and a named hangar are the SAME axis at two widths, so they displace each other:
+  // "My Abyssals" and a named hangar are the SAME axis at two widths, so they displace each other:
   // ticked together, unticking the character would change nothing, and a tick that does nothing is
   // worse than one that is missing. The market is a different axis and coexists with any of them.
   const toggleSource=id=>{
@@ -157,7 +169,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
       </>}
 
       {!words.length&&path.length===0&&<>
-        {choice('owned',t('Owned only'),t('All saved containers'))}
+        {choice('owned',t('My Abyssals'),t('All saved containers'))}
         {tree.length>0&&heading(t('Characters'))}
         {tree.map(node=>group(node,()=>setPath([node.id])))}
         {!records.length&&!tree.length&&<p style={{fontSize:12,color:C.textMute}}>{t('No saved modules match this slot or search.')}</p>}
@@ -172,34 +184,23 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
         {heading(t('Market'))}
         {choice(MARKET_SOURCE,t('MutaMarket'),
           market.jitaOnly?t('Public contracts at Jita 4-4'):t('Public contracts in The Forge'))}
-        {/* Two pills and a label, the same row the Location switch below uses, because this is the
-            same kind of choice: what the MutaMarket source is allowed to return. Said out loud
-            either way, since the absence of the 5B auctions would otherwise look like the market
-            being small rather than like a setting. */}
-        <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 4px 0'}}>
-          <span style={{fontSize:11,color:C.textMute,marginRight:'auto'}}>{t('Contracts')}</span>
-          <button style={toggle(!market.allContracts)} aria-pressed={!market.allContracts}
-            onClick={()=>onMarketChange({...market,allContracts:false})}>{t('Single item')}</button>
-          <button style={toggle(market.allContracts)} aria-pressed={market.allContracts}
-            onClick={()=>onMarketChange({...market,allContracts:true})}>{t('All')}</button>
-        </div>
-        <p style={{fontSize:11,color:C.textMute,margin:'6px 4px 0'}}>
-          {market.allContracts
-            ?t('Auctions and bundles are badged. Their price is a bid, or buys the whole contract — not this module.')
-            :t('Auctions and multi-item contracts are hidden — their price is not this module\'s price.')}
-        </p>
-        {/* The ceiling governs the whole compare list now, not just the contracts, which is why it
-            sits under its own heading rather than in the Market block's run of toggles. */}
+        <MarketSwitch label={t('Multi-item contracts')} on={market.allContracts}
+          onChange={()=>onMarketChange({...market,allContracts:!market.allContracts})}/>
+        <MarketSwitch label={t('Auctions')} on={market.showAuctions}
+          onChange={()=>onMarketChange({...market,showAuctions:!market.showAuctions})}/>
+        <p style={{fontSize:11,color:C.textMute,margin:'6px 4px 0'}}>{t('Auction bids and multi-item totals are labelled separately from module prices.')}</p>
+        {/* The ceiling applies only to abyssal listings. */}
         <div style={{padding:'14px 4px 0'}}>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
             <span style={{fontSize:11,color:C.textMute,marginRight:'auto'}}>{t('Max price')}</span>
             {/* Typed and dragged reach the same values, so either can be the one you use: the field
                 is for "exactly 300M", the track is for "somewhere around a billion". 16px because
                 anything smaller makes iOS zoom the whole sheet on focus. */}
-            <input aria-label={t('Max price')} inputMode="decimal" value={priceField}
+            <input aria-label={t('Max price in millions of ISK')} placeholder={t('Any')} inputMode="decimal" value={priceField}
               onChange={e=>setPriceText(e.target.value)} onFocus={e=>e.target.select()}
               onKeyDown={e=>{if(e.key==='Enter')e.target.blur();}} onBlur={commitPrice}
               style={{...input,width:96,flexShrink:0,textAlign:'right',fontWeight:700,fontSize:16,padding:'6px 8px'}}/>
+            <span style={{fontSize:11,color:C.textMute,whiteSpace:'nowrap'}}>M ISK</span>
           </div>
           <input type="range" min={0} max={PRICE_STOPS} step={1} value={stopAtPrice(market.maxPrice)}
             aria-label={t('Max price')} aria-valuetext={market.maxPrice==null?t('Any'):`${fmtResource(market.maxPrice,3)} ISK`}
@@ -212,7 +213,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
           {/* The one consequence that is not visible from this sheet. Without it, closing the sheet
               and finding half the stock variants gone reads as a bug rather than as this setting. */}
           <p style={{fontSize:11,color:C.textMute,margin:'6px 0 0'}}>
-            {t('Applies to every variant in the compare list, not just contracts.')}
+            {t('Applies to abyssal listings only. Standard modules are always shown regardless of price.')}
           </p>
         </div>
         <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 4px 0'}}>

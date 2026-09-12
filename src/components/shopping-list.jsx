@@ -6,6 +6,8 @@ import { ESI_SCOPES } from '../esi-config.js';
 import { beginLogin, listCharacters, onCharactersChanged, openContractWindow, UI_SCOPE } from '../lib/esi.js';
 import { readAbyssals, readListings } from '../lib/abyssal-store.js';
 import { shoppingList, BUYABLE, OWNED, EXPIRED } from '../lib/shopping-list.js';
+import { contractLinkList, stationSystems } from '../lib/contract-links.js';
+import { useOnline } from '../lib/use-online.js';
 import { mutaMarketUrl, JITA_4_4_STATION_ID } from '../lib/mutamarket.js';
 import { useSheetDrag, sheetTransform, SheetGrabber } from '../lib/use-sheet-drag.jsx';
 
@@ -31,10 +33,12 @@ function openUrl(url){
 }
 
 export function ShoppingListSheet({slots,onClose}){
+  const online=useOnline();
   const sheet=useSheetDrag(onClose);
   const [listings,setListings]=useState([]),[owned,setOwned]=useState([]);
   const [characters,setCharacters]=useState(listCharacters),[characterId,setCharacterId]=useState('');
   const [error,setError]=useState(''),[opened,setOpened]=useState({}),[copied,setCopied]=useState(false);
+  const [systems,setSystems]=useState(new Map()),[resolving,setResolving]=useState(false);
   const mounted=useRef(true);
   useEffect(()=>{
     mounted.current=true;
@@ -52,6 +56,14 @@ export function ShoppingListSheet({slots,onClose}){
   // honest about what it could not price, not because you are meant to act on them.
   const order={[BUYABLE]:0,[OWNED]:1,[EXPIRED]:2};
   const sorted=[...rows].sort((a,b)=>(order[a.state]??3)-(order[b.state]??3));
+  const stationKey=[...new Set(rows.filter(r=>r.state===BUYABLE&&r.stationId!=null).map(r=>r.stationId))].sort().join(',');
+  useEffect(()=>{
+    let active=true;setResolving(true);
+    stationSystems(stationKey?stationKey.split(','):[]).then(result=>{if(active){setSystems(result.systems);setResolving(false);}})
+      .catch(e=>{if(active){setError(e.message);setResolving(false);}});
+    return()=>{active=false;};
+  },[stationKey,online]);
+  const contractExport=contractLinkList(sorted,systems);
 
   const openInEve=async row=>{
     setError('');
@@ -63,18 +75,15 @@ export function ShoppingListSheet({slots,onClose}){
     }catch(e){setError(e.message);}
   };
 
-  const copyList=()=>{
-    const text=sorted.filter(r=>r.state===BUYABLE)
-      .map(r=>`${r.name??t('Unknown module')} — ${r.price!=null?`${fmtResource(r.price,4)} ISK`:t('No price')}${r.slug?` — ${mutaMarketUrl(r.slug)}`:''}`)
-      .join('\n');
+  const copyList=(text=contractExport.text,key='all')=>{
     if(!text)return;
-    const done=()=>{setCopied(true);setTimeout(()=>{if(mounted.current)setCopied(false);},2000);};
+    const done=()=>{setCopied(key);setTimeout(()=>{if(mounted.current)setCopied(false);},2000);};
     // Same two-step as ExportFitModal: navigator.clipboard needs a secure context, which the file://
     // origin an unpackaged build can end up on is not.
     if(navigator.clipboard&&window.isSecureContext)navigator.clipboard.writeText(text).then(done).catch(e=>setError(e.message));
     else{
       const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);
-      ta.select();document.execCommand('copy');document.body.removeChild(ta);done();
+          ta.select();const ok=document.execCommand('copy');document.body.removeChild(ta);if(ok)done();else setError(t('Copy failed. Try again.'));
     }
   };
 
@@ -91,12 +100,13 @@ export function ShoppingListSheet({slots,onClose}){
           {buyable
             ?t({one:'{n} module to buy · {isk} ISK',other:'{n} modules to buy · {isk} ISK'},{n:buyable,isk:fmtResource(total,4)})
             :t('Nothing in this fit needs buying.')}
-          {ownedCount>0&&` · ${t('{n} already owned',{n:ownedCount})}`}
+          {ownedCount>0&&` · ${rows.some(row=>row.custom)?t('{n} in your collection',{n:ownedCount}):t('{n} already owned',{n:ownedCount})}`}
           {unresolved>0&&` · ${t('{n} without a live contract',{n:unresolved})}`}
         </div>
       </div>
 
       <div style={{flex:1,minHeight:0,overflowY:'auto',padding:'12px 20px 0'}}>
+        {!online&&<p role="status" style={{fontSize:11,color:C.textMute}}>{t('Offline · showing saved details. Contract availability may have changed.')}</p>}
         {!rows.length&&<p style={{fontSize:12,color:C.textMute}}>
           {t('This fit has no abyssal modules. Pick one from MutaMarket in the Variations tab and it will show up here with its contract.')}
         </p>}
@@ -106,14 +116,14 @@ export function ShoppingListSheet({slots,onClose}){
             <div style={{display:'flex',alignItems:'baseline',gap:8}}>
               <span style={{flex:1,minWidth:0,fontSize:13,color:C.text,overflowWrap:'anywhere'}}>{row.name??t('Unknown module')}</span>
               {row.price!=null&&<span style={{fontSize:12,fontWeight:700,color:C.text,flexShrink:0}}>{fmtResource(row.price,4)}</span>}
-              {row.state===OWNED&&badge(t('Owned'),C.success)}
+              {row.state===OWNED&&badge(row.custom?t('Custom'):t('Owned'),C.success)}
               {row.state===EXPIRED&&badge(t('Expired'),C.danger)}
             </div>
             <div style={{fontSize:10,color:C.textMute,marginTop:2,overflowWrap:'anywhere'}}>
               {SLOT_LABEL[row.slot]??row.slot}
               {row.sellerName&&` · ${row.sellerName}`}
               {row.stationId===JITA_4_4_STATION_ID&&` · ${t('Jita 4-4')}`}
-              {row.state===OWNED&&` · ${t('Already in your hangar')}`}
+              {row.state===OWNED&&` · ${row.custom?t('Saved locally'):t('Already in your hangar')}`}
               {/* The one number that decides whether this list is still worth acting on tomorrow.
                   A row you saved a week ago looks identical without it. */}
               {row.state===BUYABLE&&days(row.expiresAt)!=null&&(days(row.expiresAt)<=0
@@ -124,12 +134,15 @@ export function ShoppingListSheet({slots,onClose}){
               {row.state!==OWNED&&row.state!==EXPIRED&&row.contractId==null&&` · ${t('No saved contract for this module')}`}
             </div>
             {row.state===BUYABLE&&<div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
-              {allowed&&<button style={primary} onClick={()=>openInEve(row)}>
+              <button style={button} disabled={resolving||!contractLinkList([row],systems).count}
+                onClick={()=>copyList(contractLinkList([row],systems).text,row.itemId)}>
+                {copied===row.itemId?t('Copied!'):t('Copy EVE contract link')}</button>
+              {allowed&&<button style={primary} disabled={!online} onClick={()=>openInEve(row)}>
                 {opened[row.itemId]?t('Sent to EVE'):t('Open in EVE')}</button>}
-              {url&&<button style={button} onClick={()=>openUrl(url)}>{t('View on MutaMarket')}</button>}
+              {url&&<button style={button} disabled={!online} onClick={()=>openUrl(url).catch(e=>setError(e.message))}>{t('View on MutaMarket')}</button>}
             </div>}
             {row.state===EXPIRED&&url&&<div style={{marginTop:8}}>
-              <button style={button} onClick={()=>openUrl(url)}>{t('View on MutaMarket')}</button></div>}
+              <button style={button} disabled={!online} onClick={()=>openUrl(url).catch(e=>setError(e.message))}>{t('View on MutaMarket')}</button></div>}
           </div>;
         })}
       </div>
@@ -147,8 +160,11 @@ export function ShoppingListSheet({slots,onClose}){
           style={{...button,width:'100%',boxSizing:'border-box',marginBottom:8,fontWeight:500,color:C.text,background:C.surfaceAlt}}>
           {characters.map(c=><option key={c.characterId} value={String(c.characterId)}>{c.characterName}</option>)}
         </select>}
-        {!!buyable&&<button style={{...button,width:'100%',marginBottom:8}} onClick={copyList}>
-          {copied?t('Copied to clipboard!'):t('Copy list')}</button>}
+        {!!buyable&&<>
+          <button style={{...button,width:'100%',marginBottom:8}} disabled={resolving||!contractExport.count} onClick={()=>copyList()}>
+            {copied==='all'?t('Copied to clipboard!'):resolving?t('Resolving contract locations…'):t('Copy EVE contract links')}</button>
+          {!resolving&&contractExport.unresolved>0&&<p style={{fontSize:11,color:C.warning}}>{t('{n} contracts omitted: solar system could not be resolved.',{n:contractExport.unresolved})}</p>}
+        </>}
         <button onClick={sheet.dismiss} style={{width:'100%',padding:10,borderRadius:10,border:`1px solid ${C.border}`,background:'transparent',color:C.textMute,fontSize:13,cursor:'pointer'}}>
           {t('Close')}
         </button>

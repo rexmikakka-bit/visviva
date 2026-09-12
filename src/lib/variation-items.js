@@ -49,6 +49,10 @@ export function filterVariationItems(rows,showAbyssals,sources=['owned']){
 // Every physical roll gets its own row. The baseline always uses the saved fit's
 // snapshot, even when a refreshed library record for that item has changed.
 export function variationItems(variants,baseline,owned=[]){
+  // Legacy fits can retain an item ID after removing the mutaplasmid. Identity and
+  // market provenance belong to the roll, never to its ordinary base module.
+  if(!baseline.mutaplasmid||!Object.keys(baseline.mutations??{}).length)
+    baseline={...baseline,mutaplasmid:undefined,mutations:undefined,abyssalItemId:undefined};
   const family=new Set(variants.map(v=>String(v.typeID)));family.add(String(baseline.typeID));
   const current=owned.find(r=>r.itemId===baseline.abyssalItemId);
   const choices=[{key:'fitted',mod:baseline,record:current,isBaseline:true}];
@@ -72,7 +76,8 @@ export function variationItems(variants,baseline,owned=[]){
   const values=raw.map(a=>({...a,...derivedAttributes(a)})),base=values[0];
   const has=k=>values.some(a=>typeof a[k]==='number'&&Number.isFinite(a[k]));
   const derived=[...DERIVED_KEYS].filter(has);
-  const attributes=[...new Set([...derived,'cpu','power','upgradeCost',...keys])].filter(has);
+  const attributes=[...new Set([...derived,'cpu','power','upgradeCost',...keys])]
+    .filter(k=>has(k)&&!['heatDamage','overloadSpeedFactorBonus'].includes(k));
   // …but TRAIL the row's stats, where the first six with a delta win the space. A rate is a summary
   // of attributes already on the row, so it must not push the halves it is made of off the end.
   const statKeys=[...keys.filter(k=>!['cpu','power','upgradeCost'].includes(k)),...derived];

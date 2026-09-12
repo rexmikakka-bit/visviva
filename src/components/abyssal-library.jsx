@@ -9,8 +9,12 @@ import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44 } from '../lib/abyssal-browser.js';
 import { bestFirstDirection } from '../lib/compare.js';
 import { AttributeSort } from './attribute-sort.jsx';
+import { AbyssalInfo } from './abyssal-info.jsx';
+import { useOnline } from '../lib/use-online.js';
+import { requireOnline } from '../lib/network-request.js';
 
 export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,onPathChange,onBack,backSwipe,formatValue,attributeLabel,sortValue,renderRow,renderGroup,renderInfo,Sheet}){
+  const online=useOnline();
   const [records,setRecords]=useState([]),[characters,setCharacters]=useState(listCharacters);
   const [characterId,setCharacterId]=useState(''),[scan,setScan]=useState(null),[selected,setSelected]=useState([]);
   const [busy,setBusy]=useState(false),[progress,setProgress]=useState(null),[error,setError]=useState(''),[report,setReport]=useState(null);
@@ -28,7 +32,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
   const run=async task=>{
     if(controller.current)return;
     const abort=new AbortController();controller.current=abort;setBusy(true);setError('');setReport(null);
-    try{await task(abort.signal);}catch(e){if(mounted.current&&e.name!=='AbortError')setError(e.message);}
+    try{requireOnline();await task(abort.signal);}catch(e){if(mounted.current&&e.name!=='AbortError')setError(e.message);}
     finally{controller.current=null;if(mounted.current){setBusy(false);setProgress(null);try{setRecords(await readAbyssals());}catch(e){setError(e.message);}}}
   };
   const progressUpdate=value=>{if(mounted.current)setProgress(value);};
@@ -75,6 +79,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
   const input={...button,width:'100%',minWidth:0,boxSizing:'border-box',background:C.surface,fontWeight:500,color:C.text,padding:'5px 6px'};
   const toggle=on=>({...button,background:on?C.accentLight:'none',borderColor:on?C.accentBorder:C.border,color:on?C.accent:C.textMute});
   return <><div style={{color:C.text,fontSize:12,flex:1}} {...backSwipe}>
+    {!online&&<div role="status" style={{padding:'8px 16px',fontSize:11,color:C.textMute}}>{t('Offline · saved modules are available; asset refresh requires a connection.')}</div>}
     <details open={records.length===0||busy||!!error} style={{padding:'10px 16px',borderBottom:`1px solid ${C.border}`}}>
     <summary style={{color:C.textMid,cursor:'pointer',fontSize:12,fontWeight:700,overflowWrap:'anywhere'}}>{t('Import')}{character&&` · ${character.characterName}`}</summary>
     <p style={{color:C.textMute,fontSize:11,margin:'8px 0'}}>{t('Import your rolled modules from EVE. Saved rolls stay available offline.')}</p>
@@ -162,11 +167,5 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
       })}</div>;
     })}
     {filtered.length>limit&&<button style={{...button,display:'block',margin:'12px auto'}} onClick={()=>setLimit(n=>n+40)}>{t('Show more')}</button>}
-  </div>{info&&renderInfo({item:info,onClose:()=>setInfoId(null),children:<div style={{paddingTop:12,borderTop:`1px solid ${C.border}`,overflowWrap:'anywhere'}}>
-    <div style={{color:C.textMid,fontSize:12}}>{info.characterName} · {info.location}</div>
-    <div style={{color:C.textMute,fontSize:11}}>#{info.itemId}<br/>{t('Last seen')}: {new Date(info.lastSeen).toLocaleString()}</div>
-    {!info.available&&<div style={{color:C.danger,fontSize:11}}>{t('Not found in last asset scan')}</div>}
-    <input aria-label={t('Label')} placeholder={t('Label')} style={{...input,fontSize:16,marginTop:8}} disabled={busy} defaultValue={info.label??''} maxLength={120}
-      onBlur={e=>{if(e.target.value!==(info.label??''))edit(info,{label:e.target.value});}}/>
-  </div>})}</>;
+  </div>{info&&renderInfo({item:info,onClose:()=>setInfoId(null),children:<AbyssalInfo key={info.itemId} mod={libraryModule(info)} initialRecord={info} onChanged={setRecords}/>})}</>;
 }

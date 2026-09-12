@@ -14,7 +14,6 @@
 // A value may be a form MAP instead of a string where the phrase counts something. German takes the
 // same two forms as English, so `one` and `other` are all that appear here.
 export default {
-  "Owned only": "Nur eigene",
   "Fitted elsewhere in this fit": "An anderer Stelle in diesem Fit eingebaut",
   "Browser": "Browser",
   "Containers": "Container",
