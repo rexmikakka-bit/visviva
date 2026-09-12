@@ -533,3 +533,12 @@ Local branch `codex/contract-access-price-polish`, not released:
   Screenshots: visualization directory for this task, `price-standard-{dark,light}.png`,
   `price-abyssal-{dark,light,narrow}.png`. Temporary in-app fit `Price review` deletion was
   attempted, but browser timed out before cleanup could be confirmed.
+
+### iOS 1.25.3 device review build uploaded
+
+Owen requested an iOS patch to test these fixes. Commit `9c3432a` was pushed on
+`codex/contract-access-price-polish` and built directly from that branch, pending
+device login verification before merging. iOS **1.25.3 (122)** upload succeeded:
+https://github.com/rexmikakka-bit/visviva/actions/runs/34680074341
+The log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing and tester
+availability have not been independently verified. Android remains 1.25.2 (95).
