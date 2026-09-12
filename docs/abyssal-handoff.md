@@ -281,18 +281,24 @@ maintenance; no backend choice, cost commitment, implementation, or deployment i
 
 ## State of the tree
 
-`HEAD` is `b1b02cb Record Android 1.25.1 release`. **Backlog items #9 through #19 are finished but
-completely uncommitted on `main`** — no branch, no commit. `npm run verify` is green at **1,783
-checks** as of this handoff.
+Backlog items #9 through #19 are finished and committed on the branch **`abyssal-mutamarket`**, which
+branches from `main` at `b1b02cb Record Android 1.25.1 release`. `main` itself is untouched. The
+branch has **not been pushed** — do not push it, open a PR or merge it without asking Owen.
 
-| | |
-| --- | --- |
-| Modified | `docs/abyssal-handoff.md`, `scripts/check-offline.mjs`, `src/App.jsx`, `src/components/{abyssal-library,abyssal-sources,attribute-sort,glyphs,layout,ui}.jsx`, `src/lib/{abyssal-browser,abyssal-store,compare,core,esi,variation-items}.js`, `src/regression.test.mjs`, `vite.config.js` |
-| New (untracked, **belongs to the work**) | `scripts/mutamarket-check.mjs`, `src/components/shopping-list.jsx`, `src/lib/{market-settings,mutamarket-client,mutamarket-contracts,mutamarket,shopping-list}.js` |
-| New, **do not commit** | `output/` and `promotional-assets/` (review screenshots), `.claude/scheduled_tasks.lock` |
+Three commits, split by layer so a piece can be reverted on its own:
 
-Owen has been told the work is uncommitted and has not yet said how he wants it split. Do not commit
-or branch without asking him.
+1. `08febae` — the MutaMarket data layer (`src/lib/mutamarket*.js`, `market-settings.js`,
+   `shopping-list.js`), the ESI station join, `scripts/check-offline.mjs`, the `vite.config.js` proxy
+   and the regression checks.
+2. `c39ee4e` — the UI: Variations, the source picker, the My Abyssals browser, the shopping-list
+   sheet, and their `App.jsx` wiring.
+3. `b97f3dd` — this handoff.
+
+`npm run verify` is green at **1,783 checks** at the branch tip. Only the tip was verified; the two
+earlier commits were not built in isolation.
+
+Three untracked paths are deliberately left out of every commit: `output/` and `promotional-assets/`
+(review screenshots) and `.claude/scheduled_tasks.lock`.
 
 ## The backlog, in Owen's words
 
