@@ -194,6 +194,59 @@ select a module → compare replacements in this fit → choose one → shopping
 - Never reuse the same unique physical item in two slots of one fit.
 - Shopping list includes contract links for purchases and owner/container for existing modules.
 
+## MutaMarket integration — verified against the live API, September 11 2026
+
+Owen authorized starting the MutaMarket tie-in. `src/lib/mutamarket.js` (pure: query building +
+conversion) and `src/lib/mutamarket-contracts.js` (ESI station join) exist and are covered by the
+suite. **No UI is wired yet** — the `MutaMarket / Not connected` row in
+`src/components/abyssal-sources.jsx` is still the seam to connect.
+
+**MutaMarket removes the need for the Axis-hosted contract index** proposed further down this file.
+It already indexes every publicly contracted abyssal module, needs no key or account, and filters by
+type, attribute, meta group, price, contract cleanliness and region.
+
+Verified live, not assumed:
+
+- **Abyssal type coverage is exactly 1:1.** All 89 dynamic result types in `mutaplasmids.json`
+  (`m.r`) match MutaMarket's `type_id` in both directions. No mapping table. Pinned by the suite.
+- **Rolls convert with no mismatches** across 503 live listings over six types, once `is_derived` /
+  `is_virtual` attributes are dropped. Values land inside `mutaplasmids.json` ranges.
+- **`contract.id` IS ESI's `contract_id`** — 400 of 400 sampled ids matched, prices identical. This
+  is what makes station resolution possible.
+- **MutaMarket's `id` IS the EVE `item_id`**, the same key space as an imported asset, so a listing
+  can be recognised as a module the user already owns.
+
+### Four traps, each already cost a probe to find
+
+1. **Only the LAST `attributes/` segment is applied.** Stacking two does not intersect and does not
+   error — it returns rows violating the earlier filter. `mutaMarketQuery` refuses more than one;
+   narrow further on-device.
+2. **`public_asset.price` is `0.0` for any uncontracted module.** Zero is not free. Only a clean
+   `item_exchange` contract (one abyssal module, no other items, no PLEX, not asking for items)
+   yields a price; everything else must be null. `estimated_value` is MutaMarket's model and is
+   carried separately so it can be labelled as an estimate.
+3. **No station below region.** `region_id` is the finest MutaMarket filter and its contract payload
+   has no station, so Jita 4-4 comes from joining ESI's public contract list. Owen chose this over a
+   region-only label. It matters: of 400 clean Forge listings, 371 were Jita 4-4 and 29 were not.
+   An unresolved contract must stay `null` — never folded into a station match.
+4. **No CORS headers**, same as ceve-market: fine in the installed app via CapacitorHttp, blocked on
+   the dev server, which needs a proxy before Owen can review it. Registered in `check-offline.mjs`.
+
+Cost is low: the whole Forge contract index is ~35 pages / ~35,000 contracts in ~2.1s at 8 pages in
+parallel, cached 30 min by ESI and reused for the session. A partial index is refused outright — a
+dropped page is indistinguishable from "those contracts are elsewhere" and would silently hide real
+Jita listings, the same rule `scanAbyssals` applies to asset pages.
+
+MutaMarket's legal page states no API terms, licence or attribution requirement — only that it is a
+personal project by Nicolas Kion provided as-is. Their docs ask for an identifying User-Agent with a
+contact address (`MUTAMARKET_USER_AGENT`) and no tight-looping `POST /modules`, which Axis never
+calls. Their `documentation/api-modules` page 404s; `/api/openapi.json` is the reliable reference.
+
+Validation: `npm run verify` passed all **1,601** checks (1,563 before, 38 new). Teeth proven by
+reverting three fixes and watching the suite fail: dropping the derived/virtual guard, falling back
+to `public_asset.price`, and defaulting an unresolved station to the requested one. No live ESI
+login, no UI, and no native build were exercised in this pass.
+
 ## Market data feasibility research
 
 MutaMarket is optional. Its documented public API needs no key/account, but live contract fields and
@@ -214,3 +267,138 @@ means scanning eligible contracts, inspecting contents, fetching rolls, and main
 Suggested architecture: shared public Axis contract-index service, initially Jita 4-4, with private
 inventory/fits and comparison computation remaining on-device. This would introduce hosting and
 maintenance; no backend choice, cost commitment, implementation, or deployment is authorized yet.
+
+> **Superseded for discovery.** MutaMarket already maintains this index publicly, so the Axis-hosted
+> service is not needed and nothing above authorizes building one. The ESI notes in this section are
+> still live for a different reason: `/contracts/public/{region_id}` is what resolves a contract to
+> Jita 4-4, since MutaMarket filters no finer than region. See the section above.
+
+---
+
+# Pick-up-here handoff — September 11, 2026
+
+**Read this section first.** Everything above is background; this is the live state.
+
+## State of the tree
+
+`HEAD` is `b1b02cb Record Android 1.25.1 release`. **Backlog items #9 through #19 are finished but
+completely uncommitted on `main`** — no branch, no commit. `npm run verify` is green at **1,783
+checks** as of this handoff.
+
+| | |
+| --- | --- |
+| Modified | `docs/abyssal-handoff.md`, `scripts/check-offline.mjs`, `src/App.jsx`, `src/components/{abyssal-library,abyssal-sources,attribute-sort,glyphs,layout,ui}.jsx`, `src/lib/{abyssal-browser,abyssal-store,compare,core,esi,variation-items}.js`, `src/regression.test.mjs`, `vite.config.js` |
+| New (untracked, **belongs to the work**) | `scripts/mutamarket-check.mjs`, `src/components/shopping-list.jsx`, `src/lib/{market-settings,mutamarket-client,mutamarket-contracts,mutamarket,shopping-list}.js` |
+| New, **do not commit** | `output/` and `promotional-assets/` (review screenshots), `.claude/scheduled_tasks.lock` |
+
+Owen has been told the work is uncommitted and has not yet said how he wants it split. Do not commit
+or branch without asking him.
+
+## The backlog, in Owen's words
+
+Items #9–#19 are done. What is left:
+
+- **#20** — *"revamp info sheet for abyssal modules with ownership/location/price/mutamarket
+  link/ingame contract link/custom name field/anything else a user would want to look at"* and
+  *"allow a user to save a custom abyssal module to their own abyssal collection via that module's
+  info sheet"*. **In progress — see below.**
+- **#21** — *"make the shopping list exportable as a pastable eve contract link list, so without
+  authing a character…"*. Owen confirmed the target format:
+  `<url=contract:30000142//235822605>Contract 235822605 (Abyssal Ballistic Control System) ISK 270,000,000</url>`
+- **#22** — Fit value: include priced abyssals in the fit's total value, flag the unknowns rather than
+  counting them as zero, badge where each price came from.
+- **#23** — Handle being offline gracefully across every abyssal feature.
+- **#24** — Document MutaMarket and ESI asset reading (README + the ESI settings page).
+- **Deferred, awaiting Owen's call:** replacing "Favorites" with a tag system. That one needs a
+  `src/lib/storage-migrate.js` migration; do not start it unprompted.
+
+## #20 — exactly where it stands
+
+**Done and verified.** `src/lib/shopping-list.js` now exports `abyssalProvenance(itemId,{owned,
+listings,now})`, and `shoppingList()` has been rebuilt on top of it so the two screens cannot
+disagree. The returned row shape is byte-identical to before. Seven new checks are in the `shopping`
+group of `src/regression.test.mjs`; teeth were proven by inverting the OWNED-wins rule and watching
+`a module in your hangar is owned even while its old contract is still live` fail.
+
+The insight worth keeping: a roll's provenance is a **join on the EVE item id** between the owned
+library (IndexedDB `axis-abyssals` / `modules`) and the listing cache (`axis-abyssals` / `listings`).
+That join already existed inside `shoppingList`; the info sheet needed the same answer. `OWNED` beats
+a live contract deliberately — a module in your hangar is not a purchase, whatever the market still
+says about the contract it came off.
+
+**Not started — steps B to F:**
+
+- **B. `src/lib/abyssal-library.js`** — add `export const MANUAL_OWNER` (**one declarator per line**:
+  `check-imports.mjs` reads exports by regex and only sees the first of a comma-separated
+  `export const`), plus `customAbyssal(mod,{itemId,label,ownerName,locationName,now})` building a full
+  library record, and `manualAbyssalId()` producing a synthetic **prefixed string** id that can never
+  collide with a real EVE item id.
+  Two reasons this shape was chosen: `mergeAbyssalScan` only reconciles rows where
+  `old.characterId===character.characterId`, so a row with `characterId:MANUAL_OWNER` survives every
+  asset scan untouched; and six separate display sites read `record.characterName`/`record.location`
+  (`abyssalSourceTree`, `abyssalContainerGroups`, the library row subtitle, the library info block,
+  the variations row, the sources sheet), so `customAbyssal` takes **already-translated display
+  strings from the caller** rather than plumbing a marker through all six. The pure lib then needs no
+  i18n import and the suite can pass explicit strings.
+- **C. `src/lib/abyssal-store.js`** — `saveCustomAbyssal(record)` and `forgetAbyssal(itemId)`, so
+  saving is reversible. Follow the `forgetCharacterAbyssals` transaction pattern at line 75: the
+  shared `update()` helper only PUTs and never deletes, so delete paths are written out by hand.
+- **D. Regression checks** for `customAbyssal` in a new group, each proven to have teeth by reversion.
+- **E. New `src/components/abyssal-info.jsx`** exporting an `AbyssalInfo` panel: owner / location /
+  last seen / availability, price (asking price, or `estimatedValue` **explicitly labelled as an
+  estimate** — see trap 2 above), MutaMarket link via `mutaMarketUrl(slug)`, "Open in EVE" via
+  `openContractWindow` gated on `UI_SCOPE`, the custom-name (label) field, and a "Save to My Abyssals"
+  action when the roll is not already in the library. Keep it **out of `ui.jsx`**, which is 2,938
+  lines and a named conflict hotspot.
+- **F. Mount it at two sites.** `src/components/abyssal-library.jsx:165` — the `renderInfo` children
+  block, replacing the existing inline owner/location/label block. And
+  `ModuleInfoTab` at `src/components/ui.jsx:1523`, which today renders only `<ItemInfoPanel>` and
+  shows no provenance at all — that is the "no price" sheet Owen saw. Its two call sites are
+  `ui.jsx:2746` (modules) and `ui.jsx:2794` (drones); only the module one needs provenance.
+
+Reference anchors: `ItemInfoSheet` `ui.jsx:1492` (renders the panel then `{children}`), the
+My Abyssals toggle and `<AbyssalLibrary>` mount `ui.jsx:895–904`, `ModuleVariationsTab` `ui.jsx:1752`,
+the variations provenance line `ui.jsx:2061`.
+
+The reusable patterns for the link/contract actions are all in `src/components/shopping-list.jsx`:
+`openUrl` (Capacitor `Browser.open` on native, `window.open` otherwise), `openContractWindow`,
+`UI_SCOPE` gating, and the two-step clipboard fallback (`navigator.clipboard` needs a secure context,
+which `file://` is not).
+
+## #21 — the one detail that is not yet solved
+
+The in-game link is `contract:<SOLAR SYSTEM ID>//<contract id>`, and `30000142` in Owen's example is
+**Jita the solar system**, not a region and not the station. What the listing cache actually stores is
+`stationId` (Jita 4-4 is `60003760`), resolved by `withStations` from ESI's
+`/contracts/public/{region_id}` `start_location_id`. There is no system id anywhere in the pipeline
+yet.
+
+Do not guess one. Either resolve station → system through ESI `/universe/stations/{station_id}`
+(the payload has `system_id`; cache it, and it is a public endpoint needing no auth), or — if Owen
+prefers the smaller change — accept that the export only covers contracts whose station resolved and
+map those. A listing whose `stationId` is `null` must not be exported with an invented system id;
+`null` means *unknown*, never *Jita*. That rule is load-bearing throughout this feature.
+
+`copyList` at `shopping-list.jsx:66` is the function to extend — it already has the clipboard
+fallback and the "copied" flash. The export must work with **no character linked at all**, which is
+Owen's stated point ("without authing a character"), so it cannot depend on `UI_SCOPE`.
+
+## Rules that have already cost time here
+
+- **`check()` in `regression.test.mjs` takes a RELATIVE tolerance, not absolute.** Always prove a new
+  check has teeth by reverting the change and watching it fail.
+- **`check-i18n.mjs` fails only on ORPHANED catalog keys, never on missing ones.** New `t()` strings
+  are free. Editing an *existing* English string that is in the catalog orphans its 7 translations.
+- **Never patch `App.jsx` or `components/ui.jsx` with scripted whole-span replacements**, and never
+  use sed/python to write source files at all — it flips LF→CRLF and eats adjacent lines invisibly.
+  Slicing "from this function to the next `function `" has already silently swallowed `ItemDetailSheet`
+  once and the abyssal helper block twice.
+- **Review on the dev server before shipping.** The synthetic library lives at
+  `http://localhost:5173/abyssal-preview.html` — **Add sample modules**, then **Open Axis**, pick a
+  hull, open an empty module slot, choose **My Abyssals**. 243 rolls, all at Jita 4-4
+  (`locationId:'60003760'`), so the Jita filter legitimately changes nothing on this data — that is
+  not a bug, it was checked.
+- MutaMarket has **no CORS headers**, so it is blocked on the dev server and needs the `vite.config.js`
+  proxy; it works natively via CapacitorHttp.
+- Owen is on iPhone. Every release ships **both** platforms (Android GitHub APK *and* iOS TestFlight),
+  patch bumps by default, and **never** a Play-signed AAB unless he explicitly asks.

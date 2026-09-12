@@ -15,9 +15,10 @@
 
 ## Current work handoff
 
-Before continuing the abyssal module work, read [docs/abyssal-handoff.md](docs/abyssal-handoff.md).
-It records the tested iOS build, newer browser styling, local preview, and Owen's decisions for future work.
-The abyssal library and reviewed browser/comparison improvements are merged into `main`.
+Before continuing the abyssal module work, read the **"Pick-up-here handoff"** section at the END of
+[docs/abyssal-handoff.md](docs/abyssal-handoff.md). It holds the live backlog (#20–#24), exactly how
+far #20 got, and the state of the working tree. Everything above that section in the file is
+background: the tested iOS build, the browser styling, the local preview, and Owen's earlier decisions.
 
 ## UI consistency
 

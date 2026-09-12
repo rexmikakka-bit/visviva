@@ -4,6 +4,11 @@ Read [CLAUDE.md](CLAUDE.md) for project constraints, architecture, validation, a
 the current handoff before working in this repository. Its project rules apply
 regardless of which agent is doing the work.
 
+If you are picking up the abyssal / MutaMarket work, the live state is the
+**"Pick-up-here handoff"** section at the end of
+[docs/abyssal-handoff.md](docs/abyssal-handoff.md): the remaining backlog (#20–#24),
+how far #20 got, and what is uncommitted.
+
 For any user-facing UI change, also read [docs/ui-conventions.md](docs/ui-conventions.md).
 Start from the closest existing Axis screen and reuse its components and interaction
 patterns. A feature request is not a request to redesign the app. State the existing
