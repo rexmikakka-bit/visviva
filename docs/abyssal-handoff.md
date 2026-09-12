@@ -498,3 +498,17 @@ Android, rejecting the separate Android adaptation. Launcher assets are generate
 `scripts/build-launcher-icons.mjs`; in-app marks, favicon and splash remain unchanged.
 Full verification passed 1,837 checks. Cumulative notes since 1.22.6 are in
 `docs/whats-new-1.25.2.md`. Release results will be recorded after publishing.
+
+### 1.25.2 shipped
+
+- PR #71 merged to main at `b5a1b4bf65090b058d4da9ce55ee44aec6d52025`; both CI jobs passed.
+- Android 1.25.2, versionCode 95: https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.2
+  APK metadata was verified with aapt2; uploaded SHA-256 matches the local build:
+  `95531f4af3290b90de655ff76ea5abb30781bf63ccbd6ea6d470deb85ee913f2`.
+  Packaged launcher pixels match the approved original artwork.
+- iOS 1.25.2, build 121: https://github.com/rexmikakka-bit/visviva/actions/runs/34676759783
+  Completed successfully; upload log says `UPLOAD SUCCEEDED with no errors`.
+  App Store Connect processing/tester availability was not separately checked.
+- Android notes were corrected to cover **since 1.25.1** (`docs/android-release-1.25.2.md`).
+  The App Store submission notes remain cumulative **since 1.22.6** (`docs/whats-new-1.25.2.md`).
+- The rejected Android adaptation, `.claude` lock and `output/` scratch artifacts remain untracked.
