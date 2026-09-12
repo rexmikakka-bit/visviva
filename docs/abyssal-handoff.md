@@ -542,3 +542,13 @@ device login verification before merging. iOS **1.25.3 (122)** upload succeeded:
 https://github.com/rexmikakka-bit/visviva/actions/runs/34680074341
 The log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing and tester
 availability have not been independently verified. Android remains 1.25.2 (95).
+
+### Android 1.25.3 shipped after device approval
+
+Owen confirmed the iOS fixes look great and work correctly, then authorized Android.
+PR #72 merged to main at `692db3d`; both CI checks and local verification passed
+(1,842 regression checks). Android **1.25.3 (96)** is published:
+https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.3
+APK package/version metadata verified with aapt2. GitHub asset SHA-256 matches local:
+`80396022e64041467b3ce0cade809cb4d6cce3b7bb0c9fe34feff823b7d8d0aa`.
+Notes are in `docs/android-release-1.25.3.md`. iOS remains 1.25.3 (122).
