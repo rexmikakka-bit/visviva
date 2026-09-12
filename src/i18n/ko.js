@@ -10,7 +10,6 @@
 // phrases are plain strings here rather than form maps — Korean nouns do not inflect for number, and
 // a map would only ever reach its `other` branch.
 export default {
-  "Owned only": "보유 모듈만",
   "Fitted elsewhere in this fit": "이 피팅의 다른 슬롯에 장착됨",
   "Browser": "브라우저",
   "Containers": "컨테이너",

@@ -12,7 +12,6 @@
 // four. `other` is still the catalog lookup key — the shape of the plural belongs to Russian, not to
 // English's idea of it.
 export default {
-  "Owned only": "Только свои",
   "Fitted elsewhere in this fit": "Установлен в другом слоте этого фита",
   "Browser": "Браузер",
   "Containers": "Контейнеры",

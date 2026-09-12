@@ -8,6 +8,8 @@ import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { fittedAbyssalIds } from '../lib/variation-items.js';
+import { abyssalValue } from '../lib/abyssal-value.js';
+import { useAbyssalData } from '../lib/use-abyssal-data.js';
 import { missileRangeTip } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
@@ -1446,6 +1448,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   const [showTargetPicker,setShowTargetPicker]=useState(false);
   // Market price state — hub controlled from Settings > Market, prices fetched from Fuzzwork.
   const [prices,setPrices]=useState(null);
+  const abyssalData=useAbyssalData(slots);
   const [priceLoading,setPriceLoading]=useState(false);
   // Collect typeID+qty pairs per display group for pricing.
   const priceItems=useMemo(()=>{
@@ -1456,8 +1459,8 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       // `abyssal` modules keep their BASE typeID and carry the roll in `mutaplasmid`/`mutations`,
       // so a market lookup would price them as the unmutated module — which is meaningless: a
       // rolled module's value depends entirely on the roll and ranges over orders of magnitude.
-      // They're listed but never priced, and are left out of the totals.
-      modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,
+      // Only confirmed live asking prices contribute; unknown values remain visible.
+      modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,mod:s,
         abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
       charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
       // Boosters are part of the FIT price; implants are not. The line between them is "does flying
@@ -1494,10 +1497,11 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
     return()=>{cancelled=true;};
   },[fitFingerprint,priceHub,priceSource]);// eslint-disable-line react-hooks/exhaustive-deps
   const groupTotals=useMemo(()=>{
-    const sum=items=>items.reduce((acc,{typeID,qty,abyssal})=>acc+(abyssal?0:(prices?.get(typeID)??0)*qty),0);
+    const sum=items=>items.reduce((acc,{typeID,qty,abyssal,mod})=>acc+(abyssal?(abyssalValue(mod,abyssalData).price??0):(prices?.get(typeID)??0))*qty,0);
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),
            boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),implants:sum(priceItems.implants)};
-  },[priceItems,prices]);
+  },[priceItems,prices,abyssalData]);
+  const unknownAbyssals=priceItems.modules.filter(it=>it.abyssal&&abyssalValue(it.mod,abyssalData).price==null).length;
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
   // The hull-and-fit cost is the number you compare against another fit; implants are a property of
   // the PILOT and follow you from ship to ship, so a total that silently folds in a set of
@@ -1511,22 +1515,23 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
     const out={};
     for(const[group,items]of Object.entries(priceItems)){
       const merged=new Map();
-      for(const{typeID,qty,abyssal}of items){
+      for(const{typeID,qty,abyssal,mod}of items){
         if(!typeID)continue;
         // Keyed by typeID AND the abyssal flag, so a rolled module never merges with an unrolled
         // one of the same base type — they'd share a row but not a price.
-        const key=abyssal?`${typeID}*`:String(typeID);
-        const e=merged.get(key)??{typeID,abyssal:!!abyssal,qty:0,unit:abyssal?null:(prices?.get(typeID)??0)};
+        const key=abyssal?`${typeID}*${mod?.id??merged.size}`:String(typeID);
+        const valuation=abyssal?abyssalValue(mod,abyssalData):{price:prices?.get(typeID)??0,source:'market'};
+        const e=merged.get(key)??{key,typeID,abyssal:!!abyssal,qty:0,unit:valuation.price,source:valuation.source};
         e.qty+=qty??1;
         merged.set(key,e);
       }
       out[group]=[...merged.values()]
-        .map(e=>({...e,name:TYPES[String(e.typeID)]?.n??`#${e.typeID}`,total:e.abyssal?null:e.unit*e.qty}))
+        .map(e=>({...e,name:TYPES[String(e.typeID)]?.n??`#${e.typeID}`,total:e.unit==null?null:e.unit*e.qty}))
         // Unpriced (abyssal) rows sort last; the rest by value descending.
         .sort((a,b)=>(a.total==null)-(b.total==null)||(b.total??0)-(a.total??0));
     }
     return out;
-  },[priceItems,prices]);
+  },[priceItems,prices,abyssalData]);
   // Separate from `collapsed` (which is open-by-default): these nested rows default to CLOSED,
   // so absence from the set means closed.
   const[openPriceGroups,setOpenPriceGroups]=useViewMemory("Stats:openPriceGroups",{});
@@ -2142,12 +2147,13 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       <div style={card}>
         <SectionHead id="fitvalue" title={t("Fit Value")} right={
           <span style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"baseline",gap:5}}>
-            <span style={{color:C.rig}}>{priceLoading?'…':fmtISK(hullPrice)}</span>
+            <span style={{color:C.rig}}>{priceLoading?'…':`${fmtISK(hullPrice)}${unknownAbyssals>0?' + ?':''}`}</span>
             {!priceLoading&&(groupTotals.implants??0)>0&&
               <span style={{color:C.accent}} title={t("Including implants")}>{fmtISK(totalPrice)}</span>}
           </span>
         }/>
         {isOpen("fitvalue")&&<>
+          {(unknownAbyssals>0||abyssalData.loading||abyssalData.error)&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.warning}}>{abyssalData.loading?t('Loading saved module details…'):abyssalData.error||t({one:'Known subtotal; {n} abyssal module has no confirmed value.',other:'Known subtotal; {n} abyssal modules have no confirmed value.'},{n:unknownAbyssals})}</div>}
           {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
@@ -2165,14 +2171,15 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
                 <span style={{fontSize:11,fontWeight:600,color:C.text}}>{priceLoading?'…':fmtISK(val)}</span>
               </div>
               {open&&items.map((it,j)=>(
-                <div key={it.typeID} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,
+                <div key={it.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,
                      padding:"4px 12px 4px 26px",background:`${C.surfaceAlt}88`,
                      borderBottom:(last&&j===items.length-1)?"none":`1px solid ${C.border}`}}>
                   <span style={{fontSize:11,color:C.textMid,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {it.qty>1&&<span style={{color:C.textMute,fontWeight:700}}>{it.qty}x </span>}{it.name}
+                    <span style={{display:'block',fontSize:9,color:C.textMute}}>{it.abyssal?({ask:t('MutaMarket asking price'),owned:t('Owned · value unknown'),custom:t('Custom · value unknown'),expired:t('Expired contract'),unknown:t('No confirmed price')}[it.source]):`${priceHub} · ${priceSource}`}</span>
                   </span>
                   <span title={it.abyssal?t("Abyssal module — value depends on the roll, not the base type"):undefined}
-                        style={{fontSize:11,fontWeight:600,color:it.abyssal?C.textMute:C.text,flexShrink:0}}>{it.abyssal?'—':fmtISK(it.total)}</span>
+                        style={{fontSize:11,fontWeight:600,color:it.total==null?C.textMute:C.text,flexShrink:0}}>{it.total==null?'—':fmtISK(it.total)}</span>
                 </div>
               ))}
             </div>);

@@ -9,7 +9,6 @@
 // ⚠ NO PLURAL FORMS. `Intl.PluralRules('zh')` answers `other` for every count, so the 44 counted
 // phrases are plain strings here rather than form maps — Chinese nouns do not inflect for number.
 export default {
-  "Owned only": "仅已拥有",
   "Fitted elsewhere in this fit": "已装配在此配置的其他槽位",
   "Browser": "浏览器",
   "Containers": "容器",

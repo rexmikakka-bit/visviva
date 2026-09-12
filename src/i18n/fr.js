@@ -11,7 +11,6 @@
 // A value may be a form MAP instead of a string where the phrase counts something. French takes the
 // same two forms as English (with 0 taking `one`), so `one` and `other` are all that appear here.
 export default {
-  "Owned only": "Possédés uniquement",
   "Fitted elsewhere in this fit": "Déjà équipé ailleurs dans ce fit",
   "Browser": "Navigateur",
   "Containers": "Conteneurs",

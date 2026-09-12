@@ -1192,8 +1192,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
-    try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters,drones}); }catch{ return null; }
-  },[ship,slots,skills,implants,boosters,drones]);
+    try{ return computeProjectedReps({name:sn,typeID:tidByName(sn)},slots,skills,{implants,boosters,drones,externalBursts}); }catch{ return null; }
+  },[ship,slots,skills,implants,boosters,drones,externalBursts]);
   // What the target would present with its MWD off — the only thing a scrambler in `ownProj` can be
   // modelled against. Non-null only for a preset that HAS an MWD variant and is currently running it:
   // once sig or speed is typed the profile becomes "custom", which carries no variant, and a typed

@@ -23,7 +23,7 @@ You can also:
 - **Plot performance.** Graph damage, EWAR, repairs, shield regeneration, capacitor, mobility, warp time, and lock time. Available axes include distance, time, target speed, and signature radius. Use a frigate, cruiser, or battleship target profile, or another saved fit.
 - **Include fleet support and environment effects.** Apply links, command bursts, remote repairs, webs, neutralizers, target painters, and other EWAR from saved fits. Model wormhole class effects, metaliminal storms, and event beacons.
 - **Choose a pilot.** Use all level V skills, an Alpha clone profile, or skills synced from your EVE character. The fit header identifies unmet skill requirements.
-- **Work with abyssal modules.** Roll and save mutated modules with their individual attributes, and compare module variations side by side.
+- **Work with abyssal modules.** Import owned rolls from linked characters, organize them by character/container, save custom rolls locally, and compare them with MutaMarket listings in Variations.
 - **Inspect equipment.** View descriptions, traits, attributes, prices, and T1, T2, faction, storyline, deadspace, and officer variants.
 - **Compare costs.** Request market prices for individual items or an entire fit. The price optimizer finds cheaper module variants with identical stats.
 
@@ -31,11 +31,36 @@ You can also:
 
 Fits are saved on your device. Import and export EFT text, exchange saved fittings with your EVE character through ESI, or share a fit as an image. Saved data can be backed up to a file and restored.
 
+The abyssal shopping list keeps the contracts selected for a fit. Copy its EVE contract links
+without connecting a character; links are exported only when their solar system is known.
+Copy a single item's link or the entire list. Auction visibility and single-item filtering are
+independent; the abyssal price limit does not hide standard module variants. Sorting changes order,
+while attribute padlocks explicitly hide rolls worse than the fitted module.
+Opening a contract directly in a running EVE client requires the optional contract-window permission.
+
+Fitted rolls are included in fit backups. The separate owned/custom abyssal library, labels,
+favorites and saved contract cache are currently local to the device and are not included in those backups.
+
 ## Offline use and privacy
 
 Game data, ship and module art, and the fitting engine are bundled with the app. Your fits, skills, and settings remain on your device. Axis has no application server, separate account system, or telemetry.
 
 Network access is used for optional EVE character connections and market-price requests. Character connections use CCP's official login through ESI; prices are fetched when requested. Neither is needed to build or evaluate a fit.
+
+My Abyssals requests optional read-only access to each character's personal assets and item names;
+it does not move items or read corporate assets. You choose the locations to import. Complete scans
+mark missing items as unavailable while preserving their saved rolls. Unlinking a character does
+not automatically erase imported modules; forgetting those records is a separate action.
+
+[MutaMarket](https://mutamarket.com) supplies public abyssal listings without an account or API key.
+Axis sends module types and market filters, not your character's inventory. Public ESI contract and
+station lookups resolve locations, including Jita 4-4. Listings may be delayed or disappear; saved
+prices are not a guarantee that a contract is still available. Estimates, auction bids and bundle
+totals are labelled separately and are not counted as a confirmed per-module fit value.
+
+Offline, fitting, imported/custom rolls and saved contract details remain available. Refreshing
+assets, fetching new listings and opening an EVE contract window require a connection. Contract-link
+export can use previously resolved station information offline; unresolved links are reported and omitted.
 
 ## Calculation accuracy
 

@@ -10,7 +10,6 @@
 // A value may be a form MAP instead of a string where the phrase counts something. Spanish takes the
 // same two forms as English, so `one` and `other` are all that appear here.
 export default {
-  "Owned only": "Solo propios",
   "Fitted elsewhere in this fit": "Equipado en otra ranura de este fit",
   "Browser": "Explorador",
   "Containers": "Contenedores",

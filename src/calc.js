@@ -1418,7 +1418,9 @@ export function computeFitCostRatios(ship, slots, skills = SKILL_DEFAULTS, opts 
     for (const [slot] of _COST_ATTRS) {
       const it = e[slot] != null ? probes.get(e[slot]) : null;
       const attr = _COST_ATTRS.find(p => p[0] === slot)[1];
-      const b = it ? (it.getBase(attr) ?? 0) : 0;
+      // Pre-multiply hull bonuses modify getBase itself (e.g. bomber launcher grid).
+      // Browser rows show the unmodified type cost, so divide by that same cost.
+      const b = it ? (TYPES[e[slot]]?.attrs?.[attr] ?? 0) : 0;
       // 1, not null: a class no member of which pays this resource cannot fail on it either.
       r[slot] = b > 0 ? (it.get(attr) ?? 0) / b : 1;
     }

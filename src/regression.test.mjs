@@ -25,8 +25,8 @@ import { TARGET_PROFILES } from './data/target-profiles.js';
 import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
-import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits } from './lib/core.js';
+import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap } from './lib/esi.js';
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -35,10 +35,19 @@ import { byRecentlyModified, byNewestFitting } from './lib/fit-order.js';
 import { jargonSearch, nameMatchesQuery, searchScore, initialsOf } from './lib/jargon.js';
 import { browserMetaRank, metaOf } from './lib/meta.js';
 import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
-import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE } from './lib/abyssal-library.js';
+import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE, MANUAL_OWNER, customAbyssal, manualAbyssalId } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
-import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel } from './lib/abyssal-browser.js';
-import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems } from './lib/variation-items.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
+import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
+import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
+import { fetchContractIndex, stationOf, withStations, contractIndexExpired } from './lib/mutamarket-contracts.js';
+import { fetchListings } from './lib/mutamarket-client.js';
+import { normalizeMarketSettings, MARKET_DEFAULTS, priceAtStop, stopAtPrice, parsePriceInput, PRICE_MIN, PRICE_MAX, PRICE_STOPS } from './lib/market-settings.js';
+import { shoppingList, contractExpiry, abyssalProvenance } from './lib/shopping-list.js';
+import { contractLinkList, stationSystems } from './lib/contract-links.js';
+import { abyssalValue } from './lib/abyssal-value.js';
+import { savedMarketListings } from './lib/mutamarket.js';
+import { networkJSON } from './lib/network-request.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
@@ -2239,6 +2248,12 @@ Loki Propulsion - Intercalated Nanofibers
   // highIsGood, when a rig's −20% exists to drive them down.
   check('cmp', 'industry time multiplier: lower is better',
         directionOf('attributeEquipmentManufactureTimeMultiplier', 0.8, 1, tempestTid) ? 1 : 0, 1, 0);
+  // And the third: calibration is flagged highIsGood, so a rig eating more of the hull's 400 points
+  // read as the better rig. Invisible while the only consumer was the attribute list, which drops
+  // upgradeCost into the fitting glyphs via IGNORED — the sort sheet's per-attribute locks ask for a
+  // direction on every attribute it offers, and this one is offered.
+  check('cmp', 'calibration cost: cheaper is better (CCP flag overridden)',
+        directionOf('upgradeCost', 5, 3, tempestTid) ? 1 : 0, 0, 0);
 
   // Heat absorption differs on nearly every meta variant and only matters while overheating, so it
   // outranked the attributes a disruptor is actually chosen for. Excluded by name.
@@ -4994,6 +5009,37 @@ Medium Capacitor Control Circuit II
   // No headroom at all is "no opinion", not "won't fit" — the browser can be opened without a fit.
   check('gono', 'no headroom means no mark', fitCostFits(null, 78, 0, 1) === null ? 1 : 0, 1, 0);
 
+  // ── The whole-module verdict the "only show what fits" filter is built on ──
+  // It is three-valued for the same reason fitCostFits is, and the filter only ever drops a row on a
+  // literal `false`. A null treated as a failure would empty the list on the frame before headroom
+  // arrives; a null treated as a pass is correct — we have not been given anything to judge with.
+  const bothRes={pg:{used:100,total:200},cpu:{used:100,total:200}};
+  check('gono','a variant that clears every resource fits',
+    variantCostFits({pg:40,cpu:40,calib:null},{pg:0,cpu:0,calib:null},bothRes,null)===true?1:0,1,0);
+  // The point of checking EVERY resource rather than the worst one: this variant is cheaper on
+  // powergrid than the module it replaces and still cannot go in, because the CPU cannot be found.
+  check('gono','one blown resource sinks the whole variant',
+    variantCostFits({pg:10,cpu:180,calib:null},{pg:0,cpu:0,calib:null},bothRes,null)===false?1:0,1,0);
+  // The displaced module's cost is freed first — without backing it out, every same-cost swap on a
+  // full fit would be flagged as an overrun.
+  check('gono','the module coming out frees its own room',
+    variantCostFits({pg:95,cpu:95,calib:null},{pg:90,cpu:90,calib:null},bothRes,null)===true?1:0,1,0);
+  check('gono','no headroom is no verdict, not a rejection',
+    variantCostFits({pg:9999,cpu:9999,calib:null},{pg:0,cpu:0,calib:null},null,null)===null?1:0,1,0);
+  // A rig charges calibration and nothing else, on a fit whose powergrid and CPU have room to spare.
+  // Both of those pass trivially, so calibration has to be able to outvote them — a verdict taken
+  // from the majority, or from pg/cpu alone, would let every over-budget rig through.
+  const rigged={...bothRes,cal:{used:250,total:400}};
+  check('gono','a rig over its calibration budget does not fit',
+    variantCostFits({pg:0,cpu:0,calib:200},{pg:0,cpu:0,calib:0},rigged,null)===false?1:0,1,0);
+  check('gono','a rig within calibration fits',
+    variantCostFits({pg:0,cpu:0,calib:100},{pg:0,cpu:0,calib:0},rigged,null)===true?1:0,1,0);
+  // Same scaling trap fitCostFits exists for: a hull that halves this class's CPU means the base
+  // attribute is not what the fit is charged, and an unscaled comparison flags a swap that fits.
+  check('gono','the group multiplier applies to the whole-module verdict',
+    [variantCostFits({pg:0,cpu:180,calib:null},{pg:0,cpu:0,calib:null},bothRes,{cpu:1}),
+     variantCostFits({pg:0,cpu:180,calib:null},{pg:0,cpu:0,calib:null},bothRes,{cpu:0.5})].join(','),'false,true');
+
   // ── The probe table must agree with measuring each module for real ──
   // One representative stands in for a whole CLASS (dogma group + required skills), and all of them
   // are measured in a single engine pass alongside each other. Two things could break that: a bonus
@@ -5007,7 +5053,11 @@ Medium Capacitor Control Circuit II
   // reduction (Megathron/Guardian) and a family that straddles two groups.
   for (const [hull, rack, seed] of [['Scimitar', 'high', PITHUM],
                                     ['Megathron', 'high', 'Heavy Neutron Blaster II'],
-                                    ['Guardian',  'high', 'Large Remote Armor Repairer II']]) {
+                                    ['Guardian',  'high', 'Large Remote Armor Repairer II'],
+                                    ['Hound', 'high', 'Torpedo Launcher II'],
+                                    ['Manticore', 'high', 'Torpedo Launcher II'],
+                                    ['Purifier', 'high', 'Torpedo Launcher II'],
+                                    ['Nemesis', 'high', 'Torpedo Launcher II']]) {
     const ship = lookupShip(hull);
     const probed = computeFitCostRatios(ship, EMPTY, null, {});
     const fam = variantsOf(tid(seed));
@@ -5018,7 +5068,7 @@ Medium Capacitor Control Circuit II
       const r = fitCostRatioOf({ratios: probed}, v.typeID);
       if (!item || !r) continue;
       for (const [slot, attr] of [['cpu', 'cpu'], ['pg', 'power'], ['cal', 'upgradeCost']]) {
-        const b = item.getBase(attr) ?? 0;
+        const b = TYPES[v.typeID]?.attrs?.[attr] ?? 0;
         if (b <= 0) continue;              // costs nothing, so it cannot fail on this resource
         compared++;
         if (Math.abs((item.get(attr) ?? 0) / b - r[slot]) > 1e-9) disagreed++;
@@ -6873,6 +6923,31 @@ Nanofiber Internal Structure II
   check('abyssal-browser','owned item follows the exact standard browser path',abyssalBrowseLevel(tree,path).records.includes(base)?1:0,1,0);
   check('abyssal-browser','removed favorite leaves empty category rather than other items',abyssalBrowseLevel(abyssalMarketGroups([],REAL_MODULE_BROWSER.mid),path).records.length,0,0);
   check('abyssal-browser','grouping does not mutate source record order',items.map(r=>r.itemId).join(','),'one,two,three,four,high,rig');
+
+  // The Jita 4-4 filter. A roll's `locationId` is its IMMEDIATE parent, so anything in a can names
+  // the can — the station is the ROOT of the walked path, which is the first segment of `location`.
+  // Reading the id instead is the mistake this pins: it would answer "no" for every roll in a
+  // container, which is where a trading stockpile actually lives.
+  const jitaName='Jita IV - Moon 4 - Caldari Navy Assembly Plant';
+  const atJita=r=>atJita44(r)?1:0;
+  check('abyssal-browser','a roll sitting in the station hangar is at Jita 4-4',
+    atJita({...base,locationId:'60003760',location:jitaName}),1,0);
+  check('abyssal-browser','a roll inside a container is still at Jita 4-4',
+    atJita({...base,locationId:'1039',location:`${jitaName} / Abyss loot`}),1,0);
+  // An unresolved name renders as the raw id, and that is the SAME station. Matching only the
+  // pretty string would empty the filter exactly when ESI name resolution failed.
+  check('abyssal-browser','an unresolved station name still matches by id',
+    atJita({...base,locationId:'1039',location:'Location #60003760 / Abyss loot'}),1,0);
+  check('abyssal-browser','a different station is not Jita',
+    atJita({...base,locationId:'60008494',location:'Amarr VIII (Oris) - Emperor Family Academy'}),0,0);
+  // A container NAMED after the station must not pass: the root is what counts, not any segment.
+  check('abyssal-browser','a can named after Jita elsewhere does not match',
+    atJita({...base,locationId:'1039',location:`Amarr VIII (Oris) - Emperor Family Academy / ${jitaName}`}),0,0);
+  check('abyssal-browser','a record with no location is not claimed for Jita',
+    [atJita({...base,location:undefined,locationId:undefined}),atJita({})].join(','),'0,0');
+  check('abyssal-browser','filtering to Jita keeps only the station\'s rolls',
+    [{...base,itemId:'j1',location:jitaName},{...base,itemId:'a1',location:'Amarr VIII (Oris) - Emperor Family Academy'},
+     {...base,itemId:'j2',location:`${jitaName} / Can`}].filter(atJita44).map(r=>r.itemId).join(','),'j1,j2');
   // Totality over the actual catalog catches omitted / duplicated branches, including
   // synthetic propulsion-size groups, without hard-coding a catalog size.
   for(const [slot,nodes] of Object.entries(REAL_MODULE_BROWSER)){
@@ -6914,10 +6989,721 @@ Nanofiber Internal Structure II
   check('variations-owned','duplicate check excludes only the slot being replaced',[...occupied].join(','),'two');
   check('variations-owned','hiding abyssals preserves fitted roll and stock alternatives',filterVariationItems(result.rows,false).map(r=>r.key).join(','),'fitted,stock:3244');
   const otherOwner={...result.rows.find(r=>r.key==='owned:long'),key:'other-owner',record:{...record('other',31000,44),characterId:2}};
-  const scoped=filterVariationItems([...result.rows,otherOwner],true,JSON.stringify(['1','1']));
+  const scoped=filterVariationItems([...result.rows,otherOwner],true,[JSON.stringify(['1','1'])]);
   check('variations-owned','container scope uses owner and location identities',scoped.some(r=>r.key==='other-owner')?1:0,0,0);
   check('variations-owned','container scope retains its matching physical rolls',scoped.filter(r=>r.key.startsWith('owned:')).length,2,0);
-  check('variations-owned','missing container still retains baseline and stock',filterVariationItems(result.rows,true,'missing').map(r=>r.key).join(','),'fitted,stock:3244');
+  check('variations-owned','missing container still retains baseline and stock',filterVariationItems(result.rows,true,['missing']).map(r=>r.key).join(','),'fitted,stock:3244');
+
+  // Per-attribute locks: "no worse than the module currently FITTED", one attribute at a time. The
+  // whole point is the question sorting cannot ask — "as much range as I can get WITHOUT losing CPU"
+  // — so the locks have to intersect, and each one has to actually bite.
+  //
+  // Fixture: fitted is cpu 40 / maxRange 25000 / speedMultiplier .9; long is 44/30000/.8;
+  // short is 35/20000/.8; the stock base is 44/24000 with no speedMultiplier at all.
+  const locked=keys=>filterLockedRows(result.rows,new Set(keys)).map(r=>r.key).join(',');
+  // Identity, not a copy: the sorted list downstream is memoised on the array it is handed, and
+  // returning a fresh array for the no-lock case re-sorts the whole comparison on every render.
+  check('variations-owned','no locks is a pass-through',filterLockedRows(result.rows,new Set())===result.rows?1:0,1,0);
+  check('variations-owned','a lock keeps only rolls at least as long as fitted',locked(['maxRange']),'fitted,owned:long');
+  // cpu is the one that caught the first implementation. It is offered in the sort sheet but is NOT
+  // in `row.stats` — variation-items.js filters cpu/power/upgradeCost out of there because they render
+  // as the fitting glyph line — so judging the lock on `stats` made it a silent no-op. Reading
+  // `values` is the reason filterLockedRows takes the row rather than the delta.
+  check('variations-owned','a lock on a fitting attribute is not a silent no-op',locked(['cpu']),'fitted,owned:short');
+  // And the direction on it is the corrected one: 35 beats the fitted 40, 44 does not.
+  check('variations-owned','a lower-is-better lock keeps the cheaper side',locked(['cpu']).includes('owned:long')?1:0,0,0);
+  // Two locks intersect rather than union. Nothing owned is both roomier and longer than fitted, so
+  // the honest answer is the fitted module alone — an empty-but-for-baseline list is a real result.
+  check('variations-owned','locks intersect',locked(['cpu','maxRange']),'fitted');
+  // The stock base has no speedMultiplier, so it cannot be as good as a roll that has one. Dropping
+  // it is the point: a lock the row has no value for must not pass by default.
+  check('variations-owned','a variant missing the locked attribute is dropped',locked(['speedMultiplier']),'fitted,owned:long,owned:short');
+  // The fitted module is what every lock is measured against; a list that filtered out its own
+  // baseline would show deltas against something no longer on screen.
+  check('variations-owned','the baseline survives every lock',filterLockedRows(result.rows,new Set(['cpu','maxRange','speedMultiplier']))[0]?.key??'gone','fitted');
+  // A lock is a floor, not a demand for an improvement. Excluding ties would drop every variant that
+  // simply matches what is already fitted — which on a popular roll is most of the market.
+  const tied=[{key:'fitted',isBaseline:true,typeID:3244,values:{maxRange:25000}},{key:'tie',typeID:3244,values:{maxRange:25000}}];
+  check('variations-owned','an equal value is not worse',filterLockedRows(tied,new Set(['maxRange'])).length,2,0);
+  // Neither is an attribute the fitted module does not have at all: there is no floor to clear.
+  const noFloor=[{key:'fitted',isBaseline:true,typeID:3244,values:{}},{key:'other',typeID:3244,values:{maxRange:1}}];
+  check('variations-owned','a lock the fitted module has no value for clears everything',filterLockedRows(noFloor,new Set(['maxRange'])).length,2,0);
+
+  // Derived rates: the number a module is actually chosen by, which CCP does not store because each
+  // is a RATIO of two attributes it does. Every value below is the quotient of two attributes read
+  // out of the bundle in the line above it, so an SDE rebalance moves them together.
+  const ATTRS=id=>TYPES[id]?.attrs??TYPES[id]?.a??{};
+  const derived=(key,attrs)=>derivedAttributes(attrs)[key];
+  // Large Shield Booster II: 276 HP per 4 s cycle, 160 GJ a cycle.
+  check('derived','shield boost per second is amount over cycle',derived('derived:repairPerSecond',ATTRS(10858)),69,0);
+  check('derived','shield boost per cap is amount over activation cost',derived('derived:repairPerCap',ATTRS(10858)),1.725,0);
+  // Medium Ancillary Armor Repairer: 207 a cycle UNLOADED, ×3 with Nanite Repair Paste. Nobody runs
+  // one unpasted, and at 17.25 HP/s it would file the strongest repairer in the family last.
+  check('derived','an ancillary repairer is rated on its paste-boosted cycle',derived('derived:repairPerSecond',ATTRS(33101)),51.75,0);
+  // Gyrostabilizer II: 1.1 damage against a 0.895 cycle-time multiplier.
+  check('derived','a damage mod is rated on damage over cycle time',derived('derived:damagePerTime',ATTRS(519)),1.2290502793296089,0);
+  // A launcher mod names its damage half differently and must reach the same key, or the whole
+  // missile side of the market would sort as unrated.
+  check('derived','a BCS rates through the missile damage attribute',derived('derived:damagePerTime',ATTRS(22291)),1.2290502793296089,0);
+  // Modulated Strip Miner II: 120 m³ per 45 s.
+  check('derived','mining yield per second is amount over cycle',derived('derived:yieldPerSecond',ATTRS(17912)),2.6666666666666665,0);
+  // Absence, not a wrong number. A Drone Damage Amplifier's roll is `droneDamageBonus` — it carries
+  // neither half of the ratio — and a zero cycle would otherwise produce Infinity, which sorts first.
+  check('derived','a module with neither half of the ratio gets no key',derivedAttributes(ATTRS(4405))['derived:damagePerTime']===undefined?1:0,1,0);
+  check('derived','a zero cycle yields no rate rather than Infinity',
+    Object.keys(derivedAttributes({shieldBonus:200,duration:0})).length,0,0);
+  check('derived','half a ratio is not a rate',Object.keys(derivedAttributes({damageMultiplier:1.1})).length,0,0);
+
+  // Direction — which is what decides both the arrow's colour and which half of the list a lock
+  // keeps. These pin the CONTRACT, not the branch: `attrHighIsGood` happens to default an unknown
+  // attribute to high-is-good, so removing directionOf's explicit derived rule does not fail them.
+  // They bite if that default changes, or if a derived key is ever added to a lower-is-better list.
+  check('derived','more repair per second is better',directionOf('derived:repairPerSecond',80,69,10858)?1:0,1,0);
+  check('derived','more repair per cap is better',directionOf('derived:repairPerCap',2.1,1.725,10858)?1:0,1,0);
+  check('derived','more damage per unit of cycle time is better',directionOf('derived:damagePerTime',1.28,1.229,519)?1:0,1,0);
+
+  // The whole point: the ratio orders the list, not either half. This roll boosts LESS per cycle
+  // than the fitted module and is the better booster, because the cycle is shorter — sorting by
+  // shieldBonus puts it behind, which is the answer the attribute list already gives.
+  const boost=(key,shieldBonus,duration)=>({key,typeID:10858,values:{shieldBonus,duration,
+    ...derivedAttributes({shieldBonus,duration})}});
+  const fittedBoost={...boost('fitted',276,4000),isBaseline:true};
+  const quick=boost('quick',240,3000),big=boost('big',300,5000);
+  check('derived','the rate sorts ahead of the bigger single cycle',
+    sortCompareRows([fittedBoost,big,quick],{by:'derived:repairPerSecond',dir:'desc'})[1].key,'quick');
+  check('derived','sorting by the amount alone gives the opposite order',
+    sortCompareRows([fittedBoost,big,quick],{by:'shieldBonus',dir:'desc'})[1].key,'big');
+  // And a lock on the rate bites on the same reasoning: 60 HP/s is worse than the fitted 69, however
+  // much the row's 300 shieldBonus flatters it.
+  check('derived','a lock on a rate drops a variant no attribute of which is worse',
+    filterLockedRows([fittedBoost,big,quick],new Set(['derived:repairPerSecond'])).map(r=>r.key).join(','),'fitted,quick');
+
+  // These keys are ours, not MutaMarket's. The `derived:` prefix is what keeps them out of the
+  // listing URL: nothing rolls an attribute by that name, so the request goes unfiltered rather than
+  // carrying a name the server answers with a 400 (mutamarket.js trap 6).
+  check('derived','a derived key never becomes a MutaMarket attribute filter',
+    [...DERIVED_KEYS].some(k=>attrFilterFor({abyssalTypeId:47736,name:k,anchor:1,keepHigh:true})!==null)?1:0,0,0);
+
+  // End to end, through the tab's own path: the fitted Large Shield Booster II against a Pith A-Type.
+  const boosters=variationItems([{name:'Pith A-Type Large Shield Booster',typeID:19205}],
+    {name:'Large Shield Booster II',typeID:10858},[]);
+  check('derived','the rates lead the sort options',boosters.attributes.slice(0,2).join(','),
+    'derived:repairPerSecond,derived:repairPerCap');
+  check('derived','a rate is offered only where the family supports one',
+    boosters.attributes.includes('derived:damagePerTime')?1:0,0,0);
+  const pith=boosters.rows.find(r=>r.typeID===19205);
+  check('derived','the row carries the rate as a delta against the fitted module',
+    pith.stats.find(s=>s.key==='derived:repairPerSecond').delta,38.1875,0);
+  // Trailing, not leading: `visibleStats` keeps the first six with a delta, and a rate that pushed
+  // the attributes it is computed FROM off the end would be a summary of numbers nobody can see.
+  check('derived','a rate trails the attributes it is made of',
+    pith.stats.findIndex(s=>s.key==='derived:repairPerSecond')>pith.stats.findIndex(s=>s.key==='shieldBonus')?1:0,1,0);
+
+  // Picking an attribute aims the sort at its GOOD end. `bestFirstDirection` has to reach that
+  // through `directionOf`, using real values out of the list — half of directionOf's rules compare
+  // MAGNITUDES, so a synthetic 1-vs-0 probe answers backwards for exactly the attributes that
+  // motivated it. The display/raw split is the other half: it must pick its extremes in the space
+  // the sort actually runs in. (Same transform as ui.jsx's `mutaToDisplay`.)
+  const display=(name,v)=>name==='speedMultiplier'?(1/v-1)*100:/DamageResistanceBonus$/.test(name)?-v:v;
+  const span=(key,...pairs)=>bestFirstDirection(key,pairs.map(([value,typeID])=>({value,typeID})),display);
+  check('bestfirst','a plain high-is-good attribute opens biggest-first',span('shieldBonus',[276,10858],[300,10858]),'desc');
+  check('bestfirst','a cost attribute opens cheapest-first',span('cpu',[40,3244],[35,3244]),'asc');
+  // Stasis Webifier I (-50) against II (-60). Stored negative, shown negative, and the STRONGER web
+  // is the more negative one — so best-first is ascending. A 1-vs-0 probe would say 'desc' here.
+  check('bestfirst','a magnitude attribute opens at its strongest, not its largest',
+    span('speedFactor',[-50,526],[-60,527]),'asc');
+  // Gyrostabilizer II's 0.895 cycle divisor shows as +11.7% Rate of Fire. Raw ascending and display
+  // ascending are opposites, and the sort runs on display — so the good end is 'desc'.
+  check('bestfirst','a display-inverted rate opens at the fastest',span('speedMultiplier',[0.895,519],[0.85,519]),'desc');
+  // EM Energized Membrane I (-34.71) against II (-38.82): stored negative, SHOWN positive.
+  check('bestfirst','a resist bonus opens at the strongest resist',
+    span('emDamageResistanceBonus',[-34.71,11217],[-38.82,11219]),'desc');
+  check('bestfirst','a derived rate opens at the best rate',span('derived:repairPerSecond',[69,10858],[80,10858]),'desc');
+  // Price carries no `values` entry, so the samples are empty and 'asc' stands — which is what Owen
+  // asked for by name: choosing Price shows the cheapest first. Same fallback covers Meta Level and
+  // the library's Name option, neither of which has a value to learn a direction from.
+  check('bestfirst','price has nothing to learn from and stays cheapest-first',span('price'),'asc');
+  check('bestfirst','one value is not a direction',span('cpu',[40,3244]),'asc');
+  check('bestfirst','an attribute every row agrees on stays ascending',span('cpu',[40,3244],[40,3244]),'asc');
+  // Rows missing the attribute must not decide it — they sink to the bottom of the sort either way.
+  // A leaked null becomes one of the extremes, `directionOf` answers null for it, and the whole
+  // thing silently falls back to 'asc': the failure looks exactly like "no opinion", not like a bug.
+  check('bestfirst','absent values are not extremes',span('shieldBonus',[null,10858],[276,10858],[300,10858]),'desc');
+
+  // Choosing which slice of the library to compare against. A flat container list is unusable for a
+  // player with several characters and years of loot, so containers nest under their owner — the one
+  // key that never collides, unlike location names and user-typed labels.
+  const hoard=[record('a',31000,44),{...record('b',31000,44),locationId:'2'},
+    {...record('c',31000,44),characterId:2,characterName:'Second pilot',locationId:'3'}];
+  const tree=abyssalSourceTree(hoard);
+  check('sources','characters are the top level, not containers',tree.length,2,0);
+  check('sources','a character carries every roll beneath it',tree.find(n=>n.name==='Alt').count,2,0);
+  check('sources','containers remain reachable one level down',tree.find(n=>n.name==='Alt').children.length,2,0);
+  check('sources','characters are named rather than numbered',tree.map(n=>n.name).join(','),'Alt,Second pilot');
+  const drilled=abyssalBrowseLevel(tree,[`${CHARACTER_SOURCE}1`]);
+  check('sources','drilling a character lists only that character\'s containers',drilled.nodes.length,2,0);
+  check('sources','the breadcrumb names the character',drilled.breadcrumb.map(n=>n.name).join(','),'Alt');
+  check('sources','a whole character can be chosen as one source',
+    hoard.filter(r=>matchesSource(r,`${CHARACTER_SOURCE}1`)).map(r=>r.itemId).join(','),'a,b');
+  check('sources','choosing a character excludes the other one\'s hangar',matchesSource(hoard[2],`${CHARACTER_SOURCE}1`)?1:0,0,0);
+  check('sources','a single container is still selectable',
+    hoard.filter(r=>matchesSource(r,containerSource(hoard[0]))).map(r=>r.itemId).join(','),'a');
+  // A listing is in nobody's hangar, so it must not answer to an owned scope — and an owned roll
+  // must not appear under the market one, or the shopping list would try to buy what you have.
+  const offered={...record('m',31000,44),source:MARKET_SOURCE,characterId:undefined};
+  check('sources','a market listing only matches the market source',
+    [matchesSource(offered,MARKET_SOURCE),matchesSource(offered,'owned'),matchesSource(offered,`${CHARACTER_SOURCE}1`)].join(','),'true,false,false');
+  check('sources','an owned roll never appears under the market source',matchesSource(hoard[0],MARKET_SOURCE)?1:0,0,0);
+  // Several sources at once. A UNION: "my hangar and the market" is the question the tab is usually
+  // asked, and the answer has to be both lists rather than their overlap — which is empty, since no
+  // record can match both an owned scope and the market one.
+  const union=(...sources)=>[...hoard,offered].filter(r=>matchesAnySource(r,sources)).map(r=>r.itemId).join(',');
+  check('sources','owned and the market are shown together',union('owned',MARKET_SOURCE),'a,b,c,m');
+  check('sources','two characters union rather than intersect',
+    union(`${CHARACTER_SOURCE}1`,`${CHARACTER_SOURCE}2`),'a,b,c');
+  check('sources','one character plus the market leaves the other hangar out',
+    union(`${CHARACTER_SOURCE}1`,MARKET_SOURCE),'a,b,m');
+  // Two overlapping scopes must not double-count: the filter asks per ROW, so a row matching both
+  // still appears once. Pinned because the obvious alternative — concatenating each source's matches
+  // — would show the same roll twice.
+  check('sources','overlapping scopes still yield each roll once',
+    union(`${CHARACTER_SOURCE}1`,containerSource(hoard[0])),'a,b');
+  // No sources means no rolls, and it has to stay reachable: the sheet lets you untick the last one
+  // deliberately, so an empty list that quietly meant "all of them" would make that tick a no-op.
+  check('sources','no sources selected matches nothing',union(),'');
+  check('sources','abyssal rows drop out when every source is unticked',
+    filterVariationItems(result.rows,true,[]).map(r=>r.key).join(','),'fitted,stock:3244');
+
+  // The tree is built from SAVED ROLLS, so on its own it cannot show a character you have only just
+  // linked — and connecting one to find the list unchanged reads as a failed login. The merge is the
+  // other half of that: ESI characters join the list, and `linked` is carried per node because the
+  // reverse case is real too — unlinking deliberately leaves the library alone, so a character with
+  // rolls and no session must stay selectable rather than vanish with their loot.
+  const linkedChars=[{characterId:1,characterName:'Alt'},{characterId:3,characterName:'Brand new'}];
+  const merged=mergeLinkedCharacters(tree,linkedChars);
+  check('sources','a freshly linked character appears before importing anything',
+    merged.map(n=>n.name).join(','),'Alt,Brand new,Second pilot');
+  check('sources','a character with nothing imported has no rolls to offer',
+    [merged.find(n=>n.name==='Brand new').count,merged.find(n=>n.name==='Brand new').records.length].join(','),'0,0');
+  check('sources','a character already in the tree is not listed twice',
+    merged.filter(n=>n.id===`${CHARACTER_SOURCE}1`).length,1,0);
+  check('sources','merging keeps a known character\'s rolls and containers',
+    [merged.find(n=>n.name==='Alt').count,merged.find(n=>n.name==='Alt').children.length].join(','),'2,2');
+  // Disconnecting is not deleting: the rolls are a local library that works offline, so an unlinked
+  // character keeps their node and only `linked` changes — which is what the sheet reads to decide
+  // whether to offer "Disconnect" and whether to say "not connected".
+  check('sources','an unlinked character keeps their saved rolls as a source',
+    [merged.find(n=>n.name==='Second pilot').linked,merged.find(n=>n.name==='Second pilot').count].join(','),'false,1');
+  check('sources','linked state is per character rather than per list',
+    merged.map(n=>`${n.name}:${n.linked}`).join(','),'Alt:true,Brand new:true,Second pilot:false');
+  // No ESI session at all is the offline / logged-out case, and it must leave the library untouched.
+  check('sources','with nothing linked the saved library is still the whole list',
+    mergeLinkedCharacters(tree,[]).map(n=>`${n.name}:${n.linked}`).join(','),'Alt:false,Second pilot:false');
+
+  // A contract listing's asking price IS the row's price. Every rolled row used to sort as
+  // "unpriced" — mutations meant no market price — which would have parked the entire market at the
+  // bottom of a cheapest-first sort, beneath a stock module nobody opened the tab to buy.
+  const stockRow={key:'stock:3244',typeID:3244,mod:{}};
+  const listed=price=>({key:'listing',typeID:3244,mod:{mutations:{maxRange:31000}},record:{source:MARKET_SOURCE,price}});
+  const jitaPrice=new Map([[3244,123]]);
+  check('sources','a listing sorts on its asking price rather than as unpriced',
+    sortCompareRows([stockRow,listed(50)],{by:'price',dir:'asc',prices:jitaPrice})[0].key,'listing');
+  check('sources','a dearer listing still sorts behind a cheaper stock module',
+    sortCompareRows([stockRow,listed(400)],{by:'price',dir:'asc',prices:jitaPrice})[0].key,'stock:3244');
+  check('sources','an owned roll has no asking price and still sinks',
+    sortCompareRows([{key:'owned:long',typeID:3244,mod:{mutations:{maxRange:31000}},record:record('long',31000,44)},stockRow],
+      {by:'price',dir:'asc',prices:jitaPrice})[0].key,'stock:3244');
+
+  // MutaMarket indexes the ABYSSAL result type, not the base module, and six warp disruptor
+  // mutaplasmids collapse onto one of them. Querying per mutaplasmid would fetch the same list six
+  // times; querying the base typeID would 404.
+  check('sources','six mutaplasmids collapse to the one type MutaMarket indexes',abyssalTypeIds([3244]).join(','),'47736');
+  check('sources','a family spanning two abyssal types asks for both',abyssalTypeIds([3244,5975]).join(','),'47408,47736');
+  check('sources','a module nothing can mutate asks for nothing',abyssalTypeIds([587]).length,0,0);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// MutaMarket listings: honest prices, real rolls, and a station we can actually stand in.
+// The payload below is a real response trimmed to one module (Abyssal Ballistic Control System
+// 49738, from a Ballistic Control System II rolled with a Decayed BCS Mutaplasmid). The two
+// attributes carrying is_virtual / is_derived are MutaMarket's own computations and must not
+// reach the dogma engine — droneDamageBonus is not a BCS roll, and 5000004 is not a CCP ID.
+{
+  const listed={id:1029172563826,type:{id:49738,name:'Abyssal Ballistic Control System'},
+    source_type:{id:22291,name:'Ballistic Control System II',meta_group:'Tech II'},
+    mutaplasmid:{id:49739,name:'Decayed Ballistic Control System Mutaplasmid'},
+    slug:'abyssal-ballistic-control-system-1029172563826',estimated_value:10983507.348618977,
+    public_asset:{owner:{id:91254848,name:'fliet99'},price:0.0},
+    mutated_attributes:[
+      {id:50,name:'cpu',value:48.511999940872,base_value:40,is_derived:false,is_virtual:false},
+      {id:1255,name:'droneDamageBonus',value:0,base_value:0,is_derived:false,is_virtual:true},
+      {id:213,name:'missileDamageMultiplierBonus',value:1.1020933119297,base_value:1.1,is_derived:false,is_virtual:false},
+      {id:204,name:'speedMultiplier',value:0.88757150708437,base_value:.895,is_derived:false,is_virtual:false},
+      {id:5000004,name:'dpsIncreaseMissiles',value:1.2416952359704,base_value:1.2290502793296,is_derived:true,is_virtual:false}],
+    contract:{id:235938160,type:'item_exchange',price:150000000,asking_for_items:false,plex_count:0,
+      non_abyssal_modules_count:0,abyssal_modules_count:1,issuer:{id:2124003172,name:'Solaxx'},
+      date_issued:'2026-09-11 15:30:48+00',date_expired:'2026-10-09 15:30:48+00'}};
+
+  const listing=mutaMarketListing(listed,4242);
+  check('mutamarket','listing keeps the source module, not the abyssal shell',listing.typeID,22291,0);
+  check('mutamarket','rolled CPU is stored exactly',listing.mutations.cpu,48.511999940872,0);
+  check('mutamarket','only the mutaplasmid\'s own attributes are rolled',Object.keys(listing.mutations).sort().join(','),'cpu,missileDamageMultiplierBonus,speedMultiplier');
+  check('mutamarket','MutaMarket-derived attributes never reach the engine',listing.mutations.dpsIncreaseMissiles===undefined&&listing.mutations.droneDamageBonus===undefined?1:0,1,0);
+  check('mutamarket','EVE item ID is preserved for owned-module dedupe',listing.itemId,'1029172563826');
+  check('mutamarket','slot is derived from the source module',listing.slot,'low');
+  // Rolls must land inside the mutaplasmid's declared range, or we are writing a stat EVE cannot
+  // produce. Verified live across 503 listings over six abyssal types with zero mismatches.
+  check('mutamarket','CPU roll sits inside the declared mutaplasmid range',
+    listing.mutations.cpu/40>=0.95&&listing.mutations.cpu/40<=1.25?1:0,1,0);
+
+  // Prices. A contract price is real; everything else must come back null rather than zero.
+  check('mutamarket','a clean single-item contract yields its real price',listing.price,150000000,0);
+  check('mutamarket','the seller is named from the contract issuer',listing.sellerName,'Solaxx');
+  const bundle={...listed,contract:{...listed.contract,abyssal_modules_count:14}};
+  check('mutamarket','a bundle price is never shown as this module\'s price',listingPrice(bundle)===null?1:0,1,0);
+  check('mutamarket','a contract carrying other items is not individually priced',isIndividuallyPriced({...listed.contract,non_abyssal_modules_count:2})?1:0,0,0);
+  check('mutamarket','an auction bid is not an asking price',isIndividuallyPriced({...listed.contract,type:'auction'})?1:0,0,0);
+  check('mutamarket','a PLEX contract is not individually priced',isIndividuallyPriced({...listed.contract,plex_count:5})?1:0,0,0);
+  check('mutamarket','asking-for-items is not a purchase',isIndividuallyPriced({...listed.contract,asking_for_items:true})?1:0,0,0);
+
+  // What kind of number the contract's price is. The three kinds are what let auctions and bundles
+  // be SHOWN with a badge rather than excluded outright: the listing is real and the contract is
+  // where the roll actually is — it is only the claim "this module costs X" that would be false.
+  const auction={...listed.contract,type:'auction'};
+  check('mutamarket','a clean single-item exchange asks a price',contractKind(listed.contract),'ask');
+  check('mutamarket','an auction is a bid, not an ask',contractKind(auction),'bid');
+  check('mutamarket','a multi-module contract is a bundle',contractKind(bundle.contract),'bundle');
+  check('mutamarket','PLEX on the contract makes it a bundle',contractKind({...listed.contract,plex_count:5}),'bundle');
+  check('mutamarket','a want-to-buy is not a purchase of any kind',contractKind({...listed.contract,asking_for_items:true})===null?1:0,1,0);
+  check('mutamarket','an uncontracted module has no kind',contractKind(null)===null?1:0,1,0);
+  check('mutamarket','everything on the contract is counted, not just the abyssals',
+    contractItemCount({abyssal_modules_count:2,non_abyssal_modules_count:3,plex_count:1}),6,0);
+  // An auction of 39 modules is both at once, which is exactly why the row carries the count
+  // separately from the kind instead of one label having to choose between them.
+  const auctionBundle=mutaMarketListing({...listed,contract:{...auction,abyssal_modules_count:39}});
+  check('mutamarket','an auctioned bundle reports both facts',
+    [auctionBundle.contractKind,auctionBundle.contractItems].join(','),'bid,39');
+
+  // The price is withheld from a bid or a bundle; the contract IDENTITY is not. The link is the
+  // whole reason to show the row, and calling a live contract unknown would be its own wrong answer.
+  const bundleListing=mutaMarketListing(bundle);
+  check('mutamarket','a bundled listing still points at its contract',bundleListing.contractId,235938160,0);
+  check('mutamarket','a bundled listing refuses to name a module price',bundleListing.price===null?1:0,1,0);
+  check('mutamarket','a bundled listing still knows what the contract costs',bundleListing.cost,150000000,0);
+  check('mutamarket','a want-to-buy keeps no contract identity',
+    mutaMarketListing({...listed,contract:{...listed.contract,asking_for_items:true}}).contractId===null?1:0,1,0);
+  check('mutamarket','a zero contract price is absence, not free',
+    contractCost({...listed.contract,price:0})===null?1:0,1,0);
+  // A ceiling needs SOMETHING real to measure a bid against, or turning auctions on would empty the
+  // list the moment a budget was set — the one outcome that reads as a bug rather than as a filter.
+  check('mutamarket','a bid is measured by what the contract charges',listingCost(bundleListing),150000000,0);
+  check('mutamarket','an asking price is preferred where there is one',listingCost(listing),150000000,0);
+  check('mutamarket','a listing with neither is unpriced rather than zero',
+    listingCost({price:null,cost:null})===null?1:0,1,0);
+  // public_asset.price is 0.0 for every uncontracted module. Zero is not free.
+  check('mutamarket','an uncontracted module has no price rather than a zero one',listingPrice({...listed,contract:null})===null?1:0,1,0);
+  check('mutamarket','an estimate is carried separately from a price',mutaMarketListing({...listed,contract:null}).estimatedValue,10983507.348618977,0);
+
+  // One unconvertible row costs that row, not the page.
+  const unknown={...listed,id:7,mutaplasmid:{id:999999,name:'Mutaplasmid CCP shipped after our bundle'}};
+  const page=mutaMarketListings([listed,unknown,{...listed,id:8}]);
+  check('mutamarket','an unknown mutaplasmid does not take down the page',page.listings.length,2,0);
+  check('mutamarket','the skipped row is reported rather than silently dropped',page.skipped[0].id,'7');
+  let mismatched=false;
+  try{mutaMarketListing({...listed,mutated_attributes:listed.mutated_attributes.filter(a=>a.id!==50)});}catch{mismatched=true;}
+  check('mutamarket','a missing roll is rejected rather than defaulted',mismatched?1:0,1,0);
+  let wrongSource=false;
+  try{mutaMarketListing({...listed,source_type:{id:5975,name:'10MN Afterburner II'}});}catch{wrongSource=true;}
+  check('mutamarket','a mutaplasmid that cannot roll this module is rejected',wrongSource?1:0,1,0);
+
+  // Our mutaplasmid bundle and MutaMarket agree on exactly 89 abyssal types, verified live in both
+  // directions. A regen that changes this means new abyssal types exist and the source list moved.
+  check('mutamarket','abyssal type coverage matches MutaMarket',mutaMarketTypeIds().size,89,0);
+
+  // Query building. The single-attribute rule is the API's, not ours: stacking two `attributes/`
+  // segments silently applies only the last and returns rows violating the first.
+  check('mutamarket','individually-priced listings are the default query',mutaMarketQuery({typeId:49738}),
+    '/modules/type/49738/contracts-only/item-exchange/no-multi-item-contracts/without-other-items');
+  check('mutamarket','region and sort ride along',mutaMarketQuery({typeId:49738,regionId:FORGE_REGION_ID,sort:{by:'price',dir:'asc'}}),
+    '/modules/type/49738/contracts-only/item-exchange/no-multi-item-contracts/without-other-items/sort/price/asc?region_id=10000002');
+  check('mutamarket','one attribute filter is expressed as a range',mutaMarketQuery({typeId:49738,individuallyPriced:false,attribute:{name:'cpu',value:[0,35]}}),
+    '/modules/type/49738/attributes/cpu/0-35');
+  let stacked=false;
+  try{mutaMarketQuery({typeId:49738,attribute:[{name:'cpu',value:[0,35]},{name:'speedMultiplier',value:[0,1]}]});}catch{stacked=true;}
+  check('mutamarket','stacking attribute filters is refused rather than silently ignored',stacked?1:0,1,0);
+
+  // Spending that one filter on the sorted attribute. The page budget reads the 800 CHEAPEST rows,
+  // so on an attribute sort the rows it never reaches are exactly the good rolls; bounding the
+  // request at the fitted module's value drops the far tail instead, which nobody scrolls to.
+  //
+  // Every failure mode here is "no filter", never a wrong one, because trap 6 makes a bad
+  // `attributes/` segment either a 400 or a 200 with an empty list — a silently empty market.
+  check('mutamarket','a rolled attribute spans base x multiplier',
+    JSON.stringify(abyssalAttrSpan(47808,'capacityBonus')),'{"min":1235,"max":3712.5000000000005}');
+  // The reason the span is min/max rather than lo/hi: a stasis web's speedFactor base is NEGATIVE, so
+  // the multipliers order the result backwards. A span read straight off the pair would be inverted,
+  // and an inverted range is a 200 with zero rows.
+  check('mutamarket','a negative base does not invert the span',
+    JSON.stringify(abyssalAttrSpan(47702,'speedFactor')),'{"min":-69,"max":-42.5}');
+  check('mutamarket','an attribute nothing rolls has no span',abyssalAttrSpan(47808,'notAnAttribute')===null?1:0,1,0);
+  // Sorting biggest-first keeps the half above the fitted module; the far bound is padded outward by
+  // 1% of the span, since our bound is computed and MutaMarket's is whatever CCP rolled.
+  check('mutamarket','sorting for bigger rolls asks for the half above the fitted value',
+    JSON.stringify(attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:2400,keepHigh:true})),
+    '{"name":"capacityBonus","value":[2400,3737.2751]}');
+  check('mutamarket','sorting for smaller rolls asks for the half below',
+    JSON.stringify(attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:2400,keepHigh:false})),
+    '{"name":"capacityBonus","value":[1210.225,2400]}');
+  check('mutamarket','the bound is raw, so a negative attribute filters on its own sign',
+    JSON.stringify(attrFilterFor({abyssalTypeId:47702,name:'speedFactor',anchor:-55,keepHigh:true})),
+    '{"name":"speedFactor","value":[-55,-42.235]}');
+  // An anchor past the far end would build an inverted range — trap 6's silently empty market. It
+  // returns null instead, so the request goes out unfiltered and the list is merely wide.
+  check('mutamarket','an anchor past the far end never builds an inverted range',
+    attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:9999,keepHigh:true})===null?1:0,1,0);
+  check('mutamarket','an anchor at the near end narrows nothing and is skipped',
+    attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:100,keepHigh:true})===null?1:0,1,0);
+  // Price and Meta Level are not rolled attributes, so sorting by either sends no segment at all.
+  check('mutamarket','a sort with no rolled attribute sends no filter',
+    [attrFilterFor({abyssalTypeId:47808,name:null,anchor:2400,keepHigh:true}),
+     attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:null,keepHigh:true})].every(f=>f===null)?1:0,1,0);
+  check('mutamarket','the filter reaches the URL as one range segment',
+    mutaMarketQuery({typeId:47808,individuallyPriced:false,
+      attribute:attrFilterFor({abyssalTypeId:47808,name:'capacityBonus',anchor:2400,keepHigh:true})}),
+    '/modules/type/47808/attributes/capacityBonus/2400-3737.2751');
+
+  // Station resolution. MutaMarket cannot filter below region, so Jita 4-4 comes from joining
+  // ESI's public contract list on contract_id — an id match verified live on 400 of 400 contracts.
+  const forge=[{contract_id:235938160,start_location_id:JITA_4_4_STATION_ID},
+    {contract_id:235295255,start_location_id:60003460}];
+  const pagesSeen=[];
+  const api={page:async(regionId,page)=>{pagesSeen.push(page);
+    return {rows:page===1?forge:[{contract_id:999,start_location_id:60003460}],pages:2,expires:'Fri, 11 Sep 2026 17:06:09 GMT'};}};
+  const contractIndex=await fetchContractIndex(FORGE_REGION_ID,{api});
+  check('mutamarket','every contract page is read',pagesSeen.sort().join(','),'1,2');
+  check('mutamarket','contract IDs resolve to their station',stationOf(contractIndex,235938160),JITA_4_4_STATION_ID,0);
+  check('mutamarket','an unindexed contract resolves to unknown, not to a station',stationOf(contractIndex,111)===null?1:0,1,0);
+  check('mutamarket','the cache expiry is exposed for a last-checked label',contractIndex.expiresAt,Date.parse('Fri, 11 Sep 2026 17:06:09 GMT'),0);
+  check('mutamarket','a fresh index is not treated as expired',contractIndexExpired(contractIndex,contractIndex.expiresAt-1)?1:0,0,0);
+  check('mutamarket','a stale index is refetched rather than trusted',contractIndexExpired(contractIndex,contractIndex.expiresAt)?1:0,1,0);
+  check('mutamarket','a missing index is always expired',contractIndexExpired(null)?1:0,1,0);
+
+  const elsewhere={...listing,itemId:'2',contractId:235295255};
+  const unlocated={...listing,itemId:'3',contractId:424242};
+  const all=[listing,elsewhere,unlocated];
+  check('mutamarket','Jita 4-4 excludes other stations in the same region',
+    withStations(all,contractIndex,{stationId:JITA_4_4_STATION_ID}).map(l=>l.itemId).join(','),'1029172563826');
+  check('mutamarket','an unresolved contract is never claimed to be at Jita',
+    withStations(all,contractIndex,{stationId:JITA_4_4_STATION_ID}).some(l=>l.itemId==='3')?1:0,0,0);
+  check('mutamarket','without a station filter every listing is kept',withStations(all,contractIndex).length,3,0);
+  check('mutamarket','an unresolved station stays null rather than guessing',withStations(all,contractIndex)[2].stationId===null?1:0,1,0);
+  // A dropped page would look identical to "those contracts are elsewhere", silently hiding real
+  // Jita listings — the same rule scanAbyssals applies to a failed asset page.
+  let partial=false;
+  try{await fetchContractIndex(FORGE_REGION_ID,{api:{page:async(r,page)=>{
+    if(page===2)throw Object.assign(new Error('gone'),{status:404});
+    return {rows:forge,pages:2,expires:null};}}});}catch{partial=true;}
+  check('mutamarket','a failed contract page never becomes a complete index',partial?1:0,1,0);
+
+  // Budget. There is NO server-side price filter — `contract-price/0-30000000`, `price/…`, `value/…`
+  // and `contract-price/min/0/max/…` were each fetched over 400 rows sorted price-descending and all
+  // 400 broke the ceiling in every spelling, because an unrecognised segment returns the FULL list
+  // rather than an error. So the ceiling is ours to apply, and a query must never pretend otherwise.
+  check('mutamarket','the query carries no price segment the API would ignore',
+    /price/.test(mutaMarketQuery({typeId:49738,maxPrice:30000000,contractPrice:[0,30000000]}))?1:0,0,0);
+  const cheap={...listing,itemId:'c',price:20000000,cost:20000000},dear={...listing,itemId:'d',price:5000000000,cost:5000000000};
+  // Unpriced means NEITHER number: no asking price and no contract cost. A bid has the second one,
+  // which is what keeps it in a budgeted list rather than dropping out with the truly unknown.
+  const unpriced={...listing,itemId:'u',price:null,cost:null};
+  const bid={...listing,itemId:'b',price:null,cost:20000000,contractKind:'bid'};
+  check('mutamarket','a listing under the ceiling is kept',withinBudget(cheap,{maxPrice:150000000})?1:0,1,0);
+  check('mutamarket','a 5B module is excluded from a 150M budget',withinBudget(dear,{maxPrice:150000000})?1:0,0,0);
+  check('mutamarket','the ceiling is inclusive of its own value',withinBudget({price:150000000},{maxPrice:150000000})?1:0,1,0);
+  check('mutamarket','a floor excludes cheaper listings',withinBudget(cheap,{minPrice:50000000})?1:0,0,0);
+  // Unpriced is not cheap. Same rule as an unresolved station: unknown is never folded into a match.
+  check('mutamarket','an unpriced listing is not counted as within budget',withinBudget(unpriced,{maxPrice:150000000})?1:0,0,0);
+  check('mutamarket','with no budget set every listing passes, unpriced included',withinBudget(unpriced)?1:0,1,0);
+  check('mutamarket','filtering a page applies the ceiling to each row',
+    filterListings([cheap,dear,unpriced],{maxPrice:150000000}).map(l=>l.itemId).join(','),'c');
+  check('mutamarket','overBudget only fires on a real overrun',
+    [overBudget(dear,{maxPrice:150000000}),overBudget(cheap,{maxPrice:150000000}),overBudget(dear,{})].join(','),'true,false,false');
+  check('mutamarket','a bid under the ceiling survives a budget',withinBudget(bid,{maxPrice:150000000})?1:0,1,0);
+  check('mutamarket','a bid over the ceiling stops the ascending walk',overBudget({...bid,cost:5000000000},{maxPrice:150000000})?1:0,1,0);
+
+  // The switch that admits them. Off, the four cleanliness segments are asked for; on, the query
+  // stops asking and `contractKind` labels whatever comes back — trap 4 means the segments could
+  // never have been trusted to be the only line of defence anyway.
+  check('mutamarket','admitting every contract drops the cleanliness segments',
+    mutaMarketQuery({typeId:49738,individuallyPriced:false,regionId:FORGE_REGION_ID,sort:{by:'price',dir:'asc'}}),
+    '/modules/type/49738/sort/price/asc?region_id=10000002');
+  check('mutamarket','auctions and bundles are off on a fresh install',normalizeMarketSettings(null).allContracts?1:0,0,0);
+  check('mutamarket','the contracts choice survives a reload',
+    [normalizeMarketSettings({allContracts:true}).allContracts,normalizeMarketSettings({allContracts:'yes'}).allContracts].join(','),'true,false');
+
+  // The persisted settings blob. These are validated on read rather than trusted because a
+  // hand-edited or half-written value here changes what the compare list SHOWS without failing:
+  // a NaN ceiling makes `price <= NaN` false for everything and silently empties the market list.
+  check('mutamarket','a fresh install hides abyssals and compares owned rolls only',
+    [normalizeMarketSettings(null).showAbyssals,normalizeMarketSettings(null).sources.join('|')].join(','),'false,owned');
+  check('mutamarket','the triangle and the chosen sources survive a reload',
+    [normalizeMarketSettings({showAbyssals:true,sources:['owned','mutamarket']}).showAbyssals,
+     normalizeMarketSettings({showAbyssals:true,sources:['owned','mutamarket']}).sources.join('|')].join(','),'true,owned|mutamarket');
+  // Anything that is not literally `true` is off. A truthy string from a half-migrated blob must not
+  // turn the market walk on behind a triangle that is drawn unfilled.
+  check('mutamarket','only a real boolean turns abyssals on',
+    normalizeMarketSettings({showAbyssals:'yes'}).showAbyssals===false?1:0,1,0);
+  // A blob written before sources could be multiple. This IS the migration — `axis_market` is
+  // validated on every read, so lifting the old single string into a one-element list here is all
+  // that stands between a returning user and a source list that silently reset to "owned".
+  check('mutamarket','a blob from the single-source version keeps its choice',
+    normalizeMarketSettings({source:'mutamarket'}).sources.join('|'),'mutamarket');
+  check('mutamarket','a list wins over a leftover single source',
+    normalizeMarketSettings({source:'mutamarket',sources:['owned']}).sources.join('|'),'owned');
+  check('mutamarket','an absent or unusable source list falls back to owned',
+    [normalizeMarketSettings({}).sources.join('|'),normalizeMarketSettings({source:''}).sources.join('|'),
+     normalizeMarketSettings({source:7}).sources.join('|')].join(','),'owned,owned,owned');
+  // Garbage inside the list is dropped rather than failing the whole read, and duplicates collapse:
+  // a repeated id would put the same rolls in the union twice and make the tick states disagree.
+  check('mutamarket','junk entries are dropped and duplicates collapse',
+    normalizeMarketSettings({sources:['owned','owned','',null,7,'mutamarket']}).sources.join('|'),'owned|mutamarket');
+  // Unticking the last source is a CHOICE, not a missing value — "show me no abyssal rolls", which
+  // the sheet says out loud. Rewriting it to the default here would undo it on the next read, and
+  // the tick would appear to come back on its own.
+  check('mutamarket','an empty selection is preserved rather than reset',
+    normalizeMarketSettings({sources:[]}).sources.length,0,0);
+  check('mutamarket','a NaN ceiling falls back to the default rather than emptying the list',
+    normalizeMarketSettings({maxPrice:'nonsense'}).maxPrice,MARKET_DEFAULTS.maxPrice,0);
+  // Explicit null is a real choice ("Any"), and must not be rewritten to the default ceiling.
+  check('mutamarket','no ceiling is kept as no ceiling',normalizeMarketSettings({maxPrice:null}).maxPrice===null?1:0,1,0);
+  // The fits filter can only ever hide rows, so it has to be opt-in and it has to round-trip — a
+  // toggle that quietly reset itself would look like the variant list losing modules at random.
+  // ── The ceiling slider's scale ──
+  // Both ends have to be exactly the advertised numbers, or the track lies about its own range.
+  check('mutamarket','the track starts at the advertised floor',priceAtStop(0),PRICE_MIN,0);
+  check('mutamarket','the last real stop is the advertised ceiling',priceAtStop(PRICE_STOPS-1),PRICE_MAX,0);
+  // Past the end is "no limit", not 5B. It is the only way to turn the ceiling off by dragging, and
+  // a ceiling is the one setting here that can silently empty the list.
+  check('mutamarket','the end of the track is no limit',priceAtStop(PRICE_STOPS)===null?1:0,1,0);
+  // The thumb lands on the nearest stop, which for a typed or default ceiling need not be exact —
+  // the field is what holds the real number. What must hold is that "nearest" is actually near: a
+  // thumb sitting a decade away from the ceiling printed beside it would be reading as a different
+  // setting. Nothing is rewritten by this, so the default survives opening the sheet untouched.
+  check('mutamarket','the thumb lands next to the ceiling it represents',
+    priceAtStop(stopAtPrice(MARKET_DEFAULTS.maxPrice)),MARKET_DEFAULTS.maxPrice,0.06);
+  check('mutamarket','no ceiling puts the thumb at the far end',stopAtPrice(null),PRICE_STOPS,0);
+  // Every stop must round-trip, or the thumb jumps backwards under a dragging finger — the snapping
+  // in priceAtStop is exactly what makes inverting the log unsafe here.
+  {
+    let bad=0;
+    for(let s=0;s<PRICE_STOPS;s++)if(stopAtPrice(priceAtStop(s))!==s)bad++;
+    check('mutamarket','every stop on the track round-trips',bad,0,0);
+  }
+  // Log, not linear: the midpoint of a linear 10M–5B track is 2.5B, which would put every ceiling
+  // worth setting inside the first two percent of the travel.
+  check('mutamarket','the scale is logarithmic, not linear',
+    priceAtStop(Math.floor((PRICE_STOPS-1)/2))<500_000_000?1:0,1,0);
+  // The typed field and the thumb must accept the same values. An empty field is a real answer —
+  // no ceiling — so garbage cannot also read as empty, or a typo switches the market to unlimited.
+  check('mutamarket','the field takes the shorthand people actually type',
+    [parsePriceInput('300m'),parsePriceInput('1.2b'),parsePriceInput('300,000,000')].join(','),
+    '300000000,1200000000,300000000');
+  check('mutamarket','an empty field means no ceiling',parsePriceInput('  ')===null?1:0,1,0);
+  check('mutamarket','a typo leaves the ceiling alone rather than removing it',
+    [parsePriceInput('cheap'),parsePriceInput('3m3'),parsePriceInput('-5m')].every(v=>v===undefined)?1:0,1,0);
+  check('mutamarket','a typed value is clamped to the track so the two controls agree',
+    [parsePriceInput('1'),parsePriceInput('99b')].join(','),`${PRICE_MIN},${PRICE_MAX}`);
+
+  // ── What the ceiling hides in the compare list ──
+  // Only a KNOWN price over the ceiling is excluded. An owned roll has no price at all, and hiding
+  // the unpriced would drop exactly the modules the market has nothing to say about.
+  check('mutamarket','a cheap variant is kept and an expensive one is not',
+    [withinPriceCeiling(200e6,250e6),withinPriceCeiling(300e6,250e6)].join(','),'true,false');
+  check('mutamarket','the ceiling itself is affordable',withinPriceCeiling(250e6,250e6)===true?1:0,1,0);
+  check('mutamarket','an unpriced variant is not treated as unaffordable',
+    withinPriceCeiling(null,250e6)===true?1:0,1,0);
+  check('mutamarket','no ceiling hides nothing',withinPriceCeiling(9e12,null)===true?1:0,1,0);
+
+  check('mutamarket','the fits filter is off on a fresh install and survives a reload',
+    [normalizeMarketSettings(null).fitsOnly,normalizeMarketSettings({fitsOnly:true}).fitsOnly,
+     normalizeMarketSettings({fitsOnly:'yes'}).fitsOnly].join(','),'false,true,false');
+
+  // Paging. Two live traps: `links.next` drops the query string (so page 2 would silently widen from
+  // The Forge to all of New Eden), and the ceiling can only be enforced by reading rows. Sorting
+  // ascending lets the walk stop at the first row over budget rather than reading the whole type.
+  const priced=n=>({...listed,id:1000+n,contract:{...listed.contract,id:200000+n,price:n*10000000}});
+  const requested=[];
+  const pager=async path=>{requested.push(path);
+    const offset=Number(new URL(`https://x${path}`).searchParams.get('cursor')??0);
+    const rows=Array.from({length:100},(_,i)=>priced(offset+i+1));
+    return {rows,cursor:String(offset+100)};};
+  const walked=await fetchListings({typeId:49738,regionId:FORGE_REGION_ID,maxPrice:150000000},{api:{page:pager}});
+  check('mutamarket','the walk stops at the first listing over budget',walked.listings.length,15,0);
+  check('mutamarket','every kept listing is inside the budget',walked.listings.every(l=>l.price<=150000000)?1:0,1,0);
+  check('mutamarket','stopping early is not reported as a truncated list',walked.truncated?1:0,0,0);
+  check('mutamarket','a budgeted walk reads only the pages it needs',requested.length,1,0);
+  check('mutamarket','the walk sorts ascending so the ceiling can end it',/sort\/price\/asc/.test(requested[0])?1:0,1,0);
+  // The region rides in OUR query string on every page, because `links.next` is never followed.
+  const far=await fetchListings({typeId:49738,regionId:FORGE_REGION_ID,maxPages:3},{api:{page:pager}});
+  check('mutamarket','the region survives pagination',requested.slice(1).every(p=>p.includes('region_id=10000002'))?1:0,1,0);
+  check('mutamarket','the cursor is appended to our own query, not taken from links.next',
+    requested[2].includes('region_id=10000002')&&requested[2].includes('cursor=')?1:0,1,0);
+  check('mutamarket','an unbounded walk stops at maxPages',far.listings.length,300,0);
+  check('mutamarket','a walk cut short by maxPages says the list is partial',far.truncated?1:0,1,0);
+}
+// ─────────────────────────────────────────────────────────────────────────────
+// The shopping list: a saved fit remembers only an item ID, so turning it back into something
+// buyable is a join against the cached listings — and every interesting case is a join that fails.
+{
+  const listingOf=(itemId,over)=>({itemId,name:'Ballistic Control System II',price:150000000,
+    contractId:235938160,sellerName:'Solaxx',stationId:JITA_4_4_STATION_ID,
+    slug:'abyssal-ballistic-control-system-1',expiresAt:over?'2026-01-01 00:00:00+00':'2026-10-09 15:30:48+00'});
+  const now=Date.parse('2026-09-11T12:00:00Z');
+  const slots={low:[{id:1,abyssalItemId:'buy'},{id:2,abyssalItemId:'mine'},{id:3,name:'Damage Control II'}],
+    mid:[{id:4,abyssalItemId:'gone'},{id:5,abyssalItemId:'stale'}]};
+  const cached=[listingOf('buy'),{...listingOf('stale',true)}];
+  const list=shoppingList(slots,cached,{owned:[{itemId:'mine'}],now});
+
+  check('shopping','a module with no abyssal identity is not a purchase',list.rows.length,4,0);
+  check('shopping','a market module becomes a buyable row',list.rows.find(r=>r.itemId==='buy').state,'buyable');
+  check('shopping','the contract comes along so it can be opened in the client',list.rows.find(r=>r.itemId==='buy').contractId,235938160,0);
+  check('shopping','a module you already own is listed but not bought',list.rows.find(r=>r.itemId==='mine').state,'owned');
+  // Not "free" and not "owned" — a module whose origin we no longer know has to say so, or the
+  // total reads as the whole cost of the fit when it is only part of it.
+  check('shopping','an item with no cached listing is unresolved, not free',list.rows.find(r=>r.itemId==='gone').state,'unknown');
+  check('shopping','an expired contract is not a live link',list.rows.find(r=>r.itemId==='stale').state,'expired');
+  check('shopping','only live contracts are summed',list.total,150000000,0);
+  check('shopping','the three counts the screen has to state',[list.buyable,list.owned,list.unresolved].join(','),'1,1,2');
+  check('shopping','the slot is carried so the row can name where it goes',list.rows.find(r=>r.itemId==='gone').slot,'mid');
+  // A unique physical item cannot sit in two slots; a repeat is an upstream bug, not a second buy.
+  const doubled=shoppingList({low:[{id:1,abyssalItemId:'buy'}],mid:[{id:2,abyssalItemId:'buy'}]},cached,{now});
+  check('shopping','the same physical module is never billed twice',doubled.total,150000000,0);
+  check('shopping','an empty fit costs nothing',shoppingList({},cached,{now}).total,0,0);
+  // MutaMarket's "2026-10-09 15:30:48+00" is not ISO 8601 — a NaN here makes every contract look live.
+  check('shopping','a MutaMarket expiry date is parsed rather than trusted',contractExpiry('2026-10-09 15:30:48+00'),Date.parse('2026-10-09T15:30:48+00:00'),0);
+  check('shopping','an unparseable expiry is null rather than NaN',contractExpiry('whenever')===null?1:0,1,0);
+  check('shopping','a listing with no expiry at all is still live',
+    shoppingList({low:[{abyssalItemId:'buy'}]},[{...listingOf('buy'),expiresAt:null}],{now}).rows[0].state,'buyable');
+  // The web page is the only route to a contract on a machine with no EVE client running, and the
+  // only one at all before a character grants esi-ui.open_window. It is built from the slug the API
+  // returned rather than assembled from the name, which would guess wrong on every duplicate.
+  check('shopping','a contract link is built from the slug MutaMarket returned',
+    mutaMarketUrl('abyssal-warp-disruptor-1055169244217'),
+    'https://mutamarket.com/modules/abyssal-warp-disruptor-1055169244217');
+  check('shopping','a slug is escaped rather than pasted into the path',
+    mutaMarketUrl('a b/c')==='https://mutamarket.com/modules/a%20b%2Fc'?1:0,1,0);
+  check('shopping','no slug means no link, not a link to the module index',
+    mutaMarketUrl(null)===null?1:0,1,0);
+
+  // The info sheet asks the same question the shopping list does, so it asks through the same join.
+  // Two screens deciding independently whether a module is owned is how they come to disagree.
+  const owned=[{itemId:'mine',characterName:'Solaxx',location:'Jita 4-4'}];
+  const both=[listingOf('mine'),...cached];
+  check('shopping','a module in your hangar is owned even while its old contract is still live',
+    abyssalProvenance('mine',{owned,listings:both,now}).state,'owned');
+  check('shopping','an owned module still carries the listing, so the sheet can show where it came from',
+    abyssalProvenance('mine',{owned,listings:both,now}).listing?.contractId,235938160,0);
+  check('shopping','the hangar record comes back whole, for the owner and location lines',
+    abyssalProvenance('mine',{owned,listings:both,now}).record?.characterName,'Solaxx');
+  check('shopping','a module that is neither owned nor listed has no provenance to show',
+    abyssalProvenance('gone',{owned,listings:both,now}).state,'unknown');
+  check('shopping','the expiry is parsed once, in the join, not again by each caller',
+    abyssalProvenance('stale',{listings:both,now}).expiresAt,Date.parse('2026-01-01T00:00:00+00:00'),0);
+  check('shopping','the sheet and the shopping list never disagree about a module',
+    list.rows.every(r=>abyssalProvenance(r.itemId,{owned:[{itemId:'mine'}],listings:cached,now}).state===r.state)?1:0,1,0);
+  // An id arriving as a number from one store and a string from the other must still be one module.
+  check('shopping','the item id is compared as a string, whichever store it came from',
+    abyssalProvenance(1055169244217,{owned:[{itemId:'1055169244217'}],now}).state,'owned');
+}
+{
+  const typeID=tid('1MN Afterburner II');
+  const {default:mutators}=await import('./data/mutaplasmids.json',{with:{type:'json'}});
+  const mutaplasmid=Number(Object.keys(mutators).find(k=>mutators[k].t.includes(typeID)));
+  const {ATTR_ID_TO_NAME}=await import('./calc.js');
+  const mutations=Object.fromEntries(Object.keys(mutators[mutaplasmid].a).map(id=>[ATTR_ID_TO_NAME[id],TYPES[typeID].attrs[ATTR_ID_TO_NAME[id]]]));
+  const mod={typeID,mutaplasmid,mutations,abyssalItemId:'12345'};
+  const copy=customAbyssal(mod,{itemId:'axis-manual:test',label:'  My roll  ',ownerName:'Custom',locationName:'Local',now:123});
+  check('custom-abyssal','custom copy never reuses physical market identity',copy.itemId,'axis-manual:test');
+  check('custom-abyssal','custom owner cannot match a real character',copy.characterId,MANUAL_OWNER);
+  check('custom-abyssal','custom roll survives an unrelated complete asset scan',mergeAbyssalScan([copy],[],[],{characterId:123}, {},999)[0].available?1:0,1,0);
+  check('custom-abyssal','display strings and label survive conversion',[copy.characterName,copy.location,copy.label].join('|'),'Custom|Local|My roll');
+  check('custom-abyssal','save timestamp is retained',copy.importedAt,123,0);
+  const key=Object.keys(mutations)[0],old=mutations[key];copy.mutations[key]=999;
+  check('custom-abyssal','saved roll is a copy, not an alias into the fit',mutations[key],old,0);
+  let rejected=0;
+  for(const options of [{itemId:'12345'},{itemId:'axis-manual:test'}]){
+    try{customAbyssal(options.itemId==='12345'?mod:{...mod,mutations:{...mutations,[key]:NaN}},options);}catch{rejected++;}
+  }
+  check('custom-abyssal','reject numeric identities and invalid roll values',rejected,2,0);
+  const ids=Array.from({length:100},manualAbyssalId);
+  check('custom-abyssal','generated identities are distinct and outside the EVE namespace',new Set(ids).size===100&&ids.every(id=>id.startsWith('axis-manual:'))?1:0,1,0);
+}
+{
+  const now=Date.parse('2026-09-11T00:00:00Z');
+  const listing={itemId:'one',contractId:235822605,contractKind:'ask',price:270000000,name:'Abyssal Ballistic Control System',stationId:60003760,regionId:10000002,dynamicTypeId:1,expiresAt:'2026-10-01T00:00:00Z'};
+  const row={...listing,state:'buyable'},systems=new Map([[60003760,30000142]]);
+  check('contract-export','EVE format uses the resolved solar system',contractLinkList([row],systems).text,'<url=contract:30000142//235822605>Contract 235822605 (Abyssal Ballistic Control System) ISK 270,000,000</url>');
+  check('contract-export','unknown systems are omitted and reported',contractLinkList([row]).unresolved,1,0);
+  check('contract-export','station ids cannot masquerade as system ids',contractLinkList([row],new Map([[60003760,60003760]])).count,0,0);
+  check('contract-export','contracts are exported once even with multiple module rows',contractLinkList([row,{...row,name:'second'}],systems).count,1,0);
+  check('contract-export','expired contracts are omitted',contractLinkList([{...row,state:'expired'}],systems).count,0,0);
+  check('contract-export','module names cannot inject EVE markup',contractLinkList([{...row,name:'<url=bad>\n&'}],systems).text.includes('&lt;url=bad&gt; &amp;')?1:0,1,0);
+  let stored='{}',requests=0;
+  const storage={getItem:()=>stored,setItem:(_k,v)=>{stored=v;}};
+  const fetcher=async()=>{requests++;return {ok:true,json:async()=>({system_id:30000142})};};
+  await stationSystems([60003760,60003760],{storage,fetcher});
+  const cached=await stationSystems([60003760,null,1000000000001],{storage,fetcher});
+  check('contract-export','public station resolution is cached and skips structures',requests,1,0);
+  check('contract-export','cached system survives subsequent offline export',cached.systems.get(60003760),30000142,0);
+  const failed=await stationSystems([60000001],{storage,fetcher:async()=>{throw new Error('offline');}});
+  check('contract-export','failed lookup never invents Jita',failed.systems.size,0,0);
+  check('contract-export','failed lookup remains retryable',failed.failed,1,0);
+  const data={listings:[listing],now};
+  check('abyssal-value','live individual asking price contributes to fit value',abyssalValue({abyssalItemId:'one'},data).price,270000000,0);
+  check('abyssal-value','owned modules cannot inherit a stale market offer',abyssalValue({abyssalItemId:'one'},{...data,owned:[{itemId:'one'}]}).price===null?1:0,1,0);
+  check('abyssal-value','auction estimates never become a confirmed price',abyssalValue({abyssalItemId:'one'},{...data,listings:[{...listing,price:null,cost:999,estimatedValue:1000,contractKind:'bid'}]}).price===null?1:0,1,0);
+  check('abyssal-value','expired asking price is unknown',abyssalValue({abyssalItemId:'one'},{...data,now:Date.parse('2027-01-01')}).source,'expired');
+  const scope={typeIds:[1],regionId:10000002,stationId:60003760,now};
+  check('offline-market','matching cached listing remains usable',savedMarketListings([listing],scope).length,1,0);
+  check('offline-market','cached fallback respects station, family, expiry and budget',savedMarketListings([listing,{...listing,stationId:null},{...listing,dynamicTypeId:2},{...listing,expiresAt:'2020-01-01'}],{...scope,maxPrice:1}).length,0,0);
+  const savedFetch=globalThis.fetch;
+  try{
+    globalThis.fetch=()=>new Promise(()=>{});
+    let timedOut=false;try{await networkJSON('https://example.invalid',{timeout:5});}catch(e){timedOut=e.message.includes('timed out');}
+    check('offline-market','hung native fetch cannot leave the UI loading forever',timedOut?1:0,1,0);
+  }finally{globalThis.fetch=savedFetch;}
+}
+{
+  const {matchesContractFilters}=await import('./lib/mutamarket.js');
+  const choices=[{contractKind:'ask',contractItems:1},{contractKind:'bundle',contractItems:2},
+    {contractKind:'bid',contractItems:1},{contractKind:'bid',contractItems:2}];
+  for(const [singleItem,showAuctions,expected] of [[true,false,'ask:1'],[true,true,'ask:1,bid:1'],
+    [false,false,'ask:1,bundle:2'],[false,true,'ask:1,bundle:2,bid:1,bid:2']]){
+    check('contracts',`independent single-item=${singleItem} auctions=${showAuctions}`,
+      choices.filter(l=>matchesContractFilters(l,{singleItem,showAuctions})).map(l=>`${l.contractKind}:${l.contractItems}`).join(','),expected);
+    const query=mutaMarketQuery({typeId:49738,singleItem,showAuctions});
+    check('contracts',`query preserves auction choice ${singleItem}/${showAuctions}`,query.includes('/item-exchange')?1:0,showAuctions?0:1,0);
+    check('contracts',`query preserves item-count choice ${singleItem}/${showAuctions}`,query.includes('/no-multi-item-contracts')?1:0,singleItem?1:0,0);
+  }
+  check('contracts','auction preference persists independently',normalizeMarketSettings({allContracts:false,showAuctions:true}).showAuctions?1:0,1,0);
+  const typeID=tid('1MN Afterburner II');
+  const record={itemId:'stale',typeID,name:'1MN Afterburner II',source:'mutamarket',mutaplasmid:1,mutations:{power:50}};
+  const cleared=variationItems([{typeID}],{typeID,abyssalItemId:'stale'},[record]);
+  check('variations','removed roll loses its market provenance',cleared.rows[0].record?1:0,0,0);
+  check('variations','original market roll is selectable again',cleared.rows.filter(r=>r.record?.itemId==='stale'&&!r.isBaseline).length,1,0);
+  const variants=variationItems([{typeID:tid('1MN Monopropellant Enduring Afterburner')}],{typeID});
+  check('variations','heat attributes never enter the sort picker',variants.attributes.some(k=>['heatDamage','overloadSpeedFactorBonus'].includes(k))?1:0,0,0);
+  const ship=lookupShip('Orthrus'),slots={high:[],mid:[{id:'s',typeID:tid('Warp Scrambler II'),state:'active'}],low:[],rigs:[]};
+  const externalBursts=[{buffID:21,value:33.75}];
+  const projected=computeProjectedReps(ship,slots,null,{externalBursts});
+  check('scram','external Interdiction Maneuvers extends Orthrus tackle',projected.scrams[0].optimal,18056.25,1e-9);
+  check('scram','projection and fitted info use identical boosted range',projected.scrams[0].optimal,
+    calcFitStats(ship,slots,[],null,{externalBursts}).fittedItems.get('s').get('maxRange'),1e-9);
+}
+{
+  const {parsePriceMillions}=await import('./lib/market-settings.js');
+  check('market-input','bare numbers in the editor are millions',
+    [parsePriceMillions('20'),parsePriceMillions('2000'),parsePriceMillions('20.5')].join(','),'20000000,2000000000,20500000');
+  check('market-input','clearing the millions field removes the ceiling',parsePriceMillions('')===null?1:0,1,0);
+  check('market-input','invalid units cannot silently change the ceiling',parsePriceMillions('2b')===undefined?1:0,1,0);
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

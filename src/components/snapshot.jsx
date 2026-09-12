@@ -5,6 +5,8 @@ import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName,
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices } from "../prices.js";
+import { abyssalValue } from '../lib/abyssal-value.js';
+import { useAbyssalData } from '../lib/use-abyssal-data.js';
 import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
 
@@ -393,7 +395,7 @@ function Projected({ links, incoming }) {
 
 // The card renders off-screen at a fixed 1140px so the exported image is consistent regardless of the
 // phone's viewport. The two columns stretch to equal height, so a tall loadout grows the whole card.
-function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected, skillLabel }) {
+function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected, skillLabel,abyssalData }) {
   const s = cs ?? {};
   const dmg = s.totalDps ?? {};
   const dmgTotal = (dmg.em ?? 0) + (dmg.th ?? 0) + (dmg.kin ?? 0) + (dmg.exp ?? 0);
@@ -421,15 +423,17 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const cachedPrices = getCachedPrices(priceHub);
   const fmtISKShort = (n) => n >= 1e12 ? `${(n / 1e12).toFixed(2)}T` : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1e3).toFixed(1)}K`;
   const priceBreakdown = (() => {
-    if (!cachedPrices.size) return null;
-    let fit = 0, character = 0;
+    let fit = 0, character = 0,unknownAbyssals=0,pricedAbyssals=0;
     const addFit = (id, qty = 1) => { if (id > 0) fit += (cachedPrices.get(id) ?? 0) * qty; };
     const addChar = (id) => { if (id > 0) character += cachedPrices.get(id) ?? 0; };
     const ship = shipTypeID ? (cachedPrices.get(shipTypeID) ?? null) : null;
     const allSlots = [...(slots?.high ?? []), ...(slots?.mid ?? []), ...(slots?.low ?? []), ...(slots?.rigs ?? []), ...(slots?.subsystems ?? [])];
     for (const m of allSlots) {
       if (!isReal(m)) continue;
-      if (m.typeID > 0) addFit(m.typeID);
+      if(m.mutaplasmid||m.mutations){
+        const value=abyssalValue(m,abyssalData);
+        if(value.price==null)unknownAbyssals++;else{fit+=value.price;pricedAbyssals++;}
+      }else if (m.typeID > 0) addFit(m.typeID);
       if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id); }
     }
     // Drones and fighters are priced by the UNIT, so the stack size counts: five Hobgoblin IIs are
@@ -448,7 +452,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
     // outvalues most hulls — so they stay out of the headline and are listed separately.
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addFit(id); } }
     const total = (ship ?? 0) + fit;
-    return total > 0 ? { ship, fit, character, total } : null;
+    return total > 0||unknownAbyssals>0 ? { ship, fit, character, total,unknownAbyssals,pricedAbyssals } : null;
   })();
 
   // Rep = local rep EHP/s + projected remote-rep EHP/s (folded in). Sustained stays local.
@@ -521,7 +525,9 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
           {priceBreakdown != null && (
             <div style={{ flexShrink: 0, textAlign: "right" }}>
               <div style={{ fontSize: 10, letterSpacing: ".5px", color: T.muted, fontWeight: 600, textTransform: "uppercase", marginBottom: 3 }}>{t("Est. Value")}</div>
-              <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}</div>
+              <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}{priceBreakdown.unknownAbyssals>0?' + ?':''}</div>
+              {priceBreakdown.unknownAbyssals>0&&<div style={{fontSize:10,color:T.dim}}>{t('{n} abyssal values unknown',{n:priceBreakdown.unknownAbyssals})}</div>}
+              {priceBreakdown.pricedAbyssals>0&&<div style={{fontSize:10,color:T.dim}}>{t('Includes MutaMarket asking prices')}</div>}
               <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>{t("Ship: {v}", { v: priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : t("N/A") })}</div>
               <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>{t("Fit: {v}", { v: fmtISKShort(priceBreakdown.fit) })}</div>
               {/* "(excl.)" is dimmed rather than being part of the sentence, so it stays its own key
@@ -695,6 +701,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
 
 // ── the modal: preview + save/share ─────────────────────────────────────────────
 function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = "Jita", priceSource = "fuzzwork", ...cardProps }) {
+  const abyssalData=useAbyssalData(cardProps.slots);
   const cardRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
@@ -741,7 +748,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
     })();
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pricesReady]);
+  }, [pricesReady,abyssalData]);
 
   const filename = `${(cardProps.fitName || cardProps.shipName || "fit").replace(/[^\w\-]+/g, "_")}.png`;
 
@@ -841,7 +848,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = 
 
       {/* The real card renders off-screen at full width so the export is identical on every device. */}
       <div style={{ position: "fixed", left: -99999, top: 0 }}>
-        <FitCard cardRef={cardRef} {...cardProps} projected={projected} />
+        <FitCard cardRef={cardRef} {...cardProps} projected={projected} abyssalData={abyssalData}/>
       </div>
     </div>
   );

@@ -1528,6 +1528,22 @@ export function fitCostFits(hr,val,base=0,m=1){
   return val*k<=(hr.total??0)-(hr.used??0)+base*k+1e-6;
 }
 
+// The whole-module version, for the Variations tab's "only show what fits" filter: a swap fits only
+// if EVERY resource it charges does. Costs are `{cpu,pg,calib}` as fitCostParts builds them, and
+// `base` is the module being displaced — a rig charges calibration and nothing else, so the pg/cpu
+// pair and the calibration figure are never both live on the same row.
+//
+// Three-valued, deliberately, and for the same reason fitCostFits is: false means "checked, won't
+// fit", null means "nothing to check it against". A filter that treated null as false would empty
+// itself on the one screen where headroom has not arrived yet.
+export function variantCostFits(cost,base,headroom,ratio){
+  const answers=[['pg',cost?.pg,base?.pg],['cpu',cost?.cpu,base?.cpu],['cal',cost?.calib,base?.calib]]
+    .filter(([,val,b])=>val>0||b>0)
+    .map(([key,val,b])=>fitCostFits(headroom?.[key],val??0,b??0,ratio?.[key]));
+  if(answers.includes(false))return false;
+  return answers.includes(true)?true:null;
+}
+
 // True if a module accepts charges (reads chargeGroup1-6 from authoritative TYPES data).
 // Used for module classification and charge-tab gating so any chargeable module works going forward.
 function moduleTakesCharges(typeID,name){
