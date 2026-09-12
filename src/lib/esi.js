@@ -271,6 +271,18 @@ export function getCharacterAssetNames(characterId, ids, signal) {
   return esiRequest(characterId,'POST',`/characters/${characterId}/assets/names/`,ids,{signal});
 }
 
+// Optional, like ASSET_SCOPE: requested on demand rather than at first login, so a player who only
+// wants skill sync is never asked for permission to drive their game client.
+export const UI_SCOPE = 'esi-ui.open_window.v1';
+
+// Opens the contract window in the EVE client the character is currently logged into — the only way
+// an app that is not the game can put a player in front of a Buy button. It acts on the RUNNING
+// client, so it does nothing if the character is offline; the caller has to say so rather than let
+// a silent 204 read as success. Returns 204 with no body when it worked.
+export function openContractWindow(characterId, contractId, signal) {
+  return esiRequest(characterId, 'POST', `/ui/openwindow/contract/?contract_id=${Number(contractId)}`, undefined, { signal });
+}
+
 // { skills: [{skill_id, trained_skill_level, active_skill_level, skillpoints_in_skill}], total_sp, unallocated_sp }
 export function getCharacterSkills(characterId) {
   return esiRequest(characterId, 'GET', `/characters/${characterId}/skills/`);

@@ -44,6 +44,15 @@ const ALLOWED = [
        + 'resolves in the installed app, where CapacitorHttp bypasses the browser CORS rules.',
   },
   {
+    host: 'mutamarket.com',
+    why: 'Public abyssal-module contract index (no key, no account). Online-only by nature: it lists '
+       + 'what other players currently have for sale, which cannot be bundled. A failed fetch leaves '
+       + 'the listing source empty and the owned library still works. Like ceve-market it sends no '
+       + 'CORS headers, so it only resolves in the installed app, where CapacitorHttp bypasses the '
+       + 'browser CORS rules. `vite.config.js` proxies /mutamarket-api so a dev-server browser can '
+       + 'exercise it too; that prefix exists only under `npm run dev` and never ships.',
+  },
+  {
     host: 'community.eveonline.com',
     why: 'NOT a fetch — appears inside an item DESCRIPTION string in data-bundle.js (a CSM link in '
        + "CCP's flavour text). Never requested. This scan can't distinguish a fetched URL from one "

@@ -275,7 +275,11 @@ const HOSTILE_DOMAINS = new Set(['targetID', 'target']);
  * heavier hull green. The correction belongs to the attribute, not to the route taken to reach it.
  */
 const LOWER_IS_BETTER_TARGET_RE = /((Time|Material|Mat|Cost)Multiplier|ExplosionRadius)$/;
-const LOWER_IS_BETTER_TARGETS = new Set(['mass', 'strEngMatBonus']);
+// `upgradeCost` is calibration, and CCP flags it high-is-good — a rig that eats more of the 400 points
+// is painted as the better rig. It stayed invisible while the only consumer was the attribute list,
+// which drops it into the glyph line via IGNORED; the per-attribute locks read direction for every
+// attribute the sort sheet offers, and a calibration lock would have kept exactly the wrong half.
+const LOWER_IS_BETTER_TARGETS = new Set(['mass', 'strEngMatBonus', 'upgradeCost']);
 function correctedHighIsGood(attrID) {
   const name = ATTR_ID_TO_NAME[attrID];
   if (name && (LOWER_IS_BETTER_TARGET_RE.test(name) || LOWER_IS_BETTER_TARGETS.has(name))) return false;
@@ -314,6 +318,68 @@ export function derivedDirection(typeID, key) {
   return verdict;
 }
 
+// ── Derived values ──────────────────────────────────────────────────────────────────────────────
+/**
+ * The numbers a module is actually chosen by, which CCP does not store because each is a RATIO of
+ * two attributes it does store.
+ *
+ * This is the question the attribute list cannot answer. A rolled shield booster that gained 8% shield
+ * and lost 6% cycle time shows one green arrow and one red one, and nothing on the row says which
+ * won — the comparison hands back the two halves of a division and leaves the user to do it on a
+ * phone, across thirty contracts. Sorting by either half is worse than useless: sort by amount and
+ * the longest cycles float to the top.
+ *
+ * Keyed under a `derived:` prefix that no dogma attribute can collide with, because these travel in
+ * the same `values` bag as real attributes so that sorting, the per-attribute locks and the row
+ * display all reach them through the paths they already use. The prefix is also what keeps them out
+ * of a MutaMarket URL: `abyssalAttrSpan` matches against mutaplasmid attribute names, finds nothing,
+ * and `attrFilterFor` returns no filter rather than a name the server would 400 on (mutamarket.js
+ * trap 6).
+ */
+const num = x => (typeof x === 'number' && Number.isFinite(x)) ? x : null;
+const ratio = (n, d) => (n != null && d != null && d > 0) ? n / d : null;
+// Local reps, remote reps and hull reps each name their amount differently; a module carries exactly
+// one of the three, so first-present is a selection and not a precedence.
+function repairAmount(a) {
+  const amount = num(a.shieldBonus) ?? num(a.armorDamageAmount) ?? num(a.structureDamageAmount);
+  if (amount === null) return null;
+  // An Ancillary Armor Repairer loaded with Nanite Repair Paste reps x3, and nobody runs one unpasted
+  // — the module exists for the boosted cycle. It shares a variation family with the plain repairers
+  // (`variantsOf` lists Large Ancillary Armor Repairer among Large Armor Repairer II's variants), so
+  // leaving it out would file the strongest module in the list at a third of its output. Read from
+  // the same attribute calc.js uses for its own AAR branch, so the two cannot drift apart.
+  return amount * (num(a.chargedArmorDamageMultiplier) ?? 1);
+}
+const DERIVED = {
+  'derived:repairPerSecond': a => ratio(repairAmount(a), num(a.duration) / 1000),
+  // Sustain, as opposed to burst. Note an Ancillary Shield Booster reads pessimistically here: its
+  // stored capacitorNeed is the UNLOADED cycle, and loaded with cap boosters it costs the ship
+  // nothing until the clip runs dry. That is a floor on the real figure, not a wrong number, and it
+  // is the same value the Activation Cost row beside it shows.
+  'derived:repairPerCap':    a => ratio(repairAmount(a), num(a.capacitorNeed)),
+  'derived:yieldPerSecond':  a => ratio(num(a.miningAmount), num(a.duration) / 1000),
+  // A damage mod's whole trade. Turrets carry `damageMultiplier` and launchers
+  // `missileDamageMultiplierBonus`, both against `speedMultiplier` — the multiplier the weapon's
+  // cycle time is divided by, so dividing by it is what turns damage-per-shot into damage-per-time.
+  // Both halves are required. A Drone Damage Amplifier carries neither — its damage lives on
+  // `droneDamageBonus`, a flat percentage with no cycle to divide by — and rating a lone damage
+  // multiplier against an implied 1.0 would just restate the attribute already on the row.
+  'derived:damagePerTime':   a => {
+    const dmg = num(a.damageMultiplier) ?? num(a.missileDamageMultiplierBonus);
+    return ratio(dmg, num(a.speedMultiplier));
+  },
+};
+export const DERIVED_KEYS = new Set(Object.keys(DERIVED));
+/** Every derived value a set of attributes supports, as `{['derived:x']: number}`. */
+export function derivedAttributes(attrs) {
+  const out = {};
+  for (const [key, fn] of Object.entries(DERIVED)) {
+    const v = fn(attrs ?? {});
+    if (v !== null && Number.isFinite(v)) out[key] = v;
+  }
+  return out;
+}
+
 const PENALTY_RE = /Penalty$/;
 const SIDE_EFFECT_CHANCE_RE = /^boosterEffectChance\d*$/;
 // `speedFactor` is the clearest case in the family and the one most easily missed: a Stasis
@@ -333,6 +399,12 @@ const SIGNED_BONUS_RE = /^(aoeCloudSizeBonus|aoeVelocityBonus|missileVelocityBon
 const TARGET_FACING_SIG_GROUPS = new Set(['Target Painter', 'Structure Disruption Battery']);
 export function directionOf(k, v, b, typeID) {
   if (v == null || b == null) return null;
+  // Every derived value is a rate — repaired HP per second, per GJ, damage per unit of cycle time —
+  // and more of it is the reason anyone sorted by it. There is no dogma flag behind these keys, so
+  // without this they would depend on `attrHighIsGood` happening to default an unknown attribute to
+  // high-is-good, which is a coincidence rather than a decision — and a future derived key that is
+  // lower-is-better (a cap DRAIN per second, say) has to be caught here rather than inherit this.
+  if (DERIVED_KEYS.has(k))      return v > b;
   // The booster side-effect family first: CCP flags every one highIsGood=1 AND signs them
   // inconsistently, so neither the derived rule nor the raw flag can be trusted for them.
   if (PENALTY_RE.test(k))       return Math.abs(v) < Math.abs(b);   // weaker penalty wins
@@ -346,6 +418,37 @@ export function directionOf(k, v, b, typeID) {
   if (derived !== null)         return derived ? v > b : v < b;
   if (SIGNED_BONUS_RE.test(k))  return Math.abs(v) > Math.abs(b);   // stronger bonus wins
   return correctedHighIsGood(ATTR_NAME_TO_ID[k]) ? v > b : v < b;
+}
+
+/**
+ * Which sort direction puts the BEST value first, for a freshly picked attribute.
+ *
+ * There is no flag to read for this. `directionOf` is the only thing that knows which way is better,
+ * and it answers about a PAIR — so ask it about the pair that spans the list: the largest and the
+ * smallest value actually present. If the largest is the better one, the best-first order is 'desc'.
+ *
+ * It must be asked with REAL values, never a synthetic 1-vs-0 probe: half of `directionOf`'s rules
+ * compare magnitudes, so a web's speedFactor of -60 beats -50 and a probe on the numbers 1 and 0
+ * would answer backwards. The extremes are picked in DISPLAY space because that is the space the
+ * sort itself runs in — a Rate of Fire shown as +11.7% is stored as a cycle-time divisor of 0.895,
+ * and the two orderings are opposites.
+ *
+ * Fewer than two distinct values means there is nothing to learn, so 'asc' stands: that is what
+ * keeps 'price' cheapest-first (rows carry no `values.price`) and leaves the by-name sorts alone.
+ *
+ * Rows MISSING the attribute are dropped before the extremes are picked, and screening the DISPLAY
+ * value covers both halves at once — a null survives `toDisplay` as a null or an Infinity, never as
+ * a finite number. A leaked one becomes an extreme, `directionOf` answers null for it, and the
+ * result quietly degrades to 'asc', which is indistinguishable from having no opinion.
+ */
+export function bestFirstDirection(key, samples, toDisplay = (_k, v) => v) {
+  const usable = (samples ?? []).map(s => ({ ...s, display: toDisplay(key, s?.value) }))
+    .filter(s => typeof s.display === 'number' && Number.isFinite(s.display));
+  if (usable.length < 2) return 'asc';
+  const hi = usable.reduce((a, b) => b.display > a.display ? b : a);
+  const lo = usable.reduce((a, b) => b.display < a.display ? b : a);
+  if (hi.display === lo.display) return 'asc';
+  return directionOf(key, hi.value, lo.value, hi.typeID) === true ? 'desc' : 'asc';
 }
 
 /**
@@ -392,6 +495,49 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutati
 }
 
 /**
+ * Rows whose every LOCKED attribute is no worse than the fitted module's.
+ *
+ * Sorting answers "what is the best X" one attribute at a time, and the answer is usually a module
+ * that wins on X by giving up something else. A lock is the other half of that question: hold this
+ * one at the fitted value and sort by the next. That is the shape of an actual abyssal purchase —
+ * "as much shield as I can get WITHOUT losing CPU" — and it is not expressible by sorting at all.
+ *
+ * "No worse" deliberately includes EQUAL. A lock is a floor, not a demand for an improvement, and
+ * excluding ties would drop every variant that simply matches the module already fitted.
+ *
+ * Read from `values` rather than from `stats`, which is the whole reason this takes the row and not
+ * the delta: `stats` omits cpu, power and upgradeCost — they are shown as the glyph line instead —
+ * while the sort sheet offers all three. Judging on `stats` made a CPU lock a silent no-op, which
+ * is the worst outcome available here, since a filter that does nothing still reads as one that did.
+ *
+ * Direction comes from `directionOf`, so a lock on a lower-is-better attribute (capacitorNeed) or a
+ * magnitude one (a web's speedFactor) keeps the correct half with no list of special cases here.
+ */
+export function filterLockedRows(rows, locks) {
+  if (!locks?.size) return rows;
+  const base = rows.find(r => r.isBaseline)?.values;
+  if (!base) return rows;
+  return rows.filter(r => {
+    // The fitted module is exempt — it is the value every lock is measured against, and a list that
+    // dropped its own baseline would show deltas against something no longer on screen.
+    if (r.isBaseline) return true;
+    return [...locks].every(key => {
+      const v = r.values?.[key], b = base[key];
+      const has = x => typeof x === 'number' && Number.isFinite(x);
+      // Nothing to clear: the fitted module has no value for this attribute at all.
+      if (!has(b)) return true;
+      // The variant is the one missing it, so it cannot be as good.
+      if (!has(v)) return false;
+      if (v === b) return true;
+      // `null` is "the data does not say which way is better" — hostile modifiers, mostly. Keeping
+      // the row is the only safe answer; hiding on a direction we could not resolve would drop
+      // variants for no reason the user could see or undo.
+      return directionOf(key, v, b, r.typeID) !== false;
+    });
+  });
+}
+
+/**
  * Sorts comparison rows for display. The fitted module is always pinned first — it is the thing
  * every other row is measured against, so burying it mid-list makes the deltas unreadable.
  *
@@ -400,6 +546,11 @@ export function compareRows(typeIDs, baselineTypeID, { limit = 6, baselineMutati
  */
 export function sortCompareRows(rows, { by = 'price', dir = 'asc', prices, toDisplay=(_key,value)=>value } = {}) {
   const price = r => {
+    // A rolled module has no market price, EXCEPT when the row is a contract listing — then the
+    // asking price is the whole point of the row, and sorting it as unpriced would sink every
+    // market result to the bottom of a price sort.
+    const asking = r.record?.price;
+    if(typeof asking === 'number' && asking > 0) return asking;
     if(r.mod?.mutations)return Infinity;
     const p = prices?.get?.(Number(r.typeID));
     return (typeof p === 'number' && p > 0) ? p : Infinity;   // unpriced sinks, never sorts as free
