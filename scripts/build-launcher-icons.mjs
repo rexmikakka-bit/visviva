@@ -6,13 +6,12 @@ import {fileURLToPath} from 'node:url';
 import sharp from 'sharp';
 
 const root=join(dirname(fileURLToPath(import.meta.url)),'..');
-const source=join(root,'promotional-assets/abyssal-integration-2026-09-11/axis-abyssal-promo-1024.png');
+const source=join(root,'promotional-assets/abyssal-integration-2026-09-11/axis-abyssal-corner-v3-1024.png');
 const metadata=await sharp(source).metadata();
 if(metadata.width!==1024||metadata.height!==1024||metadata.hasAlpha)
   throw new Error('Launcher master must be an opaque 1024px square');
 writeFileSync(join(root,'assets/icon-only.png'),readFileSync(source));
-// Owen selected the same original artwork for both platforms. Android applies its
-// launcher mask; do not substitute the rejected inset adaptation.
+// The smaller inset triangle was approved on iOS; both launchers use this master.
 const android=readFileSync(source);
 writeFileSync(join(root,'assets/icon-foreground.png'),android);
 const scales={ldpi:[36,81],mdpi:[48,108],hdpi:[72,162],xhdpi:[96,216],xxhdpi:[144,324],xxxhdpi:[192,432]};

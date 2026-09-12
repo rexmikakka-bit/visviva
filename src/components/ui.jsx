@@ -1846,7 +1846,7 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   // Price first, then fitting, so the two counts below are disjoint and add up to what is missing.
   // The fitted module is exempt from both: it is the reference every delta is measured against, and
   // a comparison with nothing to compare to is worse than one showing an overrun.
-  const affordable=visible.filter(r=>r.isBaseline||!r.mod.mutations||withinPriceCeiling(rowPrice(r),market.maxPrice));
+  const affordable=visible.filter(r=>r.isBaseline||withinPriceCeiling(rowPrice(r),market.maxPrice));
   const overBudget=visible.length-affordable.length;
   const shown=fitsOnly
     ? affordable.filter(r=>r.isBaseline||variantCostFits(fitCostParts({typeID:r.typeID},r.mod.mutations),baseCost,resourceHeadroom,costRatio)!==false)
