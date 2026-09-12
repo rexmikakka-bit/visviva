@@ -552,3 +552,12 @@ https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.3
 APK package/version metadata verified with aapt2. GitHub asset SHA-256 matches local:
 `80396022e64041467b3ce0cade809cb4d6cce3b7bb0c9fe34feff823b7d8d0aa`.
 Notes are in `docs/android-release-1.25.3.md`. iOS remains 1.25.3 (122).
+
+### iOS corner-icon device review
+
+Owen requested an inset and smaller white triangle in the red abyssal ribbon,
+then an iOS patch to inspect it on the home screen. The selected preview is
+`axis-abyssal-corner-v3-1024.png`, copied to `assets/icon-only.png` on
+`codex/ios-icon-corner`. The launcher generator now preserves that iOS source;
+Android retains its approved original master. In-app artwork is unchanged.
+The revised iOS master is verified opaque and 1024px square.
