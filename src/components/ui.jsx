@@ -4,8 +4,13 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { AbyssalLibrary } from './abyssal-library.jsx';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalSources } from './abyssal-sources.jsx';
-import { readAbyssals, editAbyssal } from '../lib/abyssal-store.js';
-import { variationItems, variationRoll, filterVariationItems } from '../lib/variation-items.js';
+import { readAbyssals, editAbyssal, rememberListings } from '../lib/abyssal-store.js';
+import { variationItems, variationRoll, filterVariationItems, withinPriceCeiling, MARKET_SOURCE } from '../lib/variation-items.js';
+import { abyssalTypeIds, listingCost, attrFilterFor, JITA_4_4_STATION_ID } from '../lib/mutamarket.js';
+import { contractExpiry } from '../lib/shopping-list.js';
+import { fetchListings } from '../lib/mutamarket-client.js';
+import { contractIndexFor, withStations } from '../lib/mutamarket-contracts.js';
+import { readMarketSettings, writeMarketSettings, marketStationId } from '../lib/market-settings.js';
 import { createPortal } from "react-dom";
 import { C, getTheme } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
@@ -14,11 +19,11 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { TARGET_PROFILES } from "../data/target-profiles.js";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleByName, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits } from "../lib/core.js";
+import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleByName, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits, variantCostFits } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource } from "../lib/fmt.js";
 import { fetchPrices } from "../prices.js";
-import { sortCompareRows, directionOf } from "../lib/compare.js";
+import { sortCompareRows, directionOf, filterLockedRows, bestFirstDirection, DERIVED_KEYS } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
@@ -631,7 +636,22 @@ function SubsystemPickerSheet({ship,slotId,current,onSelect,onClose}){
 // whenever the browser re-renders. Tapping a row with the keyboard up blurs the search input, which
 // re-renders the sheet BETWEEN touchstart and click — the row's node was replaced mid-tap, so the
 // click had no surviving target and the first tap on a module only collapsed the keyboard.
-function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,children,largeInfo=false}){
+// The abyssal marker in one place. It had drifted on the variations tab's listing rows to a bare red
+// "▲ Gravid" with no cell around it, which next to a column of DeltaMarks reads as another delta
+// arrow rather than as the same badge the info panel and snapshot card use.
+const BADGE={fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
+  borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'};
+function AbyssalBadge({grade}){
+  return <span style={{...BADGE,color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)'}}>▲ {grade}</span>;
+}
+// Green, not red, and deliberately a separate pill from the grade: the grade is a property of the
+// module, where it is listed is a property of this moment. A single combined badge would make a
+// contract roll and an identical owned roll indistinguishable once the contract expired.
+function SourceBadge({label,color=C.success}){
+  return <span style={{...BADGE,color,background:`${color}1f`,border:`1px solid ${color}55`}}>{label}</span>;
+}
+
+function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,children,badges,largeInfo=false}){
   const rowMeta=metaOf(mod.typeID,mod.meta);
   const grade=mod.mutations?abyssalGrade(mod.mutaplasmid):null;
   return(
@@ -651,7 +671,13 @@ function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,child
           {mod.typeID&&<img className="eve-icon" src={eveIcon(mod.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.visibility="hidden";}}/>}
         </div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:500,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{mod.name}</div>
+            {/* Beside the NAME, not down in the subtitle: these say why a row will not respond to a
+                tap, and an explanation you have to go looking for arrives after the confusion it
+                exists to prevent. They never shrink the name — it ellipses first. */}
+            {badges?.map(b=><span key={b.label} style={{flexShrink:0}}><SourceBadge label={b.label} color={b.color}/></span>)}
+          </div>
           <FitCost item={mod} headroom={headroom}/>
           {subtitle&&<div style={{fontSize:10,color:C.textMute,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{subtitle}</div>}
         </div>
@@ -662,7 +688,14 @@ function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,child
         {!largeInfo&&actions}
         {mod.typeID&&<div onClick={e=>e.stopPropagation()} style={{paddingLeft:largeInfo?8:0}}><InfoButton touchSize={largeInfo?44:19} onClick={e=>{e.stopPropagation();onInfo(mod);}}/></div>}
       </div>
-      {children&&<div style={{width:"100%",paddingLeft:38,boxSizing:"border-box",display:'flex',alignItems:'center',gap:8}}><div style={{flex:1,minWidth:0}}>{children}</div>{largeInfo&&actions}</div>}
+      {/* The second line fits the same module, so it adds it too. It was dead space: on an abyssal
+          row the rolled attributes are most of the cell's height and the whole reason you are
+          reading it, so tapping the numbers and getting nothing read as a broken row rather than as
+          "aim higher". A SIBLING of the target above rather than a wrapper around the lot, because
+          nesting the star and the info control inside a button is not a thing a button may contain. */}
+      {children&&<div style={{width:"100%",paddingLeft:38,boxSizing:"border-box",display:'flex',alignItems:'center',gap:8}}>
+        <div onClick={()=>{if(!disabled)onAdd(mod);}} onMouseDown={e=>e.preventDefault()}
+          style={{flex:1,minWidth:0,cursor:disabled?"default":"pointer"}}>{children}</div>{largeInfo&&actions}</div>}
     </div>
   );
 }
@@ -1360,9 +1393,7 @@ function ItemInfoPanel({typeID, item, mutaplasmid, overrides,baseOverrides, blee
             {/* Same badge as the Variations tab and the snapshot card, so a rolled module is
                 recognisable as the same module wherever it appears. Sits beside the meta badge
                 because it is the other half of "what item is this" — the name alone cannot say. */}
-            {grade && <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
-                                    color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
-                                    borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>}
+            {grade && <AbyssalBadge grade={grade}/>}
           </div>
         </div>
       </div>
@@ -1702,6 +1733,22 @@ function readSort(){
   return {by:'price',dir:'asc'};
 }
 
+// Where a contract actually is, and how long it stays there. An unresolved station says so rather
+// than being folded into Jita: `stationOf` returns null for a contract the region index has not
+// caught up with, and "we don't know" is not "it's the station you asked for".
+function ListingWhere({record}){
+  const expiry=contractExpiry(record.expiresAt);
+  const days=expiry==null?null:Math.floor((expiry-Date.now())/86400000);
+  const where=record.stationId===JITA_4_4_STATION_ID?t('Jita 4-4')
+    :record.stationId==null?t('Station unknown'):t('Elsewhere in the region');
+  return <>
+    {record.sellerName??t('Unknown seller')} · {where}
+    {days!=null&&(days<0?<span style={{color:C.danger}}> · {t('Contract expired')}</span>
+      :days===0?<span style={{color:C.warning}}> · {t('Expires today')}</span>
+      :<span> · {t({one:'{n} day left',other:'{n} days left'},{n:days})}</span>)}
+  </>;
+}
+
 function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHeadroom, baseMutations, baseMutaplasmid,baseItemId,usedAbyssalIds=new Set()}) {
   const raw = typeID ? variantsOf(typeID) : [];
   const vars = raw.map(v=>({...v, meta: metaOf(v.typeID, v.meta)}));
@@ -1713,7 +1760,24 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   useEffect(()=>{try{localStorage.setItem(VAR_SORT_KEY,`${sortBy}:${sortDir}`);}catch{/* private mode */}},[sortBy,sortDir]);
   const [prices, setPrices] = useState(null);
   const [owned,setOwned]=useState([]),[ownedError,setOwnedError]=useState('');
-  const [showAbyssals,setShowAbyssals]=useState(true),[source,setSource]=useState('owned'),[editSources,setEditSources]=useState(false);
+  // Persisted, because none of these are statements about the module in front of you: a price
+  // ceiling is a statement about the kind of ship you fly, and the triangle is a statement that you
+  // are shopping for rolls at all. Re-picking either on every module you opened made them useless.
+  // Abyssals still start hidden on a fresh install — see MARKET_DEFAULTS.
+  const [market,setMarket]=useState(readMarketSettings);
+  const [showAbyssals,setShowAbyssals]=useState(()=>market.showAbyssals),[sources,setSources]=useState(()=>market.sources);
+  const [fitsOnly,setFitsOnly]=useState(()=>market.fitsOnly);
+  // NOT persisted, unlike the sort beside them. A lock names an attribute, and an attribute belongs
+  // to a module family — carrying a `capacityBonus` lock onto the next module you open would either
+  // mean nothing or silently empty a list you had not touched. Cleared when the module changes for
+  // the same reason, since this component is reused rather than remounted across modules.
+  const [locks,setLocks]=useState(()=>new Set());
+  useEffect(()=>{setLocks(new Set());},[typeID]);
+  const toggleLock=key=>setLocks(prev=>{const next=new Set(prev);next.has(key)?next.delete(key):next.add(key);return next;});
+  const [editSources,setEditSources]=useState(false);
+  useEffect(()=>{setMarket(m=>writeMarketSettings({...m,showAbyssals,sources,fitsOnly}));},[showAbyssals,sources,fitsOnly]);
+  const [listings,setListings]=useState([]);
+  const [marketState,setMarketState]=useState({busy:false,error:'',truncated:false});
   useEffect(()=>{let active=true;readAbyssals().then(rows=>{if(active)setOwned(rows);}).catch(e=>{if(active)setOwnedError(e.message);});return()=>{active=false;};},[]);
   const favorite=async record=>{try{setOwned(await editAbyssal(record.itemId,{favorite:!record.favorite}));}catch(e){setOwnedError(e.message);}};
 
@@ -1730,16 +1794,101 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
     return()=>{cancelled=true;};
   },[idKey]);// eslint-disable-line react-hooks/exhaustive-deps
 
+  // Contracts are fetched only while you are actually looking at them — the market source selected
+  // AND the abyssal triangle on. Anything less would put a multi-page HTTP walk behind opening any
+  // module at all, for a list most taps never want to see.
+  const marketTypes=abyssalTypeIds([typeID,...ids]);
+  const marketKey=marketTypes.join(',');
+  const marketOn=showAbyssals&&sources.includes(MARKET_SOURCE)&&marketTypes.length>0;
+  // The anchor for the server-side attribute filter: the fitted module's own value for whatever the
+  // list is sorted by, its roll included. Read from the type rather than from `comparison` because
+  // that is built from the listings this effect fetches, and depending on it would close the loop.
+  // A derived key is excluded here as well as price and meta: it is a RATIO we compute, MutaMarket
+  // has never heard of it, and there is no anchor to bound it with. `attrFilterFor` would return
+  // null for it anyway, but naming it would put it in this effect's dependencies — so switching
+  // between two derived sorts would re-walk every page of the market to re-fetch the same rows.
+  const sortedAttr=sortBy==='price'||sortBy==='meta'||DERIVED_KEYS.has(sortBy)?null:sortBy;
+  const fittedAttrs=(TYPES[typeID]?.attrs??TYPES[String(typeID)]?.attrs??{});
+  const sortAnchor=sortedAttr?(baseMutations?.[sortedAttr]??fittedAttrs[sortedAttr]??null):null;
+  // XOR: the sort direction is in DISPLAY units and the filter bound is in raw ones, and a rate-of-
+  // fire or resist attribute reverses between the two — "highest first" on shield resist is the most
+  // NEGATIVE damageResistanceBonus. Getting this backwards builds a filter that keeps precisely the
+  // rolls the user was sorting away from, and it would look like a short market rather than a bug.
+  const sortKeepHigh=sortedAttr?((sortDir==='desc')!==mutaDisplayInverted(sortedAttr)):false;
+  // Whether the request actually narrowed. `attrFilterFor` returns null for an attribute nothing
+  // rolls and for an anchor past the far end, so asking it is the only way to know — deriving it
+  // from `sortedAttr` alone would claim a filter on sorts that were sent unfiltered.
+  const attrFiltered=marketOn&&marketTypes.some(id=>
+    !!attrFilterFor({abyssalTypeId:id,name:sortedAttr,anchor:sortAnchor,keepHigh:sortKeepHigh}));
+  useEffect(()=>{
+    if(!marketOn){setListings([]);setMarketState({busy:false,error:'',truncated:false});return;}
+    let active=true;const ctrl=new AbortController();
+    setMarketState({busy:true,error:'',truncated:false});
+    (async()=>{
+      try{
+        const pages=await Promise.all(marketKey.split(',').map(id=>fetchListings(
+          {typeId:Number(id),regionId:market.regionId,maxPrice:market.maxPrice,
+            individuallyPriced:!market.allContracts,
+            attribute:attrFilterFor({abyssalTypeId:Number(id),name:sortedAttr,anchor:sortAnchor,keepHigh:sortKeepHigh})},
+          {signal:ctrl.signal})));
+        // Stations are joined even when the filter is off, so a kept listing can still SAY where it
+        // is. `withStations` drops the unresolvable ones only when a station is actually demanded.
+        const located=withStations(pages.flatMap(p=>p.listings),await contractIndexFor(market.regionId),
+          {stationId:marketStationId(market)});
+        if(active){setListings(located);setMarketState({busy:false,error:'',truncated:pages.some(p=>p.truncated)});}
+      }catch(e){
+        if(active&&e.name!=='AbortError')setMarketState({busy:false,error:e.message,truncated:false});
+      }
+    })();
+    return()=>{active=false;ctrl.abort();};
+    // The sort is a dependency because it is now part of the REQUEST, not just the ordering. Three
+    // scalars rather than the filter object so that re-sorting within one attribute's own direction
+    // — which changes neither bound — does not re-walk the market.
+  },[marketOn,marketKey,market.regionId,market.maxPrice,market.jitaOnly,market.allContracts,
+     sortedAttr,sortAnchor,sortKeepHigh]);
+
   if (!typeID) return <div style={{padding:16,color:C.textMute,fontSize:12}}>{t("No variation data available.")}</div>;
 
   // Deltas are measured against the module ACTUALLY FITTED — including its abyssal roll, since an
   // abyssal module keeps its base typeID and comparing against the unrolled item answers a question
   // nobody asked.
   const abyssal = !!baseMutations && Object.keys(baseMutations).length > 0;
-  const comparison=variationItems(vars,{name:currentName??TYPES[typeID]?.n,typeID,mutations:abyssal?baseMutations:undefined,mutaplasmid:baseMutaplasmid,abyssalItemId:baseItemId},owned);
+  // Listings ride in the same array as owned rolls: a MutaMarket listing is already in the library
+  // record shape, and `filterVariationItems` decides which of the two the chosen source wants.
+  const comparison=variationItems(vars,{name:currentName??TYPES[typeID]?.n,typeID,mutations:abyssal?baseMutations:undefined,mutaplasmid:baseMutaplasmid,abyssalItemId:baseItemId},
+    listings.length?[...owned,...listings]:owned);
   const activeSort=['price','meta',...comparison.attributes].includes(sortBy)?sortBy:'price';
-  const rows = sortCompareRows(filterVariationItems(comparison.rows,showAbyssals,source),
-                               {by:activeSort, dir:sortDir, prices,toDisplay:mutaToDisplay});
+  // Same three inputs FitCostDelta measures each row with, hoisted so the filter and the red numbers
+  // on the rows it keeps cannot disagree: the fitted module's cost is what gets backed out, and the
+  // ratio is the FITTED module's, not each variant's (see FitCostDelta).
+  const baseCost=fitCostParts({typeID},baseMutations),costRatio=fitCostRatioOf(resourceHeadroom,typeID);
+  // The fitted module always stays, even when it is the thing that no longer fits — it is the
+  // reference every other row's delta is measured against, and a comparison with nothing to compare
+  // to is worse than one showing an overrun.
+  // The one place a row's price is decided, so the number printed on it and the number the ceiling
+  // is compared against cannot come apart. The fitted abyssal's own "price" would be the base item's
+  // — the one number that is certainly not what this module is worth. A contract listing is the
+  // exception: there the asking price IS this exact roll's price.
+  // `listingCost`, not `record.price`, so an auction or a bundle is measured and sorted by the
+  // number the contract actually charges rather than dropping out of the list as unpriced. What
+  // KIND of number it is is the badge's job, not the ceiling's.
+  const rowPrice=r=>(r.record?.source===MARKET_SOURCE?listingCost(r.record):null)
+    ??(r.mod.mutations?null:prices?.get(Number(r.typeID)))??null;
+  const visible=filterVariationItems(comparison.rows,showAbyssals,sources);
+  // Price first, then fitting, so the two counts below are disjoint and add up to what is missing.
+  // The fitted module is exempt from both: it is the reference every delta is measured against, and
+  // a comparison with nothing to compare to is worse than one showing an overrun.
+  const affordable=visible.filter(r=>r.isBaseline||withinPriceCeiling(rowPrice(r),market.maxPrice));
+  const overBudget=visible.length-affordable.length;
+  const shown=fitsOnly
+    ? affordable.filter(r=>r.isBaseline||variantCostFits(fitCostParts({typeID:r.typeID},r.mod.mutations),baseCost,resourceHeadroom,costRatio)!==false)
+    : affordable;
+  const hidden=affordable.length-shown.length;
+  // Last of the three, so all three counts stay disjoint and add up to what is missing. A row that
+  // is both too expensive and a worse roll is reported as too expensive — the cheaper reason first.
+  const kept=filterLockedRows(shown,locks);
+  const lockedOut=shown.length-kept.length;
+  const rows = sortCompareRows(kept,{by:activeSort, dir:sortDir, prices,toDisplay:mutaToDisplay});
   // An abyssal module has no market price — its worth is the roll, which spans orders of magnitude
   // on contracts. The base item's Jita price is not a stand-in for it, so there is nothing honest to
   // subtract and the price delta is suppressed rather than guessed at.
@@ -1748,24 +1897,76 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   return (
     <div>
       {ownedError&&<div role="alert" style={{color:C.danger,fontSize:11}}>{ownedError}</div>}
-      <div style={{display:'flex',alignItems:'center',gap:8,padding:'2px 4px 0'}}>
+      <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',padding:'2px 4px 0'}}>
         {/* Two whole sentences rather than one with an appended " roll": the clause is the object of
             "vs", and a language that puts the object elsewhere cannot bolt it on at the end. */}
         <span style={{fontSize:10,color:C.textMute}}>
           {abyssal?t({one:"{n} variant · vs fitted roll",other:"{n} variants · vs fitted roll"},{n:rows.length})
                   :t({one:"{n} variant · vs fitted",other:"{n} variants · vs fitted"},{n:rows.length})}
         </span>
+        {/* The count above is of what is LEFT, so without these the filters look like a shorter list
+            rather than a filtered one — and "the variant I wanted isn't here" is the reading. Two
+            separate clauses because they are two different reasons, and only one has anything to do
+            with the ship you are flying. */}
+        {overBudget>0&&<span style={{fontSize:10,color:C.textMute}}>· {t('{n} over budget',{n:overBudget})}</span>}
+        {hidden>0&&<span style={{fontSize:10,color:C.textMute}}>· {t("{n} won't fit",{n:hidden})}</span>}
+        {lockedOut>0&&<span style={{fontSize:10,color:C.textMute}}>· {t('{n} worse than fitted',{n:lockedOut})}</span>}
+        {/* The one filter that can hide EVERY roll while the triangle still says they are on. The
+            sheet explains it where the ticks are; this is for after the sheet is closed, in the same
+            run of clauses as every other reason the list is shorter than it looks. */}
+        {showAbyssals&&!sources.length&&<span style={{fontSize:10,color:C.textMute}}>· {t('no abyssal sources')}</span>}
       </div>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:8,paddingBottom:3,borderBottom:`1px solid ${C.border}`}}>
-        {TYPES[typeID]?.c===7&&<div style={{display:'flex',gap:0}}>
-          <button aria-label={t('Show abyssals')} title={t('Show abyssals')} aria-pressed={showAbyssals} onClick={()=>setShowAbyssals(v=>!v)} style={{width:44,height:44,padding:0,border:'none',background:'none',color:C.danger,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+        {(TYPES[typeID]?.c===7||!!resourceHeadroom)&&<div style={{display:'flex',gap:0}}>
+          {/* The bolt, because it is already what a fitting cost looks like on every row of this
+              same list — a funnel would say "filtered" without saying by what. Tinted accent when
+              on, matching how the rest of the app marks an active control; the triangle beside it
+              keeps its own red because red means abyssal here, not active. */}
+          {!!resourceHeadroom&&<button aria-label={t('Only show what fits')} title={t('Only show what fits')} aria-pressed={fitsOnly} onClick={()=>setFitsOnly(v=>!v)} style={{width:44,height:44,padding:0,border:'none',background:'none',color:fitsOnly?C.accent:C.textMute,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
+            <span style={{width:28,height:26,borderRadius:6,background:fitsOnly?C.accentLight:'none',display:'flex',alignItems:'center',justifyContent:'center'}}><PgGlyph size={13}/></span>
+          </button>}
+          {TYPES[typeID]?.c===7&&<><button aria-label={t('Show abyssals')} title={t('Show abyssals')} aria-pressed={showAbyssals} onClick={()=>setShowAbyssals(v=>!v)} style={{width:44,height:44,padding:0,border:'none',background:'none',color:C.danger,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}>
             <span style={{width:28,height:26,borderRadius:6,background:showAbyssals?'rgba(239,68,68,.09)':'none',display:'flex',alignItems:'center',justifyContent:'center'}}><svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16"><path d="M8 2 14 13H2Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" fill={showAbyssals?'currentColor':'none'}/></svg></span>
           </button>
-          <button aria-label={t('Edit abyssal sources')} title={t('Edit abyssal sources')} onClick={()=>setEditSources(true)} style={{width:44,height:44,padding:0,background:'none',border:'none',color:C.textMute,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"><path d="m12.5 3.5 4 4M3 17l1-5L13.5 2.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L8 16Z"/></svg></button>
+          <button aria-label={t('Edit abyssal sources')} title={t('Edit abyssal sources')} onClick={()=>setEditSources(true)} style={{width:44,height:44,padding:0,background:'none',border:'none',color:C.textMute,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}}><svg aria-hidden="true" width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.35" strokeLinecap="round" strokeLinejoin="round"><path d="m12.5 3.5 4 4M3 17l1-5L13.5 2.5a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L8 16Z"/></svg></button></>}
         </div>}
-        <AttributeSort Sheet={BottomSheet} value={activeSort} direction={sortDir} onChange={value=>{setSortBy(value);setSortDir('asc');}} onReverse={()=>setSortDir(d=>d==='asc'?'desc':'asc')}
-        options={[{value:'price',label:t('Price')},{value:'meta',label:t('Meta Level')},...comparison.attributes.map(a=>({value:a,label:mutaLabel(a)}))]}/></div>
-      {editSources&&<AbyssalSources Sheet={BottomSheet} records={owned} selection={source} onChange={value=>{setSource(value);setShowAbyssals(true);}} onClose={()=>setEditSources(false)}/>}
+        {/* Price and Meta Level carry no padlock: price already has its own ceiling in the source
+            sheet, and "no worse meta" is not a thing anyone wants — a faction module can be a worse
+            buy than a T2 one, which is the entire reason this comparison exists. */}
+        {/* Picking an attribute aims the sort at its GOOD end, so the answer to "which is the best
+            shield boost" is the first row rather than the last. Measured off the rows on screen, so
+            a direction is never derived from a variant the filters have already excluded. */}
+        <AttributeSort Sheet={BottomSheet} value={activeSort} direction={sortDir}
+        onChange={value=>{setSortBy(value);setSortDir(bestFirstDirection(value,kept.map(r=>({value:r.values?.[value],typeID:r.typeID})),mutaToDisplay));}}
+        onReverse={()=>setSortDir(d=>d==='asc'?'desc':'asc')}
+        locks={locks} onToggleLock={toggleLock}
+        options={[{value:'price',label:t('Price')},{value:'meta',label:t('Meta Level')},...comparison.attributes.map(a=>({value:a,label:mutaLabel(a),lockable:true}))]}/></div>
+      {/* Ticking a source turns the triangle on, since going to the trouble of naming one is already
+          the request. Unticking the last one does NOT turn it off: that would make the triangle move
+          on its own, and the empty state is one the sheet says out loud instead. */}
+      {editSources&&<AbyssalSources Sheet={BottomSheet} records={owned} selection={sources} market={market}
+        onMarketChange={next=>setMarket(writeMarketSettings(next))} onRecordsChange={setOwned}
+        onChange={next=>{setSources(next);if(next.length)setShowAbyssals(true);}} onClose={()=>setEditSources(false)}/>}
+      {/* The contract walk is a multi-page HTTP crawl plus a 35-page ESI region scan, so it is slow
+          enough that without a moving spinner the line reads as a static note and the list looks
+          empty rather than pending. Same ring FitPickerSheet and the backup screen use. */}
+      {marketOn&&(marketState.busy||marketState.error||marketState.truncated)&&
+        <div role={marketState.error?'alert':'status'} style={{display:'flex',alignItems:'center',gap:7,padding:'6px 4px',fontSize:11,color:marketState.error?C.danger:C.textMute}}>
+          {marketState.busy&&!marketState.error&&<span className="vv-spin" aria-hidden="true" style={{display:'inline-block',flexShrink:0,width:12,height:12,border:`2px solid ${C.border}`,borderTopColor:C.accent,borderRadius:'50%'}}/>}
+          <span>{marketState.error||(marketState.busy?t('Checking contracts…')
+            :t('Showing the cheapest listings only — narrow the price range to see the rest.'))}</span>
+        </div>}
+      {/* Said out loud, because the contract walk stops at a page budget and the rows it never
+          reaches are the expensive ones — which on an attribute sort are the good rolls. Spending
+          the request's one attribute range on the half the sort points at fixes that, but it also
+          shortens the list, and a shortened list with no explanation reads as a thin market.
+          Phrased in DISPLAY terms — above/below what you can see — since the raw bound is reversed
+          for rate-of-fire and resist attributes and the user is not holding the raw number. */}
+      {attrFiltered&&!marketState.error&&
+        <div role="status" style={{padding:'0 4px 6px',fontSize:11,color:C.textMute}}>
+          {sortDir==='desc'?t("Contracts below the fitted {attr} aren't listed.",{attr:mutaLabel(sortedAttr)})
+                           :t("Contracts above the fitted {attr} aren't listed.",{attr:mutaLabel(sortedAttr)})}
+        </div>}
       {rows.map(r => {
         const v = r.mod,record=r.record;
         const grade=abyssalGrade(v.mutaplasmid);
@@ -1775,17 +1976,26 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
         const visibleStats=r.stats.filter(st=>hasDelta(st)||st.key===activeSort).slice(0,6);
         const selectedStat=r.stats.find(st=>st.key===activeSort);
         if(selectedStat&&!visibleStats.includes(selectedStat))visibleStats.push(selectedStat);
-        // The fitted abyssal row's own "price" would be the base item's — the one number that is
-        // certainly not what this module is worth.
-        const price = v.mutations?null:prices?.get(Number(r.typeID));
-        const dPrice = (price!=null&&basePrice!=null)?price-basePrice:null;
+        const price = rowPrice(r);
+        // Suppressed for a bid or a bundle: "+19.7B vs the stock module" reads as this roll costing
+        // that, when the number is a starting bid or the price of thirty-nine other modules.
+        const askPrice = record?.source===MARKET_SOURCE&&record.contractKind!=='ask'?null:price;
+        const dPrice = (askPrice!=null&&basePrice!=null)?askPrice-basePrice:null;
+        // Choosing a listing is the ONLY moment its contract is written down. The fit slot keeps
+        // just the item id, and the next page of results replaces `listings` in memory, so without
+        // this the shopping list has nothing to join against and every row reads as unknown. Not
+        // awaited and deliberately swallowed: a full or blocked IndexedDB must not stop the swap.
+        const pick=()=>{
+          if(record?.source===MARKET_SOURCE)rememberListings([record]).catch(()=>{});
+          onSwap(v);
+        };
         return (
           // The stock row shares a typeID with the fitted abyssal one, so the flag has to be in the key.
           <div key={r.key}
             style={{padding:'9px 4px',borderBottom:`1px solid ${C.border}`,
                     background:r.isBaseline?C.accentLight:'transparent'}}>
-            <div role="button" aria-disabled={disabled} tabIndex={disabled?-1:0} onClick={()=>{if(!disabled)onSwap(v);}}
-              onKeyDown={e=>{if(!disabled&&(e.key==='Enter'||e.key===' ')){e.preventDefault();onSwap(v);}}}
+            <div role="button" aria-disabled={disabled} tabIndex={disabled?-1:0} onClick={()=>{if(!disabled)pick();}}
+              onKeyDown={e=>{if(!disabled&&(e.key==='Enter'||e.key===' ')){e.preventDefault();pick();}}}
               style={{cursor:disabled?'default':'pointer'}}>
             <div style={{display:'flex',alignItems:'center',gap:9}}>
               {v.typeID&&<img className="eve-icon" src={eveIcon(v.typeID,32)} width={26} height={26} alt="" onError={e=>{e.target.style.display="none";}}/>}
@@ -1796,15 +2006,25 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
                   {r.isStockBase&&<span style={{fontSize:9,color:C.textMute,marginLeft:6}}>{t("UNMUTATED")}</span>}
                 </div>
                 {/* Price and its delta lead, because that is the axis this view exists to serve. */}
-                <div style={{fontSize:10,marginTop:2,display:'flex',gap:8,alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
-                  {/* The fitted abyssal row has no price to show, so it carries the same red grade
-                      badge the snapshot card uses — which says WHY there is no number, and names the
-                      mutaplasmid, rather than leaving the row to read as missing data. */}
-                  {(v.mutations&&grade)
-                    ? <span style={{fontSize:9,lineHeight:1,fontWeight:800,letterSpacing:'.4px',textTransform:'uppercase',
-                                    color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)',
-                                    borderRadius:4,padding:'3px 5px',whiteSpace:'nowrap'}}>▲ {grade}</span>
-                    : <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:t('no price')}</span>}
+                {/* Wraps, because a contract can carry up to four pills at once and the narrowest
+                    phone cannot hold them beside a price on one line. Same row gap the stats line
+                    below uses, so a wrapped badge sits where a wrapped stat would. */}
+                <div style={{fontSize:10,marginTop:2,display:'flex',flexWrap:'wrap',gap:'3px 8px',alignItems:'baseline',fontVariantNumeric:'tabular-nums'}}>
+                  {/* A listing shows both: the price is what it costs, the grade is what you get.
+                      An abyssal row with no price shows the badge ALONE rather than "no price" —
+                      the grade says why there is no number, which "no price" does not. The guard
+                      keeps its `grade` clause so an unrecognised mutaplasmid still falls back to
+                      the text rather than rendering an empty line. */}
+                  {(price!=null||!(v.mutations&&grade))&&
+                    <span style={{color:C.textMid,fontWeight:600}}>{price!=null?`${fmtResource(price)} ISK`:t('no price')}</span>}
+                  {v.mutations&&grade&&<AbyssalBadge grade={grade}/>}
+                  {record?.source===MARKET_SOURCE&&<SourceBadge label={t('MutaMarket')}/>}
+                  {/* Amber, not the green of the MutaMarket pill beside it: that one says where the
+                      row came from, these say the number next to it is not an asking price. Both can
+                      be true at once — an auction of thirty-nine modules is a bid AND a bundle — so
+                      they are two pills rather than one combined label that would have to pick. */}
+                  {record?.contractKind==='bid'&&<SourceBadge label={t('BID')} color={C.warning}/>}
+                  {record?.contractItems>1&&<SourceBadge label={t('×{n} ITEMS',{n:record.contractItems})} color={C.warning}/>}
                   {dPrice!=null&&dPrice!==0&&
                     <span style={{color:dPrice<0?C.rig:C.warning}}>{dPrice>0?'+':'−'}{fmtResource(Math.abs(dPrice))}</span>}
                 </div>
@@ -1840,12 +2060,15 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
             </div>
             {record&&<div style={{display:'flex',alignItems:'center',gap:8,marginLeft:35}}>
               <div style={{flex:1,minWidth:0,fontSize:10,color:C.textMute,overflowWrap:'anywhere'}}>
-                {record.characterName} · {record.location}
-                {!record.available&&<div style={{color:C.danger}}>{t('Not found in last asset scan')}</div>}
+                {record.source===MARKET_SOURCE?<ListingWhere record={record}/>:<>{record.characterName} · {record.location}</>}
+                {record.source!==MARKET_SOURCE&&!record.available&&<div style={{color:C.danger}}>{t('Not found in last asset scan')}</div>}
                 {inUse&&!r.isBaseline&&<div style={{color:C.warning}}>{t('Fitted elsewhere in this fit')}</div>}
               </div>
-              <button aria-label={t('Favorite')} aria-pressed={!!record.favorite} title={record.favorite?t('Remove from favorites'):t('Add to favorites')} onClick={()=>favorite(record)}
-                style={{width:44,height:44,flexShrink:0,background:'none',border:'none',color:record.favorite?C.accent:C.textMute,fontSize:20,cursor:'pointer'}}>{record.favorite?'★':'☆'}</button>
+              {/* A listing is not yours to favorite — there is no library record behind it to write
+                  the flag onto, and the star would silently fail. */}
+              {record.source!==MARKET_SOURCE&&
+                <button aria-label={t('Favorite')} aria-pressed={!!record.favorite} title={record.favorite?t('Remove from favorites'):t('Add to favorites')} onClick={()=>favorite(record)}
+                  style={{width:44,height:44,flexShrink:0,background:'none',border:'none',color:record.favorite?C.accent:C.textMute,fontSize:20,cursor:'pointer'}}>{record.favorite?'★':'☆'}</button>}
             </div>}
           </div>
         );
@@ -1926,7 +2149,13 @@ warfareBuff1Value:"Burst Strength",warfareBuff2Value:"Burst Strength",warfareBuf
 hiSlotModifier:"High Slots",medSlotModifier:"Mid Slots",lowSlotModifier:"Low Slots",
 turretHardPointModifier:"Turret Hardpoints",launcherHardPointModifier:"Launcher Hardpoints",
 cpuOutput:"CPU Output",cpuOutputBonus2:"CPU Bonus",powerOutput:"Powergrid Output",
-powerEngineeringOutputBonus:"Powergrid Bonus"};
+powerEngineeringOutputBonus:"Powergrid Bonus",
+// The derived rates (compare.js). These have no dogma name to fall back on — `mutaLabel`'s
+// camelCase split would print "Derived:repair Per Second" — so a label here is required, not a
+// nicety. "DPS Multiplier" is the module's OWN multiplier (damage × rate of fire), not the fit's
+// DPS increase: the variations tab never sees the fit.
+"derived:repairPerSecond":"Repair Rate","derived:repairPerCap":"Repair / Cap",
+"derived:yieldPerSecond":"Mining Rate","derived:damagePerTime":"DPS Multiplier"};
 // camelCase -> words, keeping ACRONYMS intact: a naive /([A-Z])/ split turned
 // `boosterArmorHPPenalty` into "Booster Armor H P Penalty". The leading "Booster " is then dropped
 // as redundant — you are already looking at a booster.
@@ -1941,7 +2170,18 @@ const mutaLabel=(name)=>MUTA_ATTR_LABELS[name]??String(name)
 const PERCENT_ATTRS=new Set(["aoeCloudSizeBonus","armorDamageAmountBonus","trackingSpeedBonus",
   "capacitorCapacityBonus","shieldBoostMultiplier","shieldCapacityBonus","maxVelocityBonus",
   "armorHpBonus","signatureRadiusBonus","falloffBonus","maxRangeBonus","durationBonus"]);
+// A derived rate carries its own unit, and it is the unit that makes the number readable: "28.4"
+// beside a repair amount of 568 looks like a typo, "28.4 HP/s" does not. Looked up before the
+// patterns below because the KEY is what disambiguates them — `derived:repairPerCap` would
+// otherwise be at the mercy of whatever regex matches "Cap" next.
+const DERIVED_UNITS={"derived:repairPerSecond":{scale:1,unit:"HP/s",dp:1},
+  "derived:repairPerCap":{scale:1,unit:"HP/GJ",dp:2},
+  "derived:yieldPerSecond":{scale:1,unit:"m³/s",dp:2},
+  // Three decimals for the same reason `damageMultiplier` gets them: two rolls a trader is choosing
+  // between differ in the third digit, and 2dp files them as identical.
+  "derived:damagePerTime":{scale:1,unit:"",dp:3}};
 const mutaUnit=(name)=>{
+  if(DERIVED_UNITS[name]) return DERIVED_UNITS[name];
   if(MUTA_RATE_PCT.has(name)||RESIST_BONUS_RE.test(name)) return {scale:1,unit:"%",dp:2};
   // A "chance" is stored as a 0..1 fraction; 0.2000 tells you nothing at a glance, 20% does.
   if(/chance/i.test(name)) return {scale:0.01,unit:"%",dp:0};

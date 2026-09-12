@@ -114,6 +114,16 @@ export const IconTag = (p) => (
   </Glyph>
 );
 
+// A basket rather than a trolley: the trolley's two wheels and handle need detail that collapses at
+// 21px, and this sits next to IconPrice in the same menu, so the two have to stay distinguishable.
+export const IconBasket = (p) => (
+  <Glyph {...p}>
+    <path d="M3.5 8.5h17l-1.7 9.1a1.5 1.5 0 0 1-1.47 1.4H6.67a1.5 1.5 0 0 1-1.47-1.4z"/>
+    <path d="M8.5 8.5 11 4.5"/><path d="M15.5 8.5 13 4.5"/>
+    <path d="M9.7 12v3.5"/><path d="M14.3 12v3.5"/>
+  </Glyph>
+);
+
 // The menu rows set no colour of their own, so the glyph would otherwise inherit the document
 // default rather than sitting a step below the label the way the emoji visually did.
 export function MenuGlyph({icon: Icon}) {

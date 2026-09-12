@@ -8,7 +8,7 @@ import { SKILL_CATALOG } from "../calc.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
-import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconFeedback, IconSettings } from "./glyphs.jsx";
+import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconBasket, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
@@ -121,7 +121,7 @@ const DRAWER_MS=220;
 // already open — so it gets the accent treatment instead of blending into the list. It routes to
 // the ship browser rather than creating a fit outright: a fit needs a hull, and the menu is
 // reachable from tabs where no hull is selected.
-export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice,onNewFit}){
+export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapshot,onFeedback,onOptimizePrice,onShoppingList,onNewFit}){
   // Close is DEFERRED so the drawer can slide back out — the caller unmounts us the moment onClose
   // runs. The picked item's own action is deferred with it rather than fired immediately: most of
   // these open a sheet or a full-screen overlay, and doing that first puts it on screen behind a
@@ -149,7 +149,7 @@ export function HamburgerMenu({onClose,onOpenSettings,onImport,onExport,onSnapsh
         <span style={{display:"flex",color:C.accent,flexShrink:0}}><IconPlus size={21}/></span>
         <div><div style={{...MENU_LABEL,fontWeight:700,color:C.accent}}>{t("New Fit")}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{t("Choose a hull")}</div></div>
       </button>
-      {[{icon:IconImport,label:t("Import Fit"),sub:t("From EFT or an EVE character"),action:"import"},{icon:IconExport,label:t("Export Fit"),sub:t("To clipboard or an EVE character"),action:"export"},{icon:IconSnapshot,label:t("Export Snapshot"),sub:t("Shareable image of the fit"),action:"snapshot"},{icon:IconPrice,label:t("Optimize Fit Price"),sub:t("Swap modules to reduce cost"),action:"optimizePrice"},{icon:IconFeedback,label:t("Send Feedback"),sub:t("Report a bug or suggest something"),action:"feedback"},{icon:IconSettings,label:t("Settings"),sub:t("ESI, market, overrides"),action:"settings"}].map(item=>(<button key={item.action} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{...MENU_LABEL,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
+      {[{icon:IconImport,label:t("Import Fit"),sub:t("From EFT or an EVE character"),action:"import"},{icon:IconExport,label:t("Export Fit"),sub:t("To clipboard or an EVE character"),action:"export"},{icon:IconSnapshot,label:t("Export Snapshot"),sub:t("Shareable image of the fit"),action:"snapshot"},{icon:IconPrice,label:t("Optimize Fit Price"),sub:t("Swap modules to reduce cost"),action:"optimizePrice"},{icon:IconBasket,label:t("Shopping List"),sub:t("Abyssal contracts to buy"),action:"shoppingList"},{icon:IconFeedback,label:t("Send Feedback"),sub:t("Report a bug or suggest something"),action:"feedback"},{icon:IconSettings,label:t("Settings"),sub:t("ESI, market, overrides"),action:"settings"}].map(item=>(<button key={item.action} onClick={()=>dismiss({import:onImport,export:onExport,snapshot:onSnapshot,optimizePrice:onOptimizePrice,shoppingList:onShoppingList,feedback:onFeedback,settings:onOpenSettings}[item.action])} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:"none",border:"none",cursor:"pointer",textAlign:"left",borderBottom:`1px solid ${C.border}`}}><MenuGlyph icon={item.icon}/><div><div style={{...MENU_LABEL,fontWeight:600,color:C.text}}>{item.label}</div><div style={{fontSize:11,color:C.textMute,marginTop:1}}>{item.sub}</div></div></button>))}
     </div>
   </div>);
 }

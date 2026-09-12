@@ -6,6 +6,7 @@ import { fetchPrices } from "./prices.js";
 import { C, THEMES, setTheme } from "./theme.js";
 import { ImportFitSheet, initKeyboardTracking } from "./components/ui.jsx";
 import { SnapshotModal } from "./components/snapshot.jsx";
+import { ShoppingListSheet } from "./components/shopping-list.jsx";
 import { ActiveFitBar, FittingsScreen, ShipInfoSheet, FIT_SUBTABS } from "./components/FittingsScreen.jsx";
 import { CargoScreen } from "./components/cargo.jsx";
 import { DronesScreen } from "./components/drones.jsx";
@@ -418,6 +419,7 @@ export default function App(){
   const[importFitInitial,setImportFitInitial]=useState(null);
   const[showExportFit,setShowExportFit]=useState(false);
   const[showSnapshot,setShowSnapshot]=useState(false);
+  const[showShoppingList,setShowShoppingList]=useState(false);
   const[showFeedback,setShowFeedback]=useState(false);
   const[showEsiImport,setShowEsiImport]=useState(false);
   const[showEsiExport,setShowEsiExport]=useState(false);
@@ -792,7 +794,7 @@ export default function App(){
       {!!activeFit?.ship&&<BottomNav active={bottomTab} onChange={setBottomTab} badges={navBadges}/>}
     </div>
     {priceBanner&&<div style={{position:"fixed",top:"calc(12px + env(safe-area-inset-top, 0px))",left:"50%",transform:"translateX(-50%)",zIndex:300,background:priceBanner.kind==="success"?C.success:C.surfaceAlt,color:priceBanner.kind==="success"?"#0e0e10":C.textMid,border:priceBanner.kind==="success"?"none":`1px solid ${C.border}`,borderRadius:10,padding:"10px 16px",fontSize:13,fontWeight:700,boxShadow:"0 6px 20px rgba(0,0,0,.35)",maxWidth:"90%",textAlign:"center"}}>{priceBanner.kind==="success"?"✓ ":""}{priceBanner.msg}</div>}
-    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
+    {showHamburger&&<HamburgerMenu onClose={()=>setShowHamburger(false)} onOpenSettings={()=>{setShowSettings(true);setShowHamburger(false);}} onImport={()=>setShowImportChooser(true)} onExport={()=>{setShowExportChooser(true);setShowHamburger(false);}} onSnapshot={()=>{setShowSnapshot(true);setShowHamburger(false);}} onFeedback={()=>{setShowFeedback(true);setShowHamburger(false);}} onOptimizePrice={()=>{optimizeFitPrice();setShowHamburger(false);}} onShoppingList={()=>{setShowShoppingList(true);setShowHamburger(false);}} onNewFit={()=>{setBottomTab("fittings");setFittingsView("browse");setNewFitIntent(true);}}/>}
     {/* "EFT" and "EVE" stay as they are — one is a file format's name, the other the game's. */}
     {showImportChooser&&<ChooserSheet title={t("Import Fit")} onClose={()=>setShowImportChooser(false)} options={[
       {icon:IconClipboard,label:t("From EFT"),sub:t("Paste from clipboard"),onSelect:async()=>{
@@ -824,6 +826,7 @@ export default function App(){
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
     {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
+    {showShoppingList&&<ShoppingListSheet slots={slots} onClose={()=>setShowShoppingList(false)}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd} setCloseBrowserOnAdd={setCloseBrowserOnAdd} locale={locale} setLocale={setLocale}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}
     {showFeedback&&<FeedbackModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} projFits={projFits} cmdFits={cmdFits} fitsDB={fitsDB} onClose={()=>setShowFeedback(false)}/>}

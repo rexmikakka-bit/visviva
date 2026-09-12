@@ -6,14 +6,15 @@ import { beginLogin, listCharacters, onCharactersChanged, getLastLoginError } fr
 import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-library.js';
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
-import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel } from '../lib/abyssal-browser.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44 } from '../lib/abyssal-browser.js';
+import { bestFirstDirection } from '../lib/compare.js';
 import { AttributeSort } from './attribute-sort.jsx';
 
 export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,onPathChange,onBack,backSwipe,formatValue,attributeLabel,sortValue,renderRow,renderGroup,renderInfo,Sheet}){
   const [records,setRecords]=useState([]),[characters,setCharacters]=useState(listCharacters);
   const [characterId,setCharacterId]=useState(''),[scan,setScan]=useState(null),[selected,setSelected]=useState([]);
   const [busy,setBusy]=useState(false),[progress,setProgress]=useState(null),[error,setError]=useState(''),[report,setReport]=useState(null);
-  const [favorites,setFavorites]=useState(false),[groupBy,setGroupBy]=useState('market'),[sort,setSort]=useState(''),[descending,setDescending]=useState(false);
+  const [favorites,setFavorites]=useState(false),[jita,setJita]=useState(false),[groupBy,setGroupBy]=useState('market'),[sort,setSort]=useState(''),[descending,setDescending]=useState(false);
   const [limit,setLimit]=useState(40),[infoId,setInfoId]=useState(null);
   const controller=useRef(null),mounted=useRef(true);
   useEffect(()=>{
@@ -48,7 +49,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
   for(const a of scan?.candidates??[]){const key=String(a.location_id),old=locations.get(key);locations.set(key,{name:assetLocation(a,byId,scan.names),count:(old?.count??0)+1});}
   const eligible=abyssalsForSlot(records,slotType);
   const words=search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const matching=eligible.filter(r=>(!favorites||r.favorite)&&
+  const matching=eligible.filter(r=>(!favorites||r.favorite)&&(!jita||atJita44(r))&&
     words.every(w=>`${r.name} ${r.label??''} ${r.characterName} ${r.location} ${r.itemId}`.toLowerCase().includes(w)));
   const group=rows=>groupBy==='market'?abyssalMarketGroups(rows,marketTree):abyssalContainerGroups(rows);
   // Use the full market tree for breadcrumbs: opening My Abyssals from a standard
@@ -111,11 +112,20 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
     <div style={{display:'flex',alignItems:'center',gap:5,marginBottom:8,flexWrap:'wrap'}}>
       <button style={toggle(groupBy==='market')} aria-pressed={groupBy==='market'} onClick={()=>{setGroupBy('market');navigate([]);}}>{t('Browser')}</button>
       <button style={toggle(groupBy==='container')} aria-pressed={groupBy==='container'} onClick={()=>{setGroupBy('container');navigate([]);}}>{t('Containers')}</button>
-      <button style={{...toggle(favorites),marginLeft:'auto'}} aria-pressed={favorites} onClick={()=>setFavorites(v=>!v)}>{t('Favorites')}</button>
+      {/* Beside Favorites because it is the same kind of control — a filter over the whole library
+          that survives browsing, not a place in the tree. Deliberately NOT a container node: rolls
+          in Jita sit in dozens of different cans, and the question is the station, not the can. */}
+      <button style={{...toggle(jita),marginLeft:'auto'}} aria-pressed={jita} onClick={()=>setJita(v=>!v)}>{t('Jita 4-4')}</button>
+      <button style={toggle(favorites)} aria-pressed={favorites} onClick={()=>setFavorites(v=>!v)}>{t('Favorites')}</button>
     </div>
     <div style={{display:'flex',gap:6,alignItems:'center'}}>
       <span style={{fontSize:10,color:C.textMute,marginRight:'auto'}}>{t('Saved modules')}: {visibleCount}</span>
-      {!!filtered.length&&<AttributeSort Sheet={Sheet} value={activeSort} direction={descending?'desc':'asc'} onChange={setSort} onReverse={()=>setDescending(d=>!d)}
+      {/* Aim a freshly picked attribute at its good end, as Variations does — the reason to sort a
+          shelf of rolls by shield boost is to see the best one, not to scroll to the bottom. Name
+          has no values to learn from, so it stays A–Z. */}
+      {!!filtered.length&&<AttributeSort Sheet={Sheet} value={activeSort} direction={descending?'desc':'asc'}
+        onChange={key=>{setSort(key);setDescending(bestFirstDirection(key,filtered.map(r=>({value:r.mutations[key],typeID:r.typeID})),sortValue)==='desc');}}
+        onReverse={()=>setDescending(d=>!d)}
         options={[{value:'',label:t('Name')},...attributes.map(a=>({value:a,label:attributeLabel(a)}))]}/>}
     </div>
     </div>
@@ -137,7 +147,11 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
           disabled={busy} title={item.favorite?t('Remove from favorites'):t('Add to favorites')}
           aria-label={t('Favorite')} aria-pressed={!!item.favorite}
           onClick={()=>edit(item,{favorite:!item.favorite})}>{item.favorite?'★':'☆'}</button>,
-        subtitle:`${isFitted?t('Fitted')+' · ':''}${item.characterName} · ${item.location}`,
+        // A roll is one physical module, so it can only be in one slot — tapping it again has to do
+        // nothing. Silence was the whole complaint: the row looked identical to every other one and
+        // simply refused, which reads as a broken list rather than as "it is already in the fit".
+        badges:isFitted?[{label:t('On this fit'),color:C.accent}]:undefined,
+        subtitle:`${item.characterName} · ${item.location}`,
         children:<>
           {!item.available&&<div style={{color:C.danger,fontSize:10,marginTop:4}}>{t('Not found in last asset scan')}</div>}
           <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,fontSize:10}}>
