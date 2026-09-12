@@ -28,6 +28,7 @@ import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
 import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap, contractCharacter, UI_SCOPE } from './lib/esi.js';
+import { moduleGestureHistory } from './lib/module-gesture.js';
 
 import { resolvePilotSkills, describeSkillSheet, esiPilot, esiPilotId, profilePilot, profilePilotId, PILOT_ALL_V, PILOT_ALPHA, PILOT_ME } from './lib/pilot.js';
 import { buildShipTaxonomy, shipsUnder, nodeAtPath, classifyHull, TOP_ORDER, RACE_ICON_ID } from './lib/ship-taxonomy.js';
@@ -6623,6 +6624,23 @@ Nanofiber Internal Structure II
   check('rowkey', 'ungrouped rows key on their slot id', mids.map(r => r.rkey).join(','), 'm0,m1,m2');
   check('rowkey', 'and no rkey is ever missing',
         [...before, ...after, ...mids].filter(r => !r.rkey).length, 0, 0);
+
+  const memory={current:null};
+  const active=computeDisplayRows([gun('h0'),gun('h1')],'high',true)[0];
+  const firstTap=moduleGestureHistory(memory,'high',active);
+  firstTap.lastTap=1000;
+  const stopped=computeDisplayRows([{...gun('h0'),state:'online'},{...gun('h1'),state:'online'}],'high',true)[0];
+  check('dot gesture','state change really remounts the group',active.rkey!==stopped.rkey?1:0,1,0);
+  check('dot gesture','second tap retains first tap after remount',moduleGestureHistory(memory,'high',stopped).lastTap,1000,0);
+  firstTap.held=true;firstTap.lastTap=0;
+  const offline=computeDisplayRows([{...gun('h0'),state:'offline'},{...gun('h1'),state:'offline'}],'high',true)[0];
+  check('dot gesture','release remembers hold after offline remount',moduleGestureHistory(memory,'high',offline).held?1:0,1,0);
+  // A merge may change the representative to an earlier slot; use membership.
+  check('dot gesture','merged row preserves gesture of original member',moduleGestureHistory(memory,'high',{id:'earlier',groupIds:['earlier','h0','h1']}).held?1:0,1,0);
+  check('dot gesture','another weapon group has fresh tap history',moduleGestureHistory(memory,'high',{id:'h2'}).lastTap,0,0);
+  check('dot gesture','another weapon group does not inherit held flag',memory.current.held?1:0,0,0);
+  memory.current.lastTap=2000;
+  check('dot gesture','rack separates reused slot IDs',moduleGestureHistory(memory,'mid',{id:'h2'}).lastTap,0,0);
 }
 
 // 24. CARGO VOLUME — one helper behind both the Cargo screen's readout and the Stats tab's Cargo

@@ -7,6 +7,7 @@ import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_R
 import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
+import { moduleGestureHistory } from '../lib/module-gesture.js';
 import { fittedAbyssalIds } from '../lib/variation-items.js';
 import { abyssalValue } from '../lib/abyssal-value.js';
 import { useAbyssalData } from '../lib/use-abyssal-data.js';
@@ -213,8 +214,8 @@ const groupFittedError=typeID=>{
 // The double-tap window and the reason it is measured off the event lives in core.js — the abyssal
 // sliders use the same gesture and it must not drift between the two.
 const HOLD_MS=450;
-function StateDot({row,states,onSet}){
-  const gest=useRef({timer:null,lastTap:0,held:false});
+function StateDot({row,states,onSet,rack,gestureMemory}){
+  const gest=useRef({timer:null});
   useEffect(()=>()=>clearTimeout(gest.current.timer),[]);
   const color=STATE_COLORS[row.state]||C.textMid, glow=STATE_GLOW[row.state]??0;
   const fire=(gesture)=>{
@@ -225,18 +226,20 @@ function StateDot({row,states,onSet}){
     onSet(next);
   };
   const down=()=>{
-    gest.current.held=false;
-    gest.current.timer=setTimeout(()=>{gest.current.held=true;gest.current.lastTap=0;fire("hold");},HOLD_MS);
+    const history=moduleGestureHistory(gestureMemory,rack,row);
+    history.held=false;
+    gest.current.timer=setTimeout(()=>{history.held=true;history.lastTap=0;fire("hold");},HOLD_MS);
   };
   const up=(e)=>{
     clearTimeout(gest.current.timer);
     e.stopPropagation();           // never opens the module menu — the row's onClick is the menu
-    if(gest.current.held)return;   // the hold already fired; this is just the finger leaving
+    const history=moduleGestureHistory(gestureMemory,rack,row);
+    if(history.held)return;   // survives the hold's state change and row remount
     // e.timeStamp, NOT Date.now() — see the note on DOUBLE_TAP_MS. Measured off the clock, a genuine
     // 140ms double-tap here reads as 650ms and degrades into two single taps: the module runs, stops,
     // and never overheats.
-    const now=e.timeStamp, isDouble=now-gest.current.lastTap<DOUBLE_TAP_MS;
-    gest.current.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
+    const now=e.timeStamp, isDouble=history.lastTap>0&&now-history.lastTap<DOUBLE_TAP_MS;
+    history.lastTap=isDouble?0:now;   // reset, so a third tap starts a fresh pair
     fire(isDouble?"double":"tap");
   };
   return(
@@ -334,6 +337,7 @@ const histBtn=depth=>({display:"flex",alignItems:"center",gap:4,padding:"3px 10p
   color:depth?C.textMid:C.textMute,opacity:depth?1:0.4,cursor:depth?"pointer":"default"});
 
 function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implants,boosters,drones,factorInReload,externalBursts,projectedEffects,dmgProfile,autoFillHardpoints,closeBrowserOnAdd}){
+  const gestureMemory=useRef(null);
   const _scroll=useScrollMemory("Fit");
   const _cs=(ship&&slots)?calcFitStats(ship,slots,drones??[],skills,{implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity})??{}:{};
   // Keyed by SLOT id, not typeID: two slots holding the same module can have genuinely different
@@ -944,7 +948,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
                       module menu — so they keep a plain dot. */}
                   {sec.key==="subsystems"
                     ?<div style={{width:6,height:6,borderRadius:99,flexShrink:0,background:STATE_COLORS[row.state]||C.textMid,boxShadow:(STATE_GLOW[row.state]??0)?`0 0 ${STATE_GLOW[row.state]}px ${STATE_COLORS[row.state]||C.textMid}`:"none"}}/>
-                    :<StateDot row={row} states={validStatesFor(row)} onSet={s=>setRowState(sec.key,row,s)}/>}
+                    :<StateDot row={row} rack={sec.key} gestureMemory={gestureMemory} states={validStatesFor(row)} onSet={s=>setRowState(sec.key,row,s)}/>}
                   <div style={{width:30,height:30,borderRadius:7,flexShrink:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",background:`${sec.color}18`,border:`1px solid ${sec.color}35`,opacity:row.state==="offline"?0.4:1}}>
                     {row.typeID?<img className="eve-icon" src={eveIcon(row.typeID,32)} width={28} height={28} alt="" onError={e=>{e.target.style.display="none";}}/>:<span style={{fontSize:14}}>{row.icon||"?"}</span>}
                   </div>
