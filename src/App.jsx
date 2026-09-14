@@ -441,7 +441,7 @@ export default function App(){
     let priceMap;
     // fetchPrices carries its own timeout, so this always settles — offline, the banner says so
     // rather than sitting on "Checking market prices…" until the app is restarted.
-    try{priceMap=await fetchPrices([...idsToPrice],priceHub);}
+    try{priceMap=await fetchPrices([...idsToPrice],priceHub,priceSource);}
     catch(e){setPriceBanner({kind:"none",msg:e?.offline?t("No connection — market prices need internet"):t("Couldn't fetch market prices — try again")});setTimeout(()=>setPriceBanner(null),3500);return;}
     let swapped=0;
     const patchSection=sec=>(slots[sec]??[]).map(s=>{

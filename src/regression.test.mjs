@@ -7719,6 +7719,74 @@ Nanofiber Internal Structure II
   check('market-input','clearing the millions field removes the ceiling',parsePriceMillions('')===null?1:0,1,0);
   check('market-input','invalid units cannot silently change the ceiling',parsePriceMillions('2b')===undefined?1:0,1,0);
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// PRICE CACHE — the only prices a phone with no signal has are the ones it already fetched. The
+// cache existed before this suite did; what it did NOT do was survive its own TTL, so an hour after
+// the last fetch a fit was worth nothing at all. Every check below is about an offline read.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const store=new Map();
+  globalThis.localStorage={getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v)),
+    removeItem:k=>store.delete(k),key:i=>[...store.keys()][i],get length(){return store.size;}};
+  const {fetchPrices,getCachedPrices,priceAsOf,pricesAreStale,PRICE_TTL_MS}=await import('./prices.js');
+  const KEY='axis_price_fuzzwork_Jita',HOUR=3600000;
+  const savedFetch=globalThis.fetch;
+  // Fuzzwork's bulk shape, plus a record of which ids were actually requested — "did this hit the
+  // network at all" is half of what these checks pin.
+  let asked=null;
+  const serving=prices=>{asked=null;globalThis.fetch=url=>{asked=new URL(url).searchParams.get('types');
+    return Promise.resolve({ok:true,json:async()=>Object.fromEntries(
+      Object.entries(prices).map(([id,p])=>[id,{sell:{percentile:String(p)}}]))});};};
+  const offline=()=>{asked=null;globalThis.fetch=url=>{asked=new URL(url).searchParams.get('types');
+    return Promise.reject(new Error('getaddrinfo ENOTFOUND'));};};
+  const seed=entries=>store.set(KEY,JSON.stringify({ts:Date.now(),prices:entries}));
+  try{
+    // The whole point. A day-old price with no network behind it is still the answer.
+    seed({34:[5.5,Date.now()-24*HOUR]});
+    offline();
+    const stale=await fetchPrices([34],'Jita','fuzzwork');
+    check('prices','a price past its TTL survives a failed refresh',stale.get(34),5.5,0);
+    check('prices','and the refresh was still attempted, not skipped',asked,'34');
+    // Not "free": a lookup with nothing behind it has to stay an error, or a fit with no cached
+    // prices at all quietly totals zero.
+    store.clear();
+    offline();
+    let threw=false;try{await fetchPrices([34],'Jita','fuzzwork');}catch{threw=true;}
+    check('prices','an empty cache offline is an error, not a free fit',threw?1:0,1,0);
+    // Ages are per entry. The blob is rewritten whenever a fit introduces a new type, so a
+    // blob-level timestamp would re-date every price in it to the moment an unrelated one arrived.
+    store.clear();
+    seed({34:[5.5,Date.now()-24*HOUR]});
+    serving({35:12});
+    await fetchPrices([35],'Jita','fuzzwork');
+    check('prices','a new price does not backdate itself onto the old ones',
+      Math.round((Date.now()-priceAsOf([34],'Jita','fuzzwork'))/HOUR),24,0);
+    check('prices','a price fetched just now reads as current',pricesAreStale(priceAsOf([35],'Jita','fuzzwork'))?1:0,0,0);
+    check('prices','a total is as old as its stalest part',
+      priceAsOf([34,35],'Jita','fuzzwork'),priceAsOf([34],'Jita','fuzzwork'),0);
+    check('prices','the old price survived the write it was not part of',getCachedPrices('Jita','fuzzwork').get(34),5.5,0);
+    // A fresh entry must not cost a request; a stale one must.
+    store.clear();
+    seed({34:[5.5,Date.now()-60000]});
+    serving({});
+    await fetchPrices([34],'Jita','fuzzwork');
+    check('prices','a price fetched a minute ago is reused without a request',asked===null?1:0,1,0);
+    store.clear();
+    seed({34:[5.5,Date.now()-2*PRICE_TTL_MS]});
+    serving({34:9});
+    const refreshed=await fetchPrices([34],'Jita','fuzzwork');
+    check('prices','a price past the TTL is refreshed when the network is there',refreshed.get(34),9,0);
+    // Caches written before entries carried their own timestamp are read, not thrown away.
+    store.clear();
+    store.set(KEY,JSON.stringify({ts:Date.now()-3*HOUR,prices:{34:5.5}}));
+    offline();
+    const legacy=await fetchPrices([34],'Jita','fuzzwork');
+    check('prices','a cache from an older build is still worth something offline',legacy.get(34),5.5,0);
+    check('prices','and it is dated by the blob it came from, not by now',
+      Math.round((Date.now()-priceAsOf([34],'Jita','fuzzwork'))/HOUR),3,0);
+    check('prices','a type nobody ever priced has no age at all',priceAsOf([99999],'Jita','fuzzwork')===null?1:0,1,0);
+  }finally{globalThis.fetch=savedFetch;delete globalThis.localStorage;}
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);

@@ -4,7 +4,8 @@ import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
 import { WARFARE_BUFF_UNIT } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
-import { getCachedPrices, fetchPrices } from "../prices.js";
+import { getCachedPrices, fetchPrices, priceAsOf } from "../prices.js";
+import { fmtPriceAge } from "../lib/fmt.js";
 import { abyssalValue } from '../lib/abyssal-value.js';
 import { useAbyssalData } from '../lib/use-abyssal-data.js';
 import { useBackHandler } from "../lib/use-back-handler.js";
@@ -420,13 +421,18 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
   const showProj = proj.links.length > 0 || proj.incoming.length > 0;
 
   const priceHub = (() => { try { return localStorage.getItem('axis_pricehub') ?? 'Jita'; } catch { return 'Jita'; } })();
-  const cachedPrices = getCachedPrices(priceHub);
+  // The source matters as much as the hub: each one has its own cache, so reading the default while
+  // the fetch above filled ceve's leaves the card quoting a fit as free.
+  const priceSource = (() => { try { return localStorage.getItem('axis_pricesource') ?? 'fuzzwork'; } catch { return 'fuzzwork'; } })();
+  const cachedPrices = getCachedPrices(priceHub, priceSource);
   const fmtISKShort = (n) => n >= 1e12 ? `${(n / 1e12).toFixed(2)}T` : n >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : `${(n / 1e3).toFixed(1)}K`;
   const priceBreakdown = (() => {
     let fit = 0, character = 0,unknownAbyssals=0,pricedAbyssals=0;
-    const addFit = (id, qty = 1) => { if (id > 0) fit += (cachedPrices.get(id) ?? 0) * qty; };
-    const addChar = (id) => { if (id > 0) character += cachedPrices.get(id) ?? 0; };
+    const priced = [];
+    const addFit = (id, qty = 1) => { if (id > 0) { priced.push(id); fit += (cachedPrices.get(id) ?? 0) * qty; } };
+    const addChar = (id) => { if (id > 0) { priced.push(id); character += cachedPrices.get(id) ?? 0; } };
     const ship = shipTypeID ? (cachedPrices.get(shipTypeID) ?? null) : null;
+    if (shipTypeID > 0) priced.push(shipTypeID);
     const allSlots = [...(slots?.high ?? []), ...(slots?.mid ?? []), ...(slots?.low ?? []), ...(slots?.rigs ?? []), ...(slots?.subsystems ?? [])];
     for (const m of allSlots) {
       if (!isReal(m)) continue;
@@ -452,7 +458,10 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
     // outvalues most hulls — so they stay out of the headline and are listed separately.
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addFit(id); } }
     const total = (ship ?? 0) + fit;
-    return total > 0||unknownAbyssals>0 ? { ship, fit, character, total,unknownAbyssals,pricedAbyssals } : null;
+    // A snapshot is shared as an IMAGE and outlives the app state it was taken from, so an
+    // unlabelled figure keeps asserting a current price for as long as the picture exists.
+    const age = fmtPriceAge(priceAsOf(priced, priceHub, priceSource));
+    return total > 0||unknownAbyssals>0 ? { ship, fit, character, total,unknownAbyssals,pricedAbyssals,age } : null;
   })();
 
   // Rep = local rep EHP/s + projected remote-rep EHP/s (folded in). Sustained stays local.
@@ -528,6 +537,7 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
               <div style={{ fontWeight: 700, fontSize: 18, color: T.accent, lineHeight: 1 }}>{fmtISKShort(priceBreakdown.total)}{priceBreakdown.unknownAbyssals>0?' + ?':''}</div>
               {priceBreakdown.unknownAbyssals>0&&<div style={{fontSize:10,color:T.dim}}>{t('{n} abyssal values unknown',{n:priceBreakdown.unknownAbyssals})}</div>}
               {priceBreakdown.pricedAbyssals>0&&<div style={{fontSize:10,color:T.dim}}>{t('Includes MutaMarket asking prices')}</div>}
+              {priceBreakdown.age&&<div style={{fontSize:10,color:T.dim}}>{t('Prices {age}',{age:priceBreakdown.age})}</div>}
               <div style={{ fontSize: 10, color: T.dim, marginTop: 4, lineHeight: 1.3 }}>{t("Ship: {v}", { v: priceBreakdown.ship > 0 ? fmtISKShort(priceBreakdown.ship) : t("N/A") })}</div>
               <div style={{ fontSize: 10, color: T.dim, lineHeight: 1.3 }}>{t("Fit: {v}", { v: fmtISKShort(priceBreakdown.fit) })}</div>
               {/* "(excl.)" is dimmed rather than being part of the sentence, so it stays its own key

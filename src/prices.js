@@ -5,7 +5,8 @@
 // hard. Prices are "what it costs to buy one", which is sell-percentile on Fuzzwork and lowest sell
 // elsewhere; close enough to compare fits, and each source says which it used.
 //
-// Results are cached in localStorage per SOURCE and hub with a 1-hour TTL.
+// Results are cached in localStorage per SOURCE and hub. The hour-long TTL decides whether to
+// REFETCH, not whether a number is still worth showing — see the cache block below.
 //
 // ⚠️ CORS: only Fuzzwork sends `Access-Control-Allow-Origin: *`. ceve-market sends no CORS header at
 // all, so a BROWSER blocks it and it returns nothing. It works fine in the
@@ -98,27 +99,60 @@ async function pooled(items, limit, worker) {
   return out;
 }
 
-const CACHE_TTL_MS = 60 * 60 * 1000;
+// An hour is how long a price is worth REUSING, not how long it is worth knowing. Past it the entry
+// is refetched, but it is still handed out: an hour-old price is the only thing a phone docked
+// somewhere with no signal can say about what a fit costs, and discarding it leaves the fit value at
+// zero — which reads as free rather than as unknown. Screens showing a stale figure say how old it is.
+export const PRICE_TTL_MS = 60 * 60 * 1000;
 
 function cacheKey(hub, source) { return `axis_price_${source}_${hub}`; }
 
+// Timestamped per ENTRY rather than per blob. The blob is rewritten every time a fit introduces a new
+// type to it, so a blob-level stamp would date a fortnight-old price to today — and the age is the
+// entire reason a stale price is safe to show. Entries written by earlier versions are bare numbers;
+// they inherit the blob's stamp, which is the closest thing to their real age and beats discarding them.
 function loadCache(hub, source) {
   try {
     const raw = localStorage.getItem(cacheKey(hub, source));
     if (!raw) return null;
     const { ts, prices } = JSON.parse(raw);
-    if (Date.now() - ts > CACHE_TTL_MS) return null;
-    return new Map(Object.entries(prices).map(([k, v]) => [Number(k), v]));
+    const out = new Map();
+    for (const [id, value] of Object.entries(prices ?? {})) {
+      const [price, at] = Array.isArray(value) ? value : [value, ts];
+      if (price > 0) out.set(Number(id), { price, ts: Number(at) || 0 });
+    }
+    return out.size ? out : null;
   } catch { return null; }
 }
 
-function saveCache(hub, source, priceMap) {
+function saveCache(hub, source, entries) {
   const prices = {};
-  for (const [id, price] of priceMap) prices[id] = price;
+  for (const [id, entry] of entries) prices[id] = [entry.price, entry.ts];
   try { localStorage.setItem(cacheKey(hub, source), JSON.stringify({ ts: Date.now(), prices })); } catch {}
 }
 
-export function getCachedPrices(hub = 'Jita', source = 'fuzzwork') { return loadCache(hub, source) ?? new Map(); }
+export function getCachedPrices(hub = 'Jita', source = 'fuzzwork') {
+  const cached = loadCache(hub, source);
+  return cached ? new Map([...cached].map(([id, entry]) => [id, entry.price])) : new Map();
+}
+
+// The OLDEST entry behind a set of types, because a total is only as current as its stalest part and
+// "can I trust this number" is one question about the whole card, not one per row. Types with no
+// cached price at all are skipped — they are missing, not old.
+export function priceAsOf(typeIDs, hub = 'Jita', source = 'fuzzwork') {
+  const cached = loadCache(hub, source);
+  if (!cached) return null;
+  let oldest = null;
+  for (const id of new Set(typeIDs)) {
+    const entry = cached.get(Number(id));
+    if (entry && (oldest == null || entry.ts < oldest)) oldest = entry.ts;
+  }
+  return oldest;
+}
+
+export function pricesAreStale(asOf, now = Date.now()) {
+  return asOf != null && now - asOf > PRICE_TTL_MS;
+}
 
 // ceve-market: one small aggregate per type, region-scoped. Must be www + https — the bare host
 // 301s to plain http, and a mixed-content request is blocked outright in the web build.
@@ -151,29 +185,37 @@ export async function fetchPrices(typeIDs, hub = 'Jita', source = 'fuzzwork') {
   const ids = [...new Set(typeIDs.filter(id => id != null && id > 0))];
   if (!ids.length) return new Map();
 
-  const cached = loadCache(hub, source);
-  const needed = cached ? ids.filter(id => !cached.has(id)) : ids;
-  const result = new Map();
-
-  if (cached) {
-    for (const id of ids) if (cached.has(id)) result.set(id, cached.get(id));
+  const cached = loadCache(hub, source) ?? new Map();
+  const now = Date.now();
+  const result = new Map(), needed = [];
+  for (const id of ids) {
+    const entry = cached.get(id);
+    if (entry) result.set(id, entry.price);
+    if (!entry || now - entry.ts > PRICE_TTL_MS) needed.push(id);
   }
 
   if (needed.length) {
-    // Asked before anything is attempted, so a phone in a tunnel gets an instant honest answer
-    // instead of a spinner and a 20-second wait for the deadline below. Anything already cached is
-    // still returned above — being offline costs you the missing prices, not all of them.
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      throw offlineError('No connection — market prices unavailable offline');
+    try {
+      // Asked before anything is attempted, so a phone in a tunnel gets an instant honest answer
+      // instead of a spinner and a 20-second wait for the deadline below.
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw offlineError('No connection — market prices unavailable offline');
+      }
+      const region = HUB_REGIONS[hub] ?? HUB_REGIONS.Jita;
+      const ctl = new AbortController();
+      const fetched = await withDeadline(
+        source === 'ceve' ? fetchCeve(needed, region, ctl.signal)
+                          : fetchFuzzwork(needed, HUBS[hub] ?? HUBS.Jita, ctl.signal),
+        BATCH_TIMEOUT_MS, ctl);
+      const merged = new Map(cached);
+      for (const [id, p] of fetched) { result.set(id, p); merged.set(id, { price: p, ts: now }); }
+      saveCache(hub, source, merged);
+    } catch (e) {
+      // Whatever is already cached is returned regardless: losing the connection costs you the prices
+      // you never had, not the ones you did. Only a lookup with nothing at all behind it is an error,
+      // and it stays one so the caller can say "no prices" rather than quietly showing a fit as free.
+      if (!result.size) throw e;
     }
-    const region = HUB_REGIONS[hub] ?? HUB_REGIONS.Jita;
-    const ctl = new AbortController();
-    const fetched = await withDeadline(
-      source === 'ceve' ? fetchCeve(needed, region, ctl.signal)
-                        : fetchFuzzwork(needed, HUBS[hub] ?? HUBS.Jita, ctl.signal),
-      BATCH_TIMEOUT_MS, ctl);
-    for (const [id, p] of fetched) result.set(id, p);
-    saveCache(hub, source, cached ? new Map([...cached, ...result]) : new Map(result));
   }
 
   return result;

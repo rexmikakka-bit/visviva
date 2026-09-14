@@ -47,6 +47,28 @@ export function sig3(v) {
 }
 
 /**
+ * How old a cached market price is, for the line that sits beside it.
+ *
+ * Coarse on purpose — the question it answers is "is this number still worth anything", and no one
+ * decides that on the minute. It rounds DOWN so a figure is never described as fresher than it is:
+ * 23 hours reads as hours, not as a day.
+ *
+ * Null while the price is still inside its refresh window, so a current price carries no label at
+ * all and the marker only ever appears when it means something.
+ */
+export function fmtPriceAge(asOf, now = Date.now()) {
+  // `null` is "never priced", not "priced at the epoch" — the subtraction would otherwise turn a
+  // missing timestamp into an age of twenty thousand days.
+  if (!Number.isFinite(asOf)) return null;
+  const ms = now - asOf;
+  if (!Number.isFinite(ms) || ms < 3600000) return null;
+  const hours = Math.floor(ms / 3600000);
+  if (hours < 24) return t({ one: '{n} hour old', other: '{n} hours old' }, { n: hours });
+  const days = Math.floor(hours / 24);
+  return t({ one: '{n} day old', other: '{n} days old' }, { n: days });
+}
+
+/**
  * The range chip's tooltip for a missile launcher.
  *
  * A missile's flight time is fractional but it travels in whole-second ticks, so the final tick

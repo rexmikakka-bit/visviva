@@ -10,7 +10,7 @@ import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { fittedAbyssalIds } from '../lib/variation-items.js';
 import { abyssalValue } from '../lib/abyssal-value.js';
 import { useAbyssalData } from '../lib/use-abyssal-data.js';
-import { missileRangeTip } from "../lib/fmt.js";
+import { missileRangeTip, fmtPriceAge } from "../lib/fmt.js";
 import { useScrollMemory } from "../lib/use-scroll-memory.js";
 import { useViewMemory } from "../lib/use-view-memory.js";
 import { useRowSwipe } from "../lib/use-row-swipe.js";
@@ -147,7 +147,7 @@ function checkFitRestriction(modTypeID, ship, subsystems) {
     : t('Cannot be fit to this ship');
 }
 import { ModuleBrowserSheet, ModuleMenu, ResourceStrip, SubsystemPickerSheet, DamageProfileSheet, TargetProfileSheet, ItemDetailSheet, InfoButton, resourceColor } from "./ui.jsx";
-import { fetchPrices, MARKET_HUBS } from "../prices.js";
+import { fetchPrices, priceAsOf, MARKET_HUBS } from "../prices.js";
 
 // A module stranded by a subsystem swap sits past the end of its rack flagged `orphan`. Freeing a real
 // slot in that rack pulls the first one back in, so making room by deleting something else is enough
@@ -1502,6 +1502,10 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
            boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),implants:sum(priceItems.implants)};
   },[priceItems,prices,abyssalData]);
   const unknownAbyssals=priceItems.modules.filter(it=>it.abyssal&&abyssalValue(it.mod,abyssalData).price==null).length;
+  // Recomputed off `prices` so a refresh that succeeds clears the marker: the age is a property of
+  // the cache, which the fetch above has just rewritten.
+  const priceAge=useMemo(()=>fmtPriceAge(priceAsOf(allPriceIDs,priceHub,priceSource)),
+    [fitFingerprint,priceHub,priceSource,prices]);// eslint-disable-line react-hooks/exhaustive-deps
   const totalPrice=useMemo(()=>Object.values(groupTotals).reduce((a,b)=>a+b,0),[groupTotals]);
   // The hull-and-fit cost is the number you compare against another fit; implants are a property of
   // the PILOT and follow you from ship to ship, so a total that silently folds in a set of
@@ -2153,6 +2157,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
           </span>
         }/>
         {isOpen("fitvalue")&&<>
+          {priceAge&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.textMute}}>{t('Market prices are {age}.',{age:priceAge})}</div>}
           {(unknownAbyssals>0||abyssalData.loading||abyssalData.error)&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.warning}}>{abyssalData.loading?t('Loading saved module details…'):abyssalData.error||t({one:'Known subtotal; {n} abyssal module has no confirmed value.',other:'Known subtotal; {n} abyssal modules have no confirmed value.'},{n:unknownAbyssals})}</div>}
           {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
