@@ -25,8 +25,8 @@ import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
 import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleByName, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits, variantCostFits } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
-import { fmtResource } from "../lib/fmt.js";
-import { fetchPrices } from "../prices.js";
+import { fmtResource, fmtPriceAge } from "../lib/fmt.js";
+import { fetchPrices, priceAsOf } from "../prices.js";
 import { sortCompareRows, directionOf, filterLockedRows, bestFirstDirection } from "../lib/compare.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { SkillMark } from "./skill-mark.jsx";
@@ -1102,13 +1102,13 @@ function ItemPrice({typeID}) {
     fetchPrices([Number(typeID)],hub,source)
       .then(m=>{if(cancelled)return;
         const v=m.get(Number(typeID));
-        setState({status:v!=null?'ok':'none',value:v??null,hub});})
+        setState({status:v!=null?'ok':'none',value:v??null,hub,age:fmtPriceAge(priceAsOf([Number(typeID)],hub,source))});})
       // Offline, or a hub with no order for this item. Neither is an error worth shouting about.
       .catch(()=>{if(!cancelled)setState({status:'none',value:null,hub});});
     return()=>{cancelled=true;};
   },[typeID]);
   if(state.status==='none')return null;
-  return <PriceCard value={state.value} source={state.hub} loading={state.status==='loading'}/>;
+  return <PriceCard value={state.value} source={state.hub} age={state.age} loading={state.status==='loading'}/>;
 }
 
 // Compact color-coded resist grid — same visual language as the fit Stats tab's Resistances card
