@@ -1846,7 +1846,10 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
   // Price first, then fitting, so the two counts below are disjoint and add up to what is missing.
   // The fitted module is exempt from both: it is the reference every delta is measured against, and
   // a comparison with nothing to compare to is worse than one showing an overrun.
-  const affordable=visible.filter(r=>r.isBaseline||withinPriceCeiling(rowPrice(r),market.maxPrice));
+  // The ceiling rides with the triangle. It is set in the abyssal source sheet, which is only
+  // reachable beside the triangle, so with rolls off it is a filter with no control on screen — and
+  // a shorter list of plain variants then reads as missing data rather than as a budget.
+  const affordable=visible.filter(r=>r.isBaseline||withinPriceCeiling(rowPrice(r),showAbyssals?market.maxPrice:null));
   const overBudget=visible.length-affordable.length;
   const shown=fitsOnly
     ? affordable.filter(r=>r.isBaseline||variantCostFits(fitCostParts({typeID:r.typeID},r.mod.mutations),baseCost,resourceHeadroom,costRatio)!==false)
