@@ -678,3 +678,59 @@ release notes must be written against 1.25.7; iOS's against 1.25.8.
 
 `npm run verify` passed 1,861 checks. iOS 1.25.9:
 https://github.com/rexmikakka-bit/visviva/actions/runs/35236994330
+
+### 1.25.10 fixes the fit-dependent half of it — iOS ONLY, Android now three behind
+
+1.25.9 made the Heat toggle instant on a Maelstrom and Owen still measured half a
+second on one specific fit, a Deimos with five 250mm Railgun IIs. The cost was
+never fixed per tap; it scales with the fit, and two different things scale.
+
+One `calcFitStats` is ~45 ms on that fit against ~18 ms on the Maelstrom. But the
+sweep behind the Firepower card's ammo list was the real number: a 250mm Railgun
+II takes **58 compatible charges**, and `rankAmmo(..., cycleGrades)` scored every
+one of them so the grade-cycle (↻) button would have a value ready. That is 58
+whole-fit calculations, ~2.6 s, re-run on every `slots` change including a Heat
+toggle — to put **ten** numbers on screen. The card only ever displays one variant
+per row.
+
+Two changes, both of which Owen chose explicitly:
+
+- **`rankAmmo` takes `lazyGrades`.** In that mode a TURRET family scores only its
+  anchor and the loaded round; the rest come back as type metadata with
+  `unscored: true`, and the result carries `scoreVariant(name)` to fill one in
+  when the user actually cycles to it. Turret families can do this because they
+  are a pure grade ladder sharing one range multiplier, so the badge follows from
+  the type alone. **Missile families stay eager** — their badge is `range` vs
+  `application`, decided by comparing `optimal` against the anchor's, which needs
+  the calculation. They are also small. Eager remains the default, so the eleven
+  pinned checks on `variants[].dps` still exercise the old path.
+  `AmmoAdvisor` passes a Set of the grades it is already showing (held in a ref,
+  not state — a cycle is not a reason to re-sweep) so a re-sweep cannot blank a
+  row the user had cycled to. Sweep on the Deimos: **2.65 s / 58 calls → 0.51 s /
+  11 calls.**
+- **`StatsTab` reads a deferred copy of the fit.** `useDeferredValue(slots)` feeds
+  `csOpts`, `cs` and `AmmoAdvisor`; `heatMounts`/`allHot` keep the live `slots`.
+  React paints the pressed pill against the previous readouts, then lands the new
+  ones. Same total work, in the order a finger expects it.
+
+Measured on the Deimos against the production build with a MutationObserver:
+first DOM batch (the pill) at **3–6 ms**, the stats at 7–11 ms, the ammo list at
+110–190 ms. Checked by hand that the pill still lights `rgb(249,115,22)`, that ↻
+steps Caldari Navy → Federation Navy → Guristas (PRT 1) → Shadow with distinct
+numbers (537 / 537 / 514), and that a cycled grade survives a Heat toggle with
+recomputed numbers rather than blanking.
+
+Note for the browser: readings taken inside the same synchronous block as the
+`.click()` are one render stale, and four clicks in one block advance the cycle
+once because they all share the same render closure. Click and read in separate
+calls.
+
+`npm run verify` passed **1,873** checks — twelve new ones on the lazy path,
+including that `scoreVariant` produces the same `dps`/`optimal`/`grade` the eager
+sweep would have.
+
+Android is still on **1.25.7 (98)** and now owes testers three perf passes. Its
+release notes must be written against 1.25.7; iOS's against 1.25.9.
+
+iOS 1.25.10 (129):
+https://github.com/rexmikakka-bit/visviva/actions/runs/35242631472
