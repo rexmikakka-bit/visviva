@@ -734,3 +734,5 @@ release notes must be written against 1.25.7; iOS's against 1.25.9.
 
 iOS 1.25.10 (129):
 https://github.com/rexmikakka-bit/visviva/actions/runs/35242631472
+Uploaded to TestFlight successfully. Apple processing/tester availability is not
+independently verified.
