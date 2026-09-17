@@ -647,7 +647,7 @@ function AbyssalBadge({grade}){
   return <span style={{...BADGE_STYLE,color:C.danger,background:'rgba(239,68,68,.12)',border:'1px solid rgba(239,68,68,.28)'}}>▲ {grade}</span>;
 }
 
-function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,children,badges,largeInfo=false}){
+function ModRow({mod,onAdd,onInfo,headroom,disabled=false,actions,children,badges,largeInfo=false}){
   const rowMeta=metaOf(mod.typeID,mod.meta);
   const grade=mod.mutations?abyssalGrade(mod.mutaplasmid):null;
   return(
@@ -674,13 +674,23 @@ function ModRow({mod,onAdd,onInfo,headroom,disabled=false,subtitle,actions,child
                 exists to prevent. They never shrink the name — it ellipses first. */}
             {badges?.map(b=><span key={b.label} style={{flexShrink:0}}><SourceBadge label={b.label} color={b.color}/></span>)}
           </div>
+          {/* Between the name and the fitting cost, which is where the variations tab puts it — there
+              it shares a line with the price, and this row has no price to share. Its own line rather
+              than the meta column on the right so the two reads the same way in both places.
+              The holder is flex, not a block: a block wraps the pill in a LINE box, which adds
+              half-leading above it and leaves the baseline descent below, so one margin came out 7px
+              over and 2.2px under and the pill read as crowding the cost. A flex line box is the
+              pill's own height, so these margins are the gaps you actually get. */}
+          {grade&&<div style={{display:'flex',margin:'4px 0'}}><AbyssalBadge grade={grade}/></div>}
           <FitCost item={mod} headroom={headroom}/>
-          {subtitle&&<div style={{fontSize:10,color:C.textMute,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{subtitle}</div>}
         </div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0,marginLeft:8}}>
         <SkillMark typeID={mod.typeID}/>
-        <span style={{fontSize:11,color:grade?C.danger:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{grade||rowMeta}</span>
+        {/* Shown on abyssal rows too, because a roll's BASE meta is not a constant: one mutaplasmid
+            applies across tiers — Gravid Warp Disruptor covers T1, T2, storyline and all six faction
+            disruptors — and the base it was rolled from sets the stats the mutation is applied to. */}
+        <span style={{fontSize:11,color:META_COLORS[rowMeta]||C.textMute,background:C.border,borderRadius:99,padding:"2px 8px",fontWeight:700}}>{rowMeta}</span>
         {!largeInfo&&actions}
         {mod.typeID&&<div onClick={e=>e.stopPropagation()} style={{paddingLeft:largeInfo?8:0}}><InfoButton touchSize={largeInfo?44:19} onClick={e=>{e.stopPropagation();onInfo(mod);}}/></div>}
       </div>

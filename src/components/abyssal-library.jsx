@@ -155,13 +155,17 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
         // nothing. Silence was the whole complaint: the row looked identical to every other one and
         // simply refused, which reads as a broken list rather than as "it is already in the fit".
         badges:isFitted?[{label:t('On this fit'),color:C.accent}]:undefined,
-        subtitle:`${item.characterName} · ${item.location}`,
         children:<>
           {!item.available&&<div style={{color:C.danger,fontSize:10,marginTop:4}}>{t('Not found in last asset scan')}</div>}
           <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,fontSize:10}}>
             {Object.entries(item.mutations).filter(([a])=>!['cpu','power'].includes(a)).map(([a,v])=>
               <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
           </div>
+          {/* Last, under the rolls, where Variations puts the same line: it is the logistics footnote
+              on a row you pick by its numbers, and above them it pushed the numbers down behind a
+              station name. Wraps rather than ellipsing for the same reason it does there — a citadel
+              name truncated to "Jita IV - Moon 4 - Caldari…" does not say which station. */}
+          <div style={{fontSize:10,color:C.textMute,marginTop:5,overflowWrap:'anywhere'}}>{item.characterName} · {item.location}</div>
         </>
       })}</div>;
     })}
