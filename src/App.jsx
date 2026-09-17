@@ -47,6 +47,7 @@ const CLOSE_BROWSER_ON_ADD_KEY = 'axis_close_browser_on_add';
 const NO_BURSTS = [];
 const NO_PROJECTION = {reps:{shield:0,armor:0,hull:0},webMult:1,neutGJs:0,capGJs:0,capEntries:[],
   debuffs:null,boosts:{lock:[],scan:[]},ecm:[],ecmResist:1};
+const EMPTY_FIGHTER_INFO = [];
 
 export default function App(){
   const[_tick,_setTick]=useState(0);
@@ -152,6 +153,10 @@ export default function App(){
   // Capacitor stops exiting the app for us, so an unhandled press has to be handled below.
   useEffect(()=>initBackButton(),[]);
   const[bottomTab,setBottomTab]=useState("fittings");
+  // Declared up here with the other screen-level state, not down among the sheets, because the two
+  // whole-fit calculations below are skipped unless something is on screen to read them.
+  const[showShipInfo,setShowShipInfo]=useState(false);
+  const[showSnapshot,setShowSnapshot]=useState(false);
   const[showHamburger,setShowHamburger]=useState(false);
   const[showSettings,setShowSettings]=useState(false);
   // Fits come from IndexedDB, which main.jsx has already loaded into memory before this renders —
@@ -369,16 +374,22 @@ export default function App(){
     return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts,ecm:ecmEntries,ecmResist:rz('ecm')};
   },[projFits,fitsDB,fitSkills,sourceSkills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
+  // calcFitStats is ~18 ms on a battleship, and the three calls below are the bulk of what a single
+  // tap on the Fittings screen costs. Nothing on that screen reads them — every consumer is listed
+  // in these two flags — so they are gated rather than run and thrown away. Each consumer already
+  // has a fallback for a null `cs`, because the memo has always returned null before a ship is picked.
+  const wantsSnapshotStats=bottomTab==="cargo"||bottomTab==="drones"||bottomTab==="effects"||showShipInfo||showSnapshot;
+  const wantsDroneStats=bottomTab==="drones";
   const snapshotStats=useMemo(()=>{
     const shipName=activeFit?.ship;
-    if(!shipName) return null;
+    if(!shipName||!wantsSnapshotStats) return null;
     try{
       // lookupShip, not the bare {name,typeID} shape other calcFitStats calls below use — jamChance
       // needs ship.sensorType, which only lookupShip's fuller record carries.
       const sh=lookupShip(shipName)??{name:shipName,typeID:tidByName(shipName)};
       return calcFitStats(sh,slots,drones??[],fitSkills,{fighters,implants,boosters,externalBursts,projectedEcm:projectedEffects?.ecm,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
-  },[activeFit,slots,drones,fighters,fitSkills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fighters,fitSkills,implants,boosters,externalBursts,projectedEffects,wantsSnapshotStats]);
   const shipMeta=useMemo(()=>{
     const sh=activeFit?.ship?lookupShip(activeFit.ship):null;
     return {faction:sh?.race??"",cls:sh?.hullClass??sh?.groupName??""};
@@ -399,28 +410,27 @@ export default function App(){
   // two memos would mean running the whole fit twice to answer one screen.
   const _droneCs=useMemo(()=>{
     const shipName=activeFit?.ship;
-    if(!shipName) return null;
+    if(!shipName||!wantsDroneStats) return null;
     try{
       return calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,projectedEffects,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity});
     }catch{ return null; }
-  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects]);
+  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,projectedEffects,wantsDroneStats]);
   const droneInfo=_droneCs?.droneInfo??[];
   const fittedDrones=_droneCs?.fittedDrones??null;
   const fighterInfo=useMemo(()=>{
     const shipName=activeFit?.ship;
-    if(!shipName||!(fighters?.length)) return [];
+    if(!shipName||!(fighters?.length)||!wantsDroneStats) return EMPTY_FIGHTER_INFO;
     try{
       const cs=calcFitStats({name:shipName,typeID:tidByName(shipName)},slots,drones??[],fitSkills,{implants,boosters,externalBursts,damageProfile:dmgProfile?.p,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:fighters.map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))});
-      return cs?.fighterDetails ?? [];
-    }catch{ return []; }
-  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,fighters,dmgProfile]);
+      return cs?.fighterDetails ?? EMPTY_FIGHTER_INFO;
+    }catch{ return EMPTY_FIGHTER_INFO; }
+  },[activeFit,slots,drones,fitSkills,implants,boosters,externalBursts,fighters,dmgProfile,wantsDroneStats]);
   const[factorInReload,setFactorInReload]=useState(()=>{try{return localStorage.getItem("pyfa-factor-reload")==="1";}catch{return false;}});
   const[fittingsView,setFittingsView]=useState(()=>{try{const db=getLoadedFitsDB();const af=JSON.parse(localStorage.getItem("pyfa-activefit")||"null");if(db&&af&&db[af.ship]?.find(f=>f.name===af.fitName))return"active";}catch{}return"browse";});
   // Set while the browser was opened by the menu's "New Fit", which tells the ship rows the user
   // has already committed to starting something — so picking a hull builds the fit instead of
   // listing what's already on it. Any other route into the browser leaves it false.
   const[newFitIntent,setNewFitIntent]=useState(false);
-  const[showShipInfo,setShowShipInfo]=useState(false);
   const[showPilot,setShowPilot]=useState(false);
   const[showImportFit,setShowImportFit]=useState(false);
   // Set only when the "From EFT" chooser button's direct clipboard-import couldn't finish on its
@@ -428,7 +438,6 @@ export default function App(){
   // instead of the sheet opening blank and asking the user to hit "Read from Clipboard" again.
   const[importFitInitial,setImportFitInitial]=useState(null);
   const[showExportFit,setShowExportFit]=useState(false);
-  const[showSnapshot,setShowSnapshot]=useState(false);
   const[showShoppingList,setShowShoppingList]=useState(false);
   const[showFeedback,setShowFeedback]=useState(false);
   const[showEsiImport,setShowEsiImport]=useState(false);

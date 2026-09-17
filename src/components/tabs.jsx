@@ -1561,7 +1561,10 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   // flying. One object, so the two cannot drift.
   const csOpts=useMemo(()=>({implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))}),
     [implants,boosters,factorInReload,externalBursts,projectedEffects,dmgProfile,tgtProfile,slots,fighters]);
-  const cs=calcFitStats(ship,slots,drones??[],skills,csOpts)??{};
+  // Memoized on the full argument list, so a re-render that changed none of them — the autosave
+  // write-back replacing `fitsDB` is one, and it lands after every single edit — doesn't pay for a
+  // second whole-fit calculation. These five ARE every input calcFitStats reads.
+  const cs=useMemo(()=>calcFitStats(ship,slots,drones??[],skills,csOpts)??{},[ship,slots,drones,skills,csOpts]);
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;
