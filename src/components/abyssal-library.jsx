@@ -7,7 +7,8 @@ import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-librar
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44, abyssalSearchWords, abyssalMatchesSearch } from '../lib/abyssal-browser.js';
-import { bestFirstDirection } from '../lib/compare.js';
+import { bestFirstDirection, derivedAttributes } from '../lib/compare.js';
+import { rolledAttributes } from '../lib/variation-items.js';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalInfo } from './abyssal-info.jsx';
 import { useOnline } from '../lib/use-online.js';
@@ -159,6 +160,12 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
           {!item.available&&<div style={{color:C.danger,fontSize:10,marginTop:4}}>{t('Not found in last asset scan')}</div>}
           <div style={{display:'flex',flexWrap:'wrap',gap:'3px 10px',marginTop:5,fontSize:10}}>
             {Object.entries(item.mutations).filter(([a])=>!['cpu','power'].includes(a)).map(([a,v])=>
+              <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
+            {/* The rate the roll is actually judged by, which is a RATIO of two of the numbers beside
+                it and so cannot be read off them: a damage mod that gained 1% damage and lost 2% rate
+                of fire shows one better number and one worse, and only this says which won. Trailing
+                the rolled attributes, as it does in Variations, because it is a summary of them. */}
+            {Object.entries(derivedAttributes(rolledAttributes(item))).map(([a,v])=>
               <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
           </div>
           {/* Last, under the rolls, where Variations puts the same line: it is the logistics footnote

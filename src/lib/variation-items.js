@@ -3,7 +3,11 @@ import { differingAttributes, directionOf, derivedAttributes, DERIVED_KEYS } fro
 import { libraryModule } from './abyssal-library.js';
 import { CHARACTER_SOURCE } from './abyssal-browser.js';
 
-const attrs=mod=>({...((TYPES[mod.typeID]?.attrs??TYPES[mod.typeID]?.a)??{}),...mod.mutations});
+// A roll is a set of BASE-VALUE OVERRIDES, not a complete module, so a derived rate computed from
+// `mutations` alone is missing whichever half the mutaplasmid did not touch — a shield booster that
+// rolled only its amount has no duration to divide by. Merging over the stock attributes first is
+// what makes the two halves always present together.
+export const rolledAttributes=mod=>({...((TYPES[mod.typeID]?.attrs??TYPES[mod.typeID]?.a)??{}),...mod.mutations});
 export function fittedAbyssalIds(slots,exceptId){
   return new Set(Object.values(slots??{}).flatMap(v=>Array.isArray(v)?v:[])
     .filter(m=>m&&m.id!==exceptId).map(m=>m.abyssalItemId).filter(Boolean));
@@ -67,7 +71,7 @@ export function variationItems(variants,baseline,owned=[]){
     if(!family.has(String(record.typeID))||record.itemId===baseline.abyssalItemId)continue;
     choices.push({key:`owned:${record.itemId}`,mod:libraryModule(record),record,isBaseline:false});
   }
-  const raw=choices.map(c=>attrs(c.mod));
+  const raw=choices.map(c=>rolledAttributes(c.mod));
   const differing=differingAttributes([...family],{limit:Infinity,extraAttrs:raw});
   const keys=[...new Set([...differing,...choices.flatMap(c=>Object.keys(c.mod.mutations??{}))])];
   // Derived values ride in the same bag as real attributes, so sorting, the per-attribute locks and
