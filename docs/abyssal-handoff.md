@@ -621,3 +621,27 @@ APK metadata verified with aapt2; uploaded SHA-256 matches the local build:
 iOS 1.25.7 (126) uploaded successfully:
 https://github.com/rexmikakka-bit/visviva/actions/runs/35220815440
 Apple processing/tester availability is not independently verified.
+
+### 1.25.8 is iOS ONLY — Android is still on 1.25.7 (98)
+
+Owen asked for an iOS-only cut so he could feel the Heat-button fix on the
+phone. `android/version.properties` was deliberately left alone, so Android and
+iOS are out of step until the next Android build; whoever cuts that one owes
+testers this fix, and the release notes must be written against 1.25.7 for
+Android and 1.25.8 for iOS rather than a single shared baseline.
+
+The fix itself: tapping Heat on the Firepower card recalculated the whole fit two
+or three times. `useAbyssalData` was keyed on the entire `slots` object even
+though neither of its reads takes an argument, so every module state change cost
+two full IndexedDB store scans plus an extra render pass; and the autosave
+write-back replaces `fitsDB`, which `externalBursts` and `projectedEffects` are
+keyed on, so both handed back a fresh empty object and invalidated every fit
+calculation downstream. Measured on the production build, tap-to-settled on a
+battleship fit went from 233–265ms to 136–165ms.
+
+Not done, and the rest of that number: a single render pass still runs
+`calcFitStats` three times over — `snapshotStats`, `_droneCs` for the drone rows,
+and StatsTab's own `cs`. Collapsing those is a real refactor, not a one-liner.
+
+`npm run verify` passed 1,861 checks. iOS 1.25.8 (127) uploaded successfully:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35229333324
