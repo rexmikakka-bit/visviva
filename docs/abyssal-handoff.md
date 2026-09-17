@@ -645,3 +645,36 @@ and StatsTab's own `cs`. Collapsing those is a real refactor, not a one-liner.
 
 `npm run verify` passed 1,861 checks. iOS 1.25.8 (127) uploaded successfully:
 https://github.com/rexmikakka-bit/visviva/actions/runs/35229333324
+
+### 1.25.9 finishes the Heat fix — also iOS ONLY, Android now two releases behind
+
+1.25.8 was not enough; Owen still measured roughly half a second on the phone,
+with the haptic firing instantly and the pill and readout lagging behind it. That
+is the signature of the lit state deriving from `slots`, so it cannot repaint
+until the whole re-render finishes.
+
+The three `calcFitStats` calls left over from 1.25.8 are now down to one:
+
+- `snapshotStats` and `_droneCs`/`fighterInfo` are gated on `wantsSnapshotStats`
+  and `wantsDroneStats`. Their only consumers are the Cargo, Drones and Effects
+  screens, the ship info sheet and the snapshot modal — none of which is mounted
+  while you are on Fittings, so both calls were being run and thrown away. The
+  flags needed `showShipInfo` and `showSnapshot` declared with the other
+  screen-level state at the top of `App()` rather than down among the sheets.
+- StatsTab's own `cs` was computed inline on every render. The autosave
+  write-back replaces `fitsDB` after every edit, forcing a second render, which
+  paid for a second whole-fit calculation. It is memoized on the full argument
+  list now — those five values ARE every input `calcFitStats` reads, so the memo
+  cannot go stale.
+
+Tap-to-settled on the same Maelstrom, measured with a MutationObserver against
+the production build: **233–265 ms (1.25.7) → 136–165 ms (1.25.8) → 21–36 ms**.
+Checked by hand afterwards that the Heat pill still lights orange, that the drone
+rows populate with real range/tracking/EHP, and that the drone bay reads
+125 m³ / 100 Mbit/s rather than the zero fallback the gate returns.
+
+Android is still on **1.25.7 (98)** and now owes testers both perf passes. Its
+release notes must be written against 1.25.7; iOS's against 1.25.8.
+
+`npm run verify` passed 1,861 checks. iOS 1.25.9:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35236994330
