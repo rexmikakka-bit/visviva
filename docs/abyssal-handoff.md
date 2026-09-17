@@ -736,3 +736,17 @@ iOS 1.25.10 (129):
 https://github.com/rexmikakka-bit/visviva/actions/runs/35242631472
 Uploaded to TestFlight successfully. Apple processing/tester availability is not
 independently verified.
+
+### Android catches up in one jump — 1.25.10 (versionCode 99)
+
+Owen confirmed the Deimos feels right on TestFlight and asked for Android in the
+same message, so Android skipped 1.25.8 and 1.25.9 entirely and went straight
+from 1.25.7 (98) to 1.25.10 (99). The release notes were written against **1.25.7**
+and told all three perf passes as one story, rather than reusing any of the
+intermediate framing.
+
+APK verified with `aapt2 dump badging` rather than trusting the bump script:
+`versionCode='99' versionName='1.25.10'`, 27.3 MB. GitHub release:
+https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.10
+
+**The platforms are back in step at 1.25.10.** No Play AAB was built.
