@@ -750,3 +750,52 @@ APK verified with `aapt2 dump badging` rather than trusting the bump script:
 https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.10
 
 **The platforms are back in step at 1.25.10.** No Play AAB was built.
+
+### The module search now crosses into My Abyssals — 1.25.11, iOS ONLY
+
+Owen asked for the search text to survive tapping **My Abyssals** and keep
+filtering: search "point", get warp disruptors, tap through, and be looking at
+your own abyssal warp disruptors without retyping. Cut for iOS alone because he
+can only review it on the phone, so **Android is one release behind again at
+1.25.10 (99)** and `android/version.properties` is deliberately untouched. The
+next Android cut owes testers this change and its notes need a **1.25.10**
+baseline; iOS's needed 1.25.10 too, since both shipped it.
+
+The toggle in `ModuleBrowserSheet` no longer calls `setSearch('')`. The `blur()`
+stays — the point of crossing over is to read the list, not to keep typing at it.
+
+Dropping the clear was not sufficient, and this is the part worth remembering:
+**the two views did not agree on what a query means.** The browser resolves the
+query through `jargonSearch`, which knows EVE slang; the library did a plain
+multi-word `includes()` over name/label/owner/location/itemId. So the carried
+query "point" — a word that appears in no module name anywhere — would have
+arrived in the library and matched nothing, reading as "you own none of these".
+Module names now go through `nameMatchesQuery`, the same matcher `jargonSearch`
+filters with, via `abyssalMatchesSearch`/`abyssalSearchWords` in
+`lib/abyssal-browser.js`. Owner, location, label and item id stay a plain
+substring test on purpose: they are free text with no jargon to expand, and a
+label gets typed as a fragment that a word-start rule would reject. The minimum
+query length is now the browser's two characters, so one character means
+"browsing" in both views rather than one of each.
+
+Ten regression checks cover it, including one that pins the invariant rather than
+a value: the set of modules a query selects in the library must equal the set
+`jargonSearch` selects in the browser. `npm run verify` passed 1,883 checks.
+
+Verified in the running app at 390x844 with five synthetic rolls seeded into
+`axis-abyssals` (that profile owned none), following `ModuleBrowserSheet` /
+`AbyssalLibrary` as the reference: "point" → two owned abyssal warp disruptors
+with the scrambler, afterburner and shield extender correctly excluded; the query
+survives the return trip to the browser; clearing it restores category browsing;
+a custom label ("buffer") still finds its roll by free text; and a query with no
+owned match shows the empty state with its Back affordance. No styling changed,
+so no theme comparison was warranted. Seeded records were deleted afterwards.
+
+A trap for next time: deleting a fit goes through `window.confirm`, which freezes
+the Chrome automation extension outright — no screenshots, no input, nothing until
+a human dismisses it. `FittingsScreen.jsx:248`. Don't click delete from automation.
+
+iOS **1.25.11 (130)** uploaded successfully from commit `3675371`:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35256827860
+Every step green; log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing
+and tester availability are not independently verified.
