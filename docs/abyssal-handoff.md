@@ -587,3 +587,15 @@ APK metadata verified with aapt2; uploaded SHA-256 matches the local build:
 iOS 1.25.5 (124) uploaded successfully:
 https://github.com/rexmikakka-bit/visviva/actions/runs/34693942562
 Apple processing/tester availability is not independently verified.
+
+### Weapon status-dot gesture fix
+
+On `codex/weapon-dot-gestures`: grouped weapons include state in their React row
+key. A first tap remounted StateDot and erased its local double-tap history; a
+hold's offline transition could also lose the held flag before release. Gesture
+history now lives in FitTab and follows actual slot membership across remounts
+and group merges. Local hold timers still cancel on unmount or pointer cancellation.
+Mixed-state grouping and the Firepower heat toggle remain unchanged. Seven added
+regression checks cover remount history, held flags, merges and group/rack isolation.
+Running-app gesture verification was unavailable: the in-app browser timed out
+loading localhost. Device double-tap and hold/release still need verification.
