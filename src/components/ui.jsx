@@ -888,7 +888,10 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           swipe worked in the top inch of the sheet and nowhere else, which reads as the gesture
           being broken rather than as a target you missed. */}
       <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
-      {!isStructure&&<button onClick={()=>{setLibrary(v=>!v);setLibraryPath(library?[]:navPath);setSearch('');searchInputRef.current?.blur();}}
+      {/* The query survives the crossing in both directions: one search box serves both views, so
+          clearing it here made "search, then narrow to what I own" a re-typing exercise. The blur
+          stays — the point of crossing over is to look at the list, not to keep typing at it. */}
+      {!isStructure&&<button onClick={()=>{setLibrary(v=>!v);setLibraryPath(library?[]:navPath);searchInputRef.current?.blur();}}
         style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:10,padding:'10px 16px',background:C.surfaceAlt,color:C.accent,border:'none',borderBottom:`1px solid ${C.border}`,fontSize:12,fontWeight:700,textAlign:'left',cursor:'pointer'}}>
         <span>{library?`‹ ${t('Back to module browser')}`:t('My Abyssals')}</span>
         {!library&&<span aria-hidden="true" style={{color:C.textMute,fontSize:14}}>›</span>}

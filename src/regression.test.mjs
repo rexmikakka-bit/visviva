@@ -39,7 +39,7 @@ import { browserMetaRank, metaOf } from './lib/meta.js';
 import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
 import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE, MANUAL_OWNER, customAbyssal, manualAbyssalId } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
-import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, abyssalSearchWords, abyssalMatchesSearch, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
 import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
 import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
 import { fetchContractIndex, stationOf, withStations, contractIndexExpired } from './lib/mutamarket-contracts.js';
@@ -7006,6 +7006,30 @@ Nanofiber Internal Structure II
   check('abyssal-browser','filtering to Jita keeps only the station\'s rolls',
     [{...base,itemId:'j1',location:jitaName},{...base,itemId:'a1',location:'Amarr VIII (Oris) - Emperor Family Academy'},
      {...base,itemId:'j2',location:`${jitaName} / Can`}].filter(atJita44).map(r=>r.itemId).join(','),'j1,j2');
+  // The module browser and My Abyssals share ONE search box, and the query now survives the crossing,
+  // so the two have to agree on what it selects. "point" is jargon for a warp disruptor and appears
+  // in no module name at all: the plain substring match this replaced answered a carried-over query
+  // with an empty library, which reads as owning none of them.
+  const allMid=(function walk(ns){return ns.flatMap(n=>[...n.mods,...walk(n.children)]);})(REAL_MODULE_BROWSER.mid);
+  const browserHits=new Set(jargonSearch('point',allMid).map(m=>m.name));
+  const ownedOfEach=[...new Map(allMid.map(m=>[m.name,{...base,typeID:m.typeID,itemId:String(m.typeID),name:m.name}])).values()];
+  const libraryHits=new Set(ownedOfEach.filter(r=>abyssalMatchesSearch(r,abyssalSearchWords('point'))).map(r=>r.name));
+  check('abyssal-browser','jargon reaches warp disruptors at all',browserHits.size>0?1:0,1,0);
+  check('abyssal-browser','a carried-over query selects the modules the browser selected',
+    [...libraryHits].sort().join(','),[...browserHits].sort().join(','));
+  const roll={...base,name:'Warp Disruptor II',label:'shiny one',characterName:'Alt',location:'Jita / Stock',itemId:'55'};
+  const hit=(query,record=roll)=>abyssalMatchesSearch(record,abyssalSearchWords(query))?1:0;
+  check('abyssal-browser','jargon matches an owned roll through its source module',hit('point'),1,0);
+  check('abyssal-browser','an unrelated roll is not swept in',hit('point',{...roll,name:'Large Shield Extender II'}),0,0);
+  check('abyssal-browser','a personal label still matches as free text',hit('shiny'),1,0);
+  // Free text keeps a plain substring test: labels get typed as fragments, and a word-start rule
+  // there would quietly stop finding the roll you named.
+  check('abyssal-browser','a label fragment mid-word still matches',hit('hiny'),1,0);
+  check('abyssal-browser','owner, location and item id remain searchable',[hit('alt'),hit('stock'),hit('55')].join(','),'1,1,1');
+  check('abyssal-browser','tokens may come from the name and the label together',hit('point shiny'),1,0);
+  check('abyssal-browser','one character is browsing, not searching',abyssalSearchWords('p').length,0,0);
+  check('abyssal-browser','an empty query filters nothing',hit(''),1,0);
+
   // Totality over the actual catalog catches omitted / duplicated branches, including
   // synthetic propulsion-size groups, without hard-coding a catalog size.
   for(const [slot,nodes] of Object.entries(REAL_MODULE_BROWSER)){

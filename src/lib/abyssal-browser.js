@@ -1,4 +1,5 @@
 import { JITA_4_4_STATION_ID } from './mutamarket.js';
+import { nameMatchesQuery } from './jargon.js';
 
 // Jita 4-4 is where abyssal trading actually happens, so "can I hand this over today" is a yes/no
 // question about ONE station rather than a place to browse to.
@@ -17,6 +18,26 @@ export function atJita44(record){
   const root=abyssalStation(record);
   return root===JITA_4_4_NAME||root===`Location #${JITA_4_4_STATION_ID}`
     ||String(record?.locationId)===String(JITA_4_4_STATION_ID);
+}
+
+// One search box serves both the module browser and the owned-roll library, and a query carried
+// across has to mean the same thing on both sides: "point" finds warp disruptors in the browser, so
+// it has to find the ones you own here. That is `nameMatchesQuery` — the matcher `jargonSearch`
+// filters the browser with — run against the SOURCE module name.
+//
+// Owner, location, label and item id stay a plain substring test. They are free text with no jargon
+// to expand, and a label is often typed as a fragment that a word-start rule would reject.
+//
+// The minimum length is the browser's, so one character means "browsing" in both views rather than
+// browsing in one and filtering in the other.
+export const ABYSSAL_SEARCH_MIN=2;
+export function abyssalSearchWords(query){
+  const trimmed=String(query??'').trim();
+  return trimmed.length>=ABYSSAL_SEARCH_MIN?trimmed.split(/\s+/).filter(Boolean):[];
+}
+export function abyssalMatchesSearch(record,words){
+  const free=`${record.label??''} ${record.characterName??''} ${record.location??''} ${record.itemId??''}`.toLowerCase();
+  return words.every(w=>nameMatchesQuery(record.name??'',w)||free.includes(w.toLowerCase()));
 }
 
 // Browse the same saved items by CCP's existing module tree or by physical location.

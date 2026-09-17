@@ -6,7 +6,7 @@ import { beginLogin, listCharacters, onCharactersChanged, getLastLoginError } fr
 import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-library.js';
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
-import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44 } from '../lib/abyssal-browser.js';
+import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44, abyssalSearchWords, abyssalMatchesSearch } from '../lib/abyssal-browser.js';
 import { bestFirstDirection } from '../lib/compare.js';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalInfo } from './abyssal-info.jsx';
@@ -52,9 +52,8 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
   const locations=new Map();
   for(const a of scan?.candidates??[]){const key=String(a.location_id),old=locations.get(key);locations.set(key,{name:assetLocation(a,byId,scan.names),count:(old?.count??0)+1});}
   const eligible=abyssalsForSlot(records,slotType);
-  const words=search.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const matching=eligible.filter(r=>(!favorites||r.favorite)&&(!jita||atJita44(r))&&
-    words.every(w=>`${r.name} ${r.label??''} ${r.characterName} ${r.location} ${r.itemId}`.toLowerCase().includes(w)));
+  const words=abyssalSearchWords(search);
+  const matching=eligible.filter(r=>(!favorites||r.favorite)&&(!jita||atJita44(r))&&abyssalMatchesSearch(r,words));
   const group=rows=>groupBy==='market'?abyssalMarketGroups(rows,marketTree):abyssalContainerGroups(rows);
   // Use the full market tree for breadcrumbs: opening My Abyssals from a standard
   // category with no owned rolls must still name that category and allow Back.
