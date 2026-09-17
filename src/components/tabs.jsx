@@ -1,6 +1,6 @@
 // The two main fitting tabs (FitTab, StatsTab).
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
@@ -1191,6 +1191,12 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
   const [rackIdx,setRackIdx]=useViewMemory("Stats:ammoRack",0);
   const [result,setResult]=useState(null);
   const [gradePreviews,setGradePreviews]=useState({ship:null,choices:{}});
+  // Variants the user has cycled to, so the next sweep scores them instead of handing back the stub
+  // that would blank the row. A ref rather than state on purpose: a cycle is not a reason to re-sweep,
+  // it just changes what the sweep after it has to include.
+  const previewedRef=useRef(null);
+  if(previewedRef.current===null)previewedRef.current=new Set();
+  const [scored,setScored]=useState({result:null,byName:{}});
   const racks=useMemo(()=>weaponRacks(slots),[slots]);
   const rack=racks[Math.min(rackIdx,Math.max(0,racks.length-1))];
   // Two keys, and the difference between them is the whole reason this does not flicker. `rackId` is
@@ -1206,7 +1212,7 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
     // tapped vanish and come back, taking the page's scroll position with it. Holding the previous
     // ranking means the only thing that changes is the numbers, a beat later.
     const id=setTimeout(()=>{
-      if(!cancelled){const r=rankAmmo(ship,slots,drones,skills,opts,rack,true);setResult(r&&{...r,rackId});}
+      if(!cancelled){const r=rankAmmo(ship,slots,drones,skills,opts,rack,true,previewedRef.current);setResult(r&&{...r,rackId});}
     },0);
     return()=>{cancelled=true;clearTimeout(id);};
   },[ship,slots,drones,skills,opts,rackKey]);// eslint-disable-line react-hooks/exhaustive-deps
@@ -1215,11 +1221,14 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
   if(!rack||!result||result.rackId!==rackId)return null;
 
   const {rows,targeted}=result;
+  // Variants scored on demand since this sweep landed. Discarded when the sweep is replaced, because
+  // by then the result has scored them itself — `previewedRef` saw to that.
+  const justScored=scored.result===result?scored.byName:null;
   const displayRows=rows.map(row=>{
     const variants=row.variants??[row];
     const choice=gradePreviews.ship===ship?gradePreviews.choices[`${rackId}|${row.name}`]:null;
     const shown=variants.find(v=>v.name===choice)??variants.find(v=>v.name===rack.ammo)??variants.find(v=>v.name===row.name)??row;
-    return {...shown,rowKey:row.name,variants};
+    return {...shown,...justScored?.[shown.name],rowKey:row.name,variants};
   });
   const missileRows=rows.filter(r=>r.missile);
   const missilePresets=missileRows.length?[
@@ -1365,6 +1374,14 @@ function AmmoAdvisor({ship,slots,setSlots,drones,skills,opts,onPickTarget}){
             onClick={e=>{
               e.stopPropagation();haptic();
               const next=r.variants[(r.variants.findIndex(v=>v.name===r.name)+1)%r.variants.length];
+              // Scored here, before the row is switched to it, so it never renders half-filled. One
+              // calcFitStats against an explicit tap, where the sweep used to spend one against every
+              // variant in the rack on the chance this tap happened.
+              previewedRef.current.add(next.name);
+              if(next.unscored&&!justScored?.[next.name]){
+                const full=result.scoreVariant?.(next.name);
+                if(full)setScored(prev=>({result,byName:{...(prev.result===result?prev.byName:{}),[next.name]:full}}));
+              }
               setGradePreviews(prev=>({ship,choices:{...(prev.ship===ship?prev.choices:{}),[`${rackId}|${r.rowKey}`]:next.name}}));
             }}
             style={{fontSize:9,fontWeight:800,color:tierCol,flexShrink:0,minWidth:51,minHeight:32,padding:"4px 3px",border:`1px solid ${C.border}`,borderRadius:5,background:C.surface,cursor:"pointer"}}>
@@ -1559,12 +1576,18 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   // with a different round loaded and has to do it under EXACTLY these conditions — a comparison run
   // without the fit's implants, drugs or command bursts would rank ammo against a ship nobody is
   // flying. One object, so the two cannot drift.
-  const csOpts=useMemo(()=>({implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:slots?.pilotSec,systemSecurity:slots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))}),
-    [implants,boosters,factorInReload,externalBursts,projectedEffects,dmgProfile,tgtProfile,slots,fighters]);
+  // The controls on this page react to `slots`; the NUMBERS react to this. A whole-fit calculation is
+  // ~45 ms on a charged cruiser and the ammo sweep below is several hundred, and paying either before
+  // the first paint is what made the Heat pill feel stuck — the haptic fired on the tap and the pill
+  // lit half a second later. Deferring it lets React paint the pressed control against the previous
+  // numbers, then land the new ones. Same total work, in the order a finger expects it.
+  const dSlots=useDeferredValue(slots);
+  const csOpts=useMemo(()=>({implants,boosters,factorInReload,externalBursts,projectedWebMult:projectedEffects?.webMult,projectedNeutGJs:projectedEffects?.neutGJs,projectedCapGJs:projectedEffects?.capGJs,projectedDebuffs:projectedEffects?.debuffs,projectedBoosts:projectedEffects?.boosts,projectedEcm:projectedEffects?.ecm,damageProfile:dmgProfile.p,targetResists:tgtProfile?.r,pilotSec:dSlots?.pilotSec,systemSecurity:dSlots?.systemSecurity,fighters:(fighters??[]).map(f=>({name:f.name,qty:f.qty??1,active:f.active,abilities:f.abilities}))}),
+    [implants,boosters,factorInReload,externalBursts,projectedEffects,dmgProfile,tgtProfile,dSlots,fighters]);
   // Memoized on the full argument list, so a re-render that changed none of them — the autosave
   // write-back replacing `fitsDB` is one, and it lands after every single edit — doesn't pay for a
   // second whole-fit calculation. These five ARE every input calcFitStats reads.
-  const cs=useMemo(()=>calcFitStats(ship,slots,drones??[],skills,csOpts)??{},[ship,slots,drones,skills,csOpts]);
+  const cs=useMemo(()=>calcFitStats(ship,dSlots,drones??[],skills,csOpts)??{},[ship,dSlots,drones,skills,csOpts]);
   // Profile-weighted EHP: rawHP / Σ(profile_i × resonance_i), resonance = 1 - resist/100.
   const ehpForProfile=(rawHP,res)=>{
     const p=dmgProfile.p;
@@ -1955,7 +1978,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
               <span key={l}><span style={{color:c,fontWeight:700}}>{fmtDps(v)}</span> <span style={{color:C.textMute}}>{l}</span></span>
             ))}
           </div>}
-        <AmmoAdvisor ship={ship} slots={slots} setSlots={setSlots} drones={drones??[]} skills={skills}
+        <AmmoAdvisor ship={ship} slots={dSlots} setSlots={setSlots} drones={drones??[]} skills={skills}
           opts={csOpts} onPickTarget={()=>setShowTargetPicker(true)}/>
         </>}
       </div>

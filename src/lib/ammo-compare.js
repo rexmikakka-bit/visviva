@@ -238,8 +238,17 @@ function rackRangeKm(cs, slots, rack) {
  * One calcFitStats per row — pure, and ~10-18 ms for a battleship rack, so a ten-row turret sweep is
  * ~150 ms and a sixteen-row missile one ~215 ms. Too slow for a render pass and fine for an idle
  * callback, which is how the Firepower card drives it.
+ *
+ * `cycleGrades` adds a whole family under each row, which multiplies that cost by the family size —
+ * a 5x 250mm railgun rack takes 58 compatible charges and so costs 58 calls, ~2.6 s. `lazyGrades`
+ * scores only the anchor and the loaded round of each TURRET family and hands back the rest as
+ * metadata, with `scoreVariant(name)` on the result to fill one in when the user asks for it. Turret
+ * families can do this because they are a pure grade ladder sharing one range multiplier, so a
+ * variant's badge follows from its type alone; a missile family is a measured trade-off whose badge
+ * needs `optimal` compared against the anchor's, so those stay eager. They are also small. Pass a Set
+ * of names instead of `true` to keep those scored as well.
  */
-export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = false) {
+export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = false, lazyGrades = false) {
   if (!ship || !rack) return null;
   const targeted = Array.isArray(opts?.targetResists) && opts.targetResists.some((v) => v > 0);
   const dpsOf = (cs) => {
@@ -323,18 +332,38 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = 
       loaded: charge.name === rack.ammo,
     };
   };
+  // Everything `score` gets from type data rather than from the fit. Enough for a badge and a name,
+  // which is all a variant the user has not cycled to is ever asked for.
+  const unscored = (family, charge) => {
+    const label_ = label(charge.name);
+    return {
+      family, name: charge.name, label: label_, short: stripNavy(label_), typeID: charge.typeID,
+      meta: metaOf(charge.typeID, "T1"),
+      dmg: damageSplitOf(charge.typeID), line: lineOf(charge.typeID, baseDamage.get(charge.name) ?? 0),
+      loaded: charge.name === rack.ammo, unscored: true,
+    };
+  };
+  const decorate = (v, c, grades, missile, rowOptimal) => {
+    const previewKind=isNavy(c)?'navy':missile&&v.meta==='T2'
+      ?v.line==='dmg'?'damage':v.optimal>rowOptimal?'range':'application':null;
+    const grade=previewKind==='damage'?'T2 DMG':previewKind==='range'?'T2 RNG':previewKind==='application'?'T2 APP':gradeLabel(c,grades);
+    return {...v,short:abbreviatedAmmo(v.label),grade,previewKind};
+  };
+  const variantIndex = new Map();
   const rows = picks.map(({family,charge,grades:familyGrades,missile})=>{
     const row=score(family,charge);
     if(!row||!cycleGrades)return row;
     const grades=familyGrades??ammoGrades(charge,rack.charges);
     row.missile=!!missile;
     row.variants=grades.map(c=>{
-      const v=c.name===charge.name?{...row}:score(family,c);
+      variantIndex.set(c.name,{family,charge:c,grades,missile,rowOptimal:row.optimal});
+      // The loaded round is scored whatever the mode asks for: it is the baseline every delta on the
+      // card is measured from, and it can sit anywhere in the family. A name the caller passed in is
+      // one it is already showing, so leaving it unscored would blank a row it had filled in.
+      const eager=!lazyGrades||missile||c.name===rack.ammo||lazyGrades.has?.(c.name);
+      const v=c.name===charge.name?{...row}:eager?score(family,c):unscored(family,c);
       if(!v)return null;
-      const previewKind=isNavy(c)?'navy':missile&&v.meta==='T2'
-        ?v.line==='dmg'?'damage':v.optimal>row.optimal?'range':'application':null;
-      const grade=previewKind==='damage'?'T2 DMG':previewKind==='range'?'T2 RNG':previewKind==='application'?'T2 APP':gradeLabel(c,grades);
-      return {...v,short:abbreviatedAmmo(v.label),grade,previewKind};
+      return decorate(v,c,grades,missile,row.optimal);
     }).filter(Boolean);
     return row;
   }).filter(Boolean);
@@ -354,5 +383,11 @@ export function rankAmmo(ship, slots, drones, skills, opts, rack, cycleGrades = 
   // the head of the list is whatever reaches least far — Quake on a 1400mm rack — which is a true
   // range answer and a terrible recommendation, so nothing is starred and the list stays a picker.
   if (targeted && rows[0]) rows[0].best = true;
-  return { rows, targeted, loadedName: rack.ammo ? label(rack.ammo) : null, base };
+  const scoreVariant = (name) => {
+    const e = variantIndex.get(name);
+    if (!e) return null;
+    const v = score(e.family, e.charge);
+    return v ? decorate(v, e.charge, e.grades, e.missile, e.rowOptimal) : null;
+  };
+  return { rows, targeted, loadedName: rack.ammo ? label(rack.ammo) : null, base, scoreVariant };
 }

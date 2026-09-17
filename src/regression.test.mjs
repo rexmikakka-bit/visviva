@@ -6702,6 +6702,32 @@ Nanofiber Internal Structure II
   const pirateSlots=gun('1400mm Howitzer Artillery II','Domination Fusion L',6);
   const pirateRank=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},pirateSlots,[],null,ARMOUR,weaponRacks(pirateSlots)[0],true);
   check('ammo','loaded pirate is found within its family',pirateRank.rows.flatMap(r=>r.variants).filter(v=>v.loaded).map(v=>v.name).join(','),'Domination Fusion L');
+  // A grade the card is not showing costs a whole-fit calculation to score and nothing to describe.
+  // A 5x 250mm railgun rack takes 58 compatible charges, which is 58 calculations and ~2.6 s, for ten
+  // numbers on screen. Scoring those on demand is the difference between a sweep the Stats tab can
+  // afford on every edit and one it cannot.
+  const lazy=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},arty,[],null,ARMOUR,weaponRacks(arty)[0],true,true);
+  const lazyFusion=lazy.rows.find(r=>r.name==='Republic Fleet Fusion L');
+  check('ammo','a grade nobody asked for is not scored',lazyFusion.variants.map(v=>v.unscored?'-':'#').join(''),'#---');
+  check('ammo','but it still carries its badge and name',lazyFusion.variants.map(v=>v.grade).join('|'),'NAVY|PRT 1|PRT 2|T1');
+  check('ammo','and its damage split, which the spine draws',lazyFusion.variants.every(v=>v.dmg)?1:0,1,0);
+  check('ammo','the loaded round is scored whatever the mode',
+        lazy.rows.flatMap(r=>r.variants??[r]).filter(v=>v.loaded&&!v.unscored).map(v=>v.name).join(','),'EMP L');
+  check('ammo','so the baseline is unchanged',lazy.base,cycling.base,0.0001);
+  check('ammo','rows themselves are always scored',lazy.rows.every(r=>r.dps>0)?1:0,1,0);
+  // Scored late or scored early, it is the same calculation on the same fit — otherwise cycling to a
+  // grade would show a different number than sweeping to it.
+  const filled=lazy.scoreVariant('Domination Fusion L');
+  check('ammo','scoring a grade on demand matches the eager sweep',filled.dps,fusion.variants[2].dps,0.0001);
+  check('ammo','and so does its reach',filled.optimal,fusion.variants[2].optimal,0.0001);
+  check('ammo','and its badge',filled.grade,fusion.variants[2].grade);
+  check('ammo','a name nobody knows scores to nothing',lazy.scoreVariant('Not A Charge')===null?1:0,1,0);
+  // The UI hands back the grades it is already showing, so a re-sweep cannot blank a row the user
+  // cycled to before it.
+  const kept=rankAmmo({typeID:tid('Maelstrom'),name:'Maelstrom'},arty,[],null,ARMOUR,weaponRacks(arty)[0],true,new Set(['Domination Fusion L']));
+  check('ammo','a requested grade comes back scored',
+        kept.rows.find(r=>r.name==='Republic Fleet Fusion L').variants.map(v=>v.unscored?'-':'#').join(''),'#-#-');
+  check('ammo','lazy previews do not load ammo',arty.high.every(m=>m.ammo==='EMP L')?1:0,1,0);
   const tNames = turret.rows.map(r => r.label);
   // TURRETS: one row per family, at the best grade. The navy round replaces the T1 one — showing
   // both spends a row on a decision nobody makes, since navy carries the same range multiplier and
