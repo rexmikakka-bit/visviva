@@ -39,6 +39,15 @@ const THEME_PREF_KEY = 'axis_theme_pref';
 const AUTOFILL_HARDPOINTS_KEY = 'axis_autofill_hardpoints';
 const CLOSE_BROWSER_ON_ADD_KEY = 'axis_close_browser_on_add';
 
+// "Nothing is boosting this fit" and "nothing is projecting at it" are each ONE value, not a new one
+// per render. Both memos below are keyed on `fitsDB`, which the autosave write-back replaces after
+// every edit, and both feed every fit calculation on screen — so handing back a fresh empty object
+// makes a single tap recalculate the whole fit twice. NO_PROJECTION is exactly what the memo
+// computes with no projected fits: no reps, no penalty, no debuffs, resistance 1.
+const NO_BURSTS = [];
+const NO_PROJECTION = {reps:{shield:0,armor:0,hull:0},webMult:1,neutGJs:0,capGJs:0,capEntries:[],
+  debuffs:null,boosts:{lock:[],scan:[]},ecm:[],ecmResist:1};
+
 export default function App(){
   const[_tick,_setTick]=useState(0);
   useEffect(()=>{
@@ -293,8 +302,9 @@ export default function App(){
     }
     return out;
   };
-  const externalBursts=useMemo(()=>buildExternalBursts(cmdFits),[cmdFits,fitsDB,sourceSkills]);
+  const externalBursts=useMemo(()=>{const out=buildExternalBursts(cmdFits);return out.length?out:NO_BURSTS;},[cmdFits,fitsDB,sourceSkills]);
   const projectedEffects=useMemo(()=>{
+    if(!projFits.length)return NO_PROJECTION;
     // Collected, not summed: incoming remote reps go through a diminishing-returns curve that
     // needs every source's amount AND cycle time together (applyRemoteRepDiminishing).
     const repEntries={shield:[],armor:[],hull:[]};
