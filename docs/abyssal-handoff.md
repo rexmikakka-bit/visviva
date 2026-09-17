@@ -799,3 +799,68 @@ iOS **1.25.11 (130)** uploaded successfully from commit `3675371`:
 https://github.com/rexmikakka-bit/visviva/actions/runs/35256827860
 Every step green; log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing
 and tester availability are not independently verified.
+
+### The two abyssal rows now read the same way — 1.25.12, iOS ONLY
+
+Owen: the abyssal badge should sit between the module name and the resource
+displays, like it does in the variations tab. `ModRow` now renders name → grade
+badge → PG/CPU → stat line → owner/location, with the meta pill right-aligned,
+which is the Variations order top to bottom. In Variations the badge shares a line
+with the price; a browser row has no price to share, so it gets its own line rather
+than being folded into the right-hand meta column — that keeps the vertical order
+identical in both places.
+
+`ModRow`'s `subtitle` prop is gone. Owner and location moved to the END of
+`children` in `abyssal-library.jsx`, under the rolled attributes, because above them
+it pushed the numbers you actually pick a roll by down behind a station name. It
+wraps instead of ellipsing, same as Variations: "Jita IV - Moon 4 - Caldari…" does
+not tell you which station.
+
+**The base meta pill is back on abyssal rows, and the earlier reasoning for
+dropping it was wrong.** I had claimed a roll's base tier is a constant in My
+Abyssals so the grade could replace it. The data says otherwise: mutaplasmid 47735
+(Gravid Warp Disruptor) applies to 17 types spanning mg=1 (3242, T1), mg=2 (3244,
+T2), mg=3 (21510, storyline) and mg=4 (14244 Domination plus seven other faction
+disruptors). The base sets the stats the mutation multiplies, so the tier is
+load-bearing information, not decoration. Grade and tier are both shown.
+
+Two separate spacing root causes, both in CSS box rules and both worth keeping:
+
+1. **An inline box ignores `line-height` for its border box.** `BADGE_STYLE` set
+   `lineHeight:1` and it did nothing — an inline `<span>` sizes its content area
+   from the font's ascent+descent, so the pill came out 22px inside a 23.2px line
+   box, its border landing 0.2px off the fitting-cost line under it. Adding
+   `display:'inline-block'` makes the declaration apply; the pill is 17px.
+2. **A block holder wraps the pill in a line box**, which adds half-leading above it
+   and leaves the baseline descent below. A single `marginTop:2` therefore rendered
+   as 7px above and 2.2px below, and Owen spotted the asymmetry on a screenshot.
+   `display:'flex'` on the holder collapses the line box to the pill's own height,
+   so margins become literal: `margin:'4px 0'` measures 4px above, 4px below, holder
+   height 17px = badge height.
+
+Measure this class of thing rather than eyeballing it — my own earlier measurement
+had already recorded 7px/2.2px and I reported it as fine.
+
+`npm run verify` passed 1,883 checks (no new checks; this is layout only). Verified
+in the running production preview against the Variations tab with three synthetic
+rolls seeded on `:4173` spanning T1/T2/faction bases, at 500px and at a genuine 360px
+layout (Chrome clamps the viewport to 500px, so `document.documentElement.style.zoom
+= 500/360` is how you get real 360px layout widths), in both themes. The
+non-abyssal `ModRow` consumers — market-tree search results and the category level —
+are unaffected because `grade` is null there. Seeded records were deleted afterwards
+(`remaining 0`).
+
+**Owen closed the warp-disruptor group-name question:** the info sheet keeps printing
+CCP's `td.gn`, so an abyssal Warp Disruptor II still reports group "Warp Scrambler".
+That is faithful to `invgroups` 52, which really is named that and really does contain
+both. Market groups 1935/1936 would distinguish them, but 7,289 of 25,575 published
+types have a NULL `marketGroupID`. Don't revisit unprompted.
+
+iOS **1.25.12 (131)** uploaded successfully from commit `f50a9cc`:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35267962376
+Every step green; log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing
+and tester availability are not independently verified.
+
+**Android is now two releases behind at 1.25.10 (versionCode 99)** — it owes testers
+both the search carry-over (1.25.11) and this layout pass. Its next changelog baseline
+is still **1.25.10**.
