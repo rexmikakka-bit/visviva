@@ -599,3 +599,25 @@ Mixed-state grouping and the Firepower heat toggle remain unchanged. Seven added
 regression checks cover remount history, held flags, merges and group/rack isolation.
 Running-app gesture verification was unavailable: the in-app browser timed out
 loading localhost. Device double-tap and hold/release still need verification.
+
+### 1.25.7 shipped on both platforms
+
+`codex/weapon-dot-gestures` was merged into main for this release, on Owen's call.
+It had already gone to TestFlight as iOS 1.25.6 (125) built off the unmerged
+branch, so cutting 1.25.7 from main without it would have regressed iOS testers;
+Android had never had it at all. This is exactly the drift `docs/release.md`
+warns about — iOS marketing versions come from a workflow input, so 1.25.6 exists
+on TestFlight and nowhere in this repo.
+
+Also in 1.25.7: cached market prices survive past their TTL and are labelled when
+stale, the chosen market source finally reaches the Fit Value card, the snapshot
+image and the price optimizer (all three silently used Fuzzwork), and the
+variations price ceiling only applies while the abyssal triangle is on.
+
+`npm run verify` passed 1,861 checks. Android 1.25.7 (98) is published:
+https://github.com/rexmikakka-bit/visviva/releases/tag/android-1.25.7
+APK metadata verified with aapt2; uploaded SHA-256 matches the local build:
+`295b809f48281b4c8c3cf680883d1023ecd4a1a052f68e85b6c267c649e8368b`.
+iOS 1.25.7 (126) uploaded successfully:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35220815440
+Apple processing/tester availability is not independently verified.
