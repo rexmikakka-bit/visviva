@@ -7185,7 +7185,9 @@ Nanofiber Internal Structure II
   // through `directionOf`, using real values out of the list — half of directionOf's rules compare
   // MAGNITUDES, so a synthetic 1-vs-0 probe answers backwards for exactly the attributes that
   // motivated it. The display/raw split is the other half: it must pick its extremes in the space
-  // the sort actually runs in. (Same transform as ui.jsx's `mutaToDisplay`.)
+  // the sort actually runs in. Only the INVERTING cases of ui.jsx's `mutaToDisplay` are reproduced
+  // here, because an increasing transform cannot change which end is best — copying the rest would
+  // be a second list to keep in step for no added coverage.
   const display=(name,v)=>name==='speedMultiplier'?(1/v-1)*100:/DamageResistanceBonus$/.test(name)?-v:v;
   const span=(key,...pairs)=>bestFirstDirection(key,pairs.map(([value,typeID])=>({value,typeID})),display);
   check('bestfirst','a plain high-is-good attribute opens biggest-first',span('shieldBonus',[276,10858],[300,10858]),'desc');

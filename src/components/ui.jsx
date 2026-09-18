@@ -2126,10 +2126,10 @@ cpuOutput:"CPU Output",cpuOutputBonus2:"CPU Bonus",powerOutput:"Powergrid Output
 powerEngineeringOutputBonus:"Powergrid Bonus",
 // The derived rates (compare.js). These have no dogma name to fall back on — `mutaLabel`'s
 // camelCase split would print "Derived:repair Per Second" — so a label here is required, not a
-// nicety. "DPS Multiplier" is the module's OWN multiplier (damage × rate of fire), not the fit's
-// DPS increase: the variations tab never sees the fit.
+// nicety. "DPS Increase" is what this MODULE raises its own damage output by (damage × rate of
+// fire); a fit gains less once stacking penalties bite, and the variations tab never sees the fit.
 "derived:repairPerSecond":"Repair Rate","derived:repairPerCap":"Repair / Cap",
-"derived:yieldPerSecond":"Mining Rate","derived:damagePerTime":"DPS Multiplier"};
+"derived:yieldPerSecond":"Mining Rate","derived:damagePerTime":"DPS Increase"};
 // camelCase -> words, keeping ACRONYMS intact: a naive /([A-Z])/ split turned
 // `boosterArmorHPPenalty` into "Booster Armor H P Penalty". The leading "Booster " is then dropped
 // as redundant — you are already looking at a booster.
@@ -2151,9 +2151,9 @@ const PERCENT_ATTRS=new Set(["aoeCloudSizeBonus","armorDamageAmountBonus","track
 const DERIVED_UNITS={"derived:repairPerSecond":{scale:1,unit:"HP/s",dp:1},
   "derived:repairPerCap":{scale:1,unit:"HP/GJ",dp:2},
   "derived:yieldPerSecond":{scale:1,unit:"m³/s",dp:2},
-  // Three decimals for the same reason `damageMultiplier` gets them: two rolls a trader is choosing
-  // between differ in the third digit, and 2dp files them as identical.
-  "derived:damagePerTime":{scale:1,unit:"",dp:3}};
+  // 1dp keeps exactly the discrimination the raw value's third digit carried (1.247 -> 24.7%), which
+  // is where two rolls a trader is choosing between differ.
+  "derived:damagePerTime":{scale:1,unit:"%",dp:1}};
 const mutaUnit=(name)=>{
   if(DERIVED_UNITS[name]) return DERIVED_UNITS[name];
   if(MUTA_RATE_PCT.has(name)||RESIST_BONUS_RE.test(name)) return {scale:1,unit:"%",dp:2};
@@ -2187,8 +2187,14 @@ const MUTA_RATE_PCT=new Set(["speedMultiplier"]);
 // Safe as a blanket rule: every fittable module in the bundle carries these negative, and the only
 // positive occurrences are environment Effect Beacons, which never reach these formatters.
 const RESIST_BONUS_RE=/DamageResistanceBonus$/;
-const mutaToDisplay=(name,v)=>MUTA_RATE_PCT.has(name)?(1/v-1)*100:RESIST_BONUS_RE.test(name)?-v:v;
-const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):RESIST_BONUS_RE.test(name)?-d:d;
+
+// EVE prints a damage modifier raw — 1.225, not "+22.5%" — and MutaMarket follows the client, so
+// `damageMultiplier` is deliberately NOT in here. The DPS increase is a stat EVE does not display at
+// all, leaving no convention to honour, and MutaMarket shows it as a percentage. Unlike the rate
+// mapping above this one is monotonically INCREASING, so the ends of a range do not swap.
+const MUTA_MULT_PCT=new Set(["derived:damagePerTime"]);
+const mutaToDisplay=(name,v)=>MUTA_RATE_PCT.has(name)?(1/v-1)*100:MUTA_MULT_PCT.has(name)?(v-1)*100:RESIST_BONUS_RE.test(name)?-v:v;
+const mutaFromDisplay=(name,d)=>MUTA_RATE_PCT.has(name)?1/(1+d/100):MUTA_MULT_PCT.has(name)?1+d/100:RESIST_BONUS_RE.test(name)?-d:d;
 // Does the display mapping DECREASE as the raw value rises? Both transforms above are monotonic, so
 // probing two points settles it and there is no second list to keep in step with them.
 const mutaDisplayInverted=(name)=>mutaToDisplay(name,2)<mutaToDisplay(name,1);
