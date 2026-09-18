@@ -7,7 +7,7 @@ import { ASSET_SCOPE, assetLocation, libraryModule } from '../lib/abyssal-librar
 import { readAbyssals, saveAbyssalScan, editAbyssal } from '../lib/abyssal-store.js';
 import { scanAbyssals, importAbyssals } from '../lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, atJita44, abyssalSearchWords, abyssalMatchesSearch } from '../lib/abyssal-browser.js';
-import { bestFirstDirection, derivedAttributes } from '../lib/compare.js';
+import { bestFirstDirection, derivedAttributes, DERIVED_KEYS } from '../lib/compare.js';
 import { rolledAttributes } from '../lib/variation-items.js';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalInfo } from './abyssal-info.jsx';
@@ -67,10 +67,18 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
   const nodeName=node=>node.other?t('Other modules'):node.name;
   const navigate=next=>{onPathChange(next);setLimit(40);};
   const info=records.find(r=>r.itemId===infoId);
-  const attributes=[...new Set(filtered.flatMap(r=>Object.keys(r.mutations)))].sort();
+  // Computed once per record, not inside the comparator: a derived rate is a fresh merge over the
+  // stock attribute map, and a sort would otherwise redo it O(n log n) times across a library that
+  // runs to hundreds of rolls.
+  const derivedValues=new Map(filtered.map(r=>[r.itemId,derivedAttributes(rolledAttributes(r))]));
+  const valueOf=(r,key)=>DERIVED_KEYS.has(key)?derivedValues.get(r.itemId)?.[key]:r.mutations[key];
+  const mutationKeys=[...new Set(filtered.flatMap(r=>Object.keys(r.mutations)))].sort();
+  // The rates LEAD the picker, as they do in Variations: they are what a roll is actually chosen by,
+  // and this is a scrolling list where the first entries are the ones reached without hunting.
+  const attributes=[...[...DERIVED_KEYS].filter(k=>filtered.some(r=>Number.isFinite(valueOf(r,k)))),...mutationKeys];
   const activeSort=attributes.includes(sort)?sort:'';
   filtered.sort((a,b)=>{
-    if(activeSort){const av=a.mutations[activeSort],bv=b.mutations[activeSort];if(av==null)return bv==null?0:1;if(bv==null)return -1;const diff=(sortValue(activeSort,av)-sortValue(activeSort,bv))*(descending?-1:1);if(diff)return diff;}
+    if(activeSort){const av=valueOf(a,activeSort),bv=valueOf(b,activeSort);if(av==null)return bv==null?0:1;if(bv==null)return -1;const diff=(sortValue(activeSort,av)-sortValue(activeSort,bv))*(descending?-1:1);if(diff)return diff;}
     return (a.name.localeCompare(b.name)||a.itemId.localeCompare(b.itemId))*(descending&&!activeSort?-1:1);
   });
   const fitted=new Set(Object.values(slots??{}).flatMap(v=>Array.isArray(v)?v:[]).map(m=>m?.abyssalItemId).filter(Boolean));
@@ -129,7 +137,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
           shelf of rolls by shield boost is to see the best one, not to scroll to the bottom. Name
           has no values to learn from, so it stays A–Z. */}
       {!!filtered.length&&<AttributeSort Sheet={Sheet} value={activeSort} direction={descending?'desc':'asc'}
-        onChange={key=>{setSort(key);setDescending(bestFirstDirection(key,filtered.map(r=>({value:r.mutations[key],typeID:r.typeID})),sortValue)==='desc');}}
+        onChange={key=>{setSort(key);setDescending(bestFirstDirection(key,filtered.map(r=>({value:valueOf(r,key),typeID:r.typeID})),sortValue)==='desc');}}
         onReverse={()=>setDescending(d=>!d)}
         options={[{value:'',label:t('Name')},...attributes.map(a=>({value:a,label:attributeLabel(a)}))]}/>}
     </div>
@@ -165,7 +173,7 @@ export function AbyssalLibrary({slotType,search,onSelect,slots,marketTree,path,o
                 it and so cannot be read off them: a damage mod that gained 1% damage and lost 2% rate
                 of fire shows one better number and one worse, and only this says which won. Trailing
                 the rolled attributes, as it does in Variations, because it is a summary of them. */}
-            {Object.entries(derivedAttributes(rolledAttributes(item))).map(([a,v])=>
+            {Object.entries(derivedValues.get(item.itemId)??{}).map(([a,v])=>
               <span key={a} style={{color:C.textMid}}>{attributeLabel(a)} <span style={{fontWeight:700,color:C.text}}>{formatValue(a,v)}</span></span>)}
           </div>
           {/* Last, under the rolls, where Variations puts the same line: it is the logistics footnote
