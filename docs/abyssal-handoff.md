@@ -864,3 +864,73 @@ and tester availability are not independently verified.
 **Android is now two releases behind at 1.25.10 (versionCode 99)** — it owes testers
 both the search carry-over (1.25.11) and this layout pass. Its next changelog baseline
 is still **1.25.10**.
+
+### My Abyssals shows and sorts by the derived rates — 1.25.13, iOS ONLY
+
+Owen, on a screenshot of the My Abyssals results inside the Add Module sheet:
+*"can you display DPS Multiplier on cards for dps mods? its a pretty important stat"* —
+then, once I reported Variations already had it, *"i guess it's really just the 'my
+abyssals' browser"*. So this was never a new stat. `derived:damagePerTime` has existed
+in `src/lib/compare.js` since #16 and is already labelled "DPS Multiplier"; the gap was
+that `AbyssalLibrary`'s row rendered `item.mutations` and stopped there.
+
+**Why the rate is load-bearing rather than a convenience.** The three test rolls: damage
+multipliers 1.109 / 1.106 / 1.100 map to DPS multipliers 1.228 / 1.239 / 1.247 — exactly
+reversed. A mutaplasmid moves damage and rate of fire independently, so a roll shows one
+better number and one worse and **neither half of the ratio can tell you which won**.
+Sorting a shelf by Damage Multiplier was therefore ordering it by the wrong thing.
+
+Two changes, both in `src/components/abyssal-library.jsx`:
+
+1. The row's stat line now trails the rolled attributes with whatever
+   `derivedAttributes()` yields for that roll — DPS Multiplier on damage mods, and Repair
+   Rate / Repair per Cap / Mining Rate on the roll types that support them. That is not
+   scope creep: they are the same class of number and the same code path, and a repair
+   roll is judged by rate for the identical reason.
+2. The sort picker offers those keys too, **leading** the rolled attributes.
+
+**The two orderings in Variations are deliberately opposite, and both were mirrored.** A
+Variations row puts derived rates LAST (`variation-items.js` builds `statKeys` with
+`...derived` appended) because the row shows only the first six stats with a delta, and a
+summary must not push the halves it is made of off the end. The sort SHEET puts them
+FIRST (`attributes` leads with `derived`) because it is a scrolling list and the top
+entries are the ones reached without hunting. My Abyssals now does both the same way.
+
+**One shared helper, not two merges.** A roll is a set of *base-value overrides*, so a
+rate computed from `mutations` alone is missing whichever half the plasmid did not touch —
+a shield booster that rolled only its amount has no duration to divide by.
+`rolledAttributes` (the merge over the stock attribute map) was private to
+`variation-items.js` and is now exported, so both views compute derived identically.
+
+**Derived values are memoized per record, not computed in the comparator.** A naive
+`derivedAttributes(rolledAttributes(r))` inside the sort callback re-merges a ~40-entry
+map O(n log n) times; Owen's own library is 244 rolls, and 1.25.8/9/10 were all
+performance fixes. `derivedValues` is a `Map` keyed by `itemId`, built once per render and
+read by the comparator, the picker's option list, `bestFirstDirection` and the row.
+
+Direction needs no special case: `directionOf` short-circuits on `DERIVED_KEYS` with
+`v > b`, because every derived key is a rate and more of it is the whole reason someone
+sorted by it. Confirmed live — picking DPS Multiplier lands 1.247 / 1.239 / 1.228 with a
+↓ arrow, and the reverse control flips it.
+
+The `derived:` prefix is what keeps these out of a MutaMarket query: `abyssalAttrSpan`
+finds no match, so `attrFilterFor` returns no filter rather than an attribute name the
+server would 400 on. Don't "tidy" the prefix away.
+
+**A node probe of the dogma bundle will lie to you.** `initEngine` rewrites
+`TYPES[id].a` from ID-keyed to NAME-keyed **in place** (`dogma-engine.js:50-62`), so
+`dogma-types.json` on disk holds `{"4":0,"9":40,…}` while runtime `TYPES` holds
+`{damageMultiplier:1.1,…}`. `require`-ing the JSON shows `undefined` for every named
+attribute. Probe through the ESM import path instead.
+
+`npm run verify` passed 1,883 checks (no new checks — this is display and ordering over
+machinery the suite already pins). Verified in the production preview on `:4173` with
+three synthetic MFS II rolls, deleted afterwards (`remaining 0`).
+
+iOS **1.25.13 (132)** uploaded successfully from commit `e41e9e8`:
+https://github.com/rexmikakka-bit/visviva/actions/runs/35311944233
+Every step green; log confirms `UPLOAD SUCCEEDED with no errors`. Apple processing
+and tester availability are not independently verified.
+
+**Android is still at 1.25.10 (versionCode 99), now three releases behind**, and its next
+changelog baseline is still **1.25.10**.
