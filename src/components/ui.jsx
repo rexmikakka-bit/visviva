@@ -2152,8 +2152,10 @@ const DERIVED_UNITS={"derived:repairPerSecond":{scale:1,unit:"HP/s",dp:1},
   "derived:repairPerCap":{scale:1,unit:"HP/GJ",dp:2},
   "derived:yieldPerSecond":{scale:1,unit:"m³/s",dp:2},
   // 1dp keeps exactly the discrimination the raw value's third digit carried (1.247 -> 24.7%), which
-  // is where two rolls a trader is choosing between differ.
-  "derived:damagePerTime":{scale:1,unit:"%",dp:1}};
+  // is where two rolls a trader is choosing between differ. `pad` holds that decimal even when it is
+  // a zero: "24%" sitting between "22.8%" and "24.7%" reads as a number that got cut short rather
+  // than one that landed exactly on the tenth.
+  "derived:damagePerTime":{scale:1,unit:"%",dp:1,pad:true}};
 const mutaUnit=(name)=>{
   if(DERIVED_UNITS[name]) return DERIVED_UNITS[name];
   if(MUTA_RATE_PCT.has(name)||RESIST_BONUS_RE.test(name)) return {scale:1,unit:"%",dp:2};
@@ -2209,7 +2211,7 @@ const trimZeros=(s)=>s.includes('.')?s.replace(/\.?0+$/,''):s;
 // same way a value is, without a raw number to convert that would not survive the round trip.
 const mutaDisplayStr=(name,d)=>{
   const u=mutaUnit(name);
-  if(u.dp!=null) return trimZeros((d/u.scale).toFixed(u.dp));
+  if(u.dp!=null){const s=(d/u.scale).toFixed(u.dp);return u.pad?s:trimZeros(s);}
   const a=Math.abs(d); return trimZeros(a>=100?d.toFixed(1):a>=1?d.toFixed(2):d.toFixed(4));
 };
 const mutaValStr=(name,v)=>mutaDisplayStr(name,mutaToDisplay(name,v));
