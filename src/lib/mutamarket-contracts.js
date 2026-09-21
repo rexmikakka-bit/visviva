@@ -12,6 +12,7 @@
 // whole session — `expiresAt` is exposed so the UI can show when it was last checked.
 import { retryESI } from './abyssal-import.js';
 import { networkJSON } from './network-request.js';
+import { FORGE_REGION_ID } from './mutamarket.js';
 
 export const ESI_BASE='https://esi.evetech.net/latest';
 const PAGE_CONCURRENCY=8;
@@ -58,6 +59,21 @@ export function contractIndexFor(regionId,{onProgress}={}){
 
 export function contractIndexExpired(contractIndex,now=Date.now()){
   return !contractIndex||(contractIndex.expiresAt!=null&&now>=contractIndex.expiresAt);
+}
+
+// Which region's index names a listing's station. Searching every region has no region of its own,
+// but the contracts it returns are nowhere near evenly spread: sampled live across four abyssal
+// types, 94–99% of them were in The Forge. A contract ID is global while the index is region-scoped,
+// so a hit PROVES the contract is in The Forge rather than guessing it, and a miss stays unknown —
+// which is the only thing those rows could say before the index was consulted at all.
+//
+// The failure rule differs with what the station is FOR. Without a region the station is a label, so
+// a failed scan costs the label and nothing else; the listings were fetched from MutaMarket and an
+// ESI hiccup is no reason to lose them. With one it can be a filter, where a null index would
+// quietly pass every listing the filter existed to drop, so there the failure propagates.
+export async function stationIndexFor(regionId,{index=contractIndexFor}={}){
+  if(regionId!=null)return index(regionId);
+  try{ return await index(FORGE_REGION_ID); }catch{ return null; }
 }
 
 // Returns null when the contract is not in the index, which is NOT the same as "not at this

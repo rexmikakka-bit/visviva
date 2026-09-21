@@ -42,7 +42,7 @@ import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, abyssalSearchWords, abyssalMatchesSearch, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
 import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
 import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
-import { fetchContractIndex, stationOf, withStations, contractIndexExpired } from './lib/mutamarket-contracts.js';
+import { fetchContractIndex, stationOf, withStations, contractIndexExpired, stationIndexFor } from './lib/mutamarket-contracts.js';
 import { fetchListings } from './lib/mutamarket-client.js';
 import { normalizeMarketSettings, marketStationId, MARKET_DEFAULTS, priceAtStop, stopAtPrice, parsePriceInput, PRICE_MIN, PRICE_MAX, PRICE_STOPS } from './lib/market-settings.js';
 import { shoppingList, contractExpiry, abyssalProvenance } from './lib/shopping-list.js';
@@ -7480,6 +7480,31 @@ Nanofiber Internal Structure II
     withStations(all,contractIndex,{stationId:JITA_4_4_STATION_ID}).some(l=>l.itemId==='3')?1:0,0,0);
   check('mutamarket','without a station filter every listing is kept',withStations(all,contractIndex).length,3,0);
   check('mutamarket','an unresolved station stays null rather than guessing',withStations(all,contractIndex)[2].stationId===null?1:0,1,0);
+  // Searching every region still gets station names, because the contracts are not spread evenly:
+  // 94–99% of them are in The Forge, and a global contract ID found in a region-scoped index proves
+  // the contract is there. Without this every Anywhere row read "Station unknown".
+  const asked=[];
+  const lend=async regionId=>{asked.push(regionId);return contractIndex;};
+  check('mutamarket','searching every region borrows The Forge index to name stations',
+    (await stationIndexFor(null,{index:lend}))===contractIndex?1:0,1,0);
+  check('mutamarket','and asks for The Forge rather than a region nobody chose',asked.join(','),String(FORGE_REGION_ID));
+  const chosen=[];
+  await stationIndexFor(10000043,{index:async r=>{chosen.push(r);return contractIndex;}});
+  check('mutamarket','a chosen region still indexes itself',chosen.join(','),'10000043');
+  // The station is a LABEL when no region was chosen — nothing filters on it — so a failed scan
+  // costs the label and not the listings, which MutaMarket already returned.
+  const down=async()=>{throw new Error('ESI down');};
+  check('mutamarket','a failed scan costs the station name, not the listings',
+    (await stationIndexFor(null,{index:down}))===null?1:0,1,0);
+  // With a region it can be a station filter, where a null index would silently pass every listing
+  // the filter existed to drop. That failure has to stay visible.
+  let scanFailed=false;
+  try{await stationIndexFor(FORGE_REGION_ID,{index:down});}catch{scanFailed=true;}
+  check('mutamarket','but a scan a station filter depends on fails loudly',scanFailed?1:0,1,0);
+  check('mutamarket','a borrowed index names the Forge contracts in an all-region list',
+    withStations(all,await stationIndexFor(null,{index:lend})).map(l=>l.stationId).join(','),
+    `${JITA_4_4_STATION_ID},60003460,`);
+
   // A dropped page would look identical to "those contracts are elsewhere", silently hiding real
   // Jita listings — the same rule scanAbyssals applies to a failed asset page.
   let partial=false;

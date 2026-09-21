@@ -13,7 +13,7 @@ import { abyssalTypeIds, listingCost, JITA_4_4_STATION_ID, savedMarketListings }
 import { useOnline } from '../lib/use-online.js';
 import { contractExpiry } from '../lib/shopping-list.js';
 import { fetchListings } from '../lib/mutamarket-client.js';
-import { contractIndexFor, withStations } from '../lib/mutamarket-contracts.js';
+import { stationIndexFor, withStations } from '../lib/mutamarket-contracts.js';
 import { readMarketSettings, writeMarketSettings, marketStationId } from '../lib/market-settings.js';
 import { createPortal } from "react-dom";
 import { C, getTheme } from "../theme.js";
@@ -1814,9 +1814,9 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
           {signal:ctrl.signal})));
         // Stations are joined even when the filter is off, so a kept listing can still SAY where it
         // is. `withStations` drops the unresolvable ones only when a station is actually demanded.
-        // The index is per region, so searching every region has none to join against: those rows
-        // say the station is unknown rather than costing a scan of all of New Eden to name it.
-        const index=market.regionId==null?null:await contractIndexFor(market.regionId);
+        // Searching every region has no region to index; `stationIndexFor` explains which one it
+        // borrows and why a hit there is proof rather than a guess.
+        const index=await stationIndexFor(market.regionId);
         const located=withStations(pages.flatMap(p=>p.listings),index,{stationId:marketStationId(market)});
         if(active){setListings(located);setMarketState({busy:false,error:'',truncated:pages.some(p=>p.truncated)});}
       }catch(e){
