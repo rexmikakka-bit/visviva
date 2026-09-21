@@ -126,6 +126,20 @@ function usesEngRange(catKey,xKey){
   return xKey!=="dist" && (catKey==="damage" || (catKey==="reps" && xKey==="time"));
 }
 
+// A CUMULATIVE y axis integrates over time. When time is the x axis that window is the axis itself
+// and needs no control; anywhere else it is a variable the curve depends on as strongly as it
+// depends on range, and leaving it implicit makes the magnitude meaningless. It is also why this
+// window must NOT go through dom(): dom() scales by 1/xZoom, so a window that is not the axis would
+// silently rescale when you zoomed the axis, and the same fit at the same range would report
+// different totals at different zoom levels.
+function usesTimeWindow(catKey,yKey,xKey){
+  if (xKey==="time") return false;
+  return (catKey==="damage" && yKey==="inflicted") || (catKey==="reps" && yKey==="repTotal");
+}
+// Ten minutes of sustained fire is past any engagement worth graphing, and the ceiling bounds the
+// event simulation: the sweep axes run it at ~125 sample points, so an unbounded window is a hang.
+const WINDOW_S_MAX=600, DEFAULT_WINDOW_S=120;
+
 // Your own fitted web(s) at a given distance — range-scaled and stacking-penalised, same as the
 // Damage graph's application curve. Shared so the transversal/angular readouts can't disagree with
 // that curve about how fast a webbed target is actually moving; see the damage curve's own
@@ -163,6 +177,8 @@ function generateCurve(catKey,yKey,xKey,params={}){
   // velocity is infinite and turret tracking collapses, so damage-over-time against a moving target
   // read near zero for reasons that had nothing to do with the fit.
   const engDist = params.engRangeKm!=null ? Math.max(0,params.engRangeKm)*1000 : engagementDistanceM(cs);
+  // The window a cumulative y axis integrates over, when time is not the x axis. See usesTimeWindow.
+  const winSec = Math.min(WINDOW_S_MAX,Math.max(0,params.timeWindowS ?? DEFAULT_WINDOW_S));
   let pts=[],xMax,yMax;
   if(catKey==="damage"){
     const weapons = cs?.graphWeapons ?? [];
@@ -316,21 +332,26 @@ function generateCurve(catKey,yKey,xKey,params={}){
       evts.sort((a,b)=>a[0]-b[0]);
       return evts;
     };
+    // Total damage landed within the Time window at one engagement — the cumulative counterpart to
+    // `both`, with the same signature so every x axis can pick one and sample it identically.
+    const inflicted = (distM, tgtSig, tgtSpeed, free) => {
+      const ev = damageEvents(winSec, distM, tgtSig, tgtSpeed, free);
+      return [ev.reduce((s,e)=>s+e[1],0), ev.reduce((s,e)=>s+e[2],0)];
+    };
+    // Every x axis samples through this. The speed and sig axes used to call `both` unconditionally,
+    // which returns DPS — so those four axis pairs plotted DPS under a "Damage inflicted" label.
+    const sample = yKey==="inflicted" ? inflicted : both;
+    // Cumulative totals are orders of magnitude above the DPS the rate axes scale to, so they take
+    // their ceiling from the data. The ghost column counts, or it gets clipped exactly where the
+    // application gap is worth seeing.
+    const sweepYMax = () => yKey==="inflicted"
+      ? (Math.max(...pts.map(p=>Math.max(p[1],p[2]??0)))||100)*1.1
+      : (wantVolley?baseVolley:baseDps)*1.15;
     if (baseDps === 0 && baseVolley === 0) { pts=[[0,0],[40,0]]; xMax=40; yMax=100; }
     else if (xKey === "dist") {
       const step = distMaxKm/80;
-      // "Damage inflicted" against distance used to plot a CONSTANT ZERO — the axis pair rendered a
-      // flat line on the floor. It now sums the same volleys the time axis draws, over the same
-      // window, at each range: "how much do I actually land in two minutes at X km".
-      const TMAX=dom(120);
-      for (let km=0; km<=distMaxKm+1e-9; km+=step){
-        if (yKey==="inflicted"){
-          const ev=damageEvents(TMAX, km*1000, profSig, profVel);
-          pts.push([km, ev.reduce((s,e)=>s+e[1],0), ev.reduce((s,e)=>s+e[2],0)]);
-        } else pts.push([km, ...both(km*1000, profSig, profVel)]);
-      }
-      xMax=distMaxKm;
-      yMax=yKey==="inflicted" ? (Math.max(...pts.map(p=>p[1]))||100)*1.1 : (wantVolley?baseVolley:baseDps)*1.15;
+      for (let km=0; km<=distMaxKm+1e-9; km+=step) pts.push([km, ...sample(km*1000, profSig, profVel)]);
+      xMax=distMaxKm; yMax=sweepYMax();
     }
     else if (xKey === "time") {
       if (yKey === "inflicted") {
@@ -371,10 +392,10 @@ function generateCurve(catKey,yKey,xKey,params={}){
         }
       }
     }
-    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...both(engDist, profSig, v, "vel")]); xMax=vEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig, vmax*p/100, "vel")]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, ...both(engDist, sg, profVel, "sig")]); xMax=sEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
-    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...both(engDist, profSig*p/100, profVel, "sig")]); xMax=pEnd; yMax=(wantVolley?baseVolley:baseDps)*1.15; }
+    else if (xKey === "tgtSpeedMs") { const vEnd=dom(3000), vStep=vEnd/120; for(let v=0;v<=vEnd+1e-9;v+=vStep) pts.push([v, ...sample(engDist, profSig, v, "vel")]); xMax=vEnd; yMax=sweepYMax(); }
+    else if (xKey === "tgtSpeedPct") { const vmax=profVel||1000; const pEnd=dom(100), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...sample(engDist, profSig, vmax*p/100, "vel")]); xMax=pEnd; yMax=sweepYMax(); }
+    else if (xKey === "tgtSigM") { const sEnd=dom(1000), sStep=sEnd/125; for(let sg=0;sg<=sEnd+1e-9;sg+=sStep) pts.push([sg, ...sample(engDist, sg, profVel, "sig")]); xMax=sEnd; yMax=sweepYMax(); }
+    else { const pEnd=dom(200), pStep=pEnd/100; for(let p=0;p<=pEnd+1e-9;p+=pStep) pts.push([p, ...sample(engDist, profSig*p/100, profVel, "sig")]); xMax=pEnd; yMax=sweepYMax(); }
   }else if(catKey==="ewar"){
     const P=params.ownProj||{};
     const rf=(o,f,d)=>calcRangeFactor(o,f,d,true);
@@ -447,10 +468,9 @@ function generateCurve(catKey,yKey,xKey,params={}){
     else{
       let dmax=reachM>0?reachM/1000*1.05:30;dmax=dmax<=20?Math.ceil(dmax):dmax<=60?Math.ceil(dmax/5)*5:Math.ceil(dmax/10)*10;dmax=dom(dmax);
       const step=dmax/80;
-      // "Total repaired" against distance was `rate * 10` — an arbitrary ten seconds with nothing
-      // behind it, and no cycles or spool. It now runs the same cycle simulation the time axis uses
-      // over the same window, so the two axes report the same quantity.
-      const tEnd=dom(120);
+      // "Total repaired" against distance runs the same cycle simulation the time axis uses, over the
+      // Time window, so the two axes report the same quantity.
+      const tEnd=winSec;
       const totalAt=(dM)=>reps.reduce((sum,r)=>{
         const amt=(r.amount??r.rawPS*(r.cycleS||1))*rf(r.optimal,r.falloff,dM);
         const cyc=r.cycleS||1;
@@ -1134,12 +1154,16 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // field shows defaultEngRangeKm and moves with the ship you are looking at. Typing pins it, which
   // is the point: a pinned range is a stated engagement and has to survive switching fit tabs.
   const[engRangeKm,setEngRangeKm]=useState(()=>gp('engRangeKm',null));
+  // The window a cumulative y axis integrates over when time is not the x axis. null is the 120 s
+  // default rather than a pinned value, mirroring engRangeKm — and, like it, a stated window is part
+  // of the question being asked, so it survives switching fit tabs.
+  const[winSec,setWinSec]=useState(()=>gp('winSec',null));
   // One write whenever any of it changes. Cheap, and it means leaving by ANY route (swipe, tab bar,
   // backgrounding the app) keeps the setup — there is no "on unmount" hook to miss.
   useEffect(()=>{
     try{localStorage.setItem(GRAPH_PREFS_KEY,JSON.stringify(
-      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm}));}catch{}
-  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm]);
+      {catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm,winSec}));}catch{}
+  },[catKey,yKey,xKey,axisByCat,targetProfile,targetFit,targetMwd,targetAngle,selfAngle,targetVel,selfVel,targetVelMax,tgtSig,showTransversal,xZoom,yZoom,cursorX,exactHeadline,engRangeKm,winSec]);
   // The ladder the +/− buttons walk. The scrub gesture is continuous and lands BETWEEN these, so
   // stepZoom takes the first rung strictly past the current value rather than indexing off an exact
   // match — an in-between value used to miss the findIndex entirely and jump back to 1×.
@@ -1189,6 +1213,8 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
   // number that was plotted.
   const engRangeEff=engRangeKm??defaultEngRangeKm(catKey,cs);
   const showRangeField=usesEngRange(catKey,validX);
+  const winSecEff=winSec??DEFAULT_WINDOW_S;
+  const showWindowField=usesTimeWindow(catKey,validY,validX);
   // The fit's OWN outgoing projection (reps/webs/neuts/damps/ECM it applies to others) for the EWAR/Reps graphs.
   const ownProj=useMemo(()=>{
     const sn=ship?.name; if(!sn) return null;
@@ -1232,7 +1258,7 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
     if(targetProfile===TARGET_FIT)return (targetMwd&&targetFitStats?.hasProp)?targetFitStats.noMwd:null;
     return (targetMwd&&TARGET_PROFILES[targetProfile]?.mwdSig!=null)?profileTarget(targetProfile,false):null;
   },[targetMwd,targetProfile,targetFitStats]);
-  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom,engRangeKm:engRangeEff});
+  const{pts,xMax,yMax:autoYMax}=generateCurve(catKey,validY,validX,{targetProfile,shipVelFrac:selfVelEff/(ship?.maxVelocity||500),ship:ship??{},cs,ownProj,selfVel:selfVelEff,targetVel,selfAngle,targetAngle,tgtSig,tgtSpeed:targetVel,tgtNoMwd,xZoom,engRangeKm:engRangeEff,timeWindowS:winSecEff});
   // xMax already reflects xZoom (the curve is generated across the zoomed domain, so it actually
   // extends to the new axis edge instead of stopping short). Y just rescales the axis.
   const yMax=autoYMax/yZoom;
@@ -1374,20 +1400,35 @@ function GraphTab({ship,slots,skills,implants,boosters,drones,fighters,factorInR
           <button onClick={()=>{z.setZoom(v=>stepZoom(v,-1));}} disabled={atMin} style={btn(atMin)}>+</button>
         </div>);
       })}
-      {/* The engagement range every X axis that isn't range is read at. It lives here rather than in
-          TargetControls because Reps needs it too and has no target panel — and because it is a
-          property of the axis pair, which is what this row is. */}
-      {showRangeField&&<div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8}}>
-        <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase"}}>{t("Range")}</span>
-        <ScrubField value={engRangeEff} display={Math.round(engRangeEff)} anchor={30}
-          title={t("Type a range, or press and slide sideways to sweep it")}
-          onType={e=>{const v=e.target.value;setEngRangeKm(v===""?null:Math.max(0,Number(v)));}}
-          onScrub={setEngRangeKm}
-          style={{width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${engRangeKm==null?C.border:catColor}`,color:C.text}}/>
-        <span style={{fontSize:10,color:C.textMute}}>km</span>
-        {/* Only offered once it is pinned — with nothing to undo, a reset button is a dead control. */}
-        {engRangeKm!=null&&<button onClick={()=>setEngRangeKm(null)} title={t("Back to this fit's own reach")}
-          style={{padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>{t("Auto")}</button>}
+      {/* The two variables a curve reads that are neither axis: the engagement range every X axis
+          that isn't range is evaluated at, and the window a cumulative Y axis integrates over. They
+          live here rather than in TargetControls because Reps needs both and has no target panel —
+          and because they are properties of the axis pair, which is what this row is. They share one
+          wrapping row so an axis pair needing both doesn't push the plot down twice. */}
+      {(showRangeField||showWindowField)&&<div style={{gridColumn:"1 / -1",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        {showRangeField&&<>
+          <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase"}}>{t("Range")}</span>
+          <ScrubField value={engRangeEff} display={Math.round(engRangeEff)} anchor={30}
+            title={t("Type a range, or press and slide sideways to sweep it")}
+            onType={e=>{const v=e.target.value;setEngRangeKm(v===""?null:Math.max(0,Number(v)));}}
+            onScrub={setEngRangeKm}
+            style={{width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${engRangeKm==null?C.border:catColor}`,color:C.text}}/>
+          <span style={{fontSize:10,color:C.textMute}}>km</span>
+          {/* Only offered once it is pinned — with nothing to undo, a reset button is a dead control. */}
+          {engRangeKm!=null&&<button onClick={()=>setEngRangeKm(null)} title={t("Back to this fit's own reach")}
+            style={{padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>{t("Auto")}</button>}
+        </>}
+        {showWindowField&&<>
+          <span style={{fontSize:9,fontWeight:700,color:C.textMute,letterSpacing:.8,textTransform:"uppercase"}}>{t("Time")}</span>
+          <ScrubField value={winSecEff} display={Math.round(winSecEff)} anchor={DEFAULT_WINDOW_S}
+            title={t("Type a window, or press and slide sideways to sweep it")}
+            onType={e=>{const v=e.target.value;setWinSec(v===""?null:Math.min(WINDOW_S_MAX,Math.max(0,Number(v))));}}
+            onScrub={v=>setWinSec(Math.min(WINDOW_S_MAX,Math.max(0,v)))}
+            style={{width:58,padding:"3px 5px",borderRadius:5,fontSize:12,fontWeight:700,textAlign:"center",background:C.surface,border:`1px solid ${winSec==null?C.border:catColor}`,color:C.text}}/>
+          <span style={{fontSize:10,color:C.textMute}}>s</span>
+          {winSec!=null&&<button onClick={()=>setWinSec(null)} title={t("Back to the default window")}
+            style={{padding:"3px 8px",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>{t("Auto")}</button>}
+        </>}
       </div>}
     </div>
     {displayVal!=null&&<div style={{padding:"8px 14px 0",display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
