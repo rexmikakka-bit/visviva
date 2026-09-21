@@ -46,7 +46,7 @@ export function savedMarketListings(listings,{typeIds,regionId,stationId=null,ma
   return listings.filter(l=>{
     const expires=contractExpiry(l.expiresAt);
     return typeIds.includes(l.dynamicTypeId)&&l.contractId!=null&&expires!=null&&expires>now&&
-      (l.regionId===regionId||(regionId===FORGE_REGION_ID&&l.stationId===JITA_4_4_STATION_ID))&&
+      (regionId==null||l.regionId===regionId||(regionId===FORGE_REGION_ID&&l.stationId===JITA_4_4_STATION_ID))&&
       (stationId==null||l.stationId===stationId)&&matchesContractFilters(l,{individuallyPriced,singleItem,showAuctions})&&withinBudget(l,{maxPrice});
   });
 }

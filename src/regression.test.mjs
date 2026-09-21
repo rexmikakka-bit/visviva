@@ -44,7 +44,7 @@ import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, 
 import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
 import { fetchContractIndex, stationOf, withStations, contractIndexExpired } from './lib/mutamarket-contracts.js';
 import { fetchListings } from './lib/mutamarket-client.js';
-import { normalizeMarketSettings, MARKET_DEFAULTS, priceAtStop, stopAtPrice, parsePriceInput, PRICE_MIN, PRICE_MAX, PRICE_STOPS } from './lib/market-settings.js';
+import { normalizeMarketSettings, marketStationId, MARKET_DEFAULTS, priceAtStop, stopAtPrice, parsePriceInput, PRICE_MIN, PRICE_MAX, PRICE_STOPS } from './lib/market-settings.js';
 import { shoppingList, contractExpiry, abyssalProvenance } from './lib/shopping-list.js';
 import { contractLinkList, stationSystems } from './lib/contract-links.js';
 import { abyssalValue } from './lib/abyssal-value.js';
@@ -7558,6 +7558,18 @@ Nanofiber Internal Structure II
     normalizeMarketSettings({maxPrice:'nonsense'}).maxPrice,MARKET_DEFAULTS.maxPrice,0);
   // Explicit null is a real choice ("Any"), and must not be rewritten to the default ceiling.
   check('mutamarket','no ceiling is kept as no ceiling',normalizeMarketSettings({maxPrice:null}).maxPrice===null?1:0,1,0);
+  // Same rule for the region: null is "Anywhere", an absent field is a fresh install. The two used
+  // to be the same value, so the market could only ever be asked about The Forge.
+  check('mutamarket','no region is kept as no region',normalizeMarketSettings({regionId:null}).regionId===null?1:0,1,0);
+  check('mutamarket','an absent region still starts in The Forge',normalizeMarketSettings({}).regionId,MARKET_DEFAULTS.regionId,0);
+  check('mutamarket','a garbage region falls back rather than widening to all of New Eden',
+    normalizeMarketSettings({regionId:'10000002'}).regionId,MARKET_DEFAULTS.regionId,0);
+  // Jita 4-4 is a station INSIDE a region, resolved by joining that one region's contract index.
+  // Left on with no region it would filter every listing away as unresolved, so it cannot survive.
+  check('mutamarket','pinning a station cannot outlive its region',
+    normalizeMarketSettings({regionId:null,jitaOnly:true}).jitaOnly?1:0,0,0);
+  check('mutamarket','and no station is demanded of an all-region search',
+    marketStationId(normalizeMarketSettings({regionId:null,jitaOnly:true}))===null?1:0,1,0);
   // The fits filter can only ever hide rows, so it has to be opt-in and it has to round-trip — a
   // toggle that quietly reset itself would look like the variant list losing modules at random.
   // ── The ceiling slider's scale ──
@@ -7748,6 +7760,14 @@ Nanofiber Internal Structure II
   const scope={typeIds:[1],regionId:10000002,stationId:60003760,now};
   check('offline-market','matching cached listing remains usable',savedMarketListings([listing],scope).length,1,0);
   check('offline-market','cached fallback respects station, family, expiry and budget',savedMarketListings([listing,{...listing,stationId:null},{...listing,dynamicTypeId:2},{...listing,expiresAt:'2020-01-01'}],{...scope,maxPrice:1}).length,0,0);
+  // Searching every region has to reach the cache too. A listing is STORED with the region it was
+  // fetched under, so matching the query's region exactly would have made the offline fallback of an
+  // all-region search empty — the one case where the cache holds the most.
+  const elsewhere={...listing,itemId:'far',regionId:10000043,stationId:60008494};
+  check('offline-market','an all-region search reaches cached listings from any region',
+    savedMarketListings([{...listing,regionId:10000002},elsewhere],{...scope,regionId:null,stationId:null}).length,2,0);
+  check('offline-market','and a region-scoped search still excludes the others',
+    savedMarketListings([elsewhere],{...scope,stationId:null}).length,0,0);
   const savedFetch=globalThis.fetch;
   try{
     globalThis.fetch=()=>new Promise(()=>{});

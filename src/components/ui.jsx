@@ -1814,8 +1814,10 @@ function ModuleVariationsTab({typeID, currentName, onSwap, readOnly, resourceHea
           {signal:ctrl.signal})));
         // Stations are joined even when the filter is off, so a kept listing can still SAY where it
         // is. `withStations` drops the unresolvable ones only when a station is actually demanded.
-        const located=withStations(pages.flatMap(p=>p.listings),await contractIndexFor(market.regionId),
-          {stationId:marketStationId(market)});
+        // The index is per region, so searching every region has none to join against: those rows
+        // say the station is unknown rather than costing a scan of all of New Eden to name it.
+        const index=market.regionId==null?null:await contractIndexFor(market.regionId);
+        const located=withStations(pages.flatMap(p=>p.listings),index,{stationId:marketStationId(market)});
         if(active){setListings(located);setMarketState({busy:false,error:'',truncated:pages.some(p=>p.truncated)});}
       }catch(e){
         if(active&&e.name!=='AbortError'){

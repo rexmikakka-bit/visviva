@@ -503,11 +503,19 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
   const _rigsAffected = (slots.rigs ?? []).some(r =>
     r?.typeID && TYPES[r.typeID]?.a?.nullSecModifier != null);
 
-  const updateMod=(secKey,modId,updated,keepOpen=false,replace=false)=>{
+  const updateMod=(secKey,modId,updated,keepOpen=false,replace=false,groupIds=null)=>{
     setSlots(prev=>{
       const sec=[...prev[secKey]],idx=sec.findIndex(m=>m.id===modId);
       if(idx<0)return prev;
       if(updated.abyssalItemId&&fittedAbyssalIds(prev,modId).has(updated.abyssalItemId))return prev;
+      // Swapping to another variant from a grouped row swaps the whole rack, like its Remove button
+      // and state toggle — replacing one member of a 5x row would silently split it into 4x + 1x.
+      // A specific abyssal roll is the exception: it is one physical item, so it can only ever fill
+      // one slot, and computeDisplayRows gives every mutated module a row of its own anyway.
+      if(replace&&!updated.abyssalItemId&&!updated.mutaplasmid&&groupIds&&groupIds.length>1){
+        const ids=new Set(groupIds);
+        return{...prev,[secKey]:sec.map(m=>ids.has(m.id)?{...m,...updated,id:m.id}:m)};
+      }
       // Loading a charge fans out to every identical module in the rack — but only for things
       // that are actually GROUPED. It used to match on name alone, so two Skirmish Command
       // Bursts always ended up with the same charge and running two different scripts was
@@ -1099,7 +1107,7 @@ function FitTab({undo,undoDepth,redo,redoDepth,ship,slots,setSlots,skills,implan
           </div>);
         })}
       </div>
-      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onReplaceMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,false,true)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)} usedAbyssalIds={fittedAbyssalIds(slots,menuMod.id)}/>}
+      {menuMod&&<ModuleMenu mod={menuMod} groupCount={menuRow?.count??1} onClose={()=>setModuleMenu(null)} onUpdateMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u)} onUpdateModLive={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,true)} onReplaceMod={u=>updateMod(moduleMenu.secKey,moduleMenu.modId,u,false,true,menuRow?.groupIds)} onRemove={()=>removeMod(moduleMenu.secKey,moduleMenu.modId,menuRow?.groupIds)} onDuplicate={duplicateRoom(moduleMenu.secKey,menuMod)>0?n=>duplicateMod(moduleMenu.secKey,menuMod,n):null} fillCount={hardpointRoom(moduleMenu.secKey,menuMod)} onFillHardpoints={()=>fillHardpoints(moduleMenu.secKey,menuMod)} resourceHeadroom={resourceHeadroom} engineItem={_cs.fittedItems?.get(moduleMenu.modId)} chargeStats={_cs.fittedChargeStats?.get(moduleMenu.modId)} usedAbyssalIds={fittedAbyssalIds(slots,menuMod.id)}/>}
       {/* The single subsystem menu: description AND the rest of the family, with the Variations tab
           doing the swapping that used to need a separate picker. */}
       {subInfo&&<ItemDetailSheet typeID={subInfo.typeID} name={subInfo.name}
