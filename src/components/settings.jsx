@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { C, THEMES, THEME_LABELS } from "../theme.js";
 import { BackupPanel } from "./backup.jsx";
 import { SKILL_CATALOG, ALPHA_SKILLS } from "../calc.js";
 import { EsiSettingsPanel, EsiSkillAlignPanel } from "./esi-ui.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../lib/use-sheet-drag.jsx";
 import { availableLocales, t } from "../lib/i18n.js";
+import { primePrices, getCachedPrices } from "../prices.js";
+import { allPriceableTypeIDs } from "../lib/core.js";
 
 // Skill groups are DERIVED from SKILL_CATALOG rather than hand-listed. The old hardcoded table
 // covered 28 skills; the catalog has 388 — every skill the engine reads PLUS every skill any
@@ -224,6 +226,65 @@ function LanguagePicker({locale,setLocale}){
   </div>);
 }
 
+// Fills the price cache for every item in the game at once, so a module you have not opened still
+// has a figure — with its age attached — when there is no connection. See primePrices in prices.js.
+//
+// FUZZWORK ONLY, and that is a property of the endpoints rather than a preference: Fuzzwork prices a
+// whole batch per request, ceve-market prices one type per request. The same job there is several
+// thousand requests against a hobby API, which is not something to offer behind a single button.
+//
+// Deliberately a button and not something the app does on boot. It is minutes of requests and a few
+// hundred KB, and a phone on a metered connection should be the one deciding to spend that.
+function PriceDownloadPanel({hub,source}){
+  const[busy,setBusy]=useState(null);       // {done,total} while the walk is in flight
+  const[result,setResult]=useState(null);   // {ok,msg} once it has finished
+  // Reading the count means parsing the whole cache blob, so it is not something to do on every
+  // render of the panel. `result` is in the deps because a finished download changes the answer.
+  const stored=useMemo(()=>getCachedPrices(hub,source).size,[hub,source,result]);
+  const run=async()=>{
+    setResult(null);
+    const ids=allPriceableTypeIDs();
+    setBusy({done:0,total:ids.length});
+    try{
+      const{priced,total}=await primePrices(ids,hub,source,{onProgress:(done,total)=>setBusy({done,total})});
+      setResult({ok:true,msg:t("Stored {priced} of {total} prices.",{priced:priced.toLocaleString(),total:total.toLocaleString()})});
+    }catch(e){
+      setResult({ok:false,msg:e?.offline?t("No connection — prices could not be downloaded."):t("Download failed: {err}",{err:e.message})});
+    }finally{setBusy(null);}
+  };
+  return(<div style={{marginTop:20}}>
+    <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Offline Prices")}</div>
+    {source!=="fuzzwork"
+      ?<div style={{fontSize:11,color:C.textMute,lineHeight:1.5}}>
+         {t("Only available on Fuzzwork, which prices a whole batch in one request. ceve-market needs one request per item, so downloading everything from it is not practical.")}
+       </div>
+      :<>
+        <button onClick={run} disabled={!!busy}
+          style={{width:"100%",padding:"10px 0",borderRadius:8,fontSize:13,fontWeight:600,
+                  cursor:busy?"default":"pointer",opacity:busy?.5:1,background:C.surface,
+                  border:`1px solid ${C.border}`,color:C.textMid}}>
+          {busy?t("Downloading…"):t("Download all prices")}
+        </button>
+        {busy&&<div style={{marginTop:8}}>
+          <div style={{fontSize:11,color:C.textMid,marginBottom:6}}>
+            {t("{done} / {total} items…",{done:busy.done.toLocaleString(),total:busy.total.toLocaleString()})}
+          </div>
+          <div style={{height:4,borderRadius:2,background:C.surfaceAlt,overflow:"hidden"}}>
+            <div style={{height:"100%",background:C.accent,width:`${busy.total?(busy.done/busy.total)*100:0}%`}}/>
+          </div>
+        </div>}
+        {result&&!busy&&<div style={{marginTop:8,fontSize:11,color:result.ok?C.success:C.danger}}>{result.msg}</div>}
+        <div style={{marginTop:10,fontSize:11,color:C.textMute,lineHeight:1.5}}>
+          {t("{n} prices stored for {hub}.",{n:stored.toLocaleString(),hub})}
+          {" "}
+          {/* The shortfall is permanent, not a failure to explain away: plenty of types have no sell
+              order anywhere in the hub, and a price they never had is not one the download lost. */}
+          {t("Downloaded prices stay usable offline and show their age wherever they appear. Items with no sell order in the hub stay blank.")}
+        </div>
+      </>}
+  </div>);
+}
+
 export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkillProfiles,openInNewTab,setOpenInNewTab,priceHub,setPriceHub,priceSource,setPriceSource,themePref,setThemePref,autoFillHardpoints,setAutoFillHardpoints,closeBrowserOnAdd,setCloseBrowserOnAdd,locale,setLocale}){
   const[section,setSection]=useState("skills");
   const sheet=useSheetDrag(onClose);
@@ -269,6 +330,7 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
             <div style={{marginTop:6}}><strong style={{color:C.textMid}}>ceve-market</strong> — {t("lowest sell order in the hub's region. One small request per item.")}</div>
             <div style={{marginTop:6}}>{t("All sources cache for 1 hour per hub.")}</div>
           </div>
+          <PriceDownloadPanel hub={priceHub} source={priceSource}/>
         </div>}
         {section==="interface"&&<div>
           <LanguagePicker locale={locale} setLocale={setLocale}/>
