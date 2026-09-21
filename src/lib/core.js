@@ -1631,6 +1631,29 @@ export function allImplants(){
   return out;
 }
 
+// Every type that can carry a market price, for the settings panel's "download all prices".
+//
+// The union of every list the app can put on screen, rather than a pick of one. CCP's market tree is
+// the closest thing to a definition of "sellable" and is where ammo, boosters and ore come from, but
+// it is also the tree the browser walks, so anything reachable another way is missing from it: the
+// Stratios Emergency Responder and the Capsules have no market node, implants arrive with the lazy
+// data-bundle and have their own picker, and OFF_MARKET_MODULES exists precisely because a module
+// CCP does not sell has nowhere to hang. A type the market has nothing to say about simply comes
+// back without a price, so a slightly wide net costs a few ids in a query string and nothing else —
+// whereas a narrow one leaves a blank exactly where someone went looking.
+//
+// Computed on call for the same reason allImplants() is: a module-load snapshot would be taken
+// before the data-bundle import resolves and would be permanently short an implant list.
+export function allPriceableTypeIDs(){
+  const out=new Set();
+  for(const tid of Object.keys(marketTreeData.t))out.add(Number(tid));
+  for(const d of[modulesData,chargesData,dronesData,shipsData])
+    for(const tid of Object.keys(d??{}))out.add(Number(tid));
+  for(const i of allImplants())if(i.typeID)out.add(Number(i.typeID));
+  for(const rack of Object.values(OFF_MARKET_MODULES))for(const m of rack)out.add(Number(m.typeID));
+  return[...out];
+}
+
 // High before Mid before Low, matching the best-first order the module browser uses for meta. It has
 // to come off the NAME: every grade of a set implant carries the same metaGroupID 4 / metaLevel 9, so
 // browserMetaRank cannot tell them apart. Hardwirings (no prefix) sort last within a tie, which only

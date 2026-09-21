@@ -53,7 +53,7 @@ import { networkJSON } from './lib/network-request.js';
 import { pushBackHandler, runBackHandler, _backStackDepth, swipeBackAxis, swipeBackCommits, BACK_SCREEN, BACK_APP } from './lib/back-button.js';
 import { t, applyLocale, registerCatalog, _resetI18n } from './lib/i18n.js';
 import { parseSlotAttr, parseMutatedAttrs, officialName, reloadCargoCharges, xmlFittingToImportShape, convertFitting } from './lib/pyfa-xml.js';
-import { REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
+import { allPriceableTypeIDs, REAL_MODULE_BROWSER, OFF_MARKET_MODULES, gestureTarget, validStatesFor, variantsOf, withoutMutaplasmidShells, MUTA_BY_TYPE, mutaAttrRanges, snapToBase, DRONE_FLIGHT, droneAddQty, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, searchImplants, implantSetMembers, applyImplantSet, IMPLANT_NAME_TO_SLOT, computeDisplayRows, cargoVolume } from './lib/core.js';
 // core.js loads this through Vite and holds an EMPTY copy under Node, so the variation families the
 // app actually shows are unreachable from `variantsOf` here. Imported directly to test against them.
 import { moduleVariations as BUNDLE_VARIATIONS } from './data-bundle.js';
@@ -7809,6 +7809,24 @@ Nanofiber Internal Structure II
   check('market-input','clearing the millions field removes the ceiling',parsePriceMillions('')===null?1:0,1,0);
   check('market-input','invalid units cannot silently change the ceiling',parsePriceMillions('2b')===undefined?1:0,1,0);
 }
+{
+  // The catalogue behind "download all prices". Whatever it leaves out is a blank price on a screen
+  // someone can actually reach, so the claim worth pinning is COVERAGE of each list the app shows —
+  // the market tree alone misses all three of these, which is why the set is a union.
+  const cat=new Set(allPriceableTypeIDs());
+  const browserIDs=[];
+  const walk=ns=>{for(const n of ns){for(const m of(n.mods??[]))browserIDs.push(m.typeID);walk(n.children??[]);}};
+  for(const branch of Object.values(REAL_MODULE_BROWSER))walk(branch);
+  check('prices','every module the browser can show is in the price catalogue',
+    browserIDs.filter(id=>!cat.has(id)).length,0,0);
+  check('prices','including the ones CCP does not sell, which have no market node',
+    Object.values(OFF_MARKET_MODULES).flat().filter(m=>!cat.has(m.typeID)).length,0,0);
+  // A hull off the market tree but very much on contracts. Pricing hulls from the tree alone drops it.
+  check('prices','and a hull with no market node of its own',cat.has(33553)?1:0,1,0);
+  // Implants hang off the lazy data-bundle, which is not loaded here — allImplants() is empty in
+  // Node, so this pins that the catalogue still builds rather than that it contains them.
+  check('prices','the catalogue builds without the lazy data-bundle',cat.size>6000?1:0,1,0);
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // PRICE CACHE — the only prices a phone with no signal has are the ones it already fetched. The
 // cache existed before this suite did; what it did NOT do was survive its own TTL, so an hour after
@@ -7818,7 +7836,7 @@ Nanofiber Internal Structure II
   const store=new Map();
   globalThis.localStorage={getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v)),
     removeItem:k=>store.delete(k),key:i=>[...store.keys()][i],get length(){return store.size;}};
-  const {fetchPrices,getCachedPrices,priceAsOf,pricesAreStale,PRICE_TTL_MS}=await import('./prices.js');
+  const {fetchPrices,primePrices,getCachedPrices,priceAsOf,pricesAreStale,PRICE_TTL_MS}=await import('./prices.js');
   const KEY='axis_price_fuzzwork_Jita',HOUR=3600000;
   const savedFetch=globalThis.fetch;
   // Fuzzwork's bulk shape, plus a record of which ids were actually requested — "did this hit the
@@ -7875,6 +7893,49 @@ Nanofiber Internal Structure II
     check('prices','and it is dated by the blob it came from, not by now',
       Math.round((Date.now()-priceAsOf([34],'Jita','fuzzwork'))/HOUR),3,0);
     check('prices','a type nobody ever priced has no age at all',priceAsOf([99999],'Jita','fuzzwork')===null?1:0,1,0);
+
+    // ── Priming the whole catalogue ─────────────────────────────────────────
+    // Every check here is about an offline read too: a price only survives a lost connection if it
+    // was fetched before the connection went, and nothing fetches a module you never opened.
+    //
+    // The chunk size is not a tuning knob. Fuzzwork takes the ids in the QUERY STRING, so the whole
+    // catalogue in one request is a 60 KB URL that no server will answer.
+    const calls=[];
+    const servingAll=()=>{globalThis.fetch=url=>{const ids=new URL(url).searchParams.get('types').split(',');
+      calls.push(ids.length);
+      return Promise.resolve({ok:true,json:async()=>Object.fromEntries(ids.map(id=>[id,{sell:{percentile:'1.5'}}]))});};};
+    const ids900=Array.from({length:900},(_,i)=>i+1);
+    store.clear();calls.length=0;servingAll();
+    const primed=await primePrices(ids900,'Jita','fuzzwork');
+    check('prices','priming splits the catalogue across several requests',calls.length,3,0);
+    check('prices','and no request carries more ids than one chunk',Math.max(...calls),400,0);
+    check('prices','every primed type is left in the cache',primed.priced,900,0);
+    calls.length=0;
+    await primePrices(ids900,'Jita','fuzzwork');
+    check('prices','priming again costs nothing while the prices are still fresh',calls.length,0,0);
+
+    // Written as it goes, so a connection lost halfway keeps the half it already had — and stops
+    // there, rather than grinding through every remaining chunk to fail the same way.
+    store.clear();calls.length=0;
+    let served=0;
+    globalThis.fetch=url=>{const ids=new URL(url).searchParams.get('types').split(',');calls.push(ids.length);
+      return served++
+        ?Promise.reject(Object.assign(new Error('offline'),{offline:true}))
+        :Promise.resolve({ok:true,json:async()=>Object.fromEntries(ids.map(id=>[id,{sell:{percentile:'1.5'}}]))});};
+    let stopped=false;
+    try{await primePrices(ids900,'Jita','fuzzwork');}catch{stopped=true;}
+    check('prices','a prime cut off by the network keeps what it already stored',getCachedPrices('Jita','fuzzwork').size,400,0);
+    check('prices','and says so rather than reporting a total it never reached',stopped?1:0,1,0);
+    check('prices','and gives up instead of retrying every remaining chunk',calls.length,2,0);
+
+    // A hub with nothing to say about one chunk is a different thing from having no connection.
+    store.clear();calls.length=0;served=0;
+    globalThis.fetch=url=>{const ids=new URL(url).searchParams.get('types').split(',');calls.push(ids.length);
+      return served++===0?Promise.resolve({ok:false,status:500})
+        :Promise.resolve({ok:true,json:async()=>Object.fromEntries(ids.map(id=>[id,{sell:{percentile:'1.5'}}]))});};
+    const partial=await primePrices(ids900,'Jita','fuzzwork');
+    check('prices','one failed chunk does not abandon the rest of the catalogue',calls.length,3,0);
+    check('prices','and the shortfall is reported rather than rounded up to the request count',partial.priced,500,0);
   }finally{globalThis.fetch=savedFetch;delete globalThis.localStorage;}
 }
 console.log('\n' + '─'.repeat(72));

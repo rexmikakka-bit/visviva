@@ -181,6 +181,33 @@ async function fetchFuzzwork(ids, station, signal) {
   return out;
 }
 
+// ── Priming the whole catalogue ─────────────────────────────────────────────────────────────────
+// The cache only ever learns the types some screen has already asked about, so a module you have
+// never opened has nothing cached and reads as blank the moment the connection goes — the one time
+// you most want a number. Priming walks every priceable type once so that stops being true. The
+// entries are dated like any other, so a month-old price still says how old it is rather than
+// passing itself off as current.
+//
+// CHUNKED because Fuzzwork's bulk endpoint takes the ids in the query string, and seven thousand of
+// them is a 60 KB URL that nothing will serve. Each chunk goes through fetchPrices, so it is merged
+// and written as it lands: a prime interrupted halfway keeps everything it got up to that point,
+// and re-running it costs nothing for the part still inside the TTL.
+const PRIME_CHUNK = 400;
+
+export async function primePrices(typeIDs, hub = 'Jita', source = 'fuzzwork', { onProgress } = {}) {
+  const ids = [...new Set(typeIDs.filter(id => id != null && id > 0))];
+  for (let i = 0; i < ids.length; i += PRIME_CHUNK) {
+    try { await fetchPrices(ids.slice(i, i + PRIME_CHUNK), hub, source); }
+    // One chunk the market has nothing to say about is not a reason to abandon the other sixteen.
+    // A dead connection is, and every remaining chunk would fail the same way.
+    catch (e) { if (e?.offline) throw e; }
+    onProgress?.(Math.min(i + PRIME_CHUNK, ids.length), ids.length);
+  }
+  // What the cache actually HOLDS, not what was asked for. The gap is real and permanent: plenty of
+  // types have no sell order anywhere, and reporting the request count would claim otherwise.
+  return { priced: getCachedPrices(hub, source).size, total: ids.length };
+}
+
 export async function fetchPrices(typeIDs, hub = 'Jita', source = 'fuzzwork') {
   const ids = [...new Set(typeIDs.filter(id => id != null && id > 0))];
   if (!ids.length) return new Map();
