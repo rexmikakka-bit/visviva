@@ -9,6 +9,7 @@ import { forgetCharacterAbyssals } from '../lib/abyssal-store.js';
 import { abyssalSourceTree, abyssalBrowseLevel, mergeLinkedCharacters, CHARACTER_SOURCE } from '../lib/abyssal-browser.js';
 import { MARKET_SOURCE } from '../lib/variation-items.js';
 import { PRICE_MIN, PRICE_STOPS, priceAtStop, stopAtPrice, parsePriceMillions } from '../lib/market-settings.js';
+import { FORGE_REGION_ID } from '../lib/mutamarket.js';
 
 // Settings' switch track and thumb, in the source sheet's compact, borderless row.
 function MarketSwitch({label,on,onChange}){
@@ -183,7 +184,8 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
 
         {heading(t('Market'))}
         {choice(MARKET_SOURCE,t('MutaMarket'),
-          market.jitaOnly?t('Public contracts at Jita 4-4'):t('Public contracts in The Forge'))}
+          market.jitaOnly?t('Public contracts at Jita 4-4')
+            :market.regionId!=null?t('Public contracts in The Forge'):t('Public contracts everywhere'))}
         <MarketSwitch label={t('Multi-item contracts')} on={market.allContracts}
           onChange={()=>onMarketChange({...market,allContracts:!market.allContracts})}/>
         <MarketSwitch label={t('Auctions')} on={market.showAuctions}
@@ -216,11 +218,19 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
             {t('Applies to abyssal listings only. Standard modules are always shown regardless of price.')}
           </p>
         </div>
+        {/* Three widths of the same question, single-select, so no tap can leave the row with
+            nothing lit: narrowing to a station, to a region, or not narrowing at all. Anywhere is
+            a real option rather than the absence of one — the two-button version could only ever
+            say The Forge, which hid every contract outside it with no way to ask for them. It
+            costs the station names, which are a per-region join (see the effect in ui.jsx). */}
         <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 4px 0'}}>
           <span style={{fontSize:11,color:C.textMute,marginRight:'auto'}}>{t('Location')}</span>
-          <button style={toggle(market.jitaOnly)} aria-pressed={market.jitaOnly} onClick={()=>onMarketChange({...market,jitaOnly:true})}>{t('Jita 4-4')}</button>
-          <button style={toggle(!market.jitaOnly)} aria-pressed={!market.jitaOnly} onClick={()=>onMarketChange({...market,jitaOnly:false})}>{t('The Forge')}</button>
+          <button style={toggle(market.jitaOnly)} aria-pressed={market.jitaOnly} onClick={()=>onMarketChange({...market,jitaOnly:true,regionId:FORGE_REGION_ID})}>{t('Jita 4-4')}</button>
+          <button style={toggle(!market.jitaOnly&&market.regionId!=null)} aria-pressed={!market.jitaOnly&&market.regionId!=null} onClick={()=>onMarketChange({...market,jitaOnly:false,regionId:FORGE_REGION_ID})}>{t('The Forge')}</button>
+          <button style={toggle(market.regionId==null)} aria-pressed={market.regionId==null} onClick={()=>onMarketChange({...market,jitaOnly:false,regionId:null})}>{t('Anywhere')}</button>
         </div>
+        {market.regionId==null&&<p style={{fontSize:11,color:C.textMute,margin:'6px 4px 0'}}>
+          {t('Contracts from every region. Stations are only resolved inside one region, so these rows cannot name theirs.')}</p>}
       </>}
     </div>
   </Sheet>;

@@ -47,9 +47,15 @@ function normalizeSources(raw){
 
 export function normalizeMarketSettings(raw){
   const max=Number(raw?.maxPrice);
+  // A null region is "every region", the way a null ceiling is "no ceiling", so only an ABSENT field
+  // falls back to The Forge. Jita 4-4 cannot survive one: pinning a station joins MutaMarket's
+  // contracts against ONE region's ESI index, and there is no index to join when no region was asked
+  // for — a jitaOnly that outlived its region would filter every listing away as unresolved.
+  const regionId=Number.isInteger(raw?.regionId)?raw.regionId
+    :raw?.regionId===null?null:MARKET_DEFAULTS.regionId;
   return {maxPrice:Number.isFinite(max)&&max>0?max:(raw?.maxPrice===null?null:MARKET_DEFAULTS.maxPrice),
-    jitaOnly:raw?.jitaOnly!==false,
-    regionId:Number.isInteger(raw?.regionId)?raw.regionId:MARKET_DEFAULTS.regionId,
+    jitaOnly:regionId!=null&&raw?.jitaOnly!==false,
+    regionId,
     showAbyssals:raw?.showAbyssals===true,
     fitsOnly:raw?.fitsOnly===true,
     allContracts:raw?.allContracts===true,
