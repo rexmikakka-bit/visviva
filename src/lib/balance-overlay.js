@@ -11,14 +11,13 @@
 import OVERLAY from '../data/balance-overlay.json' with { type: 'json' };
 
 const MASS_ATTR = '4', INERTIA_ATTR = '70';
-export const BALANCE_PREVIEW_KEY = 'axis_balance_preview';
 export { OVERLAY as BALANCE_OVERLAY };
 
-// Absent means on: the overlay is the reason someone updated, and a fresh install should show the
-// patch it advertises. Only an explicit 'off' disables it.
-export function balancePreviewEnabled(){
-  if(typeof window==='undefined')return false;
-  try{ return window.localStorage?.getItem(BALANCE_PREVIEW_KEY)!=='off'; }catch{ return true; }
+// There is deliberately no way to turn this off in the app. Off would mean showing the numbers from
+// before the patch, and CCP has already shipped the patch — so the "safe" setting would be the one
+// that disagrees with the live game. The only runtime that opts out is Node.
+export function balanceOverlayApplies(){
+  return typeof window!=='undefined';
 }
 
 // Mass changes carry their inertia with them. CCP said align times were held constant but published

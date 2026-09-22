@@ -7,7 +7,6 @@ import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS } from "../li
 import { availableLocales, t } from "../lib/i18n.js";
 import { primePrices, getCachedPrices } from "../prices.js";
 import { allPriceableTypeIDs } from "../lib/core.js";
-import { balancePreviewEnabled, BALANCE_OVERLAY, BALANCE_PREVIEW_KEY } from "../lib/balance-overlay.js";
 
 // Skill groups are DERIVED from SKILL_CATALOG rather than hand-listed. The old hardcoded table
 // covered 28 skills; the catalog has 388 — every skill the engine reads PLUS every skill any
@@ -201,27 +200,6 @@ function ToggleRow({label,note,on,onChange}){
   </div>);
 }
 
-// CCP's balance passes land before pyfa's do, and pyfa is what every number in this app is checked
-// against. This switch is the gap made visible: on, the hulls CCP rebalanced use the values from the
-// patch notes; off, they use the last values pyfa could confirm. It reloads because the engine reads
-// the bundle once at startup, long before React renders anything.
-function BalancePreviewPanel(){
-  const [on,setOn]=useState(()=>balancePreviewEnabled());
-  const hulls=BALANCE_OVERLAY.types?Object.keys(BALANCE_OVERLAY.types).length:0;
-  const apply=next=>{
-    try{ window.localStorage.setItem(BALANCE_PREVIEW_KEY,next?'on':'off'); }catch{ /* private mode: the toggle just won't stick */ }
-    setOn(next);
-    window.location.reload();
-  };
-  return(<div>
-    <div style={{fontSize:11,fontWeight:700,color:C.textMute,letterSpacing:.5,textTransform:"uppercase",marginBottom:8}}>{t("Game Balance")}</div>
-    <ToggleRow label={t("EVE {patch} preview balance",{patch:BALANCE_OVERLAY.patch})} on={on} onChange={apply}
-      note={t("On: the {n} hulls CCP rebalanced use the numbers from the patch notes. Off: they use the last numbers pyfa confirmed. Switching reloads the app.",{n:hulls})}/>
-    <div style={{fontSize:11,color:C.textMute,lineHeight:1.5,marginTop:4,marginBottom:18}}>
-      {t("These values are read from CCP's patch notes by hand and are not yet checked against pyfa, so treat them as the patch notes' claim rather than as verified numbers. Everything else in the app is unaffected either way.")}</div>
-  </div>);
-}
-
 // Renders NOTHING while English is the only catalog that has shipped — a one-option language picker
 // is worse than no picker. availableLocales() grows as each translation lands, so this appears on
 // its own with that commit; see lib/i18n.js's LOADERS.
@@ -385,8 +363,6 @@ export function SettingsOverlay({onClose,skills,setSkills,skillProfiles,setSkill
             note={t("On: picking a turret or launcher from the browser fills every free matching hardpoint, not just the slot you tapped. Off: it fills only that one slot — use Fill Hardpoints on an existing module to fill the rest by hand.")}/>
           <ToggleRow label={t("Close after adding one module")} on={!!closeBrowserOnAdd} onChange={setCloseBrowserOnAdd}
             note={t("On: the browser closes as soon as you pick something. Off: it stays open and moves to the next empty slot in the rack, so you can fill several without reopening it.")}/>
-          <div style={{height:18}}/>
-          <BalancePreviewPanel/>
         </div>}
         {section==="overrides"&&<div>{[["Max Velocity","1,240 m/s"],["Signature Radius","385 m"],["Align Time","11.2 s"],["Scan Resolution","108 mm"]].map(([label,ph])=>(<div key={label} style={{marginBottom:10}}><div style={{fontSize:11,color:C.textMid,marginBottom:4}}>{label}</div><input placeholder={ph} style={{width:"100%",padding:"8px 10px",background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:7,color:C.text,fontSize:12,boxSizing:"border-box"}}/></div>))}<button style={{width:"100%",marginTop:8,padding:"10px 0",background:"rgba(239,68,68,.1)",border:"1px solid rgba(239,68,68,.3)",borderRadius:8,color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer"}}>Reset All Overrides</button></div>}
       </div>
