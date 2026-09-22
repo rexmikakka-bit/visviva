@@ -7963,6 +7963,98 @@ Nanofiber Internal Structure II
     check('prices','and the shortfall is reported rather than rounded up to the request count',partial.priced,500,0);
   }finally{globalThis.fetch=savedFetch;delete globalThis.localStorage;}
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// 24.01 BALANCE OVERLAY — CCP shipped a balance pass on 2026-09-22 and pyfa's newest build still
+// carries 24.00, so nothing in the overlay has a reference implementation behind it yet. Every check
+// here is therefore about CONTAINMENT rather than correctness: that it stays out of this suite, that
+// it only touches hulls CCP named, and that it never edits an effect another hull shares. None of
+// them assert a DPS or a tank, because there is nothing trustworthy to assert one against.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const {applyBalanceOverlay,balancePreviewEnabled,BALANCE_OVERLAY:OV}=await import('./lib/balance-overlay.js');
+  const ATTRS=(await import('./data/dogma-attrs.json',{with:{type:'json'}})).default;
+  // Read from disk rather than through `import`. The imported bundle is the one `initEngine` already
+  // rewrote IN PLACE — attribute IDs became attribute names and the maps were frozen — so a clone of
+  // it would have the overlay writing numeric keys alongside named ones and testing a shape the app
+  // never sees. The app applies the overlay to the raw file before initEngine touches it; a pristine
+  // parse is the only way to reproduce that order here.
+  const {readFileSync}=await import('node:fs');
+  const pristine=n=>JSON.parse(readFileSync(new URL(`./data/${n}`,import.meta.url),'utf8'));
+  const BEFORE=pristine('dogma-types.json'),BEFORE_EFFECTS=pristine('dogma-effects.json');
+
+  // THE load-bearing one. Everything above this section is a number validated against pyfa 2.68, and
+  // the overlay describes a build pyfa cannot produce. If it ever switches on under Node, all of
+  // those baselines quietly start describing 24.01 and the suite stops meaning what it says.
+  check('balance','the 24.01 overlay is inert under Node',balancePreviewEnabled()?1:0,0,0);
+  // TYPES is the live post-init engine data every baseline above was computed from, so reading the
+  // Deimos falloff bonus back out of it is the direct statement that none of them saw the overlay.
+  check('balance','so the engine the baselines ran on is still 24.00',
+    `${TYPES[12023].a.eliteBonusHeavyGunship1}/${TYPES[28661].a.mass}`,'10/148000000',0);
+  check('balance','and no synthetic effect leaked into the shipped bundle',
+    Object.keys(OV.effects).filter(id=>BEFORE_EFFECTS[id]).length,0,0);
+
+  // Everything below runs on a pristine copy, so the overlay is exercised without touching the live
+  // bundle — and in the same order the app applies it.
+  const types=structuredClone(BEFORE),effects=structuredClone(BEFORE_EFFECTS);
+  const result=applyBalanceOverlay(types,effects,OV);
+
+  // A hull the overlay names but the bundle does not have is a transcription error, and applying
+  // less than intended is exactly the failure that would otherwise go unnoticed — the app would just
+  // quietly fly an unbuffed ship.
+  check('balance','every hull the overlay names exists in the bundle',result.skipped.length,0,0);
+  check('balance','and CCP named 25 of them',result.changed.length,25,0);
+  const badAttr=Object.values(OV.types).flatMap(e=>Object.keys(e.attrs??{})).filter(a=>!ATTRS[a]);
+  check('balance','every attribute it sets is a real attribute',badAttr.length,0,0);
+  const undefinedAdds=Object.values(OV.types).flatMap(e=>e.addEffects??[]).filter(id=>!OV.effects[id]);
+  check('balance','every effect it adds is one it also defines',undefinedAdds.length,0,0);
+  // A removal that matches nothing is a silent no-op: the hull keeps the bonus CCP replaced AND
+  // gains the replacement, which reads as a buff nobody shipped.
+  const deadRemovals=Object.entries(OV.types)
+    .flatMap(([id,e])=>(e.removeEffects??[]).filter(eff=>!(BEFORE[id]?.e??[]).includes(eff)));
+  check('balance','every effect it removes is actually on that hull',deadRemovals.length,0,0);
+
+  // The containment that matters most. CCP's kinetic missile bonus is effect 899, which the Cerberus
+  // SHARES with three other hulls; widening it in place would hand them a damage-type spread CCP
+  // never gave them. The overlay adds hull-local effects instead, so 899 must come out untouched and
+  // its other users must look exactly as they did.
+  check('balance','a shared effect is never rewritten in place',
+    JSON.stringify(effects[899]),JSON.stringify(BEFORE_EFFECTS[899]),0);
+  const bystanders=['Onyx','Orthrus','Laelaps'].map(n=>tid(n));
+  check('balance','and the hulls sharing it are left alone',
+    bystanders.filter(id=>JSON.stringify(types[id].e)!==JSON.stringify(BEFORE[id].e)).length,0,0);
+  check('balance','the Harpy is the only hull to lose effect 989',
+    Object.keys(BEFORE).filter(id=>(BEFORE[id].e??[]).includes(989)
+      &&!(types[id].e??[]).includes(989)).map(id=>types[id].n).join(','),'Harpy',0);
+
+  // CCP published the new masses but not the new inertia, saying only that align times were held.
+  // Align time is proportional to mass x inertia, so the product is the thing that must not move —
+  // and it is the only part of these 11 hulls that is our arithmetic rather than CCP's number.
+  const massHulls=Object.keys(OV.types).filter(id=>OV.types[id].attrs?.['4']!=null);
+  check('balance','eleven hulls got lighter',massHulls.length,11,0);
+  const alignDrift=massHulls.filter(id=>
+    Math.abs(types[id].a['4']*types[id].a['70']-BEFORE[id].a['4']*BEFORE[id].a['70'])>1);
+  check('balance','and every one of them still aligns in the same time',alignDrift.length,0,0);
+  check('balance','a lighter Kronos is a more agile one',
+    types[28661].a['70']>BEFORE[28661].a['70']?1:0,1,0);
+
+  // The two bonuses whose SHAPE changed, not just their size. Both are reconstructions, so what is
+  // worth pinning is that the reconstruction has the shape CCP described at all.
+  const damageAttrs=new Set([114,116,117,118]);
+  const cerbDamage=new Set((types[11993].e??[])
+    .map(id=>effects[id]?.m?.[0]).filter(m=>m?.modifyingAttributeID===487&&damageAttrs.has(m.modifiedAttributeID))
+    .map(m=>m.modifiedAttributeID));
+  check('balance','the Cerberus bonus now reaches all four damage types',cerbDamage.size,4,0);
+  check('balance','at half the size it used to bonus kinetic alone',types[11993].a['487'],2.5,1e-9);
+  const harpyAF=(types[11381].e??[]).map(id=>effects[id]?.m?.[0])
+    .filter(m=>m?.modifyingAttributeID===673).map(m=>m.modifiedAttributeID).sort().join(',');
+  check('balance','the Harpy assault-frigate bonus moved from range to tracking',harpyAF,'160',0);
+
+  // The overlay is a stopgap with a defined end: when pyfa ships 24.01 the real fix is a regen, and
+  // this file is deleted. Recording the build it was transcribed against is what makes that visible
+  // later — if the bundle has moved on, the transcription was against something else.
+  check('balance','the overlay records which build it was transcribed against',
+    OV.transcribedAgainstBuild,VALIDATED_BUILD,0);
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
