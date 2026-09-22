@@ -7971,7 +7971,7 @@ Nanofiber Internal Structure II
 // them assert a DPS or a tank, because there is nothing trustworthy to assert one against.
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  const {applyBalanceOverlay,balancePreviewEnabled,BALANCE_OVERLAY:OV}=await import('./lib/balance-overlay.js');
+  const {applyBalanceOverlay,balanceOverlayApplies,BALANCE_OVERLAY:OV}=await import('./lib/balance-overlay.js');
   const ATTRS=(await import('./data/dogma-attrs.json',{with:{type:'json'}})).default;
   // Read from disk rather than through `import`. The imported bundle is the one `initEngine` already
   // rewrote IN PLACE — attribute IDs became attribute names and the maps were frozen — so a clone of
@@ -7985,7 +7985,7 @@ Nanofiber Internal Structure II
   // THE load-bearing one. Everything above this section is a number validated against pyfa 2.68, and
   // the overlay describes a build pyfa cannot produce. If it ever switches on under Node, all of
   // those baselines quietly start describing 24.01 and the suite stops meaning what it says.
-  check('balance','the 24.01 overlay is inert under Node',balancePreviewEnabled()?1:0,0,0);
+  check('balance','the 24.01 overlay is inert under Node',balanceOverlayApplies()?1:0,0,0);
   // TYPES is the live post-init engine data every baseline above was computed from, so reading the
   // Deimos falloff bonus back out of it is the direct statement that none of them saw the overlay.
   check('balance','so the engine the baselines ran on is still 24.00',
