@@ -221,8 +221,8 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
         {/* Three widths of the same question, single-select, so no tap can leave the row with
             nothing lit: narrowing to a station, to a region, or not narrowing at all. Anywhere is
             a real option rather than the absence of one — the two-button version could only ever
-            say The Forge, which hid every contract outside it with no way to ask for them. It
-            costs the station names, which are a per-region join (see the effect in ui.jsx). */}
+            say The Forge, which hid every contract outside it with no way to ask for them. Station
+            names survive it for most rows but not all — see `stationIndexFor`. */}
         <div style={{display:'flex',alignItems:'center',gap:6,padding:'10px 4px 0'}}>
           <span style={{fontSize:11,color:C.textMute,marginRight:'auto'}}>{t('Location')}</span>
           <button style={toggle(market.jitaOnly)} aria-pressed={market.jitaOnly} onClick={()=>onMarketChange({...market,jitaOnly:true,regionId:FORGE_REGION_ID})}>{t('Jita 4-4')}</button>
@@ -230,7 +230,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
           <button style={toggle(market.regionId==null)} aria-pressed={market.regionId==null} onClick={()=>onMarketChange({...market,jitaOnly:false,regionId:null})}>{t('Anywhere')}</button>
         </div>
         {market.regionId==null&&<p style={{fontSize:11,color:C.textMute,margin:'6px 4px 0'}}>
-          {t('Contracts from every region. Stations are only resolved inside one region, so these rows cannot name theirs.')}</p>}
+          {t('Contracts from every region. Stations are named from The Forge, where most abyssal contracts sit; anything outside it shows as unknown.')}</p>}
       </>}
     </div>
   </Sheet>;
