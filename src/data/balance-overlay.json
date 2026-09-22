@@ -1,0 +1,264 @@
+{
+  "_README": [
+    "PROVISIONAL. Hand-transcribed from CCP's EVE 24.01 patch notes, NOT generated from eve.db and NOT",
+    "validated against pyfa. pyfa's latest is v2.68.0 (2026-07-07), which still carries 24.00 data, so",
+    "there is no reference implementation to check these against yet. Treat every number here as CCP's",
+    "claim rather than as a measured value.",
+    "",
+    "This file exists so the app can fly the rebalanced hulls before pyfa ships a 24.01 build. It is",
+    "deliberately SEPARATE from the generated bundles and from scripts/data-patches.json (which states",
+    "that attribute values do not belong in it). Nothing here survives into the real fix: when pyfa",
+    "ships 24.01, follow docs/data-pipeline.md -> 'Upgrading eve.db', regenerate, re-validate each",
+    "moved baseline against the new pyfa, and DELETE this file.",
+    "",
+    "The overlay is inert under Node, so the pyfa-validated regression baselines still describe 2.68",
+    "behaviour and none of them move. See src/lib/balance-overlay.js.",
+    "",
+    "Confidence is not uniform, and the `_confidence` field on each entry says which kind it is:",
+    "  'quoted'  - CCP gave both the old and the new number, and the old one matches our bundle.",
+    "  'derived' - CCP described the change but not the value; we computed it. Say how, in `_why`.",
+    "  'shaped'  - CCP described a bonus whose SHAPE changed (different attribute, or a brand new",
+    "              bonus). The magnitude is quoted but the dogma wiring is our reconstruction, cloned",
+    "              from how CCP wires the same bonus on another hull. Most likely to be wrong.",
+    "",
+    "Every 'from' value CCP printed was checked against src/data/dogma-types.json before transcribing:",
+    "all 16 Lancer resonances and all 11 hull masses matched exactly, which is the main reason to",
+    "trust the rest of the transcription."
+  ],
+  "patch": "24.01",
+  "patchDate": "2026-09-22",
+  "source": "https://www.eveonline.com/news/view/patch-notes-version-24-01",
+  "transcribedAgainstBuild": "3424810",
+
+  "types": {
+    "77283": {
+      "_name": "Bane",
+      "_why": "Lancer dreadnought resistance buff. Stored as resonance = 1 - resist. Shield kinetic 47.5%->55%, shield explosive 62.5%->72.5%, armor kinetic 34.375%->47.5%, armor explosive 40%->55%.",
+      "_confidence": "quoted",
+      "attrs": { "268": 0.45, "269": 0.525, "272": 0.275, "273": 0.45 }
+    },
+    "77284": {
+      "_name": "Karura",
+      "_why": "Shield thermal 40%->60%, shield kinetic 47.5%->55%, armor thermal 58.75%->62.5%, armor kinetic 34.375%->50%.",
+      "_confidence": "quoted",
+      "attrs": { "269": 0.5, "270": 0.375, "273": 0.45, "274": 0.4 }
+    },
+    "77281": {
+      "_name": "Hubris",
+      "_why": "Shield thermal 30%->40%, shield kinetic 55%->70%, armor thermal 43.125%->55%, armor kinetic 51.25%->65%.",
+      "_confidence": "quoted",
+      "attrs": { "269": 0.35, "270": 0.45, "273": 0.3, "274": 0.6 }
+    },
+    "77288": {
+      "_name": "Valravn",
+      "_why": "Shield EM 25%->45%, shield thermal 30%->40%, armor EM 70%->80%, armor thermal 43.125%->50%.",
+      "_confidence": "quoted",
+      "attrs": { "267": 0.2, "270": 0.5, "271": 0.55, "274": 0.6 }
+    },
+
+    "28661": {
+      "_name": "Kronos",
+      "_why": "Marauder mass 148M->118.4M kg. CCP says inertia was adjusted to keep align times unchanged but did not publish the new inertia, so applyBalanceOverlay rescales it by the mass ratio.",
+      "_confidence": "quoted",
+      "attrs": { "4": 118400000 }
+    },
+    "28665": {
+      "_name": "Vargur",
+      "_why": "Marauder mass 150M->120M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 120000000 }
+    },
+    "28659": {
+      "_name": "Paladin",
+      "_why": "Marauder mass 160M->128M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 128000000 }
+    },
+    "28710": {
+      "_name": "Golem",
+      "_why": "Marauder mass 157M->125.6M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 125600000 }
+    },
+    "88001": {
+      "_name": "Babaroga",
+      "_why": "Marauder mass 143M->114.4M kg. Its Zero-Point Field Manipulator build/reprocess change is industry-only and is not modelled here.",
+      "_confidence": "quoted",
+      "attrs": { "4": 114400000 }
+    },
+    "44996": {
+      "_name": "Marshal",
+      "_why": "Black ops mass 150M->112.5M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 112500000 }
+    },
+    "22440": {
+      "_name": "Panther",
+      "_why": "Black ops mass 148.8M->111.6M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 111600000 }
+    },
+    "85236": {
+      "_name": "Python",
+      "_why": "Black ops mass 141.7M->106.3M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 106300000 }
+    },
+    "22428": {
+      "_name": "Redeemer",
+      "_why": "Black ops mass 150.3M->112.7M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 112700000 }
+    },
+    "22430": {
+      "_name": "Sin",
+      "_why": "Black ops mass 141.7M->106.3M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 106300000 }
+    },
+    "22436": {
+      "_name": "Widow",
+      "_why": "Black ops mass 151.1M->113.3M kg.",
+      "_confidence": "quoted",
+      "attrs": { "4": 113300000 }
+    },
+
+    "12011": {
+      "_name": "Eagle",
+      "_why": "HAC medium hybrid DAMAGE bonus 5%->7.5%. That is eliteBonusHeavyGunship2 (693), which effect 1061 reads to modify damageMultiplier (64) - NOT 692, which effect 11415 reads for tracking (160) and which CCP did not change.",
+      "_confidence": "quoted",
+      "attrs": { "693": 7.5 }
+    },
+    "12023": {
+      "_name": "Deimos",
+      "_why": "HAC medium hybrid FALLOFF bonus 10%->15%. eliteBonusHeavyGunship1 (692) is the one effect 1080 reads to modify falloff (158); 693 is this hull's damage bonus and is unchanged.",
+      "_confidence": "quoted",
+      "attrs": { "692": 15 }
+    },
+    "12019": {
+      "_name": "Sacrilege",
+      "_why": "HAC missile rate-of-fire bonus -5%->-7.5% via eliteBonusHeavyGunship2 (693), read by effect 4645 to modify speed (51). CCP describes the bonus as covering Light/Heavy/Heavy Assault missiles, but our bundle only wires group 771 here; widening the group set would be inventing dogma, so only the magnitude is applied.",
+      "_confidence": "quoted",
+      "attrs": { "693": -7.5 }
+    },
+    "17722": {
+      "_name": "Vigilant",
+      "_why": "Medium hybrid falloff bonus 10%->15% per Gallente Cruiser level: shipBonusGC (486), read by effect 4516 to modify falloff (158).",
+      "_confidence": "quoted",
+      "attrs": { "486": 15 }
+    },
+    "12021": {
+      "_name": "Phobos",
+      "_why": "Medium hybrid optimal range bonus 10%->15% per Heavy Interdiction Cruiser level: eliteBonusHeavyInterdictors1 (1246), read by effect 5959 to modify maxRange (54).",
+      "_confidence": "quoted",
+      "attrs": { "1246": 15 }
+    },
+
+    "11993": {
+      "_name": "Cerberus",
+      "_why": "Caldari Cruiser missile bonus goes from 5% KINETIC to 2.5% ALL damage types. The magnitude is just shipBonusCC (487). The damage-type spread is not: effect 899 only modifies kineticDamage (117) and is SHARED with the Onyx, Orthrus and Laelaps, so it must not be edited. Instead three synthetic effects add EM/explosive/thermal on this hull alone, cloning 899's exact shape.",
+      "_confidence": "shaped",
+      "attrs": { "487": 2.5 },
+      "addEffects": [2401001, 2401002, 2401003]
+    },
+    "11379": {
+      "_name": "Hawk",
+      "_why": "Light missile/rocket bonus goes from 10% KINETIC to 7.5% ALL damage types. shipBonusCF (463) carries the magnitude and effect 898 carries the kinetic half; 898 is shared, so the other three damage types come from synthetic effects cloned from it. CCP's note attributes this to Assault Frigate level, but 463 is the Caldari Frigate bonus and is the only 10% kinetic damage bonus on the hull, so the data reading is the one used here.",
+      "_confidence": "shaped",
+      "attrs": { "463": 7.5 },
+      "addEffects": [2401004, 2401005, 2401006]
+    },
+    "11381": {
+      "_name": "Harpy",
+      "_why": "Two changes. Caldari Frigate optimal range bonus 10%->15% is just shipBonusCF2 (588). The Assault Frigate bonus is replaced outright - it was 10% optimal range (effect 989, modifying maxRange 54) and becomes 5% tracking speed, so 989 is removed from this hull and a synthetic effect modifies trackingSpeed (160) from the same attribute instead. 989 is shared with two other hulls and is left alone.",
+      "_confidence": "shaped",
+      "attrs": { "588": 15, "673": 5 },
+      "addEffects": [2401007],
+      "removeEffects": [989]
+    },
+    "12042": {
+      "_name": "Ishkur",
+      "_why": "Gains a 10% drone tracking bonus per Gallente Frigate level, which the hull had no wiring for at all. shipBonusGF2 (586) already holds 10 and already scales this hull's drone hitpoint bonus by Gallente Frigate level, so the synthetic effect reads it and modifies trackingSpeed (160) on items requiring Drones (3436) - the same skill the hull's existing drone bonuses target, so it reaches the same drones.",
+      "_confidence": "shaped",
+      "addEffects": [2401008]
+    },
+    "11365": {
+      "_name": "Vengeance",
+      "_why": "Gains a 7.5% Light Missile damage bonus per Amarr Frigate level alongside the existing Rocket bonus. shipBonusAF (464) already holds 7.5 and already feeds the four rocket damage effects (3234/3235/3236/3237, one per damage type, skill Rockets 3320). The four synthetic effects are those four exactly, retargeted at Light Missiles (3321).",
+      "_confidence": "shaped",
+      "addEffects": [2401009, 2401010, 2401011, 2401012]
+    }
+  },
+
+  "effects": {
+    "2401001": {
+      "_why": "Cerberus EM damage, cloned from effect 899 (kinetic) with modifiedAttributeID swapped.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 114, "modifyingAttributeID": 487, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401002": {
+      "_why": "Cerberus explosive damage, cloned from effect 899.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 116, "modifyingAttributeID": 487, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401003": {
+      "_why": "Cerberus thermal damage, cloned from effect 899.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 118, "modifyingAttributeID": 487, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401004": {
+      "_why": "Hawk EM damage, cloned from effect 898 (kinetic) with modifiedAttributeID swapped.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 114, "modifyingAttributeID": 463, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401005": {
+      "_why": "Hawk explosive damage, cloned from effect 898.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 116, "modifyingAttributeID": 463, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401006": {
+      "_why": "Hawk thermal damage, cloned from effect 898.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 118, "modifyingAttributeID": 463, "operation": 6, "skillTypeID": 3319 }]
+    },
+    "2401007": {
+      "_why": "Harpy Assault Frigate tracking speed, cloned from the effect it replaces (989, maxRange) with modifiedAttributeID swapped to trackingSpeed.",
+      "c": 0,
+      "m": [{ "domain": "shipID", "func": "LocationRequiredSkillModifier", "modifiedAttributeID": 160, "modifyingAttributeID": 673, "operation": 6, "skillTypeID": 3301 }]
+    },
+    "2401008": {
+      "_why": "Ishkur drone tracking speed. Shape cloned from the Ishtar's drone tracking effect 5556, but reading shipBonusGF2 (586) and targeting Drones (3436) rather than Heavy Drone Operation, so it covers every drone the hull's existing bonuses do.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 160, "modifyingAttributeID": 586, "operation": 6, "skillTypeID": 3436 }]
+    },
+    "2401009": {
+      "_why": "Vengeance light missile EM damage, cloned from rocket effect 3237 with skillTypeID swapped to Light Missiles.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 114, "modifyingAttributeID": 464, "operation": 6, "skillTypeID": 3321 }]
+    },
+    "2401010": {
+      "_why": "Vengeance light missile explosive damage, cloned from rocket effect 3234.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 116, "modifyingAttributeID": 464, "operation": 6, "skillTypeID": 3321 }]
+    },
+    "2401011": {
+      "_why": "Vengeance light missile kinetic damage, cloned from rocket effect 3235.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 117, "modifyingAttributeID": 464, "operation": 6, "skillTypeID": 3321 }]
+    },
+    "2401012": {
+      "_why": "Vengeance light missile thermal damage, cloned from rocket effect 3236.",
+      "c": 0,
+      "m": [{ "domain": "charID", "func": "OwnerRequiredSkillModifier", "modifiedAttributeID": 118, "modifyingAttributeID": 464, "operation": 6, "skillTypeID": 3321 }]
+    }
+  },
+
+  "notModelled": [
+    "Ansiblex jump bridge capacitor mechanics - not a fitting concern.",
+    "Factional warfare insurgency timers, site mechanics and LP payouts.",
+    "War declaration cost 100M -> 500M ISK.",
+    "Pochven Observatory Flashpoint (15->12) and Vigilance Point (10->12) optimal fleet sizes, and doubled Stirring NPC drone damage.",
+    "C1-C3 wormhole combat site visual/AI updates.",
+    "Babaroga Zero-Point Field Manipulator manufacturing (6666->4800) and reprocessing (6666->2400) quantities - industry, not fitting."
+  ]
+}
