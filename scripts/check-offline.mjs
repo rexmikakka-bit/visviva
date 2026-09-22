@@ -53,6 +53,12 @@ const ALLOWED = [
        + 'exercise it too; that prefix exists only under `npm run dev` and never ships.',
   },
   {
+    host: 'www.eveonline.com',
+    why: 'NOT a fetch — the `source` field of src/data/balance-overlay.json, recording which patch '
+       + 'notes page each provisional value was transcribed from so the next person can check the '
+       + 'transcription. Never requested. Goes away with the overlay when pyfa ships that patch.',
+  },
+  {
     host: 'community.eveonline.com',
     why: 'NOT a fetch — appears inside an item DESCRIPTION string in data-bundle.js (a CSM link in '
        + "CCP's flavour text). Never requested. This scan can't distinguish a fetched URL from one "
