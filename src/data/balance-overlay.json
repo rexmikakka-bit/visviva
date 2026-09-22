@@ -23,7 +23,12 @@
     "",
     "Every 'from' value CCP printed was checked against src/data/dogma-types.json before transcribing:",
     "all 16 Lancer resonances and all 11 hull masses matched exactly, which is the main reason to",
-    "trust the rest of the transcription."
+    "trust the rest of the transcription.",
+    "",
+    "`attrs` moves what the ENGINE computes; `traits` moves the bonus STRING the info sheet prints,",
+    "which is generated separately into src/data/ship-traits.json and would otherwise keep quoting the",
+    "pre-patch number. Each trait op names the section, text and number it expects to find, so it is a",
+    "no-op against a bundle that already carries the new wording instead of patching it twice."
   ],
   "patch": "24.01",
   "patchDate": "2026-09-22",
@@ -127,31 +132,46 @@
       "_name": "Eagle",
       "_why": "HAC medium hybrid DAMAGE bonus 5%->7.5%. That is eliteBonusHeavyGunship2 (693), which effect 1061 reads to modify damageMultiplier (64) - NOT 692, which effect 11415 reads for tracking (160) and which CCP did not change.",
       "_confidence": "quoted",
-      "attrs": { "693": 7.5 }
+      "attrs": { "693": 7.5 },
+      "traits": [
+        { "section": "Heavy Assault Cruisers", "find": "bonus to Medium Hybrid Turret damage", "fromNumber": "5%", "toNumber": "7.5%", "attr": "693" }
+      ]
     },
     "12023": {
       "_name": "Deimos",
       "_why": "HAC medium hybrid FALLOFF bonus 10%->15%. eliteBonusHeavyGunship1 (692) is the one effect 1080 reads to modify falloff (158); 693 is this hull's damage bonus and is unchanged.",
       "_confidence": "quoted",
-      "attrs": { "692": 15 }
+      "attrs": { "692": 15 },
+      "traits": [
+        { "section": "Heavy Assault Cruisers", "find": "bonus to Medium Hybrid Turret falloff", "fromNumber": "10%", "toNumber": "15%", "attr": "692" }
+      ]
     },
     "12019": {
       "_name": "Sacrilege",
       "_why": "HAC missile rate-of-fire bonus -5%->-7.5% via eliteBonusHeavyGunship2 (693), read by effect 4645 to modify speed (51). CCP describes the bonus as covering Light/Heavy/Heavy Assault missiles, but our bundle only wires group 771 here; widening the group set would be inventing dogma, so only the magnitude is applied.",
       "_confidence": "quoted",
-      "attrs": { "693": -7.5 }
+      "attrs": { "693": -7.5 },
+      "traits": [
+        { "section": "Heavy Assault Cruisers", "find": "bonus to Rapid Light Missile, Heavy Missile and Heavy Assault Missile Launcher rate of fire", "fromNumber": "5%", "toNumber": "7.5%", "attr": "693" }
+      ]
     },
     "17722": {
       "_name": "Vigilant",
       "_why": "Medium hybrid falloff bonus 10%->15% per Gallente Cruiser level: shipBonusGC (486), read by effect 4516 to modify falloff (158).",
       "_confidence": "quoted",
-      "attrs": { "486": 15 }
+      "attrs": { "486": 15 },
+      "traits": [
+        { "section": "Gallente Cruiser", "find": "bonus to Medium Hybrid Turret falloff", "fromNumber": "10%", "toNumber": "15%", "attr": "486" }
+      ]
     },
     "12021": {
       "_name": "Phobos",
       "_why": "Medium hybrid optimal range bonus 10%->15% per Heavy Interdiction Cruiser level: eliteBonusHeavyInterdictors1 (1246), read by effect 5959 to modify maxRange (54).",
       "_confidence": "quoted",
-      "attrs": { "1246": 15 }
+      "attrs": { "1246": 15 },
+      "traits": [
+        { "section": "Heavy Interdiction Cruisers", "find": "bonus to Medium Hybrid Turret optimal range", "fromNumber": "10%", "toNumber": "15%", "attr": "1246" }
+      ]
     },
 
     "11993": {
@@ -159,14 +179,20 @@
       "_why": "Caldari Cruiser missile bonus goes from 5% KINETIC to 2.5% ALL damage types. The magnitude is just shipBonusCC (487). The damage-type spread is not: effect 899 only modifies kineticDamage (117) and is SHARED with the Onyx, Orthrus and Laelaps, so it must not be edited. Instead three synthetic effects add EM/explosive/thermal on this hull alone, cloning 899's exact shape.",
       "_confidence": "shaped",
       "attrs": { "487": 2.5 },
-      "addEffects": [2401001, 2401002, 2401003]
+      "addEffects": [2401001, 2401002, 2401003],
+      "traits": [
+        { "section": "Caldari Cruiser", "find": "bonus to kinetic Light Missile, Heavy Missile and Heavy Assault Missile damage", "fromNumber": "5%", "toNumber": "2.5%", "toText": "bonus to Light Missile, Heavy Missile and Heavy Assault Missile damage", "attr": "487" }
+      ]
     },
     "11379": {
       "_name": "Hawk",
       "_why": "Light missile/rocket bonus goes from 10% KINETIC to 7.5% ALL damage types. shipBonusCF (463) carries the magnitude and effect 898 carries the kinetic half; 898 is shared, so the other three damage types come from synthetic effects cloned from it. CCP's note attributes this to Assault Frigate level, but 463 is the Caldari Frigate bonus and is the only 10% kinetic damage bonus on the hull, so the data reading is the one used here.",
       "_confidence": "shaped",
       "attrs": { "463": 7.5 },
-      "addEffects": [2401004, 2401005, 2401006]
+      "addEffects": [2401004, 2401005, 2401006],
+      "traits": [
+        { "section": "Caldari Frigate", "find": "bonus to kinetic Light Missile and Rocket damage", "fromNumber": "10%", "toNumber": "7.5%", "toText": "bonus to Light Missile and Rocket damage", "attr": "463" }
+      ]
     },
     "11381": {
       "_name": "Harpy",
@@ -174,19 +200,29 @@
       "_confidence": "shaped",
       "attrs": { "588": 15, "673": 5 },
       "addEffects": [2401007],
-      "removeEffects": [989]
+      "removeEffects": [989],
+      "traits": [
+        { "section": "Caldari Frigate", "find": "bonus to Small Hybrid Turret optimal range", "fromNumber": "10%", "toNumber": "15%", "attr": "588" },
+        { "section": "Assault Frigates", "find": "bonus to Small Hybrid Turret optimal range", "fromNumber": "10%", "toNumber": "5%", "toText": "bonus to Small Hybrid Turret tracking speed", "attr": "673" }
+      ]
     },
     "12042": {
       "_name": "Ishkur",
       "_why": "Gains a 10% drone tracking bonus per Gallente Frigate level, which the hull had no wiring for at all. shipBonusGF2 (586) already holds 10 and already scales this hull's drone hitpoint bonus by Gallente Frigate level, so the synthetic effect reads it and modifies trackingSpeed (160) on items requiring Drones (3436) - the same skill the hull's existing drone bonuses target, so it reaches the same drones.",
       "_confidence": "shaped",
-      "addEffects": [2401008]
+      "addEffects": [2401008],
+      "traits": [
+        { "section": "Gallente Frigate", "addNumber": "10%", "addText": "bonus to Drone tracking speed", "attr": "586" }
+      ]
     },
     "11365": {
       "_name": "Vengeance",
       "_why": "Gains a 7.5% Light Missile damage bonus per Amarr Frigate level alongside the existing Rocket bonus. shipBonusAF (464) already holds 7.5 and already feeds the four rocket damage effects (3234/3235/3236/3237, one per damage type, skill Rockets 3320). The four synthetic effects are those four exactly, retargeted at Light Missiles (3321).",
       "_confidence": "shaped",
-      "addEffects": [2401009, 2401010, 2401011, 2401012]
+      "addEffects": [2401009, 2401010, 2401011, 2401012],
+      "traits": [
+        { "section": "Amarr Frigate", "find": "bonus to Rocket damage", "fromNumber": "7.5%", "toText": "bonus to Light Missile and Rocket damage", "attr": "464" }
+      ]
     }
   },
 

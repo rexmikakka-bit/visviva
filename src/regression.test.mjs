@@ -8054,6 +8054,27 @@ Nanofiber Internal Structure II
   // later — if the bundle has moved on, the transcription was against something else.
   check('balance','the overlay records which build it was transcribed against',
     OV.transcribedAgainstBuild,VALIDATED_BUILD,0);
+
+  // The Traits tab prints CCP's bonus WORDING, which is generated into ship-traits.json separately
+  // from the attributes the engine reads. Patching one and not the other shipped once: a Deimos that
+  // computed falloff at 15% and advertised 10% right next to it.
+  const {applyTraitOverlay}=await import('./lib/balance-overlay.js');
+  const BEFORE_TRAITS=pristine('ship-traits.json'),traits=structuredClone(BEFORE_TRAITS);
+  const traitResult=applyTraitOverlay(traits,OV);
+  // A skip means the text the op expects is not there. Either the transcription is wrong, or a regen
+  // has moved the wording on — both need a human, and neither should pass quietly as "nothing to do".
+  check('balance','every trait op finds the line it means to rewrite',traitResult.skipped.length,0,0);
+  check('balance','and rewrites eleven of them',traitResult.changed.length,11,0);
+  // THE check that would have caught the original bug. Every printed bonus is pinned to the attribute
+  // the engine multiplies by, so moving one without the other fails here rather than in the app.
+  const disagree=Object.entries(OV.types).flatMap(([id,e])=>(e.traits??[])
+    .filter(op=>Math.abs(types[id].a[op.attr])!==parseFloat(op.toNumber??op.addNumber??op.fromNumber))
+    .map(op=>`${e._name}/${op.attr}`));
+  check('balance','every printed bonus matches the attribute the engine uses',disagree.join(','),'',0);
+  // Applied twice it must do nothing the second time — core.js runs it on a module-level object that
+  // outlives any one render, and a second pass that re-matched would compound the change.
+  check('balance','re-applying the trait overlay changes nothing',
+    applyTraitOverlay(traits,OV).changed.length,0,0);
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

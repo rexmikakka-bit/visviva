@@ -53,3 +53,32 @@ export function applyBalanceOverlay(types,effects,overlay=OVERLAY){
   }
   return {patch:overlay.patch,changed,skipped};
 }
+
+// The info sheet's Traits tab prints CCP's own bonus wording out of ship-traits.json, which is
+// generated from eve.db and so still quotes 24.00 — patching only the attribute leaves a Deimos
+// whose falloff is computed at 15% and advertised at 10%. Every op states the text and number it
+// expects to replace, so it silently does nothing rather than double-patching once a regenerated
+// bundle already says the new thing. Mutates in place, like applyBalanceOverlay.
+export function applyTraitOverlay(traits,overlay=OVERLAY){
+  const changed=[],skipped=[];
+  for(const [typeID,entry] of Object.entries(overlay.types??{})){
+    if(!entry.traits?.length) continue;
+    const tr=traits[typeID];
+    for(const op of entry.traits){
+      const label=`${entry._name??typeID}: ${op.find??op.addText}`;
+      const section=(tr?.skills??[]).find(s=>(s.header??'').startsWith(op.section));
+      if(!section?.bonuses){skipped.push(label);continue;}
+      if(op.find!=null){
+        const bonus=section.bonuses.find(b=>b.text===op.find&&b.number===op.fromNumber);
+        if(!bonus){skipped.push(label);continue;}
+        if(op.toNumber!=null)bonus.number=op.toNumber;
+        if(op.toText!=null)bonus.text=op.toText;
+      }else{
+        if(section.bonuses.some(b=>b.text===op.addText))continue;
+        section.bonuses.push({number:op.addNumber,text:op.addText});
+      }
+      changed.push(label);
+    }
+  }
+  return {changed,skipped};
+}
