@@ -82,8 +82,32 @@ idempotent: hand fixes live in `scripts/data-patches.json` and are re-applied on
 **What eve.db cannot give you:** it has no effect `modifierInfo` and no `stackable` flag. Effect
 modifiers are preserved from the existing bundle; a genuinely new effect is written inert and
 reported loudly. Supply its modifier from CCP's FSD dump via `data-patches.json`, or write a custom
-handler in `dogma-engine.js`. Only ONE hand patch remains: **effect 12887**, which CCP ships with an
-empty modifier list.
+handler in `dogma-engine.js`.
+
+### Overriding an attribute VALUE, and why you almost never should
+
+`data-patches.json` also has a `types` section that replaces individual attribute values. It exists
+for one situation: **the SDE contradicts the live game.** A number that merely looks wrong is CCP
+rebalancing, and overriding it makes the app lie.
+
+The bar is evidence from in-game, not reasoning about what the value ought to be. The only two
+entries are the Paladin and Golem `agility` after 24.01, where the SDE carries ten times the value
+the rest of the marauder mass pass implies (`0.858` where every sibling hull got `old / 0.8` rounded
+to four decimals, here `0.0858`) and the ships still align in about fifteen seconds in game.
+
+These are the one place the app deliberately disagrees with pyfa, which reads the same SDE and
+reports 103 and 113 second align times. Section `balance` of the regression suite says so in as many
+words, so nobody "fixes" it back.
+
+Each override declares the wrong value it expects to find:
+
+```json
+"28659": { "_why": "…", "a": { "70": { "from": 0.858, "to": 0.0858 } } }
+```
+
+If the db stops saying `from`, the build **fails**. That is the point — the patch retires itself the
+day CCP corrects the data rather than silently overriding a now-correct number forever. Do not just
+update `from` to make the build pass; re-derive the value or delete the entry.
 
 ### Two traps when regenerating `type-descriptions.json`
 

@@ -3,10 +3,15 @@
     "Hand-applied fixes for data CCP does not ship usable. build-bundle.py re-applies these at the",
     "end of every build, so regenerating the bundles is idempotent and these fixes never get lost.",
     "",
-    "Only put things here that CANNOT come from eve.db. Attribute VALUES do not belong here — they",
-    "come from eve.db automatically now that the allowlist is gone. This file is for:",
-    "  1. effects whose modifierInfo CCP ships empty (they are applied client-side in EVE), and",
-    "  2. attribute flags eve.db does not carry (notably `stackable`).",
+    "Only put things here that CANNOT come from eve.db. This file is for:",
+    "  1. effects whose modifierInfo CCP ships empty (they are applied client-side in EVE),",
+    "  2. attribute flags eve.db does not carry (notably `stackable`), and",
+    "  3. attribute VALUES where the SDE contradicts the live game (`types`).",
+    "",
+    "(3) is a last resort and needs evidence from in-game, not reasoning about what the value",
+    "ought to be. A normal wrong-looking number is CCP rebalancing and belongs nowhere near here.",
+    "Each override declares the wrong value it expects to find, so the build FAILS the day CCP",
+    "fixes the data rather than overriding a now-correct number forever.",
     "",
     "Every entry must say WHY it exists and what breaks without it."
   ],
@@ -475,5 +480,15 @@
       }
     ]
   },
-  "attributes": {}
+  "attributes": {},
+  "types": {
+    "28659": {
+      "_why": "Paladin agility. The 24.01 marauder mass pass cut every hull to 0.8x mass and raised agility by the reciprocal so align time held: the Kronos went 0.074 -> 0.0925 and the Vargur 0.071 -> 0.0888, both 1/0.8 of the old value rounded to four decimals. The Paladin's 0.0686 should have become 0.0858 by the same arithmetic, and the SDE says 0.858 — the same digits with the decimal one place out. It is a data bug, not a nerf: Owen confirmed in game that the Paladin still aligns in about 15 seconds, where 0.858 would make it 103. pyfa 2.69.0 reads the same SDE and reports the wrong number too, so this is a deliberate divergence from the reference implementation.",
+      "a": { "70": { "from": 0.858, "to": 0.0858 } }
+    },
+    "28710": {
+      "_why": "Golem agility, the same decimal bug as the Paladin above. 0.077 / 0.8 = 0.09625, which rounds to 0.0963; the SDE says 0.963. Confirmed in game to still align in about 17 seconds rather than 113.",
+      "a": { "70": { "from": 0.963, "to": 0.0963 } }
+    }
+  }
 }

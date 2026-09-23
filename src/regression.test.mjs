@@ -76,6 +76,10 @@ const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).joi
 //   - Vargur mass 150,000,000 -> 120,000,000 kg, part of a marauder mass pass.
 //   - The Cerberus is no longer a single-damage-type hull, so the two checks that used it to prove a
 //     hull bonus lands on one type and not the others moved to the Drake.
+//   - Paladin and Golem agility: the SDE says 0.858 and 0.963, ten times what the rest of the
+//     marauder mass pass implies, and the live game still aligns them in about fifteen seconds.
+//     data-patches.json overrides both, which makes them the one place we deliberately disagree
+//     with pyfa — it reads the same SDE and reports the wrong number.
 //
 // 2026-07-16 upgrade (build 3383521 -> 3424810): all 50 baselines passed UNCHANGED — none of the
 // validated fits touch anything CCP moved in this SDE bump. What changed and was audited as a
@@ -8020,18 +8024,18 @@ Nanofiber Internal Structure II
 
   // The mass pass: eleven hulls got lighter and CCP shipped the inertia to go with it, so align time
   // — proportional to mass x inertia — should not have moved. The expected products are pre-patch.
+  //
+  // The Paladin and Golem reach the same answer only because data-patches.json overrides their
+  // agility: the SDE carries 0.858 and 0.963, ten times the value the rest of the pass implies, and
+  // in game both still align in about fifteen seconds. pyfa 2.69.0 reads the same SDE and reports
+  // 103 and 113 seconds, so THESE TWO ARE A DELIBERATE DIVERGENCE FROM THE REFERENCE IMPLEMENTATION
+  // and the only place in the suite where disagreeing with pyfa is the correct outcome. Without the
+  // override they land 10x high here.
   const alignProduct=n=>named(n).a.mass*named(n).a.agility;
   for(const [hull,before] of [['Kronos',10952000],['Vargur',10650000],['Redeemer',10821600],
       ['Sin',7269210],['Widow',10274800],['Panther',9523200],['Marshal',10500000],
-      ['Python',7269210],['Babaroga',11440000]])
+      ['Python',7269210],['Babaroga',11440000],['Paladin',10976000],['Golem',12089000]])
     check('balance',`the ${hull} still aligns in the same time`,alignProduct(hull),before,1e-3);
-  // On two of them it did not. CCP's 24.01 data gives the Paladin agility 0.858 and the Golem 0.963,
-  // ten times the value that would have held their align, so both now align in about 2.5 minutes.
-  // pyfa 2.69.0 reads the same eve.db and reproduces it, so the number is CCP's, not ours. Pinned as
-  // a RATIO rather than corrected, so that the day CCP moves the decimal back this check says so.
-  for(const [hull,before] of [['Paladin',10976000],['Golem',12089000]])
-    check('balance',`the ${hull} aligns ten times slower, as CCP's data says`,
-      alignProduct(hull)/before,10,1e-3);
 
   // The Traits tab prints CCP's bonus WORDING from ship-traits.json, generated separately from the
   // attributes the engine reads. The two disagreeing shipped once: a Deimos that computed falloff at
