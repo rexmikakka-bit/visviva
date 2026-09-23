@@ -7,7 +7,7 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * Every number below was validated by hand against pyfa v2.68.0 with all skills at V. They are not
+ * Every number below was validated by hand against pyfa v2.69.0 with all skills at V. They are not
  * "whatever the code currently prints" — they are the correct answers, and several of them cost a
  * lot of digging to establish. If you change calc.js, dogma-engine.js or the dogma-*.json bundles
  * and one of these moves, you have broken something real. Do not "fix" the test to match new output
@@ -64,9 +64,18 @@ const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
 const EMPTY = { high: [], mid: [], low: [], rigs: [] };
 const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).join('/');
 
-// The EVE client build these baselines were validated against (pyfa v2.68.0 / build 3424810).
+// The EVE client build these baselines were validated against (pyfa v2.69.0 / build 3532181).
 // If the bundle is regenerated from a NEWER eve.db, some baselines will legitimately move — CCP
 // rebalances things. That is a worklist, not a code regression. See CLAUDE.md -> "Upgrading eve.db".
+//
+// 2026-09-22 upgrade (build 3424810 -> 3532181, EVE 24.01), every moved baseline re-read from
+// pyfa v2.69.0's own eos:
+//   - Cerberus weapon DPS 620.0127 -> 558.0114 (587.3804 with Rapid Launch). shipBonusCC went 5 -> 2.5
+//     per level, so the kinetic ammo these fits carry loses exactly 25% -> 12.5% of its bonus. The
+//     bonus also widened to all four damage types, which this kinetic fit cannot see.
+//   - Vargur mass 150,000,000 -> 120,000,000 kg, part of a marauder mass pass.
+//   - The Cerberus is no longer a single-damage-type hull, so the two checks that used it to prove a
+//     hull bonus lands on one type and not the others moved to the Drake.
 //
 // 2026-07-16 upgrade (build 3383521 -> 3424810): all 50 baselines passed UNCHANGED — none of the
 // validated fits touch anything CCP moved in this SDE bump. What changed and was audited as a
@@ -84,7 +93,7 @@ const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).joi
 //     new site mechanic, not a static hull bonus.
 //   - Breach Control module (SCARAB-pod damage resist) and the Imperial Navy 'Atonement' Tracking
 //     Enhancer (laser cap-need reduction) are real but single ultra-niche items; deferred.
-const VALIDATED_BUILD = '3424810';
+const VALIDATED_BUILD = '3532181';
 
 let bundleVersion = null;
 try {
@@ -1446,11 +1455,11 @@ function check(group, label, actual, expected, tol = 0.005) {
 //     read 594 scan resolution against eos's 296.875 — exactly 2x, the cloak's x0.5.
 //   - An implant can sit in a fit but be switched OFF. Boosters already honoured `active`;
 //     implants did not. A Cerberus whose Zainou 'Deadeye' Rapid Launch RL-1005 was disabled read
-//     652.6 weapon DPS against eos's 620.0 — exactly the implant's +5% RoF (1/0.95).
+//     587.4 weapon DPS against eos's 558.0 — exactly the implant's +5% RoF (1/0.95).
 //
 // eos-sourced: Stork + offline Prototype Cloaking Device I -> scanResolution 296.875; Cerberus with
-// 6x HAM II (Caldari Navy Scourge) + BCS II + 2x Caldari Navy BCS -> 620.0127 weapon DPS, and
-// 652.6449 with the implant ACTIVE.
+// 6x HAM II (Caldari Navy Scourge) + BCS II + 2x Caldari Navy BCS -> 558.0114 weapon DPS, and
+// 587.3804 with the implant ACTIVE.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nFITTED-BUT-INERT (offline modules, disabled implants)');
@@ -1473,9 +1482,9 @@ function check(group, label, actual, expected, tol = 0.005) {
   };
   const RL = "Zainou 'Deadeye' Rapid Launch RL-1005";
   const cerbDps = (implants) => calcFitStats(cerb, cerbSlots, [], null, { implants }).weaponDps.total;
-  check('inert', 'Cerberus DPS, no implant', cerbDps([]), 620.0127, 0.005);
-  check('inert', 'Rapid Launch implant ACTIVE', cerbDps([{ name: RL }]), 652.6449, 0.005);
-  check('inert', 'Rapid Launch implant DISABLED', cerbDps([{ name: RL, active: false }]), 620.0127, 0.005);
+  check('inert', 'Cerberus DPS, no implant', cerbDps([]), 558.0114, 0.005);
+  check('inert', 'Rapid Launch implant ACTIVE', cerbDps([{ name: RL }]), 587.3804, 0.005);
+  check('inert', 'Rapid Launch implant DISABLED', cerbDps([{ name: RL, active: false }]), 558.0114, 0.005);
 
   // A rig can be offlined here even though the game does not allow it, because pyfa allows it and it
   // is the only way to ask what a rig is worth without pulling it off the fit. Offline has to mean
@@ -4417,7 +4426,7 @@ Republic Fleet Command Mindlink`;
   // rather than spot-checked for the reason the comment above gives.
   //
   // MASS: 317 of ships.json's 423 rows carry mass 0 (and volume 0), the Vargur among them. It read
-  // "0.00M kg" on the hull's own attributes sheet next to a correct 150.00M current, and GraphTab's
+  // "0.00M kg" on the hull's own attributes sheet next to a correct current value, and GraphTab's
   // align-time fallback (`cs?.mass ?? ship.mass`) would have taken the 0 rather than skipping past
   // it. No ship in EVE is massless, so this needs no tolerance for a legitimate zero.
   const massless = [], volumeless = [];
@@ -4429,7 +4438,7 @@ Republic Fleet Command Mindlink`;
   if (massless.length) console.log(`      MASSLESS: ${massless.slice(0, 8).join(', ')}`);
   check('hull', 'every hull has a mass', massless.length, 0, 0);
   check('hull', 'every hull has a volume', volumeless.length, 0, 0);
-  check('hull', 'Vargur mass (kg)', lookupShip('Vargur').mass, 150e6, 1e-9);
+  check('hull', 'Vargur mass (kg)', lookupShip('Vargur').mass, 120e6, 1e-9);
 
   // SENSOR TYPE: ships.json calls 62 Minmatar hulls "Laser", which is not one of the four sensor
   // types EVE has — the Minmatar sensor is LADAR. The Stats tab prints this string verbatim beside
@@ -5951,7 +5960,7 @@ Agency 'Overclocker' SB7 Dose III
 // the two are computing the same quantity by different routes and have no licence to differ.
 //
 // Drop any one of the three sources and the ratio moves: without shipMd a Cerberus reads 1.333
-// instead of 1.667, without the ROF share a Rifter reads 1.0 instead of 1.6.
+// instead of 1.5, without the ROF share a Rifter reads 1.0 instead of 1.6.
 // ─────────────────────────────────────────────────────────────────────────────
 {
   console.log('\nEFFECTIVE HARDPOINTS (hull bonus as a multiple of a bare hardpoint)');
@@ -5973,9 +5982,10 @@ Agency 'Overclocker' SB7 Dose III
   };
   // Rate of fire only (the Caracal's kinetic bonus is long gone; its launcher bonus is pure cycle).
   measured('a ROF bonus counts as damage', 'Caracal', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile');
-  // ROF and a kinetic damage bonus together, and the same hull denied the damage half by its ammo.
+  // ROF and a damage bonus together. 24.01 widened the Cerberus bonus to all four damage types, so
+  // the ammo-sensitive half of this pair moved to the Drake, which still bonuses kinetic alone.
   measured('ROF and damage compound', 'Cerberus', 'Osprey', 'Heavy Missile Launcher II', 'Scourge Heavy Missile');
-  measured('a kinetic bonus is worth nothing on EM ammo', 'Cerberus', 'Osprey', 'Heavy Missile Launcher II', 'Mjolnir Heavy Missile');
+  measured('a kinetic bonus is worth nothing on EM ammo', 'Drake', 'Osprey', 'Heavy Missile Launcher II', 'Mjolnir Heavy Missile');
   // Turrets: ROF-bonused, then damage-bonused, so neither half can be the one carrying both cases.
   measured('a turret ROF bonus', 'Rifter', 'Navitas', '200mm AutoCannon II', 'Republic Fleet EMP S');
   measured('a turret damage bonus', 'Harbinger', 'Osprey', 'Focused Medium Pulse Laser II', 'Scorch M');
@@ -5993,17 +6003,17 @@ Agency 'Overclocker' SB7 Dose III
 
   // Two ammo types across one rack pool by DPS rather than averaging, so the answer is the
   // multiplier the fit's actual output earns. Equal DPS shares here, so it lands between the two.
-  const mixed = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile'),
-                                   EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]);
-  const kin = effectiveWeaponMultipliers(fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')])).launcher;
-  const em  = effectiveWeaponMultipliers(fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')])).launcher;
+  const mixed = fitOf('Drake', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile'),
+                                EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]);
+  const kin = effectiveWeaponMultipliers(fitOf('Drake', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')])).launcher;
+  const em  = effectiveWeaponMultipliers(fitOf('Drake', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')])).launcher;
   const mix = effectiveWeaponMultipliers(mixed).launcher;
   check('eff-hp', 'mixed ammo lands between its two single-ammo answers', (mix > em && mix < kin) ? 1 : 0, 1, 0);
   // The pooling rule, stated: total DPS divided by the pooled multiplier is what the same weapons
   // would do with the hull's bonuses taken away, which is the sum of each weapon's own bare figure.
   // An arithmetic mean of the two multipliers does not satisfy this and is the mistake it guards.
-  const kinDps = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')]).weaponDps.total;
-  const emDps  = fitOf('Cerberus', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]).weaponDps.total;
+  const kinDps = fitOf('Drake', [EW('Heavy Missile Launcher II', 'active', 'Scourge Heavy Missile')]).weaponDps.total;
+  const emDps  = fitOf('Drake', [EW('Heavy Missile Launcher II', 'active', 'Mjolnir Heavy Missile')]).weaponDps.total;
   check('eff-hp', 'and pools by DPS, so stripping the bonus back out reconciles',
         mixed.weaponDps.total / mix, kinDps / kin + emDps / em, 1e-9);
 
@@ -6119,12 +6129,21 @@ Medium Warhead Rigor Catalyst II
   check('charge-prov', 'both BCS are listed', bcs.length, 2, 0);
   check('charge-prov', 'second BCS penalised', bcs[1].mult, 1 + 0.10 * P(1), 1e-9);
 
-  // The Cerberus bonuses KINETIC only (shipBonusCC3). A hull row on all four damage types would be
-  // the easy mistake here, and it would be wrong on exactly the hulls people fly for the bonus.
-  check('charge-prov', 'the hull bonus lands on the type it bonuses',
-    kin.rows.filter(r => r.source?.kind === 'hull').length, 1, 0);
-  check('charge-prov', 'and nowhere else',
-    cerb.ex.emDamage.rows.filter(r => r.source?.kind === 'hull').length, 0, 0);
+  // Which damage types the hull row lands on has to follow the hull, not a blanket rule. 24.01 widened
+  // the Cerberus bonus from kinetic to all four types, so it now wants a row on each; the Drake still
+  // bonuses kinetic alone and wants exactly one. A blanket rule either way is wrong on one of them,
+  // and it would be wrong on exactly the hulls people fly for the bonus.
+  const hullRows = (ex, attr) => ex[attr].rows.filter(r => r.source?.kind === 'hull').length;
+  for (const attr of ['kineticDamage', 'emDamage', 'thermalDamage', 'explosiveDamage'])
+    check('charge-prov', `the Cerberus bonus reaches ${attr}`, hullRows(cerb.ex, attr), 1, 0);
+
+  const drake = chargeEx(`[Drake, prov]
+
+
+Heavy Missile Launcher II, Scourge Fury Heavy Missile
+`);
+  check('charge-prov', 'the Drake bonus lands on the type it bonuses', hullRows(drake.ex, 'kineticDamage'), 1, 0);
+  check('charge-prov', 'and nowhere else', hullRows(drake.ex, 'emDamage'), 0, 0);
 
   // A Standup missile declares NO required skills, so `gate()` neutralises every personal bonus —
   // the skills, the rigs, the modules, the implants. The rows must vanish with the multipliers: a
@@ -7964,117 +7983,71 @@ Nanofiber Internal Structure II
   }finally{globalThis.fetch=savedFetch;delete globalThis.localStorage;}
 }
 // ─────────────────────────────────────────────────────────────────────────────
-// 24.01 BALANCE OVERLAY — CCP shipped a balance pass on 2026-09-22 and pyfa's newest build still
-// carries 24.00, so nothing in the overlay has a reference implementation behind it yet. Every check
-// here is therefore about CONTAINMENT rather than correctness: that it stays out of this suite, that
-// it only touches hulls CCP named, and that it never edits an effect another hull shares. None of
-// them assert a DPS or a tank, because there is nothing trustworthy to assert one against.
+// 24.01 REBALANCE — four of the hulls CCP touched get their new bonus from an effect CCP ships with
+// an EMPTY modifier list, so the modifier comes from scripts/data-patches.json. CCP also REMOVED the
+// effect each one replaces, which makes the failure mode silent: a regen that loses a patch leaves
+// the hull with no bonus at all and a Traits tab still advertising one. These pin the wiring.
 // ─────────────────────────────────────────────────────────────────────────────
 {
-  const {applyBalanceOverlay,balanceOverlayApplies,BALANCE_OVERLAY:OV}=await import('./lib/balance-overlay.js');
-  const ATTRS=(await import('./data/dogma-attrs.json',{with:{type:'json'}})).default;
-  // Read from disk rather than through `import`. The imported bundle is the one `initEngine` already
-  // rewrote IN PLACE — attribute IDs became attribute names and the maps were frozen — so a clone of
-  // it would have the overlay writing numeric keys alongside named ones and testing a shape the app
-  // never sees. The app applies the overlay to the raw file before initEngine touches it; a pristine
-  // parse is the only way to reproduce that order here.
-  const {readFileSync}=await import('node:fs');
-  const pristine=n=>JSON.parse(readFileSync(new URL(`./data/${n}`,import.meta.url),'utf8'));
-  const BEFORE=pristine('dogma-types.json'),BEFORE_EFFECTS=pristine('dogma-effects.json');
+  const EFFECTS=(await import('./data/dogma-effects.json',{with:{type:'json'}})).default;
+  const SHIP_TRAITS=(await import('./data/ship-traits.json',{with:{type:'json'}})).default;
+  const named=n=>TYPES[tid(n)];
+  const modsOf=(hull,attr)=>(named(hull).e??[]).flatMap(id=>EFFECTS[id]?.m??[])
+    .filter(m=>m.modifyingAttributeID===attr);
 
-  // THE load-bearing one. Everything above this section is a number validated against pyfa 2.68, and
-  // the overlay describes a build pyfa cannot produce. If it ever switches on under Node, all of
-  // those baselines quietly start describing 24.01 and the suite stops meaning what it says.
-  check('balance','the 24.01 overlay is inert under Node',balanceOverlayApplies()?1:0,0,0);
-  // TYPES is the live post-init engine data every baseline above was computed from, so reading the
-  // Deimos falloff bonus back out of it is the direct statement that none of them saw the overlay.
-  check('balance','so the engine the baselines ran on is still 24.00',
-    `${TYPES[12023].a.eliteBonusHeavyGunship1}/${TYPES[28661].a.mass}`,'10/148000000',0);
-  check('balance','and no synthetic effect leaked into the shipped bundle',
-    Object.keys(OV.effects).filter(id=>BEFORE_EFFECTS[id]).length,0,0);
+  // Hawk and Vengeance: a kinetic-only (resp. rocket-only) damage bonus became an all-missile one.
+  // Four damage types each, or the hull is quietly flying without part of its bonus.
+  const dmg=new Set([114,116,117,118]);
+  for(const [hull,attr] of [['Hawk',463],['Vengeance',464],['Cerberus',487]])
+    check('balance',`the ${hull} missile bonus reaches all four damage types`,
+      new Set(modsOf(hull,attr).filter(m=>dmg.has(m.modifiedAttributeID)).map(m=>m.modifiedAttributeID)).size,4,0);
+  // The Hawk's and Vengeance's replacements are filtered on Missile Launcher Operation, not on the
+  // narrower skill they replaced — that widening IS the buff, and it is invisible in a DPS number
+  // taken with the old ammo.
+  check('balance','and on every missile, not just the one skill it used to',
+    modsOf('Vengeance',464).every(m=>m.skillTypeID===3319)?1:0,1,0);
 
-  // Everything below runs on a pristine copy, so the overlay is exercised without touching the live
-  // bundle — and in the same order the app applies it.
-  const types=structuredClone(BEFORE),effects=structuredClone(BEFORE_EFFECTS);
-  const result=applyBalanceOverlay(types,effects,OV);
+  // Harpy: the Assault Frigate bonus moved from optimal range (54) to tracking (160). Effect 989,
+  // which it replaced, is shared with two other hulls and must still be doing range for them.
+  check('balance','the Harpy assault-frigate bonus is tracking, not range',
+    modsOf('Harpy',673).map(m=>m.modifiedAttributeID).sort().join(','),'160',0);
+  check('balance','and the hulls that kept effect 989 still get range',EFFECTS[989].m[0].modifiedAttributeID,54,0);
+  check('balance','the Harpy no longer carries it',(named('Harpy').e??[]).includes(989)?1:0,0,0);
 
-  // A hull the overlay names but the bundle does not have is a transcription error, and applying
-  // less than intended is exactly the failure that would otherwise go unnoticed — the app would just
-  // quietly fly an unbuffed ship.
-  check('balance','every hull the overlay names exists in the bundle',result.skipped.length,0,0);
-  check('balance','and CCP named 25 of them',result.changed.length,25,0);
-  const badAttr=Object.values(OV.types).flatMap(e=>Object.keys(e.attrs??{})).filter(a=>!ATTRS[a]);
-  check('balance','every attribute it sets is a real attribute',badAttr.length,0,0);
-  const undefinedAdds=Object.values(OV.types).flatMap(e=>e.addEffects??[]).filter(id=>!OV.effects[id]);
-  check('balance','every effect it adds is one it also defines',undefinedAdds.length,0,0);
-  // A removal that matches nothing is a silent no-op: the hull keeps the bonus CCP replaced AND
-  // gains the replacement, which reads as a buff nobody shipped.
-  const deadRemovals=Object.entries(OV.types)
-    .flatMap(([id,e])=>(e.removeEffects??[]).filter(eff=>!(BEFORE[id]?.e??[]).includes(eff)));
-  check('balance','every effect it removes is actually on that hull',deadRemovals.length,0,0);
+  // Ishkur: a bonus the hull had no wiring for at all before 24.01.
+  check('balance','the Ishkur bonuses drone tracking',
+    modsOf('Ishkur',586).filter(m=>m.modifiedAttributeID===160).length,1,0);
 
-  // The containment that matters most. CCP's kinetic missile bonus is effect 899, which the Cerberus
-  // SHARES with three other hulls; widening it in place would hand them a damage-type spread CCP
-  // never gave them. The overlay adds hull-local effects instead, so 899 must come out untouched and
-  // its other users must look exactly as they did.
-  check('balance','a shared effect is never rewritten in place',
-    JSON.stringify(effects[899]),JSON.stringify(BEFORE_EFFECTS[899]),0);
-  const bystanders=['Onyx','Orthrus','Laelaps'].map(n=>tid(n));
-  check('balance','and the hulls sharing it are left alone',
-    bystanders.filter(id=>JSON.stringify(types[id].e)!==JSON.stringify(BEFORE[id].e)).length,0,0);
-  check('balance','the Harpy is the only hull to lose effect 989',
-    Object.keys(BEFORE).filter(id=>(BEFORE[id].e??[]).includes(989)
-      &&!(types[id].e??[]).includes(989)).map(id=>types[id].n).join(','),'Harpy',0);
+  // The mass pass: eleven hulls got lighter and CCP shipped the inertia to go with it, so align time
+  // — proportional to mass x inertia — should not have moved. The expected products are pre-patch.
+  const alignProduct=n=>named(n).a.mass*named(n).a.agility;
+  for(const [hull,before] of [['Kronos',10952000],['Vargur',10650000],['Redeemer',10821600],
+      ['Sin',7269210],['Widow',10274800],['Panther',9523200],['Marshal',10500000],
+      ['Python',7269210],['Babaroga',11440000]])
+    check('balance',`the ${hull} still aligns in the same time`,alignProduct(hull),before,1e-3);
+  // On two of them it did not. CCP's 24.01 data gives the Paladin agility 0.858 and the Golem 0.963,
+  // ten times the value that would have held their align, so both now align in about 2.5 minutes.
+  // pyfa 2.69.0 reads the same eve.db and reproduces it, so the number is CCP's, not ours. Pinned as
+  // a RATIO rather than corrected, so that the day CCP moves the decimal back this check says so.
+  for(const [hull,before] of [['Paladin',10976000],['Golem',12089000]])
+    check('balance',`the ${hull} aligns ten times slower, as CCP's data says`,
+      alignProduct(hull)/before,10,1e-3);
 
-  // CCP published the new masses but not the new inertia, saying only that align times were held.
-  // Align time is proportional to mass x inertia, so the product is the thing that must not move —
-  // and it is the only part of these 11 hulls that is our arithmetic rather than CCP's number.
-  const massHulls=Object.keys(OV.types).filter(id=>OV.types[id].attrs?.['4']!=null);
-  check('balance','eleven hulls got lighter',massHulls.length,11,0);
-  const alignDrift=massHulls.filter(id=>
-    Math.abs(types[id].a['4']*types[id].a['70']-BEFORE[id].a['4']*BEFORE[id].a['70'])>1);
-  check('balance','and every one of them still aligns in the same time',alignDrift.length,0,0);
-  check('balance','a lighter Kronos is a more agile one',
-    types[28661].a['70']>BEFORE[28661].a['70']?1:0,1,0);
-
-  // The two bonuses whose SHAPE changed, not just their size. Both are reconstructions, so what is
-  // worth pinning is that the reconstruction has the shape CCP described at all.
-  const damageAttrs=new Set([114,116,117,118]);
-  const cerbDamage=new Set((types[11993].e??[])
-    .map(id=>effects[id]?.m?.[0]).filter(m=>m?.modifyingAttributeID===487&&damageAttrs.has(m.modifiedAttributeID))
-    .map(m=>m.modifiedAttributeID));
-  check('balance','the Cerberus bonus now reaches all four damage types',cerbDamage.size,4,0);
-  check('balance','at half the size it used to bonus kinetic alone',types[11993].a['487'],2.5,1e-9);
-  const harpyAF=(types[11381].e??[]).map(id=>effects[id]?.m?.[0])
-    .filter(m=>m?.modifyingAttributeID===673).map(m=>m.modifiedAttributeID).sort().join(',');
-  check('balance','the Harpy assault-frigate bonus moved from range to tracking',harpyAF,'160',0);
-
-  // The overlay is a stopgap with a defined end: when pyfa ships 24.01 the real fix is a regen, and
-  // this file is deleted. Recording the build it was transcribed against is what makes that visible
-  // later — if the bundle has moved on, the transcription was against something else.
-  check('balance','the overlay records which build it was transcribed against',
-    OV.transcribedAgainstBuild,VALIDATED_BUILD,0);
-
-  // The Traits tab prints CCP's bonus WORDING, which is generated into ship-traits.json separately
-  // from the attributes the engine reads. Patching one and not the other shipped once: a Deimos that
-  // computed falloff at 15% and advertised 10% right next to it.
-  const {applyTraitOverlay}=await import('./lib/balance-overlay.js');
-  const BEFORE_TRAITS=pristine('ship-traits.json'),traits=structuredClone(BEFORE_TRAITS);
-  const traitResult=applyTraitOverlay(traits,OV);
-  // A skip means the text the op expects is not there. Either the transcription is wrong, or a regen
-  // has moved the wording on — both need a human, and neither should pass quietly as "nothing to do".
-  check('balance','every trait op finds the line it means to rewrite',traitResult.skipped.length,0,0);
-  check('balance','and rewrites eleven of them',traitResult.changed.length,11,0);
-  // THE check that would have caught the original bug. Every printed bonus is pinned to the attribute
-  // the engine multiplies by, so moving one without the other fails here rather than in the app.
-  const disagree=Object.entries(OV.types).flatMap(([id,e])=>(e.traits??[])
-    .filter(op=>Math.abs(types[id].a[op.attr])!==parseFloat(op.toNumber??op.addNumber??op.fromNumber))
-    .map(op=>`${e._name}/${op.attr}`));
-  check('balance','every printed bonus matches the attribute the engine uses',disagree.join(','),'',0);
-  // Applied twice it must do nothing the second time — core.js runs it on a module-level object that
-  // outlives any one render, and a second pass that re-matched would compound the change.
-  check('balance','re-applying the trait overlay changes nothing',
-    applyTraitOverlay(traits,OV).changed.length,0,0);
+  // The Traits tab prints CCP's bonus WORDING from ship-traits.json, generated separately from the
+  // attributes the engine reads. The two disagreeing shipped once: a Deimos that computed falloff at
+  // 15% and advertised 10% right next to it.
+  const printed=(hull,section,text)=>(SHIP_TRAITS[tid(hull)]?.skills??[])
+    .find(s=>(s.header??'').startsWith(section))?.bonuses?.find(b=>b.text===text)?.number;
+  for(const [hull,section,text,attr] of [
+    ['Deimos','Heavy Assault Cruisers','bonus to Medium Hybrid Turret falloff','eliteBonusHeavyGunship1'],
+    ['Eagle','Heavy Assault Cruisers','bonus to Medium Hybrid Turret damage','eliteBonusHeavyGunship2'],
+    ['Vigilant','Gallente Cruiser','bonus to Medium Hybrid Turret falloff','shipBonusGC'],
+    ['Phobos','Heavy Interdiction Cruisers','bonus to Medium Hybrid Turret optimal range','eliteBonusHeavyInterdictors1'],
+    ['Harpy','Caldari Frigate','bonus to Small Hybrid Turret optimal range','shipBonusCF2'],
+    ['Harpy','Assault Frigates','bonus to Small Hybrid Turret tracking speed','eliteBonusGunship1'],
+    ['Ishkur','Gallente Frigate','bonus to Drone hitpoints and tracking speed','shipBonusGF2'],
+  ]) check('balance',`the ${hull} prints the ${attr} the engine uses`,
+    printed(hull,section,text),`${Math.abs(named(hull).a[attr])}%`,0);
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
@@ -8083,7 +8056,7 @@ if (failures.length === 0) {
 } else {
   console.log(`${passed} passed, ${failures.length} FAILED:\n`);
   for (const f of failures) console.log(`  ✗ [${f.group}] ${f.label}: got ${f.actual}, expected ${f.expected}`);
-  console.log('\nThese baselines are validated against pyfa v2.68.0. A failure means the code');
+  console.log('\nThese baselines are validated against pyfa v2.69.0. A failure means the code');
   console.log('regressed — do NOT update the expected values without re-checking against pyfa.');
   process.exit(1);
 }

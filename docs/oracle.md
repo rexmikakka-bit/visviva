@@ -111,18 +111,30 @@ reproduces our baseline exactly — eos weaponDps 13301.28 (ours 13301), volley 
 - Siege / Triage / Bastion are ordinary `Module`s in eos, not T3-style "modes". Charges: build the
   Module, set `m.owner = fit`, `m.state`, then `m.charge = <chargeItem>`, then `fit.modules.append`.
 
-**Deps (already installed into `/c/Python314`):** `sqlalchemy==1.4.50` (builds fine on 3.14 despite
-its age), `logbook`, `pyyaml`. `numpy` is NOT imported by eos — don't bother. `python`/`python3`/`py`
-hit a Microsoft Store alias stub; the real interpreter is `/c/Python314/python` (3.14.5).
+**Deps (already installed into `/c/Python314`):** `sqlalchemy`, `logbook`, `pyyaml`. `numpy` is NOT
+imported by eos — don't bother. `python`/`python3`/`py` hit a Microsoft Store alias stub; the real
+interpreter is `/c/Python314/python` (3.14.5).
 
-**Assets located on this machine (as of the 2026-07-16 v2.68 upgrade):**
+**SQLAlchemy's major version is pinned to pyfa's, and a mismatch is an ImportError at startup.**
+v2.68 needed 1.x; v2.69 moved to 2.x and `eos/db/gamedata/item.py` imports `attribute_keyed_dict`,
+which only exists there. Take the pin from the clone's own `pyproject.toml` rather than guessing:
+
+```bash
+/c/Python314/python -m pip install --user "sqlalchemy==$(grep -oP 'sqlalchemy==\K[0-9.]+' Pyfa-master/pyproject.toml)"
+```
+
+**Assets located on this machine (as of the 2026-09-22 v2.69 upgrade):**
 
 | What | Path |
 | --- | --- |
-| pyfa v2.68.0 gamedata db (build 3424810) — the **authoritative** one | `C:\Program Files\pyfa\app\eve.db` |
-| Old gamedata db (build 3383521) — repo root, superseded | `eve.db` (repo root) |
+| pyfa v2.69.0 gamedata db (build 3532181) — the **authoritative** one | `Pyfa-master/app/eve.db` |
+| Old gamedata dbs, superseded | `C:\Program Files\pyfa\app\eve.db` (3424810), `eve.db` (repo root, 3383521) |
 | User's real characters / skills / fits | `C:\Users\owen_\.pyfa\saveddata.db` |
 | pyfa source clone — the ONE clone; must match eve.db's version (enforced at startup) | `Pyfa-master/` |
+
+The authoritative db moved **out of the installed pyfa and into the clone** at the v2.69 upgrade, so
+the engine code and the data it describes are now upgraded by the same action. The installed app lags
+whatever release was last pulled here, which is exactly the skew the sentinel below exists to catch.
 
 - pyfa's gamedata schema is its **own** compact SQLite (tables `dgmattribs`, `dgmtypeattribs`
   (single `value` column), `invtypes`, `invgroups.name`, …) matching `eos/db/gamedata/*.py` — **not**

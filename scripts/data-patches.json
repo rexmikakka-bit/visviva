@@ -381,6 +381,98 @@
         "modifyingAttributeID": 973,
         "operation": 6
       }
+    ],
+    "13024": [
+      {
+        "_why": "eliteBonusGunshipHybridTracking1 (Harpy, 11381). New in 24.01, shipped empty. CCP REPLACED the hull's Assault Frigate optimal-range bonus: effect 989 was removed from the Harpy and this put in its place, so without a modifier the hull simply loses the bonus rather than showing the old one. Same shape as the 989 it replaces (which is shared with two other hulls and must stay untouched), with maxRange swapped for trackingSpeed. Mirrors pyfa Effect13024.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 160,
+        "modifyingAttributeID": 673,
+        "operation": 6,
+        "skillTypeID": 3301
+      }
+    ],
+    "13025": [
+      {
+        "_why": "shipMissileDamageCF (Hawk, 11379). New in 24.01, shipped empty. CCP removed effect 898 (kinetic only) from the hull and put this in its place, widening the bonus to all four damage types, so without modifiers the Hawk loses its missile damage bonus entirely. Shape cloned from the 898 it replaces, one modifier per damage type. Mirrors pyfa Effect13025, which filters charges on Missile Launcher Operation.",
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 114,
+        "modifyingAttributeID": 463,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 116,
+        "modifyingAttributeID": 463,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 117,
+        "modifyingAttributeID": 463,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 118,
+        "modifyingAttributeID": 463,
+        "operation": 6,
+        "skillTypeID": 3319
+      }
+    ],
+    "13026": [
+      {
+        "_why": "shipBonusDroneTrackingGF2 (Ishkur, 12042). New in 24.01, shipped empty. A brand new bonus the hull had no wiring for, so without a modifier the Traits tab advertises drone tracking the engine never applies. Shape cloned from the Ishtar's drone tracking effect 5556, reading shipBonusGF2 and filtered on Drones. Mirrors pyfa Effect13026.",
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 160,
+        "modifyingAttributeID": 586,
+        "operation": 6,
+        "skillTypeID": 3436
+      }
+    ],
+    "13027": [
+      {
+        "_why": "shipMissileDamageAF (Vengeance, 11365). New in 24.01, shipped empty. CCP removed the four rocket-only effects 3234/3235/3236/3237 from the hull and put this in their place, widening the bonus from Rockets to every missile, so without modifiers the Vengeance loses its missile damage bonus entirely. Shape cloned from those four, with the skill filter moved from Rockets to Missile Launcher Operation. Mirrors pyfa Effect13027.",
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 114,
+        "modifyingAttributeID": 464,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 116,
+        "modifyingAttributeID": 464,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 117,
+        "modifyingAttributeID": 464,
+        "operation": 6,
+        "skillTypeID": 3319
+      },
+      {
+        "domain": "charID",
+        "func": "OwnerRequiredSkillModifier",
+        "modifiedAttributeID": 118,
+        "modifyingAttributeID": 464,
+        "operation": 6,
+        "skillTypeID": 3319
+      }
     ]
   },
   "attributes": {}

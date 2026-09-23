@@ -154,6 +154,35 @@ FITS = {
         "mid": [], "low": [], "rigs": [],
     },
 
+    # The fit behind the "fitted-but-inert" baselines in regression.test.mjs section 12d, ported when
+    # 24.01 halved the Cerberus missile bonus and widened it to all four damage types. Its DPS is the
+    # only baseline that moves with that change, so it needs a reference implementation to move to.
+    "cerberus_ham": {
+        "ship": "Cerberus",
+        "high": [{"name": "Heavy Assault Missile Launcher II", "state": "active",
+                  "ammo": "Caldari Navy Scourge Heavy Assault Missile"}] * 6,
+        "mid": [],
+        "low": [
+            {"name": "Ballistic Control System II", "state": "online"},
+            {"name": "Caldari Navy Ballistic Control System", "state": "online"},
+            {"name": "Caldari Navy Ballistic Control System", "state": "online"},
+        ],
+        "rigs": [],
+    },
+    "cerberus_ham_rapid_launch": {
+        "ship": "Cerberus",
+        "high": [{"name": "Heavy Assault Missile Launcher II", "state": "active",
+                  "ammo": "Caldari Navy Scourge Heavy Assault Missile"}] * 6,
+        "mid": [],
+        "low": [
+            {"name": "Ballistic Control System II", "state": "online"},
+            {"name": "Caldari Navy Ballistic Control System", "state": "online"},
+            {"name": "Caldari Navy Ballistic Control System", "state": "online"},
+        ],
+        "rigs": [],
+        "implants": [{"name": "Zainou 'Deadeye' Rapid Launch RL-1005"}],
+    },
+
     "bane": {
         "ship": "Bane",
         "high": [

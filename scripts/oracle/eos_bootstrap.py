@@ -1,6 +1,6 @@
 """Headless bootstrap for pyfa's eos engine.
 
-Points eos at the authoritative pyfa gamedata db (build 3424810) and exposes
+Points eos at the authoritative pyfa gamedata db (build 3532181) and exposes
 helpers to build a Fit programmatically. Importing this module wires eos up;
 `get_eos()` returns the loaded namespace.
 
@@ -12,12 +12,15 @@ Python note: the real interpreter on this machine is C:\\Python314\\python.exe
 import os
 import sys
 
-# Authoritative pyfa gamedata db that matches our bundle (client build 3424810).
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Authoritative pyfa gamedata db that matches our bundle (client build 3532181). It now lives beside
+# the clone rather than inside the installed pyfa, so the engine code and the data it describes are
+# upgraded by the same action — the installed app lags whatever release was last pulled here.
 GAMEDATA_DB = os.environ.get(
-    "EOS_GAMEDATA_DB", r"C:\Program Files\pyfa\app\eve.db"
+    "EOS_GAMEDATA_DB", os.path.join(_REPO_ROOT, "Pyfa-master", "app", "eve.db")
 )
 
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # The clone supplies the eos ENGINE code; it MUST match the gamedata db version. eos hand-codes
 # every effect as a Python class, so a clone older than the db is missing classes for whatever CCP
 # added since — and a missing class is a SILENT no-op, not an error. The oracle then reports a
@@ -29,7 +32,7 @@ _PYFA_ROOT = os.environ.get("PYFA_ROOT", os.path.join(_REPO_ROOT, "Pyfa-master")
 # example: the Astarte's Command Ships bonus moved to it in v2.68, and a v2.66.3 clone drops the
 # whole bonus and reports weaponDps 799.8 where the correct answer is 1199.6.
 # When you upgrade eve.db + the clone together, update this list to an effect new in THAT version.
-_VERSION_SENTINELS = {"Effect12897": "v2.68 (Astarte Command Ships hybrid-damage bonus)"}
+_VERSION_SENTINELS = {"Effect13027": "v2.69 (Vengeance all-missile damage bonus, new in 24.01)"}
 
 
 def _assert_clone_matches_db():
