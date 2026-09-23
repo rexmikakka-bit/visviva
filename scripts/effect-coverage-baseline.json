@@ -1,7 +1,7 @@
 {
   "_comment": "Snapshot of empty-modifier effects present on fittable types. See check-effect-coverage.mjs. The GATE compares only the set of effect IDs; `c`/`n`/`ex` are informational. Regenerate with: node scripts/check-effect-coverage.mjs --update",
-  "clientBuild": "3424810",
-  "generatedAt": "2026-08-03",
+  "clientBuild": "3532181",
+  "generatedAt": "2026-09-23",
   "count": 174,
   "effects": {
     "4": {
@@ -460,15 +460,6 @@
       "n": 1,
       "ex": [
         "'Gjallarhorn' Explosive Doomsday"
-      ]
-    },
-    "4921": {
-      "c": 1,
-      "n": 6,
-      "ex": [
-        "Large Micro Jump Drive",
-        "Medium Micro Jump Drive",
-        "Capital Micro Jump Drive"
       ]
     },
     "4928": {
@@ -1163,13 +1154,6 @@
         "Tactical Capsuleer Recloner"
       ]
     },
-    "8328": {
-      "c": 0,
-      "n": 1,
-      "ex": [
-        "Coherence Volatile Booster"
-      ]
-    },
     "8364": {
       "c": 1,
       "n": 12,
@@ -1344,6 +1328,15 @@
         "State Hardpoint Booster II"
       ]
     },
+    "12869": {
+      "c": 0,
+      "n": 16,
+      "ex": [
+        "Revenant",
+        "Hel",
+        "Archon"
+      ]
+    },
     "12872": {
       "c": 0,
       "n": 1,
@@ -1453,13 +1446,6 @@
         "Breach Control"
       ]
     },
-    "12923": {
-      "c": 0,
-      "n": 1,
-      "ex": [
-        "SITREP Clash Booster"
-      ]
-    },
     "12924": {
       "c": 0,
       "n": 5,
@@ -1474,6 +1460,20 @@
       "n": 1,
       "ex": [
         "Imperial Navy 'Atonement' Tracking Enhancer"
+      ]
+    },
+    "12975": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Capital Jump Portal Generation"
+      ]
+    },
+    "13021": {
+      "c": 0,
+      "n": 1,
+      "ex": [
+        "Hybrid Drone Specialization"
       ]
     }
   }

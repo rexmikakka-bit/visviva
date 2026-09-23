@@ -66,7 +66,7 @@ export can use previously resolved station information offline; unresolved links
 
 Axis implements EVE's dogma attribute and effect system in JavaScript, including stacking penalties, hull and subsystem bonuses, implant sets, command bursts, environment effects, and overheating.
 
-[pyfa](https://github.com/pyfa-org/Pyfa) v2.68.0, using EVE client build 3424810, is the calculation reference. Discrepancies are investigated against pyfa before changing expected results.
+[pyfa](https://github.com/pyfa-org/Pyfa) v2.69.0, using EVE client build 3532181, is the calculation reference. Discrepancies are investigated against pyfa before changing expected results.
 
 The regression suite includes fit values checked manually against pyfa and through its `eos` engine, as well as checks for fitting rules and application behavior. Automated validation also checks imports, translations, production builds, and offline dependencies.
 

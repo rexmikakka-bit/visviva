@@ -48,6 +48,12 @@ and new attributes default to stackable=1 (and are reported).
 
 Hand-applied fixes for effects CCP ships empty live in scripts/data-patches.json
 and are re-applied at the end of every build, so regeneration is idempotent.
+
+That file's "types" section also overrides individual ATTRIBUTE VALUES, which is a
+much bigger hammer and is reserved for the case where the SDE contradicts the live
+game. Each override declares the wrong value it expects to find, so the build fails
+the moment CCP fixes the data and the patch can be retired instead of silently
+overriding a now-correct number forever.
 """
 
 import argparse, json, os, re, sqlite3, sys
@@ -261,6 +267,11 @@ def main():
     if dead:
         print(f"pruned:  {len(dead)} dead types not present in eve.db ({shadowed} were shadowing a live type by name)")
     added, value_changes, attrs_added, effect_changes = [], [], 0, []
+    patches = json.load(open(PATCHES)) if os.path.isfile(PATCHES) else {}
+    patched = []
+    # Attribute VALUE overrides land BEFORE the diff below, so the change report describes what we
+    # are actually shipping. Applied after it, every run would report the override as a fresh change.
+    type_patches = patches.get('types') or {}
 
     for tid in fit_types:
         sid = str(tid)
@@ -281,6 +292,21 @@ def main():
             entry['ml'] = num(ml)
         if vparent is not None and vparent != tid:
             entry['vp'] = 1
+
+        # `from` is the wrong value we expect the db to still hold. If it no longer does, CCP has
+        # changed something and a human has to decide whether the override is still wanted.
+        for aid_s, spec in (type_patches.get(sid, {}).get('a') or {}).items():
+            have = entry['a'].get(aid_s)
+            if have is None or abs(have - spec['from']) > abs(spec['from']) * 1e-9:
+                sys.exit(
+                    f"data-patches.json overrides attribute {aid_s} on type {sid} ({name}) "
+                    f"expecting the db to say {spec['from']}, but it says {have}.\n"
+                    "  The override exists because the SDE contradicted the live game. If CCP has\n"
+                    "  fixed it, DELETE the override. If they changed it some other way, re-derive\n"
+                    "  the correct value before touching this. Do not just update `from`."
+                )
+            entry['a'][aid_s] = spec['to']
+            patched.append(f"type {sid} attr {aid_s}")
 
         prev = old_types.get(sid)
         if prev is None:
@@ -336,17 +362,15 @@ def main():
             new_effect_ids.append(eid)
 
     # ── re-apply hand patches (idempotent) ──────────────────────────────────
-    patched = []
-    if os.path.isfile(PATCHES):
-        patches = json.load(open(PATCHES))
-        for eid, mods in (patches.get('effects') or {}).items():
-            if eid in new_effs:
-                new_effs[eid]['m'] = mods
-                patched.append(f"effect {eid}")
-        for aid, flags in (patches.get('attributes') or {}).items():
-            if aid in new_attrs:
-                new_attrs[aid].update(flags)
-                patched.append(f"attr {aid}")
+    # The `types` section was already applied above, before the value diff.
+    for eid, mods in (patches.get('effects') or {}).items():
+        if eid in new_effs:
+            new_effs[eid]['m'] = mods
+            patched.append(f"effect {eid}")
+    for aid, flags in (patches.get('attributes') or {}).items():
+        if aid in new_attrs:
+            new_attrs[aid].update(flags)
+            patched.append(f"attr {aid}")
 
     # ── ship/structure traits + descriptions ────────────────────────────────
     # Previously these lived ONLY in data-bundle.js's precomputed `shipTraits`, which predates

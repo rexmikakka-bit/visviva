@@ -11,12 +11,6 @@ import ATTRS_DATA   from './data/dogma-attrs.json'   with { type: 'json' };
 import SYSFX_DATA   from './data/system-effects.json' with { type: 'json' };
 
 import { initEngine } from './dogma-engine.js';
-// CCP's 24.01 balance pass, applied over the bundle in the browser only — see balance-overlay.js
-// for why Node (where the pyfa-validated suite runs) deliberately gets the untouched 2.68 data.
-import { applyBalanceOverlay, balanceOverlayApplies } from './lib/balance-overlay.js';
-export const BALANCE_PREVIEW = balanceOverlayApplies()
-  ? applyBalanceOverlay(TYPES_DATA, EFFECTS_DATA)
-  : null;
 
 initEngine(TYPES_DATA, EFFECTS_DATA, ATTRS_DATA, SYSFX_DATA.effects);
 

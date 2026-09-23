@@ -82,8 +82,32 @@ idempotent: hand fixes live in `scripts/data-patches.json` and are re-applied on
 **What eve.db cannot give you:** it has no effect `modifierInfo` and no `stackable` flag. Effect
 modifiers are preserved from the existing bundle; a genuinely new effect is written inert and
 reported loudly. Supply its modifier from CCP's FSD dump via `data-patches.json`, or write a custom
-handler in `dogma-engine.js`. Only ONE hand patch remains: **effect 12887**, which CCP ships with an
-empty modifier list.
+handler in `dogma-engine.js`.
+
+### Overriding an attribute VALUE, and why you almost never should
+
+`data-patches.json` also has a `types` section that replaces individual attribute values. It exists
+for one situation: **the SDE contradicts the live game.** A number that merely looks wrong is CCP
+rebalancing, and overriding it makes the app lie.
+
+The bar is evidence from in-game, not reasoning about what the value ought to be. The only two
+entries are the Paladin and Golem `agility` after 24.01, where the SDE carries ten times the value
+the rest of the marauder mass pass implies (`0.858` where every sibling hull got `old / 0.8` rounded
+to four decimals, here `0.0858`) and the ships still align in about fifteen seconds in game.
+
+These are the one place the app deliberately disagrees with pyfa, which reads the same SDE and
+reports 103 and 113 second align times. Section `balance` of the regression suite says so in as many
+words, so nobody "fixes" it back.
+
+Each override declares the wrong value it expects to find:
+
+```json
+"28659": { "_why": "…", "a": { "70": { "from": 0.858, "to": 0.0858 } } }
+```
+
+If the db stops saying `from`, the build **fails**. That is the point — the patch retires itself the
+day CCP corrects the data rather than silently overriding a now-correct number forever. Do not just
+update `from` to make the build pass; re-derive the value or delete the entry.
 
 ### Two traps when regenerating `type-descriptions.json`
 
@@ -109,15 +133,17 @@ category filter excluded — fighter stats had been stale for months.
 
 ## ⚠️ `build-bundle.py` auto-detect could silently pick the STALE eve.db
 
-The repo-root `eve.db` is a superseded leftover (client build **3383521**); the authoritative one is
-the pyfa v2.68 install (**3424810**). `find_db()` probed the repo-root copy **first**, and the only
-thing that had ever kept that from mattering was `Pyfa-master/` also existing. It carries no
-`eve.db`, so a plain `python scripts/build-bundle.py` regenerated the entire bundle from the old
-client build — reverting real attribute values (Aralez, Berserker SW-900, …) and invalidating every
-validated baseline in one commit. The probe order is now installs-first, repo-root last.
+The repo-root `eve.db` is a superseded leftover (client build **3383521**), as is the one inside the
+installed pyfa (**3424810**). The authoritative copy now lives beside the source clone at
+`Pyfa-master/app/eve.db` (**3532181**), so the engine code and the data it describes are upgraded by
+the same action. `find_db()` probed the repo-root copy **first**, and the only thing that had ever
+kept that from mattering was `Pyfa-master/` also existing. It carried no `eve.db` at the time, so a
+plain `python scripts/build-bundle.py` regenerated the entire bundle from the old client build —
+reverting real attribute values (Aralez, Berserker SW-900, …) and invalidating every validated
+baseline in one commit. The probe order is now clone-first, repo-root last.
 
 **Always check the first two lines the generator prints** — it echoes the db path and client build.
-If it does not say `3424810`, stop.
+If it does not say `3532181`, stop.
 
 ## Upgrading eve.db (a new EVE patch)
 
@@ -125,10 +151,10 @@ The regression baselines are only meaningful **relative to a specific EVE build*
 which one it came from in `src/data/bundle-version.json`, and the suite prints it on every run:
 
 ```
-data: EVE client build 3424810 (SDE 2026-07-07) — matches validated baselines
+data: EVE client build 3532181 (SDE 2026-09-22) — matches validated baselines
 ```
 
-We are currently on **pyfa v2.68.0 / client build 3424810**. When you move to a newer `eve.db`, the
+We are currently on **pyfa v2.69.0 / client build 3532181**. When you move to a newer `eve.db`, the
 suite detects the mismatch and prints a loud banner.
 
 **A red suite after an eve.db upgrade is a WORKLIST, not a failure.** Some baselines will move because
@@ -138,14 +164,23 @@ baselines into "whatever we currently compute", which is worth nothing.
 
 The process:
 
-1. **Upgrade the pyfa app to the same version as the new `eve.db`.** They must match — pyfa is the
-   reference, and comparing against a different build proves nothing.
+1. **Upgrade the pyfa source clone to the same version as the new `eve.db`, and put the db inside it.**
+   `Pyfa-master/` is a real git clone, so `git fetch --depth 1 origin tag vX.Y.Z --no-tags &&
+   git checkout vX.Y.Z`. Take the db from that release's Windows ZIP and drop it at
+   `Pyfa-master/app/eve.db`. They must match — pyfa is the reference, and comparing against a
+   different build proves nothing. Check `pyproject.toml` for a moved SQLAlchemy pin (`docs/oracle.md`).
 2. `python scripts/build-bundle.py --dry-run` — read what CCP actually changed before you write it.
 3. Regenerate, then `npm test`. Expect some red.
-4. For **each** failure: open that fit in the new pyfa and read the real number.
+4. For **each** failure: read the real number out of the new pyfa. `scripts/oracle/` drives eos
+   headlessly, which is the only option when nobody is at the GUI — add a spec to `FITS` in
+   `oracle.py` transcribed from the failing check and run it.
    - pyfa's number changed too → CCP rebalanced. Update the baseline, and **say why in the commit
      message** (e.g. "blaster damage nerfed 2%, Astarte 1200 → 1176 per pyfa 2.68").
    - pyfa still gives the OLD number → **you found a real bug.** Fix the code, not the test.
+   - A check can fail on an ASSUMPTION rather than a number. 24.01 widened the Cerberus missile bonus
+     from kinetic to all four damage types, and two checks used that hull precisely because it
+     discriminated by damage type. Neither was a moved baseline; both had to move to a hull that still
+     discriminates (the Drake). Read what a check is *for* before deciding it rebalanced.
 5. Watch for the generator shouting about **new effects with no modifier data**. A new expansion will
    add some, and they are inert until someone supplies a modifier (`scripts/data-patches.json`) or
    writes a custom handler. The same goes for new attributes, which default to `stackable=1`.
@@ -158,6 +193,14 @@ The process:
    `node scripts/check-effect-coverage.mjs --update`. Effects LEAVING the set never fail — they just
    prompt an update. **Do not `--update` to silence the gate without triaging first** — that is exactly
    how silent no-ops ship.
+
+   ⚠️ **An effect LEAVING a hull is the dangerous half, and the gate does not watch it.** When CCP
+   reworks a bonus it removes the old effect from the hull and ships the replacement with an empty
+   modifier list, so the hull ends up with *no* bonus at all while `ship-traits.json` keeps printing
+   one. 24.01 did this to the Harpy, Hawk, Vengeance and Ishkur at once. The triage list names the new
+   effect; before writing its modifier, check which effect it **replaced** and confirm nothing else
+   still needs that one (the Harpy's old effect 989 is shared with two other hulls and had to stay
+   untouched). The `balance` section of the suite pins the resulting wiring.
 6. Bump `VALIDATED_BUILD` in `src/regression.test.mjs` as part of the same commit.
 
 Do the upgrade as its own PR, with nothing else in it. The diff will be large and the whole point is

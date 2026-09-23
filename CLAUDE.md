@@ -29,8 +29,11 @@ Matching theme colors or passing `npm run verify` does not establish visual cons
 Feature work should extend the existing design unless Owen requests a redesign.
 
 A React + Vite ship-fitting calculator for EVE Online, targeting mobile. It implements EVE's dogma
-system in JavaScript. **pyfa v2.68.0 with all skills at V is the reference implementation** — when our
-numbers disagree with pyfa, we are wrong until proven otherwise.
+system in JavaScript. **pyfa v2.69.0 with all skills at V is the reference implementation** — when our
+numbers disagree with pyfa, we are wrong until proven otherwise. The sole standing exception is the
+Paladin's and Golem's `agility`, where CCP's SDE contradicts the live game and pyfa inherits the bad
+number; `scripts/data-patches.json` overrides it and `docs/data-pipeline.md` explains the bar for
+doing that again.
 
 **This file is the always-loaded index.** Deep technical detail — full postmortems, evidence,
 worked examples — lives in `docs/*.md` and is loaded on demand. Follow the pointers when you're
