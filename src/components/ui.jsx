@@ -1,6 +1,6 @@
 // UI primitives, module/subsystem pickers, resource strip, damage-profile sheet.
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { AbyssalLibrary } from './abyssal-library.jsx';
 import { AttributeSort } from './attribute-sort.jsx';
 import { AbyssalInfo } from './abyssal-info.jsx';
@@ -819,9 +819,19 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
   // Memoised on the query alone: this sheet re-renders for reasons unrelated to the search — focusing
   // or blurring the box, and the "+ module" toast appearing and expiring — and a full corpus scan on
   // each of those made every tap on a result cost three extra searches.
+  //
+  // DEFERRED, and that is what keeps the field usable on Android. Sixty result rows cost far more to
+  // render than the search that produced them (measured: ~6 ms to scan the corpus, 50-140 ms to
+  // render the rows), and rendering them at the keystroke's own priority blocks the main thread for
+  // that whole time. A soft keyboard's held delete key repeats every ~40 ms, so the work queued up
+  // faster than it drained and the WebView stopped answering the IME — which Android surfaces by
+  // dropping the input connection, i.e. the search field appears to close itself. Deferring puts the
+  // list on a transition lane that React time-slices and yields from, so the box keeps up with the
+  // key and the list catches up a frame later.
+  const deferredSearch=useDeferredValue(search);
   const searchResults=useMemo(
-    ()=>search.trim().length>1?(jargonSearch(search,allMods)??[]).slice(0,60):null,
-    [search,allMods]);
+    ()=>deferredSearch.trim().length>1?(jargonSearch(deferredSearch,allMods)??[]).slice(0,60):null,
+    [deferredSearch,allMods]);
 
   const breadcrumb=(()=>{
     let nodes=tree,parts=[];
@@ -829,7 +839,20 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
     return parts;
   })();
 
-  const addMod=mod=>{const n=onSelect(mod);setJustAdded({name:mod.name,count:n||1,key:Date.now()});haptic("light");};
+  // Whether the search box held focus when the press that is about to add a module BEGAN. Read at
+  // pointerdown because by the time the click lands the browser may already have moved focus away.
+  const searchHadFocus=useRef(false);
+  const addMod=mod=>{
+    const n=onSelect(mod);
+    setJustAdded({name:mod.name,count:n||1,key:Date.now()});
+    haptic("light");
+    // ModRow cancels the mousedown default, which is what holds focus in the box — but only where
+    // the focus change is that default action. Android moves focus during touch handling, so the
+    // synthesised mousedown arrives too late to cancel anything and the keyboard collapsed after
+    // every pick. Putting focus back explicitly is the same move the clear-x already makes, and it
+    // is a no-op wherever the cancel did work.
+    if(searchHadFocus.current)searchInputRef.current?.focus();
+  };
 
   // Filled/total for the rack being browsed, so a rapid-tap fill run doesn't need a peek at the
   // resource strip's hardpoint dots (or a tab-out to the fit) to know when to stop. +1 counts the
@@ -897,7 +920,8 @@ function ModuleBrowserSheet({slotType,isStructure,hullRigSize,onSelect,onClose,r
           as tall as its rows — so in a short category (four sizes of afterburner, say) the back
           swipe worked in the top inch of the sheet and nowhere else, which reads as the gesture
           being broken rather than as a target you missed. */}
-      <div style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
+      <div onPointerDownCapture={()=>{searchHadFocus.current=!!searchInputRef.current&&document.activeElement===searchInputRef.current;}}
+           style={{minHeight:"100%",display:"flex",flexDirection:"column"}}>
       {/* The query survives the crossing in both directions: one search box serves both views, so
           clearing it here made "search, then narrow to what I own" a re-typing exercise. The blur
           stays — the point of crossing over is to look at the list, not to keep typing at it. */}
