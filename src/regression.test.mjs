@@ -1179,6 +1179,48 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // -----------------------------------------------------------------------------
+// 11h-3. REP EHP/S FOLLOWS THE INCOMING DAMAGE PROFILE. The rate is weighted by
+//        rate / Σ(profile_i × resonance_i), exactly like the layer EHP beside it — NOT by a flat
+//        average of the four resists. The two agree EXACTLY under the default uniform profile, which
+//        is why a flat average sat here undetected: every baseline above passes either way. It shows
+//        up only on a lopsided profile, where the flat average makes the figure ignore the incoming
+//        damage type entirely.
+//        Ratios rather than new absolute baselines, so these stay anchored to the eos-validated raw
+//        HP/s above and survive a rebalance of the rep amounts.
+// -----------------------------------------------------------------------------
+{
+  console.log('\nREP EHP/S FOLLOWS THE DAMAGE PROFILE');
+  const car  = { typeID: tid('Caracal'), name: 'Caracal' };
+  const mids = (mid) => ({ high: [], mid, low: [], rigs: [] });
+  const shieldOf = (mid, damageProfile) => calcFitStats(car, mids(mid), [], null, { damageProfile });
+  // A Caracal's shield takes EM at 0% resist, so under pure EM the EHP/s IS the raw HP/s; under pure
+  // explosive (50%) it is exactly double. Under the flat average (0.725 resonance) both read 1.379x.
+  for (const [label, mod] of [['ASB', M('Medium Ancillary Shield Booster', 'active', 'Navy Cap Booster 50')],
+                              ['plain booster', M('Medium Shield Booster II', 'active')]]) {
+    const em = shieldOf([mod], [1, 0, 0, 0]), exp = shieldOf([mod], [0, 0, 0, 1]);
+    check('profrep', `${label}: pure EM EHP/s is the raw rate`, em.shieldRepEhpS / em.shieldRepPS, 1, 1e-6);
+    check('profrep', `${label}: pure explosive doubles it`, exp.shieldRepEhpS / exp.shieldRepPS, 2, 1e-6);
+    // Sustained rides the same weighting — it was reached by a different branch and missed it once.
+    check('profrep', `${label}: sustained follows too`,
+          exp.shieldRepSustainedEhpS / em.shieldRepSustainedEhpS, 2, 1e-6);
+  }
+  // Armor, with an AAR beside a plain repairer: the AAR's contribution arrives pre-weighted from its
+  // own slot block and the rest is weighted here, so a mix is the case where only ONE half being
+  // profile-aware would show. A Myrmidon's armor takes EM at 50%, hence 2x. (The AAR block rounds its
+  // EHP/s to 0.1, which is the whole tolerance.)
+  const myrm = { typeID: tid('Myrmidon'), name: 'Myrmidon' };
+  const mix  = { high: [], mid: [], low: [M('Medium Ancillary Armor Repairer', 'active', 'Nanite Repair Paste'),
+                                         M('Medium Armor Repairer II', 'active')], rigs: [] };
+  const aEM = calcFitStats(myrm, mix, [], null, { damageProfile: [1, 0, 0, 0] });
+  check('profrep', 'AAR + plain repairer: pure EM doubles the whole figure',
+        aEM.armorRepEhpS / aEM.armorRepPS, 2, 1e-3);
+  // And the uniform default still lands on the flat-average answer (1/0.675), so nothing above moved.
+  const aUni = calcFitStats(myrm, mix, [], null, {});
+  check('profrep', 'uniform profile still equals the flat average',
+        aUni.armorRepEhpS / aUni.armorRepPS, 1 / 0.675, 1e-3);
+}
+
+// -----------------------------------------------------------------------------
 // 12. SKILL REQUIREMENTS — the fit's green/red skill book. The catalog must cover every skill any
 //     fittable item names as a requirement, or the check silently passes fits you cannot fly: the
 //     engine's own SKILL_DEFAULTS knows nothing about Jury Rigging (on 279 rigs) or the racial
