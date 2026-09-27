@@ -4280,10 +4280,19 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       if ((stats.isAAR && stats.hasPaste) || (stats.isASB && stats.hasCharges)) ancilClipEHP += stats.totalEHP ?? 0;
     }
   }
+  // Rep EHP/s is weighted by the SELECTED incoming damage profile — rate / Σ(profile_i × resonance_i)
+  // — the same weighting the ancillary slot blocks and the Stats tab's layer EHP use, so the figures
+  // are directly comparable. `layerEHP` uses a FLAT AVERAGE of the four resists instead and is blind
+  // to the profile; under the default uniform profile the two agree exactly, which is how an
+  // average-weighted rep figure survived here, but on a fit taking one damage type they diverge by
+  // the resist spread and the number stops moving when the profile changes.
+  const profileEHP = (rate, resists) => {
+    const div = dmgP[0] * (1 - (resists?.em ?? 0) / 100) + dmgP[1] * (1 - (resists?.th ?? 0) / 100)
+              + dmgP[2] * (1 - (resists?.kin ?? 0) / 100) + dmgP[3] * (1 - (resists?.exp ?? 0) / 100);
+    return rate / Math.max(1e-4, div);
+  };
   const nonAarRepPS = Math.max(0, armorRepPS - armorRepPS_AAR);
-  let armorRepEhpS = aarEhpS + (nonAarRepPS > 0 ? layerEHP(nonAarRepPS, effectiveResists.armor) : 0);
-  // Regular (non-AAR) repairers report raw armorRepPS; convert to EHP/s with armor resists so the
-  // stat is resist-adjusted like the AAR path and like pyfa's "Armor Rep" EHP/s display.
+  let armorRepEhpS = aarEhpS + (nonAarRepPS > 0 ? profileEHP(nonAarRepPS, effectiveResists.armor) : 0);
 
   // Sustained armor rep EHP/s — pyfa default (factorReload OFF): NO reload duty-cycle is applied.
   // Sustained = peak rep throttled only by capacitor availability. A cap-stable repairer shows
@@ -4294,7 +4303,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     const capFactor = armorRepPS > 0 ? Math.max(0, Math.min(1, sustainedArmorRepPS / armorRepPS)) : 1;
     armorRepSustainedEhpS = armorRepEhpS * capFactor;
   } else {
-    armorRepSustainedEhpS = layerEHP(sustainedArmorRepPS, effectiveResists.armor);
+    armorRepSustainedEhpS = profileEHP(sustainedArmorRepPS, effectiveResists.armor);
   }
 
   // Shield boost sustained EHP/s — mirrors the armor path above, pyfa default (factorReload OFF):
@@ -4307,7 +4316,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       if (stats.isASB && (stats.ehpS ?? 0) > 0) shieldRepIsASB = true;
     }
   }
-  if (shieldRepPS > 0) shieldRepEhpS = layerEHP(shieldRepPS, effectiveResists.shield);
+  if (shieldRepPS > 0) shieldRepEhpS = profileEHP(shieldRepPS, effectiveResists.shield);
 
   let shieldRepSustainedEhpS;
   if (shieldRepIsASB) {
@@ -4327,7 +4336,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     const capFactor = shieldRepPS > 0 ? Math.max(0, Math.min(1, sustainedShieldRepPS / shieldRepPS)) : 1;
     shieldRepSustainedEhpS = shieldRepEhpS * capFactor;
   } else {
-    shieldRepSustainedEhpS = layerEHP(sustainedShieldRepPS, effectiveResists.shield);
+    shieldRepSustainedEhpS = profileEHP(sustainedShieldRepPS, effectiveResists.shield);
   }
 
   // Breacher pod launchers report a resist-ignoring DoT. pyfa folds the flat (absolute) DPS into
@@ -4413,7 +4422,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
 
     // Tank
     passiveShieldRegen,
-    shieldRepPS, shieldRepEhpS, shieldRepIsASB, shieldRepSustainedEhpS, armorRepPS, armorRepEhpS, armorRepIsAAR, armorRepSustainedEhpS, hullRepPS,
+    shieldRepPS, shieldRepEhpS, shieldRepSustainedEhpS, armorRepPS, armorRepEhpS, armorRepSustainedEhpS, hullRepPS,
     sustainedShieldRepPS, sustainedArmorRepPS, sustainedHullRepPS,
     // Remote reps (logistics)
     remoteShieldPS: Math.round(remoteShieldPS * 10) / 10,

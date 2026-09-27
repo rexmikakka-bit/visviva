@@ -1822,24 +1822,17 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         <SectionHead id="recharge" title={t("Recharge Rates")}/>
         {isOpen("recharge")&&(() => {
             // Convert HP/s to EHP/s using the selected incoming damage profile.
-            const avgR=(r)=>((r?.em??0)+(r?.th??0)+(r?.kin??0)+(r?.exp??0))/4;
             const toEhp=(hps,layer)=>hps*ehpForProfile(1,cs.resists?.[layer]);
-            // Precomputed cs.*EhpS were derived with AVERAGE resists in calc; reweight to the profile
-            // (preserves their paste-phase raw rep nuance, swaps only the resist weighting).
-            const avgMultOf=(layer)=>{const a=avgR(cs.resists?.[layer]);return a>=100?1:1/(1-a/100);};
-            const reweight=(ehpS,layer)=>ehpS*ehpForProfile(1,cs.resists?.[layer])/Math.max(1e-6,avgMultOf(layer));
-            // AAR/ASB EhpS arrive already profile-weighted from calc.js (their ehpMult uses the same
-            // damage profile); regular-repairer EhpS use layerEHP (average resist) and must be
-            // reweighted to the profile. `profiled` flags which case applies so we don't double-count.
-            const repEhp=(ehpS,layer,profiled)=>profiled?ehpS:reweight(ehpS,layer);
             const shieldEhpS=toEhp(cs.passiveShieldRegen??0,'shield');
-            const shieldRepEhpS=cs.shieldRepEhpS>0?repEhp(cs.shieldRepEhpS,'shield',cs.shieldRepIsASB):toEhp(cs.shieldRepPS??0,'shield');
-            // Use slotEngineStats-based EHP/s (Pyfa style: paste phase, with resists)
-            const armorRepEhpS=cs.armorRepEhpS>0?repEhp(cs.armorRepEhpS,'armor',cs.armorRepIsAAR):toEhp(cs.armorRepPS??0,'armor');
+            // cs.*EhpS arrive from calc.js already weighted by this same damage profile, and carry
+            // rep nuance the raw HP/s figure does not (an ancillary's paste/charge-boosted rate).
+            // Take them as-is; re-deriving them here from *RepPS would throw that away.
+            const shieldRepEhpS=cs.shieldRepEhpS>0?cs.shieldRepEhpS:toEhp(cs.shieldRepPS??0,'shield');
+            const armorRepEhpS=cs.armorRepEhpS>0?cs.armorRepEhpS:toEhp(cs.armorRepPS??0,'armor');
             const hullRepEhpS=toEhp(cs.hullRepPS??0,'hull');
             // Sustained (cap-limited) rep — pyfa style. Only differs from peak when cap-unstable.
-            const susShieldEhpS=cs.shieldRepSustainedEhpS!=null?repEhp(cs.shieldRepSustainedEhpS,'shield',cs.shieldRepIsASB):toEhp(cs.sustainedShieldRepPS??cs.shieldRepPS??0,'shield');
-            const susArmorEhpS =cs.armorRepSustainedEhpS!=null?repEhp(cs.armorRepSustainedEhpS,'armor',cs.armorRepIsAAR):toEhp(cs.sustainedArmorRepPS??cs.armorRepPS??0,'armor');
+            const susShieldEhpS=cs.shieldRepSustainedEhpS!=null?cs.shieldRepSustainedEhpS:toEhp(cs.sustainedShieldRepPS??cs.shieldRepPS??0,'shield');
+            const susArmorEhpS =cs.armorRepSustainedEhpS!=null?cs.armorRepSustainedEhpS:toEhp(cs.sustainedArmorRepPS??cs.armorRepPS??0,'armor');
             const susHullEhpS  =toEhp(cs.sustainedHullRepPS??cs.hullRepPS??0,'hull');
             // Incoming remote reps (projected) → EHP/s by own resists. Included in FULL in both peak and
             // sustained, independent of the supplying ship's capacitor stability.
