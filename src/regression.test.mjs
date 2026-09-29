@@ -884,6 +884,64 @@ function check(group, label, actual, expected, tol = 0.005) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 11b-2. A DRONE BONUS MUST NOT REACH A MODULE. Four hybrid damage mods boost the ship's turrets
+//      AND its drones, and they require the Drones skill themselves while carrying damageMultiplier.
+//      An OwnerRequiredSkillModifier filtered on a Drones-group skill was applied to modules as well
+//      as drones, so these four collected every drone bonus on the fit into their own
+//      damageMultiplier and then re-exported it to the turrets through their group modifier. Drone
+//      Interfacing V alone multiplied it by 1.5; three copies ran weapon DPS 264% over.
+//      Another module-boosts-module bug, invisible to a one-module-per-fit sweep.
+//      Every expected value is eos's, read off scripts/oracle (33 fits, 33 clean).
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  console.log('\nDRONE BONUS MUST NOT LEAK INTO A MODULE (oracle-validated)');
+
+  const rack = (hull, weapon, ammo, modName, n, drones) => {
+    const low = [];
+    for (let i = 0; i < n; i++) low.push(M(modName, 'active'));
+    return calcFitStats({ typeID: tid(hull), name: hull },
+      { high: weapon ? [M(weapon, 'active', ammo)] : [], mid: [], low, rigs: [] },
+      drones ?? [], null, {});
+  };
+
+  // The turret half. 'Basic' Magnetic Field Stabilizer carries damageMultiplier 1.07 / ROF 0.93 —
+  // identical to the Argyreos — so the two MUST print the same weapon DPS at every count, and the
+  // pair is a stricter test than the absolute figure: it cannot be satisfied by a rebalance.
+  // Heat Sink I is 1.07/0.92, NOT a twin of the 'Neophyte', hence absolutes on the Amarr pair.
+  for (const [n, eos] of [[1, 59.695], [2, 67.429], [3, 73.040]]) {
+    const argy  = rack('Thorax', 'Heavy Ion Blaster II', 'Antimatter Charge M',
+                       "Federation Navy 'Argyreos' Magnetic Field Stabilizer", n);
+    const basic = rack('Thorax', 'Heavy Ion Blaster II', 'Antimatter Charge M',
+                       "'Basic' Magnetic Field Stabilizer", n);
+    check('dronemod', `${n}x Argyreos weapon DPS`, argy.weaponDps.total, eos, 0.001);
+    check('dronemod', `${n}x Argyreos matches its no-drone-bonus twin`,
+          argy.weaponDps.total / basic.weaponDps.total, 1, 1e-9);
+  }
+  for (const [n, eos] of [[1, 63.415], [2, 75.487], [3, 84.623]])
+    check('dronemod', `${n}x Khryseos weapon DPS`, rack('Thorax', 'Heavy Ion Blaster II',
+          'Antimatter Charge M', "Federation Navy 'Khryseos' Magnetic Field Stabilizer", n)
+          .weaponDps.total, eos, 0.001);
+  for (const [n, eos] of [[1, 26.952], [2, 30.444], [3, 32.977]])
+    check('dronemod', `${n}x 'Neophyte' Heat Sink weapon DPS`, rack('Punisher',
+          'Dual Light Pulse Laser II', 'Multifrequency S', "Imperial Navy 'Neophyte' Heat Sink", n)
+          .weaponDps.total, eos, 0.001);
+
+  // The drone half must SURVIVE the fix — the bonus still belongs to the drones, stacking-penalised
+  // exactly as pyfa applies it. An Ishtar carries drones only, so this is the drone figure alone.
+  const ogres = [{ name: 'Ogre II', typeID: tid('Ogre II'), qty: 2, active: true }];
+  for (const [n, eos] of [[1, 209.09], [2, 227.26], [3, 240.23]])
+    check('dronemod', `${n}x Argyreos still boosts drones`, rack('Ishtar', null, null,
+          "Federation Navy 'Argyreos' Magnetic Field Stabilizer", n, ogres).droneDps.total, eos, 0.001);
+  for (const [n, eos] of [[1, 218.59], [2, 247.09], [3, 268.24]])
+    check('dronemod', `${n}x Khryseos still boosts drones`, rack('Ishtar', null, null,
+          "Federation Navy 'Khryseos' Magnetic Field Stabilizer", n, ogres).droneDps.total, eos, 0.001);
+  // A plain Drone Damage Amplifier has no turret half at all — the control for the drone side.
+  for (const [n, eos] of [[1, 229.05], [2, 269.86], [3, 301.42]])
+    check('dronemod', `${n}x Drone Damage Amplifier II unchanged`, rack('Ishtar', null, null,
+          'Drone Damage Amplifier II', n, ogres).droneDps.total, eos, 0.001);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 11c. EWAR RESISTANCE — the multiplier a projection's TARGET applies to incoming ewar. eos reads it
 //      in ModifiedAttributeDict.getResistance(); we had no concept of it, so projected dampeners
 //      landed at full strength. Found by diffing two real saved fits whose lock range was ~4x low.
