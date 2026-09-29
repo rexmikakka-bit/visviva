@@ -28,7 +28,8 @@
  *   LocationModifier               – source on ship → all modules in domain
  *   LocationGroupModifier          – source on ship → modules with groupID filter
  *   LocationRequiredSkillModifier  – source on ship → modules requiring skillID
- *   OwnerRequiredSkillModifier     – source char (skill/implant) → modules req. skill
+ *   OwnerRequiredSkillModifier     – source char (skill/implant) → owned items req. skill
+ *                                    (drones only when the filter skill is a DRONES-group skill)
  *   EffectStopper                  – no-op for our purposes
  *
  * Domain (modifier.domain):
@@ -1277,7 +1278,19 @@ export class Fit {
         const skillName = (skillID != null && TYPES[skillID]?.n) ? TYPES[skillID].n
                          : (domain === 'charID' ? src.name : null);
         if (skillName != null) {
-          for (const m of this._modules) {
+          // A filter naming a skill from the DRONES group selects the character's drones and
+          // fighters, never the ship's modules. Pyfa applies these 308 times across fit.drones and
+          // fit.fighters and not once to fit.modules. Read from the skill's group rather than a
+          // name list so a new CCP drone skill is covered on regen (see gotcha 8).
+          //
+          // Load-bearing because a module CAN require a drone skill: the four hybrid damage mods
+          // (Federation Navy 'Argyreos'/'Khryseos', Imperial Navy 'Neophyte'/'Disciple') require
+          // Drones AND carry damageMultiplier, so without this they collect every drone bonus in
+          // the fit and re-export it to the turrets through their own group modifier — Drone
+          // Interfacing V alone multiplied their damageMultiplier by 1.5.
+          const skillTypeID = skillID != null ? skillID : TYPE_BY_NAME[skillName];
+          const dronesOnly  = TYPES[skillTypeID]?.gn === 'Drones';
+          if (!dronesOnly) for (const m of this._modules) {
             if (m.requiresSkill(skillName)) m.attrs.applyMod(dstAttr, op, rawVal, effectiveDirect, null, source);
           }
           for (const d of this._drones) {
