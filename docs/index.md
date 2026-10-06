@@ -8,7 +8,7 @@ Short how-tos for [Axis](https://github.com/rexmikakka-bit/visviva), the free EV
 
 - [Importing a fit](importing-fits.md): paste an EFT fit, or pull one from your character.
 - [Importing from pyfa](pyfa-import.md): bring your whole pyfa library across from its XML backup.
-- [Module states](module-states.md): tap, double-tap and hold the state dot.
+- [Module states and gestures](module-states.md): tap, double-tap and hold the state dot, and swipe a row to copy or remove it.
 - [Stats tab: tap the numbers](stats-toggles.md): damage splits, heat, exact values, ancillary clips and cap views.
 - [Where a number comes from](modifier-dropdowns.md): expand any attribute to see every modifier on it.
 - [Graphs](graphs.md): plot damage, tank, cap and mobility against range, time or a target.
