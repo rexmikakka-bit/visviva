@@ -248,9 +248,14 @@ def main():
     # storms, and a handful of event beacons. Without them a WH fit's resists, reps, sig and speed
     # are all simply wrong, and they were the last thing the oracle could not model.
     BEACON_GROUP = 920
+    # Abyssal result types ("Abyssal Stasis Webifier") are published=0 as well: what you own is a
+    # dynamic item of that type, not the type itself. The 89 in the bundle were legacy entries, so the
+    # four Radical drone-upgrade results and the four Abyssal Remote Armor Repairers (24.01) could
+    # never arrive. Admit every type a mutaplasmid produces.
+    muta_results = {r for (r,) in db.execute("SELECT DISTINCT resultingTypeID FROM mutaplasmids")}
     fit_types = [tid for tid, t in types.items()
                  if (t[3] == 1 and groups.get(t[2], (None, 0))[1] in CATS)
-                 or t[2] == MODE_GROUP or t[2] == BEACON_GROUP]
+                 or t[2] == MODE_GROUP or t[2] == BEACON_GROUP or tid in muta_results]
 
     # ── rebuild types ───────────────────────────────────────────────────────
     # Drop types eve.db no longer has AT ALL. Keeping them used to seem harmless, but a dead type can
@@ -458,6 +463,41 @@ def main():
             (clones[0][0],))},
     }
 
+    # ── mutaplasmids ────────────────────────────────────────────────────────
+    # mutaplasmids.json was hand-copied once (35b917b) and never regenerated, so by 24.01 it was
+    # missing four Radical drone-upgrade mutaplasmids and the newer modules that existing ones
+    # apply to. eve.db carries the whole table; the bounds are stored as float32, so round them back
+    # to the decimals CCP authored (0.949999988 -> 0.95), which reproduces the old file exactly.
+    mutaplasmids = {}
+    for tid, rt in db.execute("SELECT typeID,resultingTypeID FROM mutaplasmids ORDER BY typeID"):
+        row = db.execute("SELECT typeName FROM invtypes WHERE typeID=?", (tid,)).fetchone()
+        if row is None:
+            continue
+        mutaplasmids[str(tid)] = {
+            'n': row[0],
+            'a': {str(a): [round(lo, 6), round(hi, 6)] for a, lo, hi in db.execute(
+                "SELECT attributeID,min,max FROM mutaplasmidAttributes WHERE typeID=? ORDER BY attributeID",
+                (tid,))},
+            't': sorted(t for (t,) in db.execute(
+                "SELECT applicableTypeID FROM mutaplasmidItems WHERE typeID=?", (tid,))),
+            'r': rt,
+        }
+
+    # ── art lookup maps ─────────────────────────────────────────────────────
+    # type-icons.json (typeID -> iconID) and graphic-ids.json (hull/structure typeID -> graphicID) are
+    # what fetch-art.mjs plans its downloads from and what icons.js resolves offline art through.
+    # Both were built once and never regenerated, so a type CCP added afterwards had no entry and
+    # drew from the image server even after a fetch-art run. MERGE rather than rebuild: the db wins
+    # where it has a value, and entries for types it no longer carries are left alone.
+    type_icons = json.load(open(os.path.join(DATA, 'type-icons.json')))
+    graphic_ids = json.load(open(os.path.join(DATA, 'graphic-ids.json')))
+    for tid, iid, gid in db.execute("SELECT typeID,iconID,graphicID FROM invtypes"):
+        if iid:
+            type_icons[str(tid)] = iid
+        row = types.get(tid)
+        if gid and str(tid) in new_types and groups.get(row[2], ('', 0))[1] in (6, 65):
+            graphic_ids[str(tid)] = gid
+
     # ── item flavour text (modules/charges/implants/drones/fighters/…) ──────
     # Iterate the TYPES we actually emit, not `fit_types`: `fit_types` requires published=1, and the
     # T3 destroyer tactical modes (Confessor/Svipul/Jackdaw/Hecate/Bomber "... Mode", 89 of them) are
@@ -480,6 +520,7 @@ def main():
     print(f"descs:   {len(type_descs):,} item descriptions")
     print(f"faction: {len(race_faction):,} hulls with a race/faction")
     print(f"alpha:   {len(alpha_clone['skills']):,} skills in the {alpha_clone['name']} ceiling")
+    print(f"muta:    {len(mutaplasmids):,} mutaplasmids")
     print(f"attrs:   +{attrs_added:,} attribute slots added to existing types")
     print(f"         {len(value_changes):,} value changes   |   +{len(new_attr_ids)} new attribute definitions")
     print(f"effects: {len(effect_changes):,} type effect-list changes   |   +{len(new_effect_ids)} new effects")
@@ -532,6 +573,9 @@ def main():
                       ('ship-traits.json', ship_traits),
                       ('ship-factions.json', race_faction),
                       ('alpha-clone.json', alpha_clone),
+                      ('mutaplasmids.json', mutaplasmids),
+                      ('type-icons.json', type_icons),
+                      ('graphic-ids.json', graphic_ids),
                       ('type-descriptions.json', type_descs)]:
         p = os.path.join(DATA, name)
         json.dump(obj, open(p, 'w'), separators=(',', ':'))
