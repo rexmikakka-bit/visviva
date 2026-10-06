@@ -10,6 +10,15 @@ import { abyssalValue } from '../lib/abyssal-value.js';
 import { useAbyssalData } from '../lib/use-abyssal-data.js';
 import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
+import { registerPlugin } from "@capacitor/core";
+
+// Android's System WebView has no Web Share API, ignores <a download> on blob: URLs and rejects image
+// clipboard writes, so on Android the snapshot leaves through a native plugin
+// (android/.../SnapshotPlugin.java). iOS's WKWebView has the share sheet and image clipboard, and
+// keeps the web path below.
+const AxisSnapshot = registerPlugin("AxisSnapshot");
+const isAndroid = () => typeof window !== "undefined" && window.Capacitor?.getPlatform?.() === "android";
+const pngBase64 = (canvas) => canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, "");
 
 // ── Export Snapshot ─────────────────────────────────────────────────────────────
 // Renders a shareable image of the fit. Layout follows the approved fit-card mockup
@@ -774,6 +783,12 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, pri
   const copyImage = async () => {
     setBusy(true);
     try {
+      if (isAndroid()) {
+        await AxisSnapshot.copyImage({ data: pngBase64(await render()), filename });
+        setStatus({ ok: true, msg: t("Image copied.") });
+        setBusy(false);
+        return;
+      }
       // Ours, not the browser's, and it is shown verbatim inside the catch's message below.
       if (!navigator.clipboard?.write) throw new Error(t("clipboard images aren't supported here"));
       const png = render().then((canvas) => new Promise((r) => canvas.toBlob(r, "image/png")));
@@ -791,6 +806,12 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, pri
     setBusy(true);
     try {
       const canvas = await render();
+      if (isAndroid()) {
+        const { album } = await AxisSnapshot.saveToGallery({ data: pngBase64(canvas), filename });
+        setStatus({ ok: true, msg: t("Saved to {album}.", { album }) });
+        setBusy(false);
+        return;
+      }
       const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
       // Web Share with a file is the only thing that reliably works in a mobile webview; fall back to
       // a download link on desktop, and to long-press-the-preview if neither is available.
@@ -802,16 +823,22 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, pri
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file] });
         setStatus({ ok: true, msg: t("Shared.") });
-      } else {
+      } else if (!window.Capacitor?.isNativePlatform?.()) {
+        // Desktop/mobile browsers honour the download attribute. A native webview does not, and
+        // reporting "Saved" after a click it ignored is how this button failed silently on Android.
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url; a.download = filename;
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         setStatus({ ok: true, msg: t("Saved {file}", { file: filename }) });
+      } else {
+        throw new Error(t("this device can't save files from the app"));
       }
     } catch (e) {
-      setStatus({ ok: false, msg: t("Failed: {err}. Long-press the preview to save it instead.", { err: e.message }) });
+      // Dismissing the share sheet is a cancel, not a failure.
+      if (e?.name === "AbortError") setStatus(null);
+      else setStatus({ ok: false, msg: t("Failed: {err}. Long-press the preview to save it instead.", { err: e.message }) });
     }
     setBusy(false);
   };
