@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, effectiveWeaponMultipliers, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, assistanceFactors, effectiveWeaponMultipliers, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -40,7 +40,7 @@ import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
 import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE, MANUAL_OWNER, customAbyssal, manualAbyssalId } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, abyssalSearchWords, abyssalMatchesSearch, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
-import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
+import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE, rolledAttributes } from './lib/variation-items.js';
 import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
 import { fetchContractIndex, stationOf, withStations, contractIndexExpired, stationIndexFor } from './lib/mutamarket-contracts.js';
 import { fetchListings } from './lib/mutamarket-client.js';
@@ -1556,7 +1556,8 @@ function check(group, label, actual, expected, tol = 0.005) {
         projectionResistances(devoter, bubbled('active'), null, {}).disallowAssistance ? 1 : 0, 1, 0);
   check('projsensor', 'online HIC bubble does not',
         projectionResistances(devoter, bubbled('online'), null, {}).disallowAssistance ? 1 : 0, 0, 0);
-  check('projsensor', 'sieged dread still takes assistance',
+  // Siege does not REFUSE assistance; it IMPEDES it, which the CRIMSON HARVEST section pins.
+  check('projsensor', 'sieged dread does not set disallowAssistance',
         projectionResistances({ typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' },
           { high: [M('Siege Module II', 'active')], mid: [], low: [], rigs: [] }, null, {}).disallowAssistance ? 1 : 0, 0, 0);
 }
@@ -8260,6 +8261,46 @@ Nanofiber Internal Structure II
   check('crimson', 'the backfill makes the Akoman searchable',
     (byClass['Attack Battlecruiser'] ?? []).some(s => s.typeID === tid('Akoman')) ? 1 : 0, 1, 0);
   const listed = Object.values(byClass).flat().map(s => s.typeID);
+  // An imported Abyssal Large Remote Armor Repairer gets the same inferred rates as an abyssal local
+  // repairer: Repair Rate (HP/s) and Repair / Cap (HP/GJ), computed from ITS roll, not the base
+  // module's. Driven through the import path the library uses, end to end.
+  const rarAsset = (id) => ({ item_id: id, type_id: tid('Large Abyssal Remote Armor Repairer'), location_id: 1, location_type: 'item', is_singleton: true });
+  const rarRoll = (amount, ms, cap) => ({ source_type_id: tid('Large Remote Armor Repairer II'), mutator_type_id: rar.r && Number(Object.keys(mutas).find(k => mutas[k] === rar)),
+    dogma_attributes: [{ attribute_id: 6, value: cap }, { attribute_id: 30, value: 200 }, { attribute_id: 50, value: 50 }, { attribute_id: 54, value: 7000 },
+      { attribute_id: 73, value: ms }, { attribute_id: 84, value: amount }, { attribute_id: 2044, value: 10000 }] });
+  const pilot = { characterId: 1, characterName: 'P', scopes: [ASSET_SCOPE] };
+  const strong = dynamicItemToModule(rarAsset(1), rarRoll(600, 6000, 365), pilot, 'Jita', 1);
+  const cheap = dynamicItemToModule(rarAsset(2), rarRoll(500, 6000, 250), pilot, 'Jita', 1);
+  const rates = r => derivedAttributes(rolledAttributes(r));
+  check('crimson', 'abyssal RAR: repair rate from its roll', rates(strong)['derived:repairPerSecond'], 100, 1e-9);
+  check('crimson', 'abyssal RAR: repair per GJ from its roll', rates(cheap)['derived:repairPerCap'], 2, 1e-9);
+  // The two rates disagree on which roll is better — the reason the sort exists.
+  check('crimson', 'the rates rank the rolls differently',
+    [rates(strong)['derived:repairPerSecond'] > rates(cheap)['derived:repairPerSecond'], rates(cheap)['derived:repairPerCap'] > rates(strong)['derived:repairPerCap']].join(','), 'true,true');
+  check('crimson', 'and the library offers both as sort keys',
+    [...DERIVED_KEYS].filter(k => [strong, cheap].some(r => Number.isFinite(rates(r)[k]))).join(','), 'derived:repairPerSecond,derived:repairPerCap');
+
+  // Effects CCP edits IN PLACE: build-bundle.py now refreshes existing modifier lists from the FSD.
+  // The Minokawa's remote-cap bonus filtered on Capital SHIELD Emission Systems; CCP and pyfa both
+  // say Capacitor. eos reads 1625 GJ (1300 x 1.25, Caldari Carrier V); before the refresh, 1300.
+  const rct = M('Capital Remote Capacitor Transmitter II', 'active');
+  check('crimson', 'Minokawa capital cap transfer matches eos',
+    String(calcFitStats({ typeID: tid('Minokawa'), name: 'Minokawa' }, { high: [rct], mid: [], low: [], rigs: [] }, [], null, {})
+      .slotEngineStats.get(rct)?.strengthText), '1625 GJ/20s (81.3 GJ/s)');
+
+  // Siege immunity. The impedance attributes come off the engine; eos computes the same repair
+  // impedance (1e-6 to the digit) but never APPLIES it — that part is deliberately past pyfa.
+  const nag = s => projectionResistances({ typeID: tid('Naglfar'), name: 'Naglfar' }, { high: [], mid: [], low: [M('Siege Module II', s)], rigs: [] });
+  const sieged = nag('active'), idle = nag('online');
+  check('crimson', 'sieged: repair impedance matches eos', sieged.remoteRepairImpedance, 1.0000000000287557e-06, 1e-9);
+  check('crimson', 'sieged: capacitor impedance (new in 3579973)', sieged.remoteCapacitorImpedance, 1e-6, 1e-3);
+  check('crimson', 'sieged: assistance impedance -80%', sieged.remoteAssistanceImpedance, 0.2, 1e-9);
+  check('crimson', 'siege offline: everything accepted', [idle.remoteRepairImpedance, idle.remoteCapacitorImpedance, idle.remoteAssistanceImpedance].join(','), '1,1,1');
+  const af = assistanceFactors(sieged);
+  check('crimson', 'a sieged dread accepts ~no reps or cap', af.rep < 1e-5 && af.cap < 1e-5 ? 1 : 0, 1, 0);
+  check('crimson', 'a HIC bubble still refuses everything', Object.values(assistanceFactors({ ...idle, disallowAssistance: true })).join(','), '0,0,0');
+  check('crimson', 'no target computed accepts everything', Object.values(assistanceFactors(null)).join(','), '1,1,1');
+
   check('crimson', 'and every hull is searchable exactly once',
     Object.entries(TYPES).filter(([, t]) => (t.c ?? t.category) === 6 && t.gn).every(([id]) => listed.includes(Number(id))) && listed.length === new Set(listed).size ? 1 : 0, 1, 0);
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
+import { calcFitStats, computeCommandBursts, computeProjectedReps, projectionResistances, assistanceFactors, applyRemoteRepDiminishing, calcRangeFactor, stackingPenalty, checkFitSkills, SKILL_DEFAULTS, TYPES, tidByName, isT3Cruiser, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS } from "./calc.js";
 import { SAVED_FITS_SEED, getGlobalCss, _bundleListeners, _bundleReady, buildSlotsFromEFT, generateEmptySlots, reconcileRacks, lookupShip, optimizeSlotPrice, moduleVariations, haptic, parseEFT, readClipboardText } from "./lib/core.js";
 import { DRONE_TYPES } from "./dogma-engine-init.js";
 import { fetchPrices } from "./prices.js";
@@ -329,8 +329,10 @@ export default function App(){
     const R=(projFits.length&&tShip)?projectionResistances({name:tShip,typeID:tidByName(tShip)},slots,fitSkills,{externalBursts}):null;
     const rz=k=>(R&&Number.isFinite(R[k])?R[k]:1);
     // disallowAssistance (in practice: an ACTIVE HIC bubble) refuses ALL incoming remote
-    // assistance - reps and remote sensor boosters - while still taking EWAR normally.
-    const noAssist=!!R?.disallowAssistance;
+    // assistance - reps and remote sensor boosters - while still taking EWAR normally. Short of
+    // that, Siege/Triage/Bastion/Industrial Core IMPEDANCE scales each kind down (to ~0 for reps
+    // and cap). assistanceFactors folds both rules into one multiplier per kind.
+    const AF=assistanceFactors(R);
     for(const pf of projFits){
       if(pf.active===false)continue;   // see the cmdFits loop — opt-out, so old saves stay active
       const fit=fitsDB[pf.ship]?.find(f=>f.name===pf.fitName);
@@ -344,18 +346,19 @@ export default function App(){
       const eff=computeProjectedReps({name:pf.ship,typeID:tidByName(pf.ship)},fit.slots,sourceSkills(fit),{implants:fit.implants,boosters:fit.boosters,drones:fit.drones,externalBursts:buildExternalBursts(fit.cmdFits)});
       const rangeM=(pf.rangeKm??30)*1000;
       const rf=(o,fo)=>calcRangeFactor(o,fo,rangeM,true);
-      if(!noAssist)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*rf(r.optimal,r.falloff),cycleS:r.cycleS});
+      if(AF.rep>0)for(const r of eff.reps)repEntries[r.kind].push({amount:r.amount*AF.rep*rf(r.optimal,r.falloff),cycleS:r.cycleS});
       for(const w of eff.webs)webMults.push(1+(w.speedFactor*rz('web')*rf(w.optimal,w.falloff))/100);
       for(const n of eff.neuts)neutGJs+=n.gjPerSec*rz('neut')*rf(n.optimal,n.falloff);
       // Remote capacitor transfer is ASSISTANCE: refused wholesale by disallowAssistance (an
       // active HIC bubble), and NOT reduced by the target's EWAR resistance the way a neut is.
-      if(!noAssist)for(const c of (eff.caps||[])){const g=c.gjPerSec*rf(c.optimal,c.falloff);if(g>0){capGJs+=g;capEntries.push({name:c.name,ship:pf.ship,gjPerSec:g});}}
+      // Capacitor impedance (siege et al.) does reduce it.
+      if(AF.cap>0)for(const c of (eff.caps||[])){const g=c.gjPerSec*AF.cap*rf(c.optimal,c.falloff);if(g>0){capGJs+=g;capEntries.push({name:c.name,ship:pf.ship,gjPerSec:g});}}
       for(const p of (eff.painters||[]))col.sig.push(p.sigBonus*rz('painter')*rf(p.optimal,p.falloff));
       for(const d of (eff.damps||[])){col.lock.push(d.lockBonus*rz('damp')*rf(d.optimal,d.falloff));col.scan.push(d.scanResBonus*rz('damp')*rf(d.optimal,d.falloff));}
       // Remote Sensor Booster: ASSISTANCE (not resisted), and a BONUS — so it must compete with the
       // ship's own signal amps/Sensor Optimization burst in one penalized group. Only the attribute
       // pool can do that, so these are handed to calcFitStats rather than stacked here.
-      if(!noAssist)for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*rf(b.optimal,b.falloff));}
+      if(AF.assist>0)for(const b of (eff.sensorBoosts||[])){if(b.lockBonus)boosts.lock.push(b.lockBonus*AF.assist*rf(b.optimal,b.falloff));if(b.scanResBonus)boosts.scan.push(b.scanResBonus*AF.assist*rf(b.optimal,b.falloff));}
       for(const td of (eff.trackDisr||[])){const f=rz('disrupt')*rf(td.optimal,td.falloff);col.trk.push(td.tracking*f);col.topt.push(td.optimalBonus*f);col.tfall.push(td.falloffBonus*f);}
       for(const g of (eff.guideDisr||[])){const f=rz('disrupt')*rf(g.optimal,g.falloff);col.mrng.push(g.missileRange*f);col.edly.push(g.explosionDelay*f);col.avel.push(g.aoeVel*f);col.acld.push(g.aoeCloud*f);}
       // ECM jammers carry remoteResistanceID 2253 = ECMResistance, so they are resisted like any other
@@ -371,7 +374,7 @@ export default function App(){
     // ecmResist is handed out so the Projected card can scale a jammer the same way this memo does;
     // the card applies its OWN range factor (it has a per-card range slider), so it cannot reuse
     // ecmEntries directly.
-    return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts,ecm:ecmEntries,ecmResist:rz('ecm')};
+    return {reps,webMult,neutGJs,capGJs,capEntries,debuffs:hasDebuff?debuffs:null,boosts,ecm:ecmEntries,ecmResist:rz('ecm'),assist:AF};
   },[projFits,fitsDB,fitSkills,sourceSkills,activeFit,slots,externalBursts]);
   const projectedReps=projectedEffects.reps;
   // calcFitStats is ~18 ms on a battleship, and the three calls below are the bulk of what a single
@@ -805,7 +808,7 @@ export default function App(){
         {bottomTab==="cargo"   &&<CargoScreen items={cargoItems} setItems={setCargoItems} slots={slots} shipCapacity={snapshotStats?.cargoCapacity??(()=>{const tid=tidByName(activeFit?.ship);return tid&&TYPES[tid]?(TYPES[tid].attrs?.capacity??1150):1150;})()} />}
         {bottomTab==="drones"  &&<DronesScreen drones={drones} setDrones={setDrones} droneInfo={droneInfo} fittedDrones={fittedDrones} fighters={fighters} setFighters={setFighters} fighterInfo={fighterInfo} maxActiveDrones={snapshotStats?.maxActiveDrones??5} shipDroneBay={snapshotStats?.droneBay??0} shipDroneBandwidth={snapshotStats?.droneBandwidth??0} shipFighter={(()=>{const tid=tidByName(activeFit?.ship);const a=tid&&TYPES[tid]?TYPES[tid].attrs:null;return a?{cap:a.fighterCapacity??0,tubes:a.fighterTubes??0,light:a.fighterLightSlots??0,heavy:a.fighterHeavySlots??0,support:a.fighterSupportSlots??0}:{cap:0,tubes:0,light:0,heavy:0,support:0};})()} />}
         {bottomTab==="implants"&&<ImplantsScreen implants={implants} setImplants={setImplants} loadouts={implantLoadouts} setLoadouts={setImplantLoadouts}/>}
-        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} openFitTabs={openFitTabs} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} jamTarget={{strength:snapshotStats?.sensorStrength??0,type:snapshotStats?.sensorType??"",resist:projectedEffects?.ecmResist??1}} onOpenFit={openFitInNewTab}/>}
+        {bottomTab==="effects" &&<EffectsScreen fitsDB={fitsDB} boosters={boosters} setBoosters={setBoosters} projFits={projFits} setProjFits={setProjFits} cmdFits={cmdFits} setCmdFits={setCmdFits} sourceSkills={sourceSkills} openFitTabs={openFitTabs} environment={slots?.environment??null} setEnvironment={(n)=>setSlots(prev=>({...prev,environment:n||undefined}))} jamTarget={{strength:snapshotStats?.sensorStrength??0,type:snapshotStats?.sensorType??"",resist:projectedEffects?.ecmResist??1}} assistTarget={projectedEffects?.assist} onOpenFit={openFitInNewTab}/>}
       </div>
       {/* Every tab except Fittings operates ON a fit — Cargo, Drones, Implants and Effects all have
           nothing to act on with no ship selected, so the bar is five dead buttons taking a row of
@@ -844,7 +847,7 @@ export default function App(){
     {showPilot&&<PilotSheet pilot={slots?.pilot??null} setPilot={p=>setSlots(prev=>({...prev,pilot:p||undefined}))}
                             missing={skillCheck.missing} appSkills={skills} skillProfiles={skillProfiles} onClose={()=>setShowPilot(false)}/>}
     {showExportFit&&<ExportFitModal activeFit={activeFit} slots={slots} implants={implants} boosters={boosters} drones={drones} fighters={fighters} cargo={cargoItems} onClose={()=>setShowExportFit(false)}/>}
-    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
+    {showSnapshot&&<SnapshotModal onClose={()=>setShowSnapshot(false)} assist={projectedEffects?.assist} fitName={activeFit?.fitName} shipName={activeFit?.ship} shipTypeID={tidByName(activeFit?.ship)} shipFaction={shipMeta.faction} shipClass={shipMeta.cls} slots={slots} cs={snapshotStats} drones={drones} fighters={fighters} implants={implants} boosters={boosters} cmdFits={cmdFits} projFits={projFits} fitsDB={fitsDB} skills={fitSkills} skillLabel={fitSkillLabel} priceHub={priceHub} priceSource={priceSource}/>}
     {showShoppingList&&<ShoppingListSheet slots={slots} onClose={()=>setShowShoppingList(false)}/>}
     {showSettings &&<SettingsOverlay onClose={()=>setShowSettings(false)} skills={skills} setSkills={setSkills} skillProfiles={skillProfiles} setSkillProfiles={setSkillProfiles} openInNewTab={openInNewTab} setOpenInNewTab={setOpenInNewTab} priceHub={priceHub} setPriceHub={setPriceHub} priceSource={priceSource} setPriceSource={setPriceSource} themePref={themePref} setThemePref={setThemePref} autoFillHardpoints={autoFillHardpoints} setAutoFillHardpoints={setAutoFillHardpoints} closeBrowserOnAdd={closeBrowserOnAdd} setCloseBrowserOnAdd={setCloseBrowserOnAdd} locale={locale} setLocale={setLocale}/>}
     {showImportFit&&<ImportFitSheet onClose={()=>{setShowImportFit(false);setImportFitInitial(null);}} onImport={importFit} initialText={importFitInitial?.text} initialErr={importFitInitial?.err}/>}

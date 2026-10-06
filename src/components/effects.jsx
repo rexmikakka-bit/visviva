@@ -466,7 +466,7 @@ const _SECTION_IDS=_SECTIONS.map(s=>s.tabId);
 // card here cannot claim a different number from the one the fit is actually getting — a projected
 // or command fit is flown by the pilot it names, or by the app-wide sheet if it names none, and that
 // decision belongs in one place.
-export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,sourceSkills=()=>SKILL_DEFAULTS,environment,setEnvironment,jamTarget,openFitTabs,onOpenFit}){
+export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,cmdFits,setCmdFits,sourceSkills=()=>SKILL_DEFAULTS,environment,setEnvironment,jamTarget,assistTarget,openFitTabs,onOpenFit}){
   const[section,setSection]=useState("boosters");
   const {panelRef:_panel,slideDir:_slideDir,swipeHandlers:_swipeHandlers,goTo:_goTo}=useTabSwipe(_SECTION_IDS,section,setSection);
   const[showBoosterPicker,setShowBoosterPicker]=useState(false);
@@ -573,11 +573,13 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
         const eff=srcFit?computeProjectedReps({name:f.ship,typeID:tidByName(f.ship)},srcFit.slots,sourceSkills(srcFit),{implants:srcFit.implants,boosters:srcFit.boosters,drones:srcFit.drones}):{reps:[],webs:[],neuts:[]};
         const rf=(o,fo)=>calcRangeFactor(o,fo,rangeKm*1000,true);
         const totals={shield:0,armor:0,hull:0};
-        for(const r of eff.reps)totals[r.kind]+=r.rawPS*rf(r.optimal,r.falloff);
+        // What THIS fit accepts (HIC bubble, siege/triage/bastion impedance), as App.jsx applies it.
+        const af=assistTarget??{rep:1,cap:1,assist:1};
+        for(const r of eff.reps)totals[r.kind]+=r.rawPS*af.rep*rf(r.optimal,r.falloff);
         const webMs=eff.webs.map(w=>1+(w.speedFactor*rf(w.optimal,w.falloff))/100);
         const webMult=webMs.length?stackingPenalty(webMs):1;
         const neutGJs=eff.neuts.reduce((s,n)=>s+n.gjPerSec*rf(n.optimal,n.falloff),0);
-        const capGJs=(eff.caps||[]).reduce((s,c)=>s+c.gjPerSec*rf(c.optimal,c.falloff),0);
+        const capGJs=(eff.caps||[]).reduce((s,c)=>s+c.gjPerSec*af.cap*rf(c.optimal,c.falloff),0);
         const stk=(arr)=>arr.length?(stackingPenalty(arr.map(p=>1+p/100))-1)*100:0;
         const painterSig=stk((eff.painters||[]).map(p=>p.sigBonus*rf(p.optimal,p.falloff)));
         const dampLock=stk((eff.damps||[]).map(d=>d.lockBonus*rf(d.optimal,d.falloff)));

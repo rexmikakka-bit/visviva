@@ -84,6 +84,15 @@ modifiers are preserved from the existing bundle; a genuinely new effect is writ
 reported loudly. Supply its modifier from CCP's FSD dump via `data-patches.json`, or write a custom
 handler in `dogma-engine.js`.
 
+**Existing modifier lists ARE refreshed from CCP's FSD dump** (`staticdata/fsd_built/dogmaeffects.0.json`
+in the pyfa clone beside the db, or `--fsd`). "Preserve" alone meant an effect CCP edits in place never
+arrived: Crimson Harvest appended `remoteCapacitorImpedance` to Siege/Triage/Bastion/Industrial Core,
+and the Minokawa's capital remote-cap bonus had been filtering on the wrong skill (1300 GJ against
+eos's 1625). Only effects that already carry modifiers are refreshed. About 150 are empty in the
+bundle and implemented by hand in `calc.js`, and filling those would apply each bonus twice. A hand
+patch still wins, and the build reports any patch CCP now disagrees with. One that differs on
+purpose says so in an `_ccpDiffers` field.
+
 ### Overriding an attribute VALUE, and why you almost never should
 
 `data-patches.json` also has a `types` section that replaces individual attribute values. It exists

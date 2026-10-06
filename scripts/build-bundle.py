@@ -95,6 +95,32 @@ def find_db(explicit=None):
     sys.exit("Could not find eve.db. Pass --db path/to/eve.db (it ships inside pyfa).")
 
 
+def load_fsd_effects(db_path, explicit=None):
+    """CCP's dogmaeffects (with modifierInfo) from the pyfa clone the db sits in, keyed by str(id)."""
+    cands = [explicit] if explicit else []
+    d = os.path.dirname(os.path.abspath(db_path))
+    for _ in range(3):
+        cands.append(os.path.join(d, 'staticdata', 'fsd_built', 'dogmaeffects.0.json'))
+        d = os.path.dirname(d)
+    for p in cands:
+        if p and os.path.isfile(p):
+            raw = json.load(open(p, encoding='utf-8'))
+            return raw if isinstance(raw, dict) else {str(x['effectID']): x for x in raw}
+    return None
+
+
+def clean_mod(m):
+    """One modifier in the bundle's shape: no null fields, integral floats as ints."""
+    return {k: (int(v) if isinstance(v, float) and v.is_integer() else v)
+            for k, v in m.items() if v is not None and not k.startswith('_')}
+
+
+def norm_mods(mods):
+    """Order- and null-insensitive identity of a modifier list (`skillID` is an old alias)."""
+    return sorted(json.dumps({('skillTypeID' if k == 'skillID' else k): v
+                              for k, v in clean_mod(m).items()}, sort_keys=True) for m in mods)
+
+
 def num(v):
     """CCP stores everything as REAL; keep ints as ints so the JSON stays small."""
     if v is None:
@@ -184,6 +210,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--db', help='path to pyfa eve.db')
     ap.add_argument('--dry-run', action='store_true', help='report changes, write nothing')
+    ap.add_argument('--fsd', help="CCP's dogmaeffects.0.json (default: staticdata/ in the db's pyfa clone)")
     args = ap.parse_args()
 
     db_path = find_db(args.db)
@@ -366,12 +393,39 @@ def main():
             new_effs[s] = {'c': 0, 'm': []}     # inert until a modifier is supplied
             new_effect_ids.append(eid)
 
+    # ── refresh EXISTING modifier lists from CCP's FSD dump ─────────────────
+    # "Preserve" above means an effect CCP edits in place never reaches the bundle. Crimson Harvest
+    # appended remoteCapacitorImpedance to the Siege/Triage/Bastion/Industrial Core effects, and the
+    # Minokawa's remote-cap bonus had been filtering on the wrong skill (Shield Emission, where CCP
+    # and pyfa say Capacitor Emission) for who knows how long. pyfa's source clone carries CCP's
+    # modifierInfo in staticdata/, so refresh from it.
+    #
+    # ONLY effects that already carry modifiers. ~150 effects are empty in the bundle and implemented
+    # by hand in calc.js (missile damage, boosters, ...); filling them from the FSD would apply each
+    # bonus twice. An empty effect still needs a data-patch or a handler, deliberately.
+    fsd_effs = load_fsd_effects(db_path, args.fsd)
+    refreshed = []
+    if fsd_effs is None:
+        print("!! no FSD dogmaeffects found beside the db (pass --fsd): existing modifier lists NOT refreshed")
+    else:
+        for s, e in new_effs.items():
+            if s in (patches.get('effects') or {}):
+                continue   # a hand patch wins; it is compared against CCP below instead
+            fm = [clean_mod(m) for m in (fsd_effs.get(s, {}).get('modifierInfo') or [])]
+            if e.get('m') and fm and norm_mods(fm) != norm_mods(e['m']):
+                e['m'] = fm
+                refreshed.append(s)
+
     # ── re-apply hand patches (idempotent) ──────────────────────────────────
     # The `types` section was already applied above, before the value diff.
+    patch_vs_ccp = []
     for eid, mods in (patches.get('effects') or {}).items():
         if eid in new_effs:
             new_effs[eid]['m'] = mods
             patched.append(f"effect {eid}")
+            fm = [clean_mod(m) for m in ((fsd_effs or {}).get(eid, {}).get('modifierInfo') or [])]
+            if fm and norm_mods(fm) != norm_mods(mods) and not (mods and '_ccpDiffers' in mods[0]):
+                patch_vs_ccp.append(eid)
     for aid, flags in (patches.get('attributes') or {}).items():
         if aid in new_attrs:
             new_attrs[aid].update(flags)
@@ -524,8 +578,14 @@ def main():
     print(f"attrs:   +{attrs_added:,} attribute slots added to existing types")
     print(f"         {len(value_changes):,} value changes   |   +{len(new_attr_ids)} new attribute definitions")
     print(f"effects: {len(effect_changes):,} type effect-list changes   |   +{len(new_effect_ids)} new effects")
+    if refreshed:
+        print(f"         {len(refreshed)} existing effects refreshed from CCP's FSD modifiers: {', '.join(refreshed)}")
     if patched:
         print(f"patches: re-applied {len(patched)} ({', '.join(patched)})")
+    if patch_vs_ccp:
+        print(f"!! {len(patch_vs_ccp)} data-patches DISAGREE with CCP's FSD modifiers: {', '.join(patch_vs_ccp)}")
+        print("   Each one is either a deliberate override (say so in its _why) or a patch CCP has")
+        print("   since made wrong. `node scripts/pyfa-effect.mjs <id>` shows pyfa's side.")
 
     if value_changes:
         print("\n-- value changes (first 25) --")
