@@ -231,7 +231,6 @@ const PAGES = {
     await tap(page, page.getByText('Import Fit', { exact: true })); await pause(page, 900);
     await still(page, 'import-sheet.png', { x: 0, y: 380, width: 390, height: 464 });
     await tap(page, page.getByText('From EFT')); await pause(page, 1600);
-    await still(page, 'import-done.png', { x: 0, y: 0, width: 390, height: 420 });
     const end = (Date.now() - t0) / 1000 + 0.6;
     const raw = await page.video().path(); await ctx.close();
     execFileSync(FFMPEG, ['-y', '-loglevel', 'error', '-ss', String(start), '-to', String(end), '-i', raw, '-vf',
