@@ -17,7 +17,7 @@ Short how-tos for the parts of Axis that aren't obvious from a phone screen. If 
 
 - [Importing a fit](docs/importing-fits.md): paste an EFT fit, or pull one from your character.
 - [Importing from pyfa](docs/pyfa-import.md): bring your whole pyfa library across from its XML backup.
-- [Module states](docs/module-states.md): tap, double-tap and hold the state dot.
+- [Module states and gestures](docs/module-states.md): tap, double-tap and hold the state dot, and swipe a row to copy or remove it.
 - [Stats tab: tap the numbers](docs/stats-toggles.md): damage splits, heat, exact values, ancillary clips and cap views.
 - [Where a number comes from](docs/modifier-dropdowns.md): expand any attribute to see every modifier on it.
 - [Graphs](docs/graphs.md): plot damage, tank, cap and mobility against range, time or a target.

@@ -211,6 +211,49 @@ const PAGES = {
     });
   },
 
+  async swipe() {
+    // Rows reveal Copy and Remove on a rightward TOUCH swipe (use-row-swipe.js listens for touch,
+    // not pointer, events), which Playwright has no gesture for, so it goes in as raw CDP touches.
+    // The demo racks are full, so Copy only has somewhere to go once Remove has made a gap. Undo is
+    // per session (it does not survive a reload), so the fit is restored inside the same session
+    // and checked before closing.
+    const lowRack = async (page) => (await page.locator('body').innerText()).match(/Low Slots[\s\S]*?Rigs/)?.[0];
+    let before = null;
+    const swipeRow = async (page, label) => {
+      const cdp = await page.context().newCDPSession(page);
+      const b = await page.getByText(label, { exact: true }).first().boundingBox();
+      const x = b.x + 20, y = b.y + b.height / 2;
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+      for (let i = 1; i <= 12; i++) { await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x + 14 * i, y }] }); await page.waitForTimeout(25); }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      return y;
+    };
+    // The tray sits under the row: Copy at 10-82 px, Remove at 82-154 px.
+    const COPY_X = 46, REMOVE_X = 118;
+    const { ctx, page, t0 } = await open('profile', { video: true });
+    await tab(page, /^modules$/i); await pause(page);
+    await toTop(page, page.getByText('Low Slots', { exact: true }));
+    before = await lowRack(page);
+    const head = await page.getByText('Low Slots', { exact: true }).boundingBox();
+    const region = { x: 0, y: head.y - 12, width: 390, height: 430 };
+    await pause(page, 400);
+    const start = (Date.now() - t0) / 1000;
+    let y = await swipeRow(page, 'Tracking Enhancer II'); await pause(page, 1400);
+    await page.mouse.click(REMOVE_X, y); await pause(page, 1300);
+    y = await swipeRow(page, 'Gyrostabilizer II'); await pause(page, 1200);
+    await page.mouse.click(COPY_X, y); await pause(page, 1800);
+    const end = (Date.now() - t0) / 1000;
+    for (let i = 0; i < 2; i++) { await page.getByRole('button', { name: /Undo/ }).first().click(); await pause(page, 500); }
+    const after = await lowRack(page);
+    const raw = await page.video().path(); await ctx.close();
+    if (after !== before) throw new Error(`swipe: the low rack was NOT restored; fix it by hand.\nbefore: ${before}\nafter:  ${after}`);
+    execFileSync(FFMPEG, ['-y', '-loglevel', 'error', '-ss', String(start - 0.2), '-to', String(end), '-i', raw, '-vf',
+      `crop=${region.width}:${Math.round(region.height)}:0:${Math.round(region.y)},fps=12,scale=390:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle`,
+      '-loop', '0', join(IMG, 'module-swipe.gif')]);
+    rmSync(raw, { force: true });
+    console.log(`  module-swipe.gif  ${(statSync(join(IMG, 'module-swipe.gif')).size / 1024).toFixed(0)} KB  (fit restored)`);
+  },
+
   async import() {
     // Its own throwaway profile: importing into the main one would duplicate the demo fit.
     rmSync(join(WORK, 'profile-import'), { recursive: true, force: true });
