@@ -212,6 +212,20 @@ let shipsByClass = {}, slotIcons = {}, raceIcons = {}, navIcons = {};
 const SUBSYSTEM_SLOT_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAQAAAC1+jfqAAAA8UlEQVR42q3BA0xwYRiA0ee99/ttM0tz0pQ0JY159vKsptyUpdmIs9WalG3btnkOz+ideEsAJijxkADsEC6QD5mzO0s7H8txbVxY2imbwps3nPMhvTey51WdpOOtR78rW9h5VY81Z8Q0c+hFIZ68RgGfHFvf1uCOcErnKzZ84sQr/vOZU2++FEggijPvP+VoEbzgmNPs9utqfnDmfWKvfTsmHBG/tZ3vDXzjhIhj8ZRfB7Yce/0uu2tDT0QHQHgd2RbdJ9G85pQSd/6pBC0K43cZmIodlmhcov7Ujm5VzNXPSwg3eKOSzBpwQeNGguJh9gA8dDZR6aX2XQAAAABJRU5ErkJggg==';
 let _bundleReady = false;
 const _bundleListeners = [];
+// ships.json is legacy too, so a hull CCP added after it (the Akoman, 24.01) was in neither it nor
+// data-bundle.js and could not be found by ship search, though lookupShip() already builds it from
+// TYPES. Every hull the regenerated dogma bundle carries is listed, whatever the legacy files know.
+// Mutates `byClass` and `listed`; exported so the suite can run it without the lazy bundle import.
+function backfillHullsFromTypes(byClass, listed, types = TYPES) {
+  for(const[tid,ty] of Object.entries(types)){
+    const ntid=Number(tid);
+    if((ty.c??ty.category)!==6 || !ty.n || !ty.gn || listed.has(ntid)) continue;
+    if(!byClass[ty.gn]) byClass[ty.gn]=[];
+    byClass[ty.gn].push({name:ty.n,typeID:ntid});
+    listed.add(ntid);
+  }
+  return byClass;
+}
 // NOTE: do NOT add /* @vite-ignore */ here. It used to be there, and it meant Vite left the path
 // untouched in the production build — so the built app tried to fetch `dist/data-bundle.js`, which
 // does not exist. The import failed silently and shipsByClass / moduleVariations / shipTraits /
@@ -246,7 +260,9 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
     if(!cls) continue;
     if(!shipsByClass[cls]) shipsByClass[cls]=[];
     if(!shipsByClass[cls].some(x=>x.name===s.name||x.typeID===s.typeID)) shipsByClass[cls].push({name:s.name,typeID:s.typeID});
+    _listedTypeIDs.add(s.typeID);
   }
+  backfillHullsFromTypes(shipsByClass, _listedTypeIDs);
   // Upwell structures aren't in ships.json at all (this app was ship-only until structure support
   // was added) — same backfill idea, but sourced straight from TYPES since there's no ships.json
   // entry to iterate. Filtered by group name, not a hardcoded typeID list, so a new structure hull
@@ -1808,4 +1824,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, backfillHullsFromTypes, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

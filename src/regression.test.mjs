@@ -18,7 +18,7 @@
  * displayed repair/EHP numbers; our value is the more precise one).
  */
 
-import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, effectiveWeaponMultipliers, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
+import { SKILL_DEFAULTS as SKILLS_ALL_V, calcFitStats, assistanceFactors, effectiveWeaponMultipliers, runCapSim, simulateCapTrace, computeFitCostRatios, effectiveCycleMs, applyRemoteRepDiminishing, checkFitSkills, computeCommandBursts, computeProjectedReps, projectionResistances, jamChanceFrom, usesTurretHardpoint, usesLauncherHardpoint, attrHighIsGood, calcTurretMult, calcTurretCTH, calcAngularSpeed, calcMissileFactor, calcLockTime, formatStrengthValues, SKILL_CATALOG, SKILL_BY_TYPEID, ALPHA_SKILLS, itemSkillGap, TYPES } from './calc.js';
 import { typeIDByName, tracing } from './dogma-engine-init.js';
 import shipsData from './data/ships.json' with { type: 'json' };
 import { TARGET_PROFILES } from './data/target-profiles.js';
@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits, backfillHullsFromTypes } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap, contractCharacter, UI_SCOPE } from './lib/esi.js';
 import { moduleGestureHistory } from './lib/module-gesture.js';
 
@@ -40,7 +40,7 @@ import { weaponRacks, rankAmmo, ammoGrades } from './lib/ammo-compare.js';
 import { abyssalAssets, assetLocation, dynamicItemToModule, mergeAbyssalScan, libraryModule, ASSET_SCOPE, MANUAL_OWNER, customAbyssal, manualAbyssalId } from './lib/abyssal-library.js';
 import { scanAbyssals, importAbyssals } from './lib/abyssal-import.js';
 import { abyssalsForSlot, abyssalMarketGroups, abyssalContainerGroups, abyssalBrowseLevel, abyssalSourceTree, mergeLinkedCharacters, atJita44, abyssalSearchWords, abyssalMatchesSearch, CHARACTER_SOURCE } from './lib/abyssal-browser.js';
-import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE } from './lib/variation-items.js';
+import { variationItems, variationRoll, fittedAbyssalIds, filterVariationItems, withinPriceCeiling, matchesSource, matchesAnySource, containerSource, MARKET_SOURCE, rolledAttributes } from './lib/variation-items.js';
 import { mutaMarketQuery, mutaMarketListing, mutaMarketListings, isIndividuallyPriced, contractKind, contractItemCount, contractCost, listingPrice, listingCost, mutaMarketTypeIds, withinBudget, overBudget, filterListings, abyssalTypeIds, mutaMarketUrl, abyssalAttrSpan, attrFilterFor, JITA_4_4_STATION_ID, FORGE_REGION_ID } from './lib/mutamarket.js';
 import { fetchContractIndex, stationOf, withStations, contractIndexExpired, stationIndexFor } from './lib/mutamarket-contracts.js';
 import { fetchListings } from './lib/mutamarket-client.js';
@@ -64,9 +64,23 @@ const M = (name, state, ammo) => ({ typeID: tid(name), state, ammo });
 const EMPTY = { high: [], mid: [], low: [], rigs: [] };
 const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).join('/');
 
-// The EVE client build these baselines were validated against (pyfa v2.69.0 / build 3532181).
+// The EVE client build these baselines were validated against (pyfa master c9671de / build 3579973).
 // If the bundle is regenerated from a NEWER eve.db, some baselines will legitimately move — CCP
 // rebalances things. That is a worklist, not a code regression. See CLAUDE.md -> "Upgrading eve.db".
+//
+// 2026-10-06 upgrade (build 3532181 -> 3579973, Crimson Harvest): every existing baseline passed
+// UNCHANGED — CCP moved no attribute value on any existing type. No pyfa release carries this build,
+// so the db was built from pyfa master c9671de's static data (db_update.py) and the oracle run
+// against that commit. Changes:
+//   - CCP fixed the Paladin/Golem agility decimal bug (now 0.0858 / 0.0963), so the data-patches.json
+//     override was deleted and the deliberate divergence from pyfa is gone.
+//   - New: the Akoman, three officer capital modules, the Abyssal Remote Armor Repairers and their
+//     24 mutaplasmids, Harvest/Tetrimon/Chemal boosters. See the CRIMSON HARVEST section for what
+//     eos could and could not confirm.
+//   - mutaplasmids.json, type-icons.json and graphic-ids.json are now generated by build-bundle.py.
+//     The hand-copied mutaplasmid table was missing four Radical drone-upgrade mutaplasmids that
+//     shipped before this build, which is why MutaMarket coverage went 89 -> 97 and a fourth
+//     negative-base slider family (aoeCloudSizeBonus) appeared.
 //
 // 2026-09-22 upgrade (build 3424810 -> 3532181, EVE 24.01), every moved baseline re-read from
 // pyfa v2.69.0's own eos:
@@ -97,7 +111,7 @@ const resistStr = (r) => [r.em, r.th, r.kin, r.exp].map((v) => v.toFixed(1)).joi
 //     new site mechanic, not a static hull bonus.
 //   - Breach Control module (SCARAB-pod damage resist) and the Imperial Navy 'Atonement' Tracking
 //     Enhancer (laser cap-need reduction) are real but single ultra-niche items; deferred.
-const VALIDATED_BUILD = '3532181';
+const VALIDATED_BUILD = '3579973';
 
 let bundleVersion = null;
 try {
@@ -1542,7 +1556,8 @@ function check(group, label, actual, expected, tol = 0.005) {
         projectionResistances(devoter, bubbled('active'), null, {}).disallowAssistance ? 1 : 0, 1, 0);
   check('projsensor', 'online HIC bubble does not',
         projectionResistances(devoter, bubbled('online'), null, {}).disallowAssistance ? 1 : 0, 0, 0);
-  check('projsensor', 'sieged dread still takes assistance',
+  // Siege does not REFUSE assistance; it IMPEDES it, which the CRIMSON HARVEST section pins.
+  check('projsensor', 'sieged dread does not set disallowAssistance',
         projectionResistances({ typeID: tid('Phoenix Navy Issue'), name: 'Phoenix Navy Issue' },
           { high: [M('Siege Module II', 'active')], mid: [], low: [], rigs: [] }, null, {}).disallowAssistance ? 1 : 0, 0, 0);
 }
@@ -3395,15 +3410,17 @@ Republic Fleet Command Mindlink`;
   check('detent', 'ranges with the base off the track', offTrack, 138, 0);
 
   // A NEGATIVE base is what tells the editor to draw that slider mirrored: the attribute's MAGNITUDE
-  // is its strength, so in raw ascending order the strong end lands on the left. Only three families
+  // is its strength, so in raw ascending order the strong end lands on the left. Only four families
   // are stored that way, and the rule is applied per-RANGE rather than per-attribute name because
   // `speedFactor` is in both camps — a webifier's is -60, a microwarpdrive's is +500, and mirroring
-  // the MWD too would put its fast end on the left.
+  // the MWD too would put its fast end on the left. The fourth, `aoeCloudSizeBonus`, arrived with the
+  // Radical Omnidirectional Tracking Enhancer/Link mutaplasmids: their drone explosion-radius bonus
+  // is -6%, so a stronger roll is a MORE negative one and mirroring is right for it too.
   //
-  // Pinned as an exact set so a bundle regen that adds a fourth family, or flips one of these
+  // Pinned as an exact set so a bundle regen that adds another family, or flips one of these
   // positive, surfaces here instead of as a silently backwards slider. Sorted for stability.
   check('detent', 'attributes whose base is stored negative', [...negBase.keys()].sort().join(','),
-    'energyWarfareResistanceBonus,siegeLocalLogisticsDurationBonus,speedFactor', 0);
+    'aoeCloudSizeBonus,energyWarfareResistanceBonus,siegeLocalLogisticsDurationBonus,speedFactor', 0);
   // ...and the MWD side of that split really is present, or the per-range test is untested.
   const mwdSpeed = mutaAttrRanges(MUTA_BY_TYPE[tid('50MN Microwarpdrive II')]?.[0], tid('50MN Microwarpdrive II'))
     .find((r) => r.name === 'speedFactor');
@@ -7522,9 +7539,12 @@ Nanofiber Internal Structure II
   try{mutaMarketListing({...listed,source_type:{id:5975,name:'10MN Afterburner II'}});}catch{wrongSource=true;}
   check('mutamarket','a mutaplasmid that cannot roll this module is rejected',wrongSource?1:0,1,0);
 
-  // Our mutaplasmid bundle and MutaMarket agree on exactly 89 abyssal types, verified live in both
+  // Our mutaplasmid bundle and MutaMarket agree on exactly 97 abyssal types, verified live in both
   // directions. A regen that changes this means new abyssal types exist and the source list moved.
-  check('mutamarket','abyssal type coverage matches MutaMarket',mutaMarketTypeIds().size,89,0);
+  // 89 -> 97 in 24.01: the four Radical drone-upgrade results and the four Abyssal Remote Armor
+  // Repairers. Each was probed on 2026-10-06; MutaMarket answers an unknown type with "Please provide
+  // a valid type" and answered all eight with a listing page (three already had contracts).
+  check('mutamarket','abyssal type coverage matches MutaMarket',mutaMarketTypeIds().size,97,0);
 
   // Query building. The single-attribute rule is the API's, not ours: stacking two `attributes/`
   // segments silently applies only the last and returns rows violating the first.
@@ -8125,12 +8145,11 @@ Nanofiber Internal Structure II
   // The mass pass: eleven hulls got lighter and CCP shipped the inertia to go with it, so align time
   // — proportional to mass x inertia — should not have moved. The expected products are pre-patch.
   //
-  // The Paladin and Golem reach the same answer only because data-patches.json overrides their
-  // agility: the SDE carries 0.858 and 0.963, ten times the value the rest of the pass implies, and
-  // in game both still align in about fifteen seconds. pyfa 2.69.0 reads the same SDE and reports
-  // 103 and 113 seconds, so THESE TWO ARE A DELIBERATE DIVERGENCE FROM THE REFERENCE IMPLEMENTATION
-  // and the only place in the suite where disagreeing with pyfa is the correct outcome. Without the
-  // override they land 10x high here.
+  // The Paladin and Golem used to reach the same answer only through a data-patches.json override:
+  // the 24.01 SDE carried agility 0.858 and 0.963, ten times what the rest of the pass implied, and
+  // in game both still aligned in about fifteen seconds. CCP corrected both to 0.0858 and 0.0963 in
+  // build 3579973 (2026-10-06) and the override was deleted. If they land 10x high here again, the
+  // decimal bug is back in the SDE.
   const alignProduct=n=>named(n).a.mass*named(n).a.agility;
   for(const [hull,before] of [['Kronos',10952000],['Vargur',10650000],['Redeemer',10821600],
       ['Sin',7269210],['Widow',10274800],['Panther',9523200],['Marshal',10500000],
@@ -8153,6 +8172,138 @@ Nanofiber Internal Structure II
   ]) check('balance',`the ${hull} prints the ${attr} the engine uses`,
     printed(hull,section,text),`${Math.abs(named(hull).a[attr])}%`,0);
 }
+
+// ─── CRIMSON HARVEST (24.01, build 3579973): Akoman, officer capital neut/nos, Zorya's ──────────
+//
+// No pyfa RELEASE carries this build. pyfa master c9671de does (its static data), and the oracle was
+// run against it with an eve.db built from that commit. What it could confirm, and what it could not:
+//
+//   - CONFIRMED against eos: the Akoman's hull EHP and armor rep, the officer capital neut/nos
+//     amounts, ranges and cycles, and Zorya's disintegrator damage multiplier and range.
+//   - NOT confirmable yet: the Akoman's five new hull effects (12949-12953) and the two Harvest
+//     booster effects (8268/8269). eos hand-implements every effect in effects.py and pyfa has not
+//     written classes for these, so eos applies none of them. Their modifiers are CCP's own FSD
+//     modifierInfo, copied verbatim into data-patches.json, and every number below is the trait
+//     text applied to the base attribute: lasers x2.25 (125% role bonus), neut/nos drain x1.75,
+//     optimal x2, falloff x1.5 (15/20/10% per Amarr BC level), webifier range x2 (20% per Minmatar
+//     BC level). Re-run the oracle when pyfa ships the classes, and move these to CONFIRMED.
+{
+  console.log('\nCRIMSON HARVEST (Akoman, officer capital neut/nos, Zorya\'s, Harvest boosters)');
+  const akoman = { typeID: tid('Akoman'), name: 'Akoman' };
+  const r = {
+    laser: M('Mega Pulse Laser II', 'active', 'Conflagration L'),
+    neut:  M('Heavy Energy Neutralizer II', 'active'),
+    nos:   M('Heavy Energy Nosferatu II', 'active'),
+    web:   M('Stasis Webifier II', 'active'),
+    rep:   M('Large Armor Repairer II', 'active'),
+  };
+  const lows = ['Heat Sink II', 'Heat Sink II', null, 'Multispectrum Energized Membrane II',
+                'Multispectrum Energized Membrane II', 'Damage Control II', '1600mm Steel Plates II'];
+  const cs = calcFitStats(akoman, {
+    high: [r.laser, M('Mega Pulse Laser II', 'active', 'Conflagration L'), M('Mega Pulse Laser II', 'active', 'Conflagration L'),
+           M('Mega Pulse Laser II', 'active', 'Conflagration L'), r.neut, r.nos],
+    mid:  [M('50MN Microwarpdrive II', 'active'), r.web, M('Stasis Webifier II', 'active'), M('Large Cap Battery II', 'online')],
+    low:  lows.map(n => n ? M(n, n === 'Damage Control II' ? 'active' : 'online') : r.rep),
+    rigs: [M('Medium Trimark Armor Pump II', 'online'), M('Medium Trimark Armor Pump II', 'online'),
+           M('Medium Energy Locus Coordinator II', 'online')],
+  }, [], null, {});
+  const st = (c, k) => c.slotEngineStats.get(r[k]) ?? {};
+
+  // eos agrees on these to the last digit.
+  check('crimson', 'Akoman EHP matches eos', cs.totalEHP, 51795.964, 1e-6);
+  check('crimson', 'Akoman armor rep matches eos', cs.armorRepEhpS, 242.798, 1e-5);
+  // eos reads 6.80597 here with no role bonus at all; the 125% bonus is exactly x2.25 of that.
+  check('crimson', 'Akoman 125% laser role bonus', st(cs, 'laser').dmgMult, 6.80597120397769 * 2.25, 1e-9);
+  check('crimson', 'neut drain +75% (Amarr BC V)', String(st(cs, 'neut').strengthText), '1050 GJ/24s (43.8 GJ/s)');
+  check('crimson', 'neut optimal +100%', st(cs, 'neut').optimal, 40, 1e-9);
+  check('crimson', 'neut falloff +50%', st(cs, 'neut').falloff, 15, 1e-9);
+  check('crimson', 'nos drain +75% (Amarr BC V)', String(st(cs, 'nos').strengthText), '210 GJ/10s (21 GJ/s)');
+  check('crimson', 'nos optimal +100%', st(cs, 'nos').optimal, 40, 1e-9);
+  check('crimson', 'web range +100% (Minmatar BC V)', st(cs, 'web').optimal, 20, 1e-9);
+
+  // Harvest boosters. The webifier one is a flat ADD (op 2), so it lands BEFORE the hull's percentage:
+  // (10 + 4) x 2 = 28 km, not 10 x 2 + 4 = 24.
+  const boosted = calcFitStats(akoman, { high: [r.nos], mid: [r.web], low: [], rigs: [] }, [], null,
+    { boosters: ['Harvest Nosferatu Booster IV', 'Harvest Webifier Booster IV'].map(n => ({ typeID: tid(n), name: n })) });
+  check('crimson', 'Harvest Nosferatu Booster IV: -12% nos cycle', String(st(boosted, 'nos').strengthText), '210 GJ/8.8s (23.9 GJ/s)');
+  check('crimson', 'Harvest Webifier Booster IV: +4 km before the hull bonus', st(boosted, 'web').optimal, 28, 1e-9);
+
+  // Officer capital neut and nos, and Zorya's: existing effects only, so eos models them in full.
+  const hn = M('Horm’s Capital Energy Neutralizer', 'active'), sn = M('Sarikusa’s Capital Energy Nosferatu', 'active');
+  const cap = calcFitStats({ typeID: tid('Revelation'), name: 'Revelation' }, { high: [hn, sn], mid: [], low: [], rigs: [] }, [], null, {});
+  const hs = cap.slotEngineStats.get(hn) ?? {}, ss = cap.slotEngineStats.get(sn) ?? {};
+  check('crimson', 'Horm’s neut matches eos', String(hs.strengthText), '4800 GJ/48s (100 GJ/s)');
+  check('crimson', 'Horm’s neut range matches eos', `${hs.optimal}/${hs.falloff}`, '43/21.5');
+  check('crimson', 'Sarikusa’s nos matches eos', String(ss.strengthText), '870 GJ/20s (43.5 GJ/s)');
+  const zd = M('Zorya’s Ultratidal Entropic Disintegrator', 'active', 'Baryon Exotic Plasma XL');
+  const zs = calcFitStats({ typeID: tid('Zirnitra'), name: 'Zirnitra' }, { high: [zd], mid: [], low: [], rigs: [] }, [], null, {}).slotEngineStats.get(zd) ?? {};
+  check('crimson', 'Zorya’s damage multiplier matches eos', zs.dmgMult, 1.7136796875, 1e-9);
+  check('crimson', 'Zorya’s optimal matches eos', zs.optimal, 80.6, 1e-3);
+
+  // The Abyssal Remote Armor Repairers: the mutaplasmid table is generated now, so a new family
+  // arrives with a regen, and its result type has to be in the bundle for MutaMarket and ESI imports.
+  const {default:mutas}=await import('./data/mutaplasmids.json',{with:{type:'json'}});
+  const rar=Object.values(mutas).find(m=>m.n==='Gravid Large Remote Armor Repairer Mutaplasmid');
+  check('crimson', 'a Large RAR mutaplasmid rolls Large Remote Armor Repairer II', rar?.t.includes(tid('Large Remote Armor Repairer II'))?1:0, 1, 0);
+  check('crimson', 'and produces a type the bundle carries', tid('Large Abyssal Remote Armor Repairer'), rar?.r, 0);
+  check('crimson', 'it can roll repair amount (armorDamageAmount)', rar?.a['84'] ? 1 : 0, 1, 0);
+
+  // Ship SEARCH reads shipsByClass, not the derived taxonomy, and shipsByClass was data-bundle.js plus
+  // a ships.json backfill — both legacy, neither with the Akoman — so typing its name found nothing
+  // while the browse menu listed it. The real list is filled by a lazy bundle import Node cannot run,
+  // so this drives the backfill from the legacy ships.json alone: worst case, nothing else listed.
+  const legacy = {}, seen = new Set();
+  for (const s of Object.values(shipsData)) if (s?.typeID && TYPES[s.typeID]?.gn) {
+    (legacy[TYPES[s.typeID].gn] ??= []).push({ name: s.name, typeID: s.typeID }); seen.add(s.typeID);
+  }
+  check('crimson', 'ships.json alone does not know the Akoman', seen.has(tid('Akoman')) ? 1 : 0, 0, 0);
+  const byClass = backfillHullsFromTypes(legacy, seen, TYPES);
+  check('crimson', 'the backfill makes the Akoman searchable',
+    (byClass['Attack Battlecruiser'] ?? []).some(s => s.typeID === tid('Akoman')) ? 1 : 0, 1, 0);
+  const listed = Object.values(byClass).flat().map(s => s.typeID);
+  // An imported Abyssal Large Remote Armor Repairer gets the same inferred rates as an abyssal local
+  // repairer: Repair Rate (HP/s) and Repair / Cap (HP/GJ), computed from ITS roll, not the base
+  // module's. Driven through the import path the library uses, end to end.
+  const rarAsset = (id) => ({ item_id: id, type_id: tid('Large Abyssal Remote Armor Repairer'), location_id: 1, location_type: 'item', is_singleton: true });
+  const rarRoll = (amount, ms, cap) => ({ source_type_id: tid('Large Remote Armor Repairer II'), mutator_type_id: rar.r && Number(Object.keys(mutas).find(k => mutas[k] === rar)),
+    dogma_attributes: [{ attribute_id: 6, value: cap }, { attribute_id: 30, value: 200 }, { attribute_id: 50, value: 50 }, { attribute_id: 54, value: 7000 },
+      { attribute_id: 73, value: ms }, { attribute_id: 84, value: amount }, { attribute_id: 2044, value: 10000 }] });
+  const pilot = { characterId: 1, characterName: 'P', scopes: [ASSET_SCOPE] };
+  const strong = dynamicItemToModule(rarAsset(1), rarRoll(600, 6000, 365), pilot, 'Jita', 1);
+  const cheap = dynamicItemToModule(rarAsset(2), rarRoll(500, 6000, 250), pilot, 'Jita', 1);
+  const rates = r => derivedAttributes(rolledAttributes(r));
+  check('crimson', 'abyssal RAR: repair rate from its roll', rates(strong)['derived:repairPerSecond'], 100, 1e-9);
+  check('crimson', 'abyssal RAR: repair per GJ from its roll', rates(cheap)['derived:repairPerCap'], 2, 1e-9);
+  // The two rates disagree on which roll is better — the reason the sort exists.
+  check('crimson', 'the rates rank the rolls differently',
+    [rates(strong)['derived:repairPerSecond'] > rates(cheap)['derived:repairPerSecond'], rates(cheap)['derived:repairPerCap'] > rates(strong)['derived:repairPerCap']].join(','), 'true,true');
+  check('crimson', 'and the library offers both as sort keys',
+    [...DERIVED_KEYS].filter(k => [strong, cheap].some(r => Number.isFinite(rates(r)[k]))).join(','), 'derived:repairPerSecond,derived:repairPerCap');
+
+  // Effects CCP edits IN PLACE: build-bundle.py now refreshes existing modifier lists from the FSD.
+  // The Minokawa's remote-cap bonus filtered on Capital SHIELD Emission Systems; CCP and pyfa both
+  // say Capacitor. eos reads 1625 GJ (1300 x 1.25, Caldari Carrier V); before the refresh, 1300.
+  const rct = M('Capital Remote Capacitor Transmitter II', 'active');
+  check('crimson', 'Minokawa capital cap transfer matches eos',
+    String(calcFitStats({ typeID: tid('Minokawa'), name: 'Minokawa' }, { high: [rct], mid: [], low: [], rigs: [] }, [], null, {})
+      .slotEngineStats.get(rct)?.strengthText), '1625 GJ/20s (81.3 GJ/s)');
+
+  // Siege immunity. The impedance attributes come off the engine; eos computes the same repair
+  // impedance (1e-6 to the digit) but never APPLIES it — that part is deliberately past pyfa.
+  const nag = s => projectionResistances({ typeID: tid('Naglfar'), name: 'Naglfar' }, { high: [], mid: [], low: [M('Siege Module II', s)], rigs: [] });
+  const sieged = nag('active'), idle = nag('online');
+  check('crimson', 'sieged: repair impedance matches eos', sieged.remoteRepairImpedance, 1.0000000000287557e-06, 1e-9);
+  check('crimson', 'sieged: capacitor impedance (new in 3579973)', sieged.remoteCapacitorImpedance, 1e-6, 1e-3);
+  check('crimson', 'sieged: assistance impedance -80%', sieged.remoteAssistanceImpedance, 0.2, 1e-9);
+  check('crimson', 'siege offline: everything accepted', [idle.remoteRepairImpedance, idle.remoteCapacitorImpedance, idle.remoteAssistanceImpedance].join(','), '1,1,1');
+  const af = assistanceFactors(sieged);
+  check('crimson', 'a sieged dread accepts ~no reps or cap', af.rep < 1e-5 && af.cap < 1e-5 ? 1 : 0, 1, 0);
+  check('crimson', 'a HIC bubble still refuses everything', Object.values(assistanceFactors({ ...idle, disallowAssistance: true })).join(','), '0,0,0');
+  check('crimson', 'no target computed accepts everything', Object.values(assistanceFactors(null)).join(','), '1,1,1');
+
+  check('crimson', 'and every hull is searchable exactly once',
+    Object.entries(TYPES).filter(([, t]) => (t.c ?? t.category) === 6 && t.gn).every(([id]) => listed.includes(Number(id))) && listed.length === new Set(listed).size ? 1 : 0, 1, 0);
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);
@@ -8160,7 +8311,7 @@ if (failures.length === 0) {
 } else {
   console.log(`${passed} passed, ${failures.length} FAILED:\n`);
   for (const f of failures) console.log(`  ✗ [${f.group}] ${f.label}: got ${f.actual}, expected ${f.expected}`);
-  console.log('\nThese baselines are validated against pyfa v2.69.0. A failure means the code');
+  console.log('\nThese baselines are validated against pyfa (master c9671de, build 3579973). A failure means the code');
   console.log('regressed — do NOT update the expected values without re-checking against pyfa.');
   process.exit(1);
 }

@@ -1619,10 +1619,32 @@ export function projectionResistances(ship, slots, skills = SKILL_DEFAULTS, opts
     // assistance (reps, remote sensor boosters, remote tracking computers) while still taking EWAR
     // normally. eos gates each assistance effect on exactly this attribute. In the current game the
     // only common source is an ACTIVE HIC bubble (Warp Disrupt Field Generator, effect 3380) —
-    // Siege/Bastion/Triage all carry disallowAssistance=0 and do NOT block assistance.
+    // Siege/Bastion/Triage carry disallowAssistance=0: they do not refuse assistance outright, they
+    // IMPEDE it (next block).
     out.disallowAssistance = !!fit.ship.get('disallowAssistance');
+    // The other way a ship refuses help: IMPEDANCE, a multiplier on what arrives. Siege, Triage,
+    // Bastion and the Industrial Cores drive repair and capacitor impedance to 1e-6 (-99.9999%) and
+    // assistance impedance (remote sensor boosters) down 80-100%. Capacitor impedance is new in build
+    // 3579973; the other two were already computed and simply never read.
+    //
+    // ⚠ pyfa computes these and does not apply them — eos reps a sieged dread in full. This is a
+    // deliberate step past the reference, because the game does not.
+    for (const attr of ['remoteRepairImpedance', 'remoteCapacitorImpedance', 'remoteAssistanceImpedance']) {
+      const v = fit.ship.get(attr);
+      out[attr] = Number.isFinite(v) && v >= 0 ? v : 1;
+    }
   } catch { /* resistances are an optimisation on top of a correct-enough default of 1 */ }
   return out;
+}
+
+/** What fraction of incoming assistance a target ACCEPTS, from projectionResistances() output:
+ *  {rep, cap, assist}. An active HIC bubble (disallowAssistance) refuses all of it; otherwise each
+ *  kind is scaled by its impedance. A missing R means "no target computed" and accepts everything. */
+export function assistanceFactors(R) {
+  if (!R) return { rep: 1, cap: 1, assist: 1 };
+  if (R.disallowAssistance) return { rep: 0, cap: 0, assist: 0 };
+  const f = v => (Number.isFinite(v) && v >= 0 ? v : 1);
+  return { rep: f(R.remoteRepairImpedance), cap: f(R.remoteCapacitorImpedance), assist: f(R.remoteAssistanceImpedance) };
 }
 
 // Remote-repair DIMINISHING RETURNS (eos Fit.__getAppliedRr). Incoming remote reps do not simply

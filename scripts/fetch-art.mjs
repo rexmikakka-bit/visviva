@@ -8,6 +8,7 @@
  *     node scripts/fetch-art.mjs --only=icons     # icons | renders | type-icons
  *     node scripts/fetch-art.mjs --force          # re-fetch even files already at target
  *     node scripts/fetch-art.mjs --fill-gaps      # also fetch referenced icons we have no file for
+ *     node scripts/fetch-art.mjs --only=icons --ids=25238,25248   # just these iconIDs (a patch's new items)
  *
  * Run it, commit src/assets/, and it never needs running again unless CCP adds new art.
  *
@@ -74,6 +75,9 @@ const dryRun = args.includes('--dry-run');
 const force = args.includes('--force');
 const fillGaps = args.includes('--fill-gaps');
 const only = (args.find((a) => a.startsWith('--only=')) ?? '').slice(7);
+// Fetch exactly these iconIDs, even ones we have no file for yet — how a patch's new items get art
+// without --fill-gaps also pulling in every long-standing gap.
+const iconIds = (args.find((a) => a.startsWith('--ids=')) ?? '').slice(6).split(',').filter(Boolean);
 
 // Politely parallel. The hero-render script goes strictly serial, which is right for 440 files but
 // would take well over ten minutes across the ~2,400 here. Six at a time against a CDN is not a
@@ -202,7 +206,7 @@ function iconJobs() {
   // Default worklist is what we ALREADY carry — this is an upgrade, not a coverage expansion. The
   // iconIDs pyfa never had art for stay on the image-server fallback unless --fill-gaps asks for
   // them, because that is ~717 more files and a materially bigger download.
-  const want = fillGaps ? [...typesByIcon.keys()] : [...have];
+  const want = iconIds.length ? iconIds : fillGaps ? [...typesByIcon.keys()] : [...have];
   return want
     .filter((iid) => typesByIcon.has(iid) && !IMAGE_SERVER_WRONG.has(iid) && !DRONE_ICON_IDS.has(iid))
     .map((iid) => ({ dir, name: `${iid}.png`, candidates: typesByIcon.get(iid), kind: 'icon' }));

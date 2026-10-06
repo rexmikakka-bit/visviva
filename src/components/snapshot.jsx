@@ -153,7 +153,9 @@ function fmtBuff(buffID, value) {
   const sign = v > 0 ? "+" : "";
   return unit ? `${sign}${v}${unit}` : `${sign}${v}%`;
 }
-function buildProjected(cmdFits, projFits, fitsDB, skills) {
+// `assist` is what the snapshot's own fit accepts (App.jsx's assistanceFactors): a sieged dread
+// takes no remote reps, so the card must not advertise them.
+function buildProjected(cmdFits, projFits, fitsDB, skills, assist = { rep: 1, cap: 1, assist: 1 }) {
   const links = [];
   for (const cf of (cmdFits ?? [])) {
     // `active` is opt-OUT — undefined counts as on, so fits saved before the toggle existed keep
@@ -195,7 +197,7 @@ function buildProjected(cmdFits, projFits, fitsDB, skills) {
     for (const d of (eff.damps || [])) { const f = rf(d.optimal, d.falloff); if (d.lockBonus < 0) add("Sensor Damp", t("{pct}% lock", { pct: (d.lockBonus * f).toFixed(0) })); if (d.scanResBonus < 0) add("Sensor Damp", t("{pct}% scan", { pct: (d.scanResBonus * f).toFixed(0) })); }
     for (const td of (eff.trackDisr || [])) { const f = rf(td.optimal, td.falloff); if (td.tracking < 0) add("Tracking Disr", t("{pct}% track", { pct: (td.tracking * f).toFixed(0) })); }
     for (const g of (eff.guideDisr || [])) { const f = rf(g.optimal, g.falloff); if (g.missileRange < 0) add("Guidance Disr", t("{pct}% mis. rng", { pct: (g.missileRange * f).toFixed(0) })); }
-    for (const r of (eff.reps || [])) { const f = rf(r.optimal, r.falloff); const v = r.rawPS * f; if (v > 0.1) { remoteReps[r.kind] = (remoteReps[r.kind] ?? 0) + v; add(`Remote ${r.kind === "shield" ? "Shield" : r.kind === "armor" ? "Armor" : "Hull"} Rep`, t("+{v} hp/s", { v: v.toFixed(0) }), false); } }
+    for (const r of (eff.reps || [])) { const f = rf(r.optimal, r.falloff); const v = r.rawPS * f * assist.rep; if (v > 0.1) { remoteReps[r.kind] = (remoteReps[r.kind] ?? 0) + v; add(`Remote ${r.kind === "shield" ? "Shield" : r.kind === "armor" ? "Armor" : "Hull"} Rep`, t("+{v} hp/s", { v: v.toFixed(0) }), false); } }
     if (fx.length) incoming.push({ fitName: pf.fitName || pf.ship, hull: pf.ship, rangeKm: pf.rangeKm ?? 30, effects: fx });
   }
   return { links, incoming, remoteReps };
@@ -710,14 +712,14 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
 }
 
 // ── the modal: preview + save/share ─────────────────────────────────────────────
-function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, priceHub = "Jita", priceSource = "fuzzwork", ...cardProps }) {
+function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, priceHub = "Jita", priceSource = "fuzzwork", ...cardProps }) {
   const abyssalData=useAbyssalData(cardProps.slots);
   const cardRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
   const [preview, setPreview] = useState(null);
   const [pricesReady, setPricesReady] = useState(false);
-  const projected = useMemo(() => buildProjected(cmdFits, projFits, fitsDB, skills), [cmdFits, projFits, fitsDB, skills]);
+  const projected = useMemo(() => buildProjected(cmdFits, projFits, fitsDB, skills, assist), [cmdFits, projFits, fitsDB, skills, assist]);
 
   const render = async () => {
     const html2canvas = (await import("html2canvas")).default;

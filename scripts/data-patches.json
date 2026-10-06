@@ -91,184 +91,6 @@
         "operation": 6
       }
     ],
-    "12879": [
-      {
-        "_why": "skillMultiplierShipBonusCommandCarrier, on the 'Command Carriers' skill (93983). CCP ships it with an empty modifier list. It scales the command-carrier hull bonus attrs (6192-6196) by skill level, exactly as effect 6583 does for the classic carrier bonuses. Without it those bonuses applied at 1x instead of 5x: a Salvation came out at 7.70M EHP vs pyfa's 8.06M, with armor resists ~0.3pp low.",
-        "domain": "shipID",
-        "func": "ItemModifier",
-        "modifiedAttributeID": 6192,
-        "modifyingAttributeID": 280,
-        "operation": 0
-      },
-      {
-        "domain": "shipID",
-        "func": "ItemModifier",
-        "modifiedAttributeID": 6193,
-        "modifyingAttributeID": 280,
-        "operation": 0
-      },
-      {
-        "domain": "shipID",
-        "func": "ItemModifier",
-        "modifiedAttributeID": 6194,
-        "modifyingAttributeID": 280,
-        "operation": 0
-      },
-      {
-        "domain": "shipID",
-        "func": "ItemModifier",
-        "modifiedAttributeID": 6195,
-        "modifyingAttributeID": 280,
-        "operation": 0
-      },
-      {
-        "domain": "shipID",
-        "func": "ItemModifier",
-        "modifiedAttributeID": 6196,
-        "modifyingAttributeID": 280,
-        "operation": 0
-      }
-    ],
-    "12876": [
-      {
-        "_why": "shipBonusCommandCarrierArmorCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Armor Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Armored Command skill so it only touches Armor bursts.",
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2469,
-        "modifyingAttributeID": 6192,
-        "operation": 6,
-        "skillTypeID": 20494
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2471,
-        "modifyingAttributeID": 6192,
-        "operation": 6,
-        "skillTypeID": 20494
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2473,
-        "modifyingAttributeID": 6192,
-        "operation": 6,
-        "skillTypeID": 20494
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2537,
-        "modifyingAttributeID": 6192,
-        "operation": 6,
-        "skillTypeID": 20494
-      }
-    ],
-    "12875": [
-      {
-        "_why": "shipBonusCommandCarrierInformationCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Information Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Information Command skill so it only touches Information bursts.",
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2469,
-        "modifyingAttributeID": 6193,
-        "operation": 6,
-        "skillTypeID": 20495
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2471,
-        "modifyingAttributeID": 6193,
-        "operation": 6,
-        "skillTypeID": 20495
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2473,
-        "modifyingAttributeID": 6193,
-        "operation": 6,
-        "skillTypeID": 20495
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2537,
-        "modifyingAttributeID": 6193,
-        "operation": 6,
-        "skillTypeID": 20495
-      }
-    ],
-    "12877": [
-      {
-        "_why": "shipBonusCommandCarrierShieldCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Shield Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Shield Command skill so it only touches Shield bursts.",
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2469,
-        "modifyingAttributeID": 6195,
-        "operation": 6,
-        "skillTypeID": 3350
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2471,
-        "modifyingAttributeID": 6195,
-        "operation": 6,
-        "skillTypeID": 3350
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2473,
-        "modifyingAttributeID": 6195,
-        "operation": 6,
-        "skillTypeID": 3350
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2537,
-        "modifyingAttributeID": 6195,
-        "operation": 6,
-        "skillTypeID": 3350
-      }
-    ],
-    "12878": [
-      {
-        "_why": "shipBonusCommandCarrierSkirmishCommand. CCP ships this with an empty modifier list. The command carriers (Salvation/Simurgh/Gaia/Ymir) get +5%/level to Skirmish Command Burst strength, which boosts the burst MODULE's warfareBuff*Value (the charge carries the magnitudes; the module carries the strength factor). Filtered by the Skirmish Command skill so it only touches Skirmish bursts.",
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2469,
-        "modifyingAttributeID": 6194,
-        "operation": 6,
-        "skillTypeID": 3349
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2471,
-        "modifyingAttributeID": 6194,
-        "operation": 6,
-        "skillTypeID": 3349
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2473,
-        "modifyingAttributeID": 6194,
-        "operation": 6,
-        "skillTypeID": 3349
-      },
-      {
-        "domain": "shipID",
-        "func": "LocationRequiredSkillModifier",
-        "modifiedAttributeID": 2537,
-        "modifyingAttributeID": 6194,
-        "operation": 6,
-        "skillTypeID": 3349
-      }
-    ],
     "5560": [
       {
         "_why": "roleBonusMarauderMJDRReactivationDelayBonus (Anhinga Tertiary Mode, 90065). CCP ships this empty. Reduces Micro Jump Drive moduleReactivationDelay by roleBonusMarauder (-90) on the mode. Mirrors pyfa Effect5560 (filteredItemBoost on group Micro Jump Drive); ModAdd of a negative percent -> operation 6 PostPercent.",
@@ -295,6 +117,7 @@
     "12794": [
       {
         "_why": "shipRocketMaxVelocityBonusPostDivSkua (Skua Sharpshooter Mode, 90064). CCP ships this empty. PostDiv the CHARGE maxVelocity of rockets by modeRocketMissileMaxVelocityBonusPostDivSkua (0.2857 -> x3.5 missile speed). Mirrors pyfa Effect12794 (filteredChargeMultiply on requiresSkill Rockets); our LocationRequiredSkillModifier reaches both the module and its loaded charge, and launchers carry no maxVelocity so the module side is a no-op.",
+        "_ccpDiffers": "CCP now ships this as charID/OwnerRequiredSkillModifier. Kept as shipID/LocationRequiredSkillModifier on purpose: the source is a tactical MODE, not the character, and this form is what reaches the loaded charge in our engine (see _why). Same filter, same numbers.",
         "domain": "shipID",
         "func": "LocationRequiredSkillModifier",
         "modifiedAttributeID": 37,
@@ -306,6 +129,7 @@
     "12795": [
       {
         "_why": "shipLightMissileMaxVelocityBonusPostDivSkua (Skua Sharpshooter Mode, 90064). CCP ships this empty. PostDiv light-missile CHARGE maxVelocity by modeLightMissileMaxVelocityBonusPostDivSkua (0.6 -> x1.667). Mirrors pyfa Effect12795.",
+        "_ccpDiffers": "CCP now ships this as charID/OwnerRequiredSkillModifier. Kept as shipID/LocationRequiredSkillModifier on purpose: the source is a tactical MODE, not the character, and this form is what reaches the loaded charge in our engine (see _why). Same filter, same numbers.",
         "domain": "shipID",
         "func": "LocationRequiredSkillModifier",
         "modifiedAttributeID": 37,
@@ -317,6 +141,7 @@
     "12796": [
       {
         "_why": "shipModeMissileFlightTimePostDiv (Anhinga Primary/Secondary Mode). CCP ships this empty. PostDiv CHARGE explosionDelay (flight time) by modeAnhingaMissileFlightTimePostDiv (Primary 0.0909 -> x11 flight time; Secondary 2.0 -> x0.5). Mirrors pyfa Effect12796, filtered on Missile Launcher Operation.",
+        "_ccpDiffers": "CCP now ships this as charID/OwnerRequiredSkillModifier. Kept as shipID/LocationRequiredSkillModifier on purpose: the source is a tactical MODE, not the character, and this form is what reaches the loaded charge in our engine (see _why). Same filter, same numbers.",
         "domain": "shipID",
         "func": "LocationRequiredSkillModifier",
         "modifiedAttributeID": 281,
@@ -328,6 +153,7 @@
     "12798": [
       {
         "_why": "shipModeMissileVelocityPostDiv (Anhinga Primary/Tertiary Mode). CCP ships this empty. PostDiv CHARGE maxVelocity by modeAnhingaMissileMaxVelocityPostDiv (Primary 1.5 -> x0.667; Tertiary 0.667 -> x1.5). Mirrors pyfa Effect12798.",
+        "_ccpDiffers": "CCP now ships this as charID/OwnerRequiredSkillModifier. Kept as shipID/LocationRequiredSkillModifier on purpose: the source is a tactical MODE, not the character, and this form is what reaches the loaded charge in our engine (see _why). Same filter, same numbers.",
         "domain": "shipID",
         "func": "LocationRequiredSkillModifier",
         "modifiedAttributeID": 37,
@@ -478,17 +304,109 @@
         "operation": 6,
         "skillTypeID": 3319
       }
+    ],
+    "8268": [
+      {
+        "_why": "nosferatuDurationBonusPassive (Harvest Nosferatu Booster I-IV). New in 24.01 Crimson Harvest, shipped empty in eve.db. Modifier copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de (no pyfa release carries it yet).",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 68,
+        "modifiedAttributeID": 73,
+        "modifyingAttributeID": 66,
+        "operation": 6
+      }
+    ],
+    "8269": [
+      {
+        "_why": "stasisWebifierMaxRangeAddPassive (Harvest Webifier Booster I-IV). New in 24.01 Crimson Harvest; a flat ADD to webifier optimal range. Modifier copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 65,
+        "modifiedAttributeID": 54,
+        "modifyingAttributeID": 3206,
+        "operation": 2
+      }
+    ],
+    "12949": [
+      {
+        "_why": "shipLaserDamagePirateAttackBattlecruiser (Akoman, 95741). Role bonus: 125% Large Energy Turret damage. New in 24.01 Crimson Harvest; modifier copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationRequiredSkillModifier",
+        "modifiedAttributeID": 64,
+        "modifyingAttributeID": 793,
+        "operation": 6,
+        "skillTypeID": 3309
+      }
+    ],
+    "12950": [
+      {
+        "_why": "Akoman Amarr Battlecruiser bonus: 15%/level neut (group 71, energyNeutralizerAmount) and nos (group 68, powerTransferAmount) drain amount. shipBonusABC1 is prescaled by skill effect 5284. Modifiers copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 68,
+        "modifiedAttributeID": 90,
+        "modifyingAttributeID": 795,
+        "operation": 6
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 71,
+        "modifiedAttributeID": 97,
+        "modifyingAttributeID": 795,
+        "operation": 6
+      }
+    ],
+    "12951": [
+      {
+        "_why": "Akoman Amarr Battlecruiser bonus: 20%/level neut and nos optimal range (shipBonusABC2, prescaled by skill effect 5285). Modifiers copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 68,
+        "modifiedAttributeID": 54,
+        "modifyingAttributeID": 1889,
+        "operation": 6
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 71,
+        "modifiedAttributeID": 54,
+        "modifyingAttributeID": 1889,
+        "operation": 6
+      }
+    ],
+    "12952": [
+      {
+        "_why": "Akoman Amarr Battlecruiser bonus: 10%/level neut and nos falloff (attr 2044; bonus attr 5205 prescaled by skill effect 11360). Modifiers copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 68,
+        "modifiedAttributeID": 2044,
+        "modifyingAttributeID": 5205,
+        "operation": 6
+      },
+      {
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 71,
+        "modifiedAttributeID": 2044,
+        "modifyingAttributeID": 5205,
+        "operation": 6
+      }
+    ],
+    "12953": [
+      {
+        "_why": "Akoman Minmatar Battlecruiser bonus: 20%/level webifier range (shipBonusMBC1, prescaled by skill effect 5290). Modifier copied verbatim from CCP's FSD dogmaeffects in pyfa master c9671de.",
+        "domain": "shipID",
+        "func": "LocationGroupModifier",
+        "groupID": 65,
+        "modifiedAttributeID": 54,
+        "modifyingAttributeID": 748,
+        "operation": 6
+      }
     ]
   },
   "attributes": {},
-  "types": {
-    "28659": {
-      "_why": "Paladin agility. The 24.01 marauder mass pass cut every hull to 0.8x mass and raised agility by the reciprocal so align time held: the Kronos went 0.074 -> 0.0925 and the Vargur 0.071 -> 0.0888, both 1/0.8 of the old value rounded to four decimals. The Paladin's 0.0686 should have become 0.0858 by the same arithmetic, and the SDE says 0.858 — the same digits with the decimal one place out. It is a data bug, not a nerf: Owen confirmed in game that the Paladin still aligns in about 15 seconds, where 0.858 would make it 103. pyfa 2.69.0 reads the same SDE and reports the wrong number too, so this is a deliberate divergence from the reference implementation.",
-      "a": { "70": { "from": 0.858, "to": 0.0858 } }
-    },
-    "28710": {
-      "_why": "Golem agility, the same decimal bug as the Paladin above. 0.077 / 0.8 = 0.09625, which rounds to 0.0963; the SDE says 0.963. Confirmed in game to still align in about 17 seconds rather than 113.",
-      "a": { "70": { "from": 0.963, "to": 0.0963 } }
-    }
-  }
+  "types": {}
 }

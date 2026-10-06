@@ -123,12 +123,12 @@ which only exists there. Take the pin from the clone's own `pyproject.toml` rath
 /c/Python314/python -m pip install --user "sqlalchemy==$(grep -oP 'sqlalchemy==\K[0-9.]+' Pyfa-master/pyproject.toml)"
 ```
 
-**Assets located on this machine (as of the 2026-09-22 v2.69 upgrade):**
+**Assets located on this machine (as of the 2026-10-06 Crimson Harvest upgrade):**
 
 | What | Path |
 | --- | --- |
-| pyfa v2.69.0 gamedata db (build 3532181) — the **authoritative** one | `Pyfa-master/app/eve.db` |
-| Old gamedata dbs, superseded | `C:\Program Files\pyfa\app\eve.db` (3424810), `eve.db` (repo root, 3383521) |
+| gamedata db built from pyfa master c9671de (build 3579973) — the **authoritative** one | `Pyfa-master/app/eve.db` |
+| Old gamedata dbs, superseded | `Pyfa-master/app/eve-3532181-v2.69.0.db`, `C:\Program Files\pyfa\app\eve.db` (3424810), `eve.db` (repo root, 3383521) |
 | User's real characters / skills / fits | `C:\Users\owen_\.pyfa\saveddata.db` |
 | pyfa source clone — the ONE clone; must match eve.db's version (enforced at startup) | `Pyfa-master/` |
 

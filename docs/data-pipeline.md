@@ -84,20 +84,29 @@ modifiers are preserved from the existing bundle; a genuinely new effect is writ
 reported loudly. Supply its modifier from CCP's FSD dump via `data-patches.json`, or write a custom
 handler in `dogma-engine.js`.
 
+**Existing modifier lists ARE refreshed from CCP's FSD dump** (`staticdata/fsd_built/dogmaeffects.0.json`
+in the pyfa clone beside the db, or `--fsd`). "Preserve" alone meant an effect CCP edits in place never
+arrived: Crimson Harvest appended `remoteCapacitorImpedance` to Siege/Triage/Bastion/Industrial Core,
+and the Minokawa's capital remote-cap bonus had been filtering on the wrong skill (1300 GJ against
+eos's 1625). Only effects that already carry modifiers are refreshed. About 150 are empty in the
+bundle and implemented by hand in `calc.js`, and filling those would apply each bonus twice. A hand
+patch still wins, and the build reports any patch CCP now disagrees with. One that differs on
+purpose says so in an `_ccpDiffers` field.
+
 ### Overriding an attribute VALUE, and why you almost never should
 
 `data-patches.json` also has a `types` section that replaces individual attribute values. It exists
 for one situation: **the SDE contradicts the live game.** A number that merely looks wrong is CCP
 rebalancing, and overriding it makes the app lie.
 
-The bar is evidence from in-game, not reasoning about what the value ought to be. The only two
-entries are the Paladin and Golem `agility` after 24.01, where the SDE carries ten times the value
-the rest of the marauder mass pass implies (`0.858` where every sibling hull got `old / 0.8` rounded
-to four decimals, here `0.0858`) and the ships still align in about fifteen seconds in game.
-
-These are the one place the app deliberately disagrees with pyfa, which reads the same SDE and
-reports 103 and 113 second align times. Section `balance` of the regression suite says so in as many
-words, so nobody "fixes" it back.
+The bar is evidence from in-game, not reasoning about what the value ought to be. The section is
+currently **empty**. Its only entries ever were the Paladin and Golem `agility` after 24.01, where
+the SDE carried ten times the value the rest of the marauder mass pass implied (`0.858` where every
+sibling hull got `old / 0.8` rounded to four decimals, here `0.0858`) while the ships still aligned
+in about fifteen seconds in game. pyfa read the same SDE and reported 103 and 113 second aligns, so
+for one build those two were a deliberate divergence from the reference. CCP fixed the data in build
+3579973 (2026-10-06); the build failed on the stale `from` exactly as designed, and both entries
+were deleted.
 
 Each override declares the wrong value it expects to find:
 
@@ -135,7 +144,7 @@ category filter excluded — fighter stats had been stale for months.
 
 The repo-root `eve.db` is a superseded leftover (client build **3383521**), as is the one inside the
 installed pyfa (**3424810**). The authoritative copy now lives beside the source clone at
-`Pyfa-master/app/eve.db` (**3532181**), so the engine code and the data it describes are upgraded by
+`Pyfa-master/app/eve.db` (**3579973**), so the engine code and the data it describes are upgraded by
 the same action. `find_db()` probed the repo-root copy **first**, and the only thing that had ever
 kept that from mattering was `Pyfa-master/` also existing. It carried no `eve.db` at the time, so a
 plain `python scripts/build-bundle.py` regenerated the entire bundle from the old client build —
@@ -143,7 +152,7 @@ reverting real attribute values (Aralez, Berserker SW-900, …) and invalidating
 baseline in one commit. The probe order is now clone-first, repo-root last.
 
 **Always check the first two lines the generator prints** — it echoes the db path and client build.
-If it does not say `3532181`, stop.
+If it does not say `3579973`, stop.
 
 ## Upgrading eve.db (a new EVE patch)
 
@@ -151,11 +160,50 @@ The regression baselines are only meaningful **relative to a specific EVE build*
 which one it came from in `src/data/bundle-version.json`, and the suite prints it on every run:
 
 ```
-data: EVE client build 3532181 (SDE 2026-09-22) — matches validated baselines
+data: EVE client build 3579973 (SDE 2026-10-06) — matches validated baselines
 ```
 
-We are currently on **pyfa v2.69.0 / client build 3532181**. When you move to a newer `eve.db`, the
-suite detects the mismatch and prints a loud banner.
+We are currently on **pyfa master c9671de / client build 3579973**: no pyfa release had shipped
+Crimson Harvest's data yet, so the db was built from that commit (see "Ahead of a pyfa release"
+below). When you move to a newer `eve.db`, the suite detects the mismatch and prints a loud banner.
+
+### Ahead of a pyfa release: building eve.db from pyfa master
+
+pyfa commits CCP's new static data (`staticdata/`, an "Update static data" commit) well before it
+cuts a release. `eve.db` is built from that data by pyfa's own `db_update.py`, so you can build one
+from master instead of waiting:
+
+```bash
+cd Pyfa-master && git fetch --depth 20 origin master && git checkout <the static-data commit>
+# db_update.py imports pyfa's config.py, which imports wx. Stub it, the way the oracle does:
+python -c "import sys,types,runpy; c=types.ModuleType('config'); c.savePath='.'; c.saveDB=None; sys.modules['config']=c; sys.argv=['db_update.py']; runpy.run_path('db_update.py', run_name='__main__')"
+mv eve.db app/eve.db
+```
+
+What master can and cannot tell you: **its `eos/effects.py` lags its static data.** pyfa implements
+effects by hand, so a hull bonus CCP ships in the same patch is a no-op in eos until someone writes
+the class, and the oracle reports the bonus-less number. CCP's own modifier data for the new effects
+IS in `staticdata/fsd_built/dogmaeffects.0.json`, which is where the `data-patches.json` entries come
+from. Validate everything else against eos, and say in the suite which numbers it could not confirm
+(the CRIMSON HARVEST section is the model).
+
+### Generated alongside the dogma bundle: mutaplasmids and the art maps
+
+`mutaplasmids.json`, `type-icons.json` and `graphic-ids.json` were hand-built once and drifted, and are
+now written by `build-bundle.py` from the same db. The mutaplasmid bounds are float32 in eve.db and are
+rounded back to the authored decimals. The two art maps are merged, not rebuilt: the db's value wins,
+and entries for types it no longer has are kept. Abyssal result types ("Abyssal Stasis Webifier") are
+`published=0` and are admitted by ID, as the tactical modes are, or a new family's result type never
+reaches the bundle.
+
+After a regen, fetch art for what is new. `fetch-art.mjs` with no flags only upgrades files it already
+has, and `--fill-gaps` pulls in ~740 long-standing gaps, so name the new iconIDs instead:
+
+```bash
+node scripts/fetch-art.mjs --only=icons --ids=25238,25248   # new items' iconIDs
+node scripts/fetch-art.mjs --only=renders                   # new hulls (from graphic-ids.json)
+node scripts/fetch-hero-renders.mjs
+```
 
 **A red suite after an eve.db upgrade is a WORKLIST, not a failure.** Some baselines will move because
 CCP rebalanced something — that is correct and expected. The failure mode to avoid is shrugging and
