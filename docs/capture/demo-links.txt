@@ -1,0 +1,27 @@
+[Damnation, armor links]
+
+[Empty Low slot]
+[Empty Low slot]
+[Empty Low slot]
+[Empty Low slot]
+[Empty Low slot]
+[Empty Low slot]
+
+[Empty Med slot]
+[Empty Med slot]
+[Empty Med slot]
+[Empty Med slot]
+
+Armor Command Burst II, Armor Energizing Charge
+Armor Command Burst II, Armor Reinforcement Charge
+Armor Command Burst II, Rapid Repair Charge
+[Empty High slot]
+[Empty High slot]
+[Empty High slot]
+[Empty High slot]
+
+Medium Command Processor I
+[Empty Rig slot]
+
+
+Armored Command Mindlink

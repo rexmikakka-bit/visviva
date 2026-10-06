@@ -11,6 +11,22 @@ Axis was previously called Vis Viva. The repository still uses the original name
 
 Axis is built with substantial help from AI coding tools, including Claude and OpenAI Codex. AI is part of the development process; the app's fitting calculations run locally using its bundled engine and game data.
 
+## Guide
+
+Short how-tos for the parts of Axis that aren't obvious from a phone screen. If you know pyfa, start here.
+
+- [Importing a fit](docs/importing-fits.md): paste an EFT fit, or pull one from your character.
+- [Importing from pyfa](docs/pyfa-import.md): bring your whole pyfa library across from its XML backup.
+- [Module states](docs/module-states.md): tap, double-tap and hold the state dot.
+- [Stats tab: tap the numbers](docs/stats-toggles.md): damage splits, heat, exact values, ancillary clips and cap views.
+- [Where a number comes from](docs/modifier-dropdowns.md): expand any attribute to see every modifier on it.
+- [Graphs](docs/graphs.md): plot damage, tank, cap and mobility against range, time or a target.
+- [Fleet boosts and other effects](docs/fleet-effects.md): command bursts, projected modules, boosters and system effects.
+- [Tags](docs/tags.md): group fits across hulls and find them again.
+- [Abyssal modules](docs/abyssals.md): import your rolls, find listings and fit specific modules.
+
+Screenshots are taken from the app running in a desktop browser at phone size, so the notch and safe-area spacing look slightly different from a real device.
+
 ## Fitting and analysis
 
 Browse ships and structures by class, or search for a hull by name. Fits support high, mid, low, rig, subsystem, and service slots, along with drones, fighters, cargo, implants, and boosters. Modules can be offline, online, active, or overheated. Resource readouts update as you make changes and highlight exceeded limits, including powergrid, CPU, calibration, drone capacity, and bandwidth.

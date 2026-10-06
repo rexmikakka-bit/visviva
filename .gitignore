@@ -87,3 +87,6 @@ lerna-debug.log*
 
 # ── Misc ─────────────────────────────────────────────────────────────────────
 node
+
+# Guide capture scratch (browser profiles, raw video): docs/capture/README.md
+docs/capture/.work/
