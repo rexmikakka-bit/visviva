@@ -272,6 +272,43 @@ const PAGES = {
     await ctx.close();
   },
 
+  async pyfa() {
+    // Needs PYFA_XML pointing at a real pyfa "Backup All Fittings" file. Runs in its own profile,
+    // wiped first, so the import never lands in the demo profile. Nothing below shows a fit NAME:
+    // the preview is counts only, and the home screen shows per-class totals.
+    const xml = process.env.PYFA_XML;
+    if (!xml || !existsSync(xml)) { console.log('  skipped: set PYFA_XML to a pyfa XML backup'); return; }
+    rmSync(join(WORK, 'profile-pyfa'), { recursive: true, force: true });
+    const ctx = await chromium.launchPersistentContext(join(WORK, 'profile-pyfa'), {
+      ...PHONE, channel: CHANNEL, headless: true, recordVideo: { dir: join(WORK, 'video'), size: PHONE.viewport } });
+    const page = ctx.pages()[0] ?? await ctx.newPage();
+    await page.addInitScript(TAP_RING);
+    const t0 = Date.now();
+    await page.goto(BASE, { waitUntil: 'load', timeout: 120000 }); await pause(page, 2000);
+    const start = (Date.now() - t0) / 1000;
+    await tap(page, page.getByText('☰')); await pause(page, 800);
+    await tap(page, page.getByText('Settings', { exact: true })); await pause(page, 900);
+    await tap(page, page.getByRole('button', { name: /^Backup$/ })); await pause(page, 900);
+    const head = page.getByText('Import from pyfa', { exact: true });
+    await toTop(page, head); await pause(page, 600);
+    const [chooser] = await Promise.all([page.waitForEvent('filechooser'), tap(page, page.getByRole('button', { name: /Choose pyfa XML file/ }))]);
+    await chooser.setFiles(xml);
+    await page.getByText(/Ready to import/).waitFor({ timeout: 120000 }); await pause(page, 1800);
+    const panel = page.locator('div', { has: page.getByText(/Ready to import/) }).filter({ has: page.getByRole('button', { name: /^Add [\d,]+ fits?$/ }) }).last();
+    const pb = await panel.boundingBox(), hb = await head.boundingBox();
+    await still(page, 'pyfa-preview.png', { x: 0, y: hb.y - 12, width: 390, height: pb.y + pb.height - hb.y + 24 });
+    await tap(page, page.getByRole('button', { name: /^Add [\d,]+ fits?$/ }));
+    await page.waitForTimeout(4000); await page.waitForLoadState('load'); await pause(page, 2500);
+    const end = (Date.now() - t0) / 1000;
+    await still(page, 'pyfa-after.png', { x: 0, y: 0, width: 390, height: 700 });
+    const raw = await page.video().path(); await ctx.close();
+    execFileSync(FFMPEG, ['-y', '-loglevel', 'error', '-ss', String(start), '-to', String(end), '-i', raw, '-vf',
+      'fps=10,scale=390:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle',
+      '-loop', '0', join(IMG, 'pyfa-import.gif')]);
+    rmSync(raw, { force: true });
+    console.log(`  pyfa-import.gif  ${(statSync(join(IMG, 'pyfa-import.gif')).size / 1024).toFixed(0)} KB`);
+  },
+
   async graphs() {
     const toGraphs = async (page) => { await tab(page, /^graphs$/i); await pause(page, 2500); };
     { const { ctx, page } = await open(); await toGraphs(page); await still(page, 'graphs.png', { x: 0, y: 160, width: 390, height: 540 }); await ctx.close(); }

@@ -21,4 +21,4 @@ node docs/capture/capture.mjs stats tags      # just some
 - The tags page creates and re-creates a `kiting` tag, and the fleet page adds the Damnation as a
   command fit and removes it again, so a re-run starts from the same state.
 
-The abyssal and pyfa-import pages are shot by hand against real data and are not in the script.
+The `pyfa` page needs `PYFA_XML` set to a real pyfa backup, and runs in its own wiped profile. The abyssal page is shot on a device: ESI login and MutaMarket listings do not work from the dev server in a desktop browser.
