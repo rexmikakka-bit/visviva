@@ -1,0 +1,57 @@
+[Hurricane Fleet Issue, arty standard]
+
+Damage Control II
+Shadow Serpentis Multispectrum Energized Membrane
+Tracking Enhancer II
+Gyrostabilizer II
+Gyrostabilizer II
+Medium Ancillary Armor Repairer, Nanite Repair Paste
+
+50MN Quad LiF Restrained Microwarpdrive
+Small Capacitor Booster II, Navy Cap Booster 400
+Federation Navy Stasis Webifier
+Dread Guristas Warp Disruptor
+
+720mm Howitzer Artillery II, Republic Fleet EMP M
+720mm Howitzer Artillery II, Republic Fleet EMP M
+Skirmish Command Burst II, Interdiction Maneuvers Charge
+720mm Howitzer Artillery II, Republic Fleet EMP M
+720mm Howitzer Artillery II, Republic Fleet EMP M
+Skirmish Command Burst II, Rapid Deployment Charge
+720mm Howitzer Artillery II, Republic Fleet EMP M
+720mm Howitzer Artillery II, Republic Fleet EMP M
+
+Medium Ancillary Current Router I
+Medium Polycarbon Engine Housing II
+Medium Command Processor I
+
+
+Acolyte II x5
+Hornet EC-300 x5
+
+
+High-grade Snake Alpha
+High-grade Snake Beta
+High-grade Snake Gamma
+High-grade Snake Delta
+High-grade Snake Epsilon
+High-grade Snake Omega
+Eifyr and Co. 'Rogue' Evasive Maneuvering EM-705
+Zor's Custom Navigation Hyper-Link
+Eifyr and Co. 'Gunslinger' Surgical Strike SS-905
+Skirmish Command Mindlink
+
+Standard Exile Booster
+Synth Drop Booster
+Agency 'Overclocker' SB5 Dose II
+
+
+Navy Cap Booster 400 x31
+Republic Fleet Depleted Uranium M x700
+Republic Fleet EMP M x700
+Republic Fleet Fusion M x820
+Republic Fleet Phased Plasma M x700
+Interdiction Maneuvers Charge x1200
+Agency 'Overclocker' SB5 Dose II x1
+Standard Drop Booster x1
+Standard Exile Booster x1
