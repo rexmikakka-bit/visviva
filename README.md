@@ -13,7 +13,7 @@ Axis is built with substantial help from AI coding tools, including Claude and O
 
 ## Guide
 
-Short how-tos for the parts of Axis that aren't obvious from a phone screen. If you know pyfa, start here.
+Short how-tos for the parts of Axis that aren't obvious from a phone screen. If you know pyfa, start here. The guide is also on the web at [rexmikakka-bit.github.io/visviva](https://rexmikakka-bit.github.io/visviva/).
 
 - [Importing a fit](docs/importing-fits.md): paste an EFT fit, or pull one from your character.
 - [Importing from pyfa](docs/pyfa-import.md): bring your whole pyfa library across from its XML backup.
