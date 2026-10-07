@@ -1512,8 +1512,12 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         ...(fighters??[]).map(f=>{const tid=f.typeID??tidByName(f.name);
           return{typeID:tid,qty:(f.qty??1)*((tid!=null?TYPES[tid]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
       ].filter(d=>d.typeID),
+      // The hold counts toward the FIT price for the same reason boosters do: it undocks with the
+      // ship and dies with it. Spare ammo, cap charges, a refit module — all of it is on the
+      // killmail. It stays out of `charges`, which is what is LOADED.
+      cargo:(cargoItems??[]).map(c=>({typeID:c.typeID??tidByName(c.name),qty:c.qty??1})).filter(c=>c.typeID&&c.qty>0),
     };
-  },[ship,slots,implants,boosters,drones,fighters]);
+  },[ship,slots,implants,boosters,drones,fighters,cargoItems]);
   const allPriceIDs=useMemo(()=>{const s=new Set();for(const g of Object.values(priceItems))for(const{typeID}of g)if(typeID)s.add(typeID);return[...s];},[priceItems]);
   const fitFingerprint=useMemo(()=>allPriceIDs.slice().sort((a,b)=>a-b).join(','),[allPriceIDs]);
   useEffect(()=>{
@@ -1528,7 +1532,8 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   const groupTotals=useMemo(()=>{
     const sum=items=>items.reduce((acc,{typeID,qty,abyssal,mod})=>acc+(abyssal?(abyssalValue(mod,abyssalData).price??0):(prices?.get(typeID)??0))*qty,0);
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),
-           boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),implants:sum(priceItems.implants)};
+           boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),cargo:sum(priceItems.cargo),
+           implants:sum(priceItems.implants)};
   },[priceItems,prices,abyssalData]);
   const unknownAbyssals=priceItems.modules.filter(it=>it.abyssal&&abyssalValue(it.mod,abyssalData).price==null).length;
   // Recomputed off `prices` so a refresh that succeeds clears the marker: the age is a property of
@@ -2190,7 +2195,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         {isOpen("fitvalue")&&<>
           {priceAge&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.textMute}}>{t('Market prices are {age}.',{age:priceAge})}</div>}
           {(unknownAbyssals>0||abyssalData.loading||abyssalData.error)&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.warning}}>{abyssalData.loading?t('Loading saved module details…'):abyssalData.error||t({one:'Known subtotal; {n} abyssal module has no confirmed value.',other:'Known subtotal; {n} abyssal modules have no confirmed value.'},{n:unknownAbyssals})}</div>}
-          {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
+          {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Cargo'),'cargo'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
             const open=expandable&&openPriceGroups[key];
