@@ -14,7 +14,7 @@ Short how-tos for [Axis](https://github.com/rexmikakka-bit/visviva), the free EV
 - [Graphs](graphs.md): plot damage, tank, cap and mobility against range, time or a target.
 - [Fleet boosts and other effects](fleet-effects.md): command bursts, projected modules, boosters and system effects.
 - [Tags](tags.md): group fits across hulls and find them again.
-- [Abyssal modules](abyssals.md): import your rolls, find listings and fit specific modules.
+- [Abyssal modules and Variations tab](abyssals.md): import your rolls, find listings, compare and filter variants, and fit specific modules.
 - [Shopping list](shopping-list.md): collect the MutaMarket contracts a fit needs and copy or open them.
 
 Get Axis on the [App Store](https://apps.apple.com/us/app/axis-mobile-fitting-tool/id6798416488) or as an [Android APK](https://github.com/rexmikakka-bit/visviva/releases).
