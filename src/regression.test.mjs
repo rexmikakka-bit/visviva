@@ -3938,7 +3938,9 @@ Republic Fleet Command Mindlink`;
     rtc:     M('Remote Tracking Computer II', 'active'),
     td:      M('Tracking Disruptor II', 'active'),
     tdScr:   M('Tracking Disruptor II', 'active', 'Tracking Speed Disruption Script'),
-    gdPrec:  M('Guidance Disruptor II', 'active', 'Missile Precision Script'),
+    // The DISRUPTION script (group 1569). "Missile Precision Script" is the Missile Guidance
+    // Computer's (group 1400), which a disruptor cannot load; the engine now refuses it, as eos does.
+    gdPrec:  M('Guidance Disruptor II', 'active', 'Missile Precision Disruption Script'),
     paint:   M('Target Painter II', 'active'),
     sebo:    M('Sensor Booster II', 'active'),
     seboIdle:M('Sensor Booster II', 'online'),
