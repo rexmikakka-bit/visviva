@@ -10,8 +10,6 @@ When a fit uses abyssal modules picked from MutaMarket, the shopping list collec
 
 Rolls you already own show as **Already in your hangar**, and contracts that have ended are marked **Expired**, so the list never quietly drops a module.
 
-![A Hurricane Fleet Issue with a Domination Stasis Webifier and a Republic Fleet Warp Disruptor from MutaMarket; opening the menu, choosing Shopping List, and copying all contract links](img/shopping-list.gif)
-
-![The shopping list: Domination Stasis Webifier at 411M and Republic Fleet Warp Disruptor at 350M, each with seller, Jita 4-4, days left, and buttons to copy the contract link, open it in EVE or view it on MutaMarket](img/shopping-list.png)
+<img src="img/shopping-list.gif" alt="A Hurricane Fleet Issue with a Domination Stasis Webifier and a Republic Fleet Warp Disruptor from MutaMarket; opening the menu, choosing Shopping List, and copying all contract links" width="390" align="top"> <img src="img/shopping-list.png" alt="The shopping list: Domination Stasis Webifier at 411M and Republic Fleet Warp Disruptor at 350M, each with seller, Jita 4-4, days left, and buttons to copy the contract link, open it in EVE or view it on MutaMarket" width="390" align="top">
 
 Captured on an iPhone.
