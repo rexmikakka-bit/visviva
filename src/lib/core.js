@@ -16,6 +16,7 @@ import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
 import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace, fitCostClassOf } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
+import { isValidCharge } from "../dogma-engine.js";
 import { classifyHull } from "./ship-taxonomy.js";
 import { t } from "./i18n.js";
 
@@ -988,16 +989,19 @@ function buildSlotsFromEFT(ship,parsedMods,subsystems){
     const hasCycle=!!(modInfo?.duration&&modInfo.duration>0)||(modInfo?.capUse!=null&&modInfo.capUse>0)||!!(mod.typeID&&TYPES[mod.typeID]?.attrs?.duration>0);
     const defaultState=isRigMod?"online":(isMicroJumpDrive(mod.typeID)||isAssaultDamageControl(mod.typeID))?"online":(isWeaponMod||isCapBooster||hasCycle)?"active":"online";
     const state=mod.state??defaultState;
+    // A charge the module cannot load is dropped, as pyfa's EFT import drops it (eft.py checks
+    // isValidCharge before assigning) — otherwise "425mm AutoCannon I, Hail M" fires Hail.
+    const ammo = mod.charge && mod.typeID && !canLoadCharge(mod.typeID, mod.charge) ? undefined : mod.charge;
     // Compute maxCharges from module capacity and charge volume:
     let maxChargesVal = undefined;
-    if(mod.charge && mod.typeID){
+    if(ammo && mod.typeID){
       const modTd = TYPES[mod.typeID]??TYPES[String(mod.typeID)];
       const modCapacity = modTd?.attrs?.capacity ?? modTd?.a?.['38'] ?? 0;
-      const chargeTid = tidByName(mod.charge.replace(/\s*\(\d+\)$/, ''));
+      const chargeTid = tidByName(ammo.replace(/\s*\(\d+\)$/, ''));
       const chargeVol = chargeTid ? (TYPES[chargeTid]?.attrs?.volume ?? TYPES[chargeTid]?.a?.['161'] ?? 1) : 1;
       maxChargesVal = modCapacity > 0 && chargeVol > 0 ? Math.floor(modCapacity / chargeVol) : undefined;
     }
-    slots[secKey][idx]={...slots[secKey][idx],name:mod.name,typeID:mod.typeID,icon:null,type:modType,state,ammo:mod.charge,charges:maxChargesVal,maxCharges:maxChargesVal,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:mod.mutaplasmid??undefined,mutations:mod.mutations??undefined};
+    slots[secKey][idx]={...slots[secKey][idx],name:mod.name,typeID:mod.typeID,icon:null,type:modType,state,ammo,charges:maxChargesVal,maxCharges:maxChargesVal,optimal:modInfo?.optimal??undefined,falloff:modInfo?.falloff??undefined,tracking:modInfo?.tracking??undefined,mutaplasmid:mod.mutaplasmid??undefined,mutations:mod.mutations??undefined};
     counters[secKey]++;
   }
   // Only ONE propulsion module may run at a time, so an imported fit carrying an MWD *and* an
@@ -1560,6 +1564,15 @@ export function variantCostFits(cost,base,headroom,ratio){
   return answers.includes(true)?true:null;
 }
 
+// Whether a module can load a named charge — the engine's isValidCharge (eos's rule: charge group,
+// size, volume), so the UI, the importers and the numbers can never disagree. No charge is always
+// loadable; an unknown charge name is not. Strips the EFT "(N)" quantity suffix.
+function canLoadCharge(typeID,ammo){
+  if(!ammo)return true;
+  const ch=tidByName(String(ammo).replace(/\s*\(\d+\)$/,""));
+  return !!ch&&isValidCharge(TYPES[typeID]??TYPES[String(typeID)],TYPES[ch]??TYPES[String(ch)]);
+}
+
 // True if a module accepts charges (reads chargeGroup1-6 from authoritative TYPES data).
 // Used for module classification and charge-tab gating so any chargeable module works going forward.
 function moduleTakesCharges(typeID,name){
@@ -1824,4 +1837,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, backfillHullsFromTypes, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, backfillHullsFromTypes, canLoadCharge, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
