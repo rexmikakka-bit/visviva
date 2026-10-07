@@ -23,7 +23,7 @@ import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
 import { TARGET_PROFILES } from "../data/target-profiles.js";
 import mutaplasmidData from "../data/mutaplasmids.json";
 import { TYPES, tidByName, calcFitStats, subsystemsForHull , usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleByName, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits, variantCostFits } from "../lib/core.js";
+import { DMG, DMG_COLOR, DOUBLE_TAP_MS, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, STATE_COLORS, STATE_GLOW, STATE_LABELS, getCompatibleCharges, groupChargesForBrowser, haptic, moduleByName, moduleTakesCharges, moduleVariations, shipTraits, validStatesFor, variantsOf, mutaAttrRanges, snapToBase, parseEFT, readClipboardText, fitCostRatioOf, fitCostFits, variantCostFits, canLoadCharge } from "../lib/core.js";
 import { jargonSearch } from "../lib/jargon.js";
 import { fmtResource, fmtPriceAge } from "../lib/fmt.js";
 import { fetchPrices, priceAsOf } from "../prices.js";
@@ -2754,9 +2754,13 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
         {tab==="info"&&<ModuleInfoTab typeID={mod.typeID} mod={mod} engineItem={engineItem} bleed={14} onSaved={record=>onUpdateModLive({...mod,abyssalItemId:record.itemId})}/>}
         {tab==="variations"&&(<ModuleVariationsTab typeID={mod.typeID} currentName={mod.name} resourceHeadroom={resourceHeadroom}
                                 baseMutations={mod.mutaplasmid?mod.mutations:null} baseMutaplasmid={mod.mutaplasmid} baseItemId={mod.abyssalItemId} usedAbyssalIds={usedAbyssalIds} onSwap={v=>{
+          // A variant that cannot load the current charge unloads it, as pyfa's module replace does
+          // (localReplace.py). T2 ammo is the common case: Hail stays legal in a 425mm AutoCannon II
+          // and is not in a 425mm AutoCannon I, which lists no Advanced Autocannon Ammo group.
+          const ammo=mod.ammo&&v.typeID&&!canLoadCharge(v.typeID,mod.ammo)?undefined:mod.ammo;
           // Recompute charge count: variants can have different bay capacities (e.g. cap boosters)
-          let nc=mod.charges;
-          if(mod.ammo&&v.typeID){
+          let nc=ammo?mod.charges:undefined;
+          if(ammo&&v.typeID){
             const newTd=TYPES[v.typeID]??TYPES[String(v.typeID)];
             const cap=newTd?.attrs?.capacity??0;
             const cTid=tidByName((mod.ammo||"").replace(/\s*\(\d+\)$/,""));
@@ -2765,7 +2769,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
           }
           // updateMod merges fields. Carry the selected physical roll, or explicitly clear
           // all roll/ownership fields when choosing stock, including the UNMUTATED row.
-          (onReplaceMod||onUpdateMod)({name:v.name,typeID:v.typeID,state:mod.state,ammo:mod.ammo,charges:nc,maxCharges:nc,
+          (onReplaceMod||onUpdateMod)({name:v.name,typeID:v.typeID,state:mod.state,ammo,charges:nc,maxCharges:nc,
                        ...variationRoll(v)});onClose();}} />)}
         {/* No wrapper here either, same reasoning as the info tab above: a second overflowY:auto
             nested inside this one already-scrolling tab body is redundant, and on iOS it stopped

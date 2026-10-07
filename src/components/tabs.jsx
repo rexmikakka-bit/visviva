@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor, loadedChargeCount } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor, canLoadCharge, loadedChargeCount } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { moduleGestureHistory } from '../lib/module-gesture.js';
@@ -1492,7 +1492,8 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,mod:s,
         abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
       // Priced by the LOAD, not one per gun: six autocannons with 120 rounds each are 720 rounds.
-      charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:loadedChargeCount(s,resolveAmmo(s))})).filter(s=>s.typeID),
+      // A charge the module cannot load isn't loaded (the engine refuses it), so it isn't priced.
+      charges:allSlots.filter(s=>s?.ammo&&canLoadCharge(s.typeID,s.ammo)).map(s=>({typeID:resolveAmmo(s),qty:loadedChargeCount(s,resolveAmmo(s))})).filter(s=>s.typeID),
       // Boosters are part of the FIT price; implants are not. The line between them is "does flying
       // this consume it". A booster is spent on the undock and its bonuses are already in every
       // number on this tab, so excluding it lets a 500M fit quote 380M while flying on 120M of
@@ -1737,6 +1738,17 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         // through an EFT or ESI import, where the fit was built somewhere with no such gate.
         // `g.group` is a CCP market group name and stays English, like every other game term.
         for(const g of (cs.groupOverFitted??[])) issues.push({sev:"err",msg:t("{count} {group} modules fitted — only {cap} allowed",{count:g.count,group:g.group,cap:g.cap===1?t("one"):g.cap})});
+        // A loaded charge the module cannot take. The engine already refuses it (so it adds no
+        // damage) and new swaps/imports drop it, but a fit SAVED before that still names it — Hail
+        // in a T1 autocannon read as a loaded gun doing nothing. One line per module+charge pair.
+        const badCharges=new Map();
+        for(const sec of ["high","mid","low","rigs","services"]) for(const m of (slots?.[sec]??[])){
+          if(!m?.typeID||!m.ammo||m.type==="empty"||canLoadCharge(m.typeID,m.ammo))continue;
+          const charge=String(m.ammo).replace(/\s*\(\d+\)$/,""),k=`${m.name}\u0000${charge}`;
+          badCharges.set(k,{module:m.name,charge,n:(badCharges.get(k)?.n??0)+1});
+        }
+        // Module and charge names are CCP's and stay English, like every other game term here.
+        for(const b of badCharges.values()) issues.push({sev:"err",msg:t("{module} can't load {charge}",{module:b.n>1?`${b.n}× ${b.module}`:b.module,charge:b.charge})});
         const hasErr=issues.some(i=>i.sev==="err");
         const accent=hasErr?C.danger:(issues.length?C.warning:C.success);
         return(

@@ -574,6 +574,29 @@ function skillPassOrder(effectIDs) {
   return ordered;
 }
 
+// eos's Module.isValidCharge, on raw type data: the charge's GROUP must be one of the module's
+// chargeGroup1-6, its size must match the module's chargeSize when the module names one, and it
+// must physically fit in the module's capacity. The group rule is what keeps T2 ammo out of T1
+// guns: a 425mm AutoCannon II lists groups 83 and 372 (Advanced Autocannon Ammo, where Hail lives),
+// the 425mm AutoCannon I only 83. Without this, swapping a Hail-loaded T2 rack to its T1 variant
+// kept Hail loaded and computed Hail damage from guns that cannot fire it.
+// Read by name OR id: initEngine() re-keys `a` by attribute NAME at runtime, while the JSON bundle
+// (and anything handed raw type data) keys it by id.
+const CHARGE_GROUP_ATTRS = [['604', 'chargeGroup1'], ['605', 'chargeGroup2'], ['606', 'chargeGroup3'],
+                            ['609', 'chargeGroup4'], ['610', 'chargeGroup5'], ['1389', 'chargeGroup6']];
+export function isValidCharge(moduleType, chargeType) {
+  if (!moduleType || !chargeType) return false;
+  const ma = moduleType.a ?? {}, ca = chargeType.a ?? {};
+  const val = (a, id, name) => Number(a[name] ?? a[id] ?? 0);
+  const groups = CHARGE_GROUP_ATTRS.map(([id, name]) => val(ma, id, name)).filter(g => g > 0);
+  if (!groups.includes(Number(chargeType.g))) return false;
+  const size = val(ma, '128', 'chargeSize');
+  if (size > 0 && val(ca, '128', 'chargeSize') !== size) return false;
+  const cap = val(ma, '38', 'capacity'), vol = val(ca, '161', 'volume');
+  if (cap > 0 && vol > cap) return false;
+  return true;
+}
+
 // ─── Fit ──────────────────────────────────────────────────────────────────────
 export class Fit {
   // Booster side-effect penalty effects — skipped by default (matches Pyfa default behaviour)
@@ -1892,9 +1915,11 @@ export class Fit {
   }
 
   // ── Helpers for calc.js compatibility ─────────────────────────────────────
-  /** Load a charge into a module (for range/damage calculations) */
+  /** Load a charge into a module (for range/damage calculations). A charge the module cannot take is
+   *  refused, as eos's Module.charge setter refuses it — see isValidCharge. */
   setCharge(moduleItem, chargeTypeID) {
     if (!chargeTypeID || !TYPES[chargeTypeID]) return;
+    if (!isValidCharge(moduleItem?._td ?? TYPES[moduleItem?.typeID], TYPES[chargeTypeID])) return;
     moduleItem._charge = new DogmaItem(chargeTypeID);
   }
 }
