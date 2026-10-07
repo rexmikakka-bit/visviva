@@ -7,7 +7,7 @@ The dot on the left of each module row sets its state: offline, online, active o
 - **Hold** to take it offline (grey, dimmed row). Tapping an offline module brings it straight back to active.
 - Tap the module's name for its sheet, where **State** has all four as buttons, alongside Charge, Info and Variations.
 
-![A microwarpdrive's state dot: tapped to online and back to active, double-tapped to overheat, held to go offline, then tapped back to active](img/module-states.gif)
+<img src="img/module-states.gif" alt="A microwarpdrive&#x27;s state dot: tapped to online and back to active, double-tapped to overheat, held to go offline, then tapped back to active" width="390" align="top">
 
 ## Swipe to copy or remove
 
@@ -17,4 +17,4 @@ The dot on the left of each module row sets its state: offline, online, active o
 - **Remove** (red) takes the module off and leaves the slot empty.
 - Removed something by mistake? **Undo** sits under the fitting bars.
 
-![Swiping Tracking Enhancer II right and removing it, then swiping a Gyrostabilizer II and tapping Copy to fill the empty slot](img/module-swipe.gif)
+<img src="img/module-swipe.gif" alt="Swiping Tracking Enhancer II right and removing it, then swiping a Gyrostabilizer II and tapping Copy to fill the empty slot" width="390" align="top">

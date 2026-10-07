@@ -10,6 +10,4 @@ The **Effects** tab applies what isn't on your own ship: boosters, other fits' c
 
 With the armor-links Damnation below applied, this Hurricane Fleet Issue goes from 48.3k to 57.5k EHP, and its armor rep from 192 to 302 EHP/s.
 
-![Adding the "armor links" Damnation as a command fit and its three armor bursts appearing](img/fleet-command.gif)
-
-![The command fit card: armor links (Damnation) with Armor Energizing −21.6%, Armor Reinforcement +21.6% and Rapid Repair −21.6%](img/fleet-command.png)
+<img src="img/fleet-command.gif" alt="Adding the &quot;armor links&quot; Damnation as a command fit and its three armor bursts appearing" width="390" align="top"> <img src="img/fleet-command.png" alt="The command fit card: armor links (Damnation) with Armor Energizing −21.6%, Armor Reinforcement +21.6% and Rapid Repair −21.6%" width="390" align="top">

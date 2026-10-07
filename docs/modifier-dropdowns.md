@@ -7,6 +7,4 @@ Any modified attribute can be expanded to list every source that changed it. Use
 3. Tap the row. It lists the unmodified value, then each skill, module, implant and hull bonus with its contribution.
 4. Stacking penalties are shown as they apply: `stacked · +10.0% at 87%` means the second Gyrostabilizer gives 8.69% instead of 10%.
 
-![Opening a howitzer's Info tab and expanding Damage Modifier to list its sources](img/modifiers.gif)
-
-![Damage Modifier expanded: 9.57× unmodified, two Gyrostabilizer IIs (the second stacking-penalised), Surgical Strike V, Medium Projectile Turret V, Medium Artillery Specialization V, the Hurricane Fleet Issue hull bonus and a Gunslinger implant, totalling 28.4958×](img/modifiers-expanded.png)
+<img src="img/modifiers.gif" alt="Opening a howitzer&#x27;s Info tab and expanding Damage Modifier to list its sources" width="390" align="top"> <img src="img/modifiers-expanded.png" alt="Damage Modifier expanded: 9.57× unmodified, two Gyrostabilizer IIs (the second stacking-penalised), Surgical Strike V, Medium Projectile Turret V, Medium Artillery Specialization V, the Hurricane Fleet Issue hull bonus and a Gunslinger implant, totalling 28.4958×" width="390" align="top">

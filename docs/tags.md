@@ -8,6 +8,4 @@ Tags group fits across hulls (a doctrine, a playstyle, "needs work") so you can 
 4. Once a tag exists, the home screen gets a **Tags** section with a chip per tag and a count. Tap one to list every fit with that tag, whatever the hull.
 5. Renaming, recolouring and deleting a tag is done from that list, under **Edit**. Searching also matches tag names.
 
-![Opening the tag sheet on a fit, typing "kiting" and creating the tag](img/tags-add.gif)
-
-![Going back to the home screen and tapping the "kiting" tag chip to list its fits](img/tags-browse.gif)
+<img src="img/tags-add.gif" alt="Opening the tag sheet on a fit, typing &quot;kiting&quot; and creating the tag" width="390" align="top"> <img src="img/tags-browse.gif" alt="Going back to the home screen and tapping the &quot;kiting&quot; tag chip to list its fits" width="390" align="top">
