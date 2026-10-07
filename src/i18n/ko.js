@@ -397,6 +397,7 @@ export default {
   "No active command bursts on this fit": "이 피팅에 가동 중인 커맨드 버스트가 없습니다",
   "No boosters added": "추가된 부스터가 없습니다",
   "No boosters found": "부스터를 찾지 못했습니다",
+  "No longer in the game. Has no effect.": "게임에서 삭제되었습니다. 효과가 없습니다.",
   "No charge-compatible modules fitted": "차지를 장전할 수 있는 모듈이 없습니다",
   "No cheaper equivalents found": "더 저렴한 동급 품목을 찾지 못했습니다",
   "No command fits applied": "적용된 커맨드 피팅이 없습니다",

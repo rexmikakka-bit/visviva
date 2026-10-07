@@ -398,6 +398,7 @@ export default {
   "No active command bursts on this fit": "このフィットに稼働中のコマンドバーストはありません",
   "No boosters added": "ブースターが追加されていません",
   "No boosters found": "ブースターが見つかりません",
+  "No longer in the game. Has no effect.": "ゲームから削除されました。効果はありません。",
   "No charge-compatible modules fitted": "チャージを装填できるモジュールがありません",
   "No cheaper equivalents found": "より安い同等品は見つかりませんでした",
   "No command fits applied": "コマンドフィットが適用されていません",

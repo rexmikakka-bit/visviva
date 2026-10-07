@@ -412,6 +412,7 @@ export default {
   "No active command bursts on this fit": "Aucun command burst actif sur ce fitting",
   "No boosters added": "Aucun booster ajouté",
   "No boosters found": "Aucun booster trouvé",
+  "No longer in the game. Has no effect.": "N'existe plus dans le jeu. Aucun effet.",
   "No charge-compatible modules fitted": "Aucun module compatible avec des charges n'est équipé",
   "No cheaper equivalents found": "Aucun équivalent moins cher trouvé",
   "No command fits applied": "Aucun fitting de commandement appliqué",

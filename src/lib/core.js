@@ -399,7 +399,7 @@ input{outline:none}select{outline:none}img.eve-icon{border-radius:4px;background
 import { C, getTheme } from "../theme.js";
 import { metaOf, META_COLORS, META_ORDER, compareForBrowser } from "./meta.js";
 import { nameMatchesQuery, searchScore } from "./jargon.js";
-import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS, BOOSTER_DATA } from "../data/static-tables.js";
+import { ATTRIBUTE_IMPLANTS, HARDWIRING_IMPLANTS } from "../data/static-tables.js";
 // #cbd5e1 (kin) and #60a5fa (em) read fine glowing on near-black but drop to ~1.5:1 and ~2.5:1
 // against white — the light-mode "Kin" column and its percentages were barely visible. Colors
 // are getters (not a plain object) so a theme switch is picked up live, same reasoning as
@@ -1029,7 +1029,50 @@ const MODULE_VARS={
 // live, but a plain object here would still snapshot it once at import time.
 const DMG_COLOR=new Proxy({},{ get(_,k){ return {EM:DMG.em.color,Thermal:DMG.th.color,Kinetic:DMG.kin.color,Explosive:DMG.exp.color}[k]; } });
 
-// ── Implant data ───────────────────────────────────────────────────
+// ── Booster catalogue ──────────────────────────────────────────────
+// The booster picker's { slot: { family: [names] } } tree, DERIVED from the bundle rather than
+// hand-listed. The hand list went stale on every event: the 24.01 regen dropped the expired
+// Clash/Volatile boosters from the SDE while the list kept offering them (no art, no description,
+// no effect), and the new Harvest/Tetrimon/Chemal Tech boosters never made it in at all.
+//
+// Slot is CCP's `boosterness`. Slots 4 and 10 are cerebral accelerators and 12 is Glamourex
+// (standings); above 17 are Serenity-only, festival and skill accelerators. None of those touch a
+// fit, so they stay out of the picker.
+const BOOSTER_NON_FIT_SLOTS=new Set([4,10,12]);
+const BOOSTER_FAMILY_GRADE_RE=/^(Nugoehuvi Synth|Synth|Standard|Improved|Strong) /;
+const BOOSTER_GRADE_RANK={"Nugoehuvi Synth":0,Synth:1,Standard:2,Improved:3,Strong:4};
+function boosterFamilyOf(name){
+  if(/^Antipharmakon /.test(name))return "Antipharmakon";
+  if(/^Halcyon /.test(name))return "Halcyon";
+  const agency=name.match(/^Agency '([^']+)'/)??name.match(/^AIR (Pyrolancea|Overclocker|Hardshell) Booster/);
+  if(agency)return `Agency ${agency[1]}`;
+  const base=name.replace(BOOSTER_FAMILY_GRADE_RE,"").replace(/ Booster( [IVX]+)?$/,"");
+  return base===name?"Other":base;
+}
+const BOOSTER_DATA=(()=>{
+  const bySlot={};
+  for(const rec of Object.values(TYPES)){
+    if(rec?.g!==303)continue;
+    const slot=Number(rec.attrs?.boosterness);
+    if(!(slot>=1&&slot<=17)||BOOSTER_NON_FIT_SLOTS.has(slot))continue;
+    ((bySlot[slot]??={})[boosterFamilyOf(rec.n)]??=[]).push(rec.n);
+  }
+  const grade=n=>BOOSTER_GRADE_RANK[n.match(BOOSTER_FAMILY_GRADE_RE)?.[1]]??-1;
+  const out={};
+  for(const slot of Object.keys(bySlot).map(Number).sort((a,b)=>a-b)){
+    const fams=bySlot[slot];
+    // A one-item "family" (Guristas Damage Booster III, Strong Veilguard) is just a long list of
+    // headings. Antipharmakon keeps its name even alone, since it is the same drug line per slot.
+    for(const f of Object.keys(fams))if(f!=="Antipharmakon"&&f!=="Other"&&fams[f].length===1){
+      (fams.Other??=[]).push(...fams[f]);delete fams[f];
+    }
+    out[slot]={};
+    for(const f of Object.keys(fams).sort((a,b)=>(a==="Other")-(b==="Other")||a.localeCompare(b))){
+      out[slot][f]=fams[f].sort((a,b)=>grade(a)-grade(b)||a.localeCompare(b,undefined,{numeric:true}));
+    }
+  }
+  return out;
+})();
 
 // ── EFT-import lookup helpers ──────────────────────────────────────
 const BOOSTER_NAME_SET=new Set(Object.values(BOOSTER_DATA).flatMap(s=>Object.values(s).flat()));
@@ -1846,4 +1889,4 @@ function optimizeSlotPrice(slot, priceMap) {
 
 // ═══ BOTTOM SHEET ════════════════════════════════════════════════
 
-export { AGENCY_BOOSTER_RE, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, backfillHullsFromTypes, canLoadCharge, loadedChargeCount, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };
+export { AGENCY_BOOSTER_RE, BOOSTER_DATA, BOOSTER_GROUP_ID, BOOSTER_NAME_SET, CHARGES_BY_GROUP, CMD_SHIP_FITS, DMG, DMG_COLOR, FIGHTER_CATALOG, getGlobalCss, IMPLANT_NAME_TO_SLOT, MG_CHILDREN, MG_HIDDEN, MODULE_STATES, MODULE_USAGE, MODULE_VARS, MT_ALL_ITEMS, MT_CHARGE_GROUPS, MT_CHARGE_ITEMS, MT_CHILDREN, MT_ITEMS, MT_ROOTS, isChargeType, MUTA_BY_NAME, MUTA_BY_TYPE, OFF_MARKET_MODULES, RACES, RACE_COLORS, REAL_CHARGE_BROWSER, REAL_DRONE_BROWSER, REAL_MODULE_BROWSER, REAL_STRUCTURE_MODULE_BROWSER, SAVED_FITS_SEED, SLOT_ROOT, STATE_COLORS, STATE_GLOW, STATE_LABELS, TOP_DRONE_ORDER, WARFARE_BUFF_UNIT, _bundleListeners, _bundleReady, buildChargeBrowser, buildDroneBrowser, buildMGChildren, buildModuleBrowser, buildSlotsFromEFT, backfillHullsFromTypes, canLoadCharge, loadedChargeCount, calcEHP, moduleByName, calcTransversal, cargoUnitVolume, cargoVolume, cheaperEquivalent, computeDisplayRows, defaultChargeFor, fmtN, generateEmptySlots, reconcileRacks, getCompatibleCharges, getMGPath, groupChargesForBrowser, guessSlotFromDogma, haptic, implantData, implantSetMembers, applyImplantSet,isBoosterName, isGroupableModule, lookupShip, moduleTakesCharges, moduleVariations, variantsOf, withoutMutaplasmidShells, mutaAttrRanges, snapToBase, navIcons, optimizeSlotPrice, parseEFT, readClipboardText, raceIcons, resMult, shipFromDogma, shipTraits, shipsByClass, slotIcons, gestureTarget, validStatesFor };

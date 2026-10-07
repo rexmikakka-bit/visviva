@@ -3,8 +3,7 @@ import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, InfoButton, mutaLabel, SheetSearchBar } from "./ui.jsx";
-import { CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
-import { BOOSTER_DATA } from "../data/static-tables.js";
+import { BOOSTER_DATA, CMD_SHIP_FITS, WARFARE_BUFF_UNIT, haptic } from "../lib/core.js";
 import { byRecentlyModified } from "../lib/fit-order.js";
 import { boosterSideEffectsFor, computeProjectedReps, computeCommandBursts, calcRangeFactor, stackingPenalty, jamChanceFrom, SKILL_DEFAULTS, tidByName, TYPES } from "../calc.js";
 import { t } from "../lib/i18n.js";
@@ -233,7 +232,7 @@ function BoosterPickerSheet({onAdd,onClose}){
         </div>
       ))}
     </div>}
-    {!searchResults&&!slotDrill&&[1,2,3,11,14,15,16,17].map(slot=>(
+    {!searchResults&&!slotDrill&&Object.keys(BOOSTER_DATA).map(Number).map(slot=>(
       <div key={slot} onClick={()=>setSlotDrill(slot)}
         style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 16px",cursor:"pointer",borderBottom:`1px solid ${C.border}`,textAlign:"left"}}>
         <div>
@@ -419,13 +418,24 @@ const BoosterIcon=({name,size=28})=>{
 // Deliberately a DENYLIST. The obvious filter — attributes ending in "Bonus" — silently drops Blue
 // Pill, whose entire effect is `shieldBoostMultiplier`, with no such suffix. Naming conventions are
 // not a reliable way to find the point of an item.
-const BOOSTER_NOISE=/^(mass|volume|radius|capacity|metaLevel.*|techLevel|requiredSkill\d(Level)?|typeColorScheme)$/i;
+const BOOSTER_NOISE=/^(mass|volume|radius|capacity|metaLevel.*|techLevel|requiredSkill\d(Level)?|typeColorScheme|nondestructible|followsJumpClones)$/i;
+
+// Most booster bonuses are percentages, but not all. The Harvest webifier and Halcyon Y boosters ADD
+// metres (webifier range, drone control range), and the damage boosters store a MULTIPLIER (1.12 is
+// +12%). Treated as percentages they read "+4000%" and "+1.12%".
+const BOOSTER_UNITS={stasisWebRangeAdd:"m",droneRangeBonus:"m",damageMultiplier:"x",missileDamageMultiplierBonus:"x"};
+function boosterBonusValue(k,v){
+  if(BOOSTER_UNITS[k]==="x")v=Math.round((v-1)*10000)/100;
+  const sign=v>0?"+":"−", m=Math.abs(v);
+  if(BOOSTER_UNITS[k]==="m")return m>=1000?`${sign}${m/1000} km`:`${sign}${m} m`;
+  return `${sign}${m}%`;
+}
 
 // `rangeSkillBonus` is CCP's internal name for the turret OPTIMAL RANGE bonus — it is the attribute
 // the Sharpshooter skill moves — and camel-cases into "Range Skill Bonus", which names a skill
 // rather than the stat it changes. Overridden here and not in MUTA_ATTR_LABELS because that map is
 // shared with the mutaplasmid rows, where the attribute is a different thing on a different item.
-const BOOSTER_LABELS={rangeSkillBonus:"Optimal Range"};
+const BOOSTER_LABELS={rangeSkillBonus:"Optimal Range",stasisWebRangeAdd:"Webifier Range"};
 
 // The trailing "Bonus"/"Penalty" is redundant beside a signed percentage, and it is wrong often
 // enough to be worth dropping rather than just shortening: Crash read "Expl. Radius Bonus −20%" for
@@ -438,7 +448,7 @@ function boosterBonuses(b){
   const a=rec?.attrs??rec?.a??{};
   return Object.entries(a)
     .filter(([k,v])=>typeof v==="number"&&v!==0&&!BOOSTER_NOISE.test(k)&&!/^booster/i.test(k))
-    .map(([k,v])=>`${boosterLabel(k)} ${v>0?"+":"−"}${Math.abs(v)}%`);
+    .map(([k,v])=>`${boosterLabel(k)} ${boosterBonusValue(k,v)}`);
 }
 
 // A booster's slot is CCP's `boosterness` (attr 1087). Read from the type rather than the saved
@@ -548,10 +558,13 @@ export function EffectsScreen({fitsDB,boosters,setBoosters,projFits,setProjFits,
             <div style={{fontSize:12,fontWeight:600,color:b.active?C.text:C.textMid}}>{b.name}</div>
             {/* `b.effect` was the drug name with its grade word stripped — "Exile" printed under
                 "Standard Exile Booster", the same word twice. Slot and actual bonuses instead. */}
-            <div style={{fontSize:10,color:C.rig,marginTop:1}}>
+            {/* CCP deletes event boosters from the SDE once they expire (the Clash/Volatile series
+                went in 24.01), so a fit saved earlier can hold a name the bundle no longer knows.
+                Say so, rather than a blank "Slot 99" row that silently does nothing. */}
+            {tidByName(b.name)?<div style={{fontSize:10,color:C.rig,marginTop:1}}>
               <span style={{color:C.textMute}}>{t("Slot {n}",{n:boosterSlotOf(b)})}</span>
               {(()=>{const bo=boosterBonuses(b);return bo.length?` · ${bo.join(" · ")}`:"";})()}
-            </div>
+            </div>:<div style={{fontSize:10,color:C.warning,marginTop:1}}>{t("No longer in the game. Has no effect.")}</div>}
           </div>
           <button onClick={()=>setBoosters(boosters.filter(x=>x.id!==b.id))} style={{background:"none",border:"none",color:C.danger,cursor:"pointer",fontSize:14}}>x</button>
         </div>
