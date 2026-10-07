@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits, backfillHullsFromTypes } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits, backfillHullsFromTypes, canLoadCharge } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap, contractCharacter, UI_SCOPE } from './lib/esi.js';
 import { moduleGestureHistory } from './lib/module-gesture.js';
 
@@ -340,9 +340,11 @@ function check(group, label, actual, expected, tol = 0.005) {
       { ...EMPTY, high: [M(gun, 'active', ammo)] }, [], null, { factorInReload: true });
     return cs.graphWeapons.find((w) => w.kind === 'turret' || w.kind === 'missile');
   };
-  check('reload', 'Cynabal (Angel, projectile)', turret('Cynabal', '425mm AutoCannon II', 'Republic Fleet EMP L').reloadS * 1000, 2500, 0.001);
+  // EMP M, not L: a 425mm is a medium gun (chargeSize 2), and the engine now refuses a large charge
+  // the way eos does. Reload time does not depend on the ammo, so the expected values are unchanged.
+  check('reload', 'Cynabal (Angel, projectile)', turret('Cynabal', '425mm AutoCannon II', 'Republic Fleet EMP M').reloadS * 1000, 2500, 0.001);
   check('reload', 'Machariel (Angel, projectile)', turret('Machariel', '800mm Repeating Cannon II', 'Republic Fleet EMP L').reloadS * 1000, 2500, 0.001);
-  check('reload', 'Rupture (control: no bonus)', turret('Rupture', '425mm AutoCannon II', 'Republic Fleet EMP L').reloadS * 1000, 10000, 0.001);
+  check('reload', 'Rupture (control: no bonus)', turret('Rupture', '425mm AutoCannon II', 'Republic Fleet EMP M').reloadS * 1000, 10000, 0.001);
   check('reload', 'Jackdaw (Caldari tac dest)', turret('Jackdaw', 'Light Missile Launcher II', 'Scourge Light Missile').reloadS * 1000, 2500, 0.001);
   check('reload', 'Laelaps (missile reload)', turret('Laelaps', 'Heavy Missile Launcher II', 'Scourge Heavy Missile').reloadS * 1000, 5000, 0.001);
   // Clip size drives BOTH the "factor in reload" DPS penalty and the damage-over-time graph.
@@ -8305,6 +8307,35 @@ Nanofiber Internal Structure II
 
   check('crimson', 'and every hull is searchable exactly once',
     Object.entries(TYPES).filter(([, t]) => (t.c ?? t.category) === 6 && t.gn).every(([id]) => listed.includes(Number(id))) && listed.length === new Set(listed).size ? 1 : 0, 1, 0);
+}
+
+// ─── CHARGES A MODULE CANNOT LOAD ───────────────────────────────────────────────────────────────
+// Swapping a Hail-loaded 425mm AutoCannon II rack to its T1 variant kept Hail loaded, Validation
+// stayed green, and DPS came from guns that cannot fire it. T2 guns list charge groups 83 and 372
+// (Advanced Autocannon Ammo); T1 only 83. pyfa refuses the charge at the engine, on a variant
+// replace and on EFT import; so does Axis now. The swap itself is UI code (ui.jsx) and goes through
+// canLoadCharge, which is what is pinned here.
+{
+  console.log('\nINCOMPATIBLE CHARGES');
+  check('charge', 'a T2 autocannon can load Hail', canLoadCharge(tid('425mm AutoCannon II'), 'Hail M') ? 1 : 0, 1, 0);
+  check('charge', 'its T1 variant cannot', canLoadCharge(tid('425mm AutoCannon I'), 'Hail M') ? 1 : 0, 0, 0);
+  check('charge', 'but it can load standard ammo', canLoadCharge(tid('425mm AutoCannon I'), 'EMP M') ? 1 : 0, 1, 0);
+  check('charge', 'the EFT quantity suffix is ignored', canLoadCharge(tid('425mm AutoCannon II'), 'Hail M (200)') ? 1 : 0, 1, 0);
+  check('charge', 'a wrong-size charge is refused', canLoadCharge(tid('425mm AutoCannon II'), 'Hail S') ? 1 : 0, 0, 0);
+  check('charge', 'no charge is always fine', canLoadCharge(tid('425mm AutoCannon I'), undefined) ? 1 : 0, 1, 0);
+
+  // The engine refuses it, so a saved fit that still names Hail does no damage with it.
+  const rack = (gun, ammo) => calcFitStats({ typeID: tid('Hurricane'), name: 'Hurricane' },
+    { high: [1, 2, 3].map(() => M(gun, 'active', ammo)), mid: [], low: [], rigs: [] }, [], null, {}).weaponDps.total;
+  check('charge', 'T1 guns "loaded" with Hail do no damage', rack('425mm AutoCannon I', 'Hail M'), 0, 0);
+  check('charge', 'T1 guns with EMP still do', rack('425mm AutoCannon I', 'EMP M') > 0 ? 1 : 0, 1, 0);
+  check('charge', 'T2 guns with Hail still do', rack('425mm AutoCannon II', 'Hail M') > 0 ? 1 : 0, 1, 0);
+
+  // EFT import drops it, as pyfa's eft.py does; the legal charge on the next gun survives.
+  const eft = parseEFT('[Hurricane, x]\n\n425mm AutoCannon I, Hail M\n425mm AutoCannon II, Hail M\n');
+  const hi = buildSlotsFromEFT(lookupShip('Hurricane'), eft.mods, eft.subsystems).high.filter(s => s.typeID);
+  check('charge', 'EFT import drops Hail from the T1 gun', String(hi.find(s => s.name === '425mm AutoCannon I')?.ammo), 'undefined');
+  check('charge', 'and keeps it in the T2 gun', hi.find(s => s.name === '425mm AutoCannon II')?.ammo, 'Hail M');
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {

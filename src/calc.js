@@ -1212,6 +1212,14 @@ const AOE_SKILL_TIDS = Object.keys(TYPES)
     .some(eid => (EFFECTS_DATA[eid]?.m ?? []).some(m => AOE_ATTR[m.modifiedAttributeID])))
   .map(Number);
 
+// The charge a fitted slot ACTUALLY carries: its ammo name, but only when the engine loaded it.
+// Fit.setCharge refuses a charge the module cannot take (eos's isValidCharge), so a saved fit that
+// still names Hail in a T1 autocannon has no engine charge — and must do no damage with it. Every
+// damage and clip computation below reads the charge through this rather than slot.ammo directly.
+function loadedAmmo(slot, fitItem) {
+  return slot?.ammo && fitItem?._charge ? slot.ammo : null;
+}
+
 function chargeProfile(chargeName) {
   if (!chargeName) return null;
   const tid = typeIDByName(chargeName) ?? tidByName(chargeName);
@@ -2463,7 +2471,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
     if (isInjector) {
       // Account for reload: effective rate = (clipSize × injAmt) / (clipSize × cycleMs + reloadMs)
       const reloadMs2 = fitItem.getBase('reloadTime') ?? 10000;
-      const clipSz    = clipSizeOf(fitItem, slot.ammo, { dfltVol: 96, min: 1 });
+      const clipSz    = clipSizeOf(fitItem, loadedAmmo(slot, fitItem), { dfltVol: 96, min: 1 });
       capFillPS += (clipSz * injAmt) / (clipSz * ct + reloadMs2) * 1000;
     } else if (cn > 0 && !loadedCapCharge) {
       // Drain uses raw cycle for ALL non-injector modules, including AAR/ASB. Pyfa's capacitor
@@ -2476,7 +2484,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       capNeedGJ: isInjector ? -injAmt : (loadedCapCharge ? 0 : cn),
       // Cap booster: clip = floor(bay / chargeVol), min 1 — pyfa models injector reloads.
       // AAR/ASB: clip 0 = continuous cycling, matching pyfa's cap simulation.
-      clipSize: isInjector ? clipSizeOf(fitItem, slot.ammo, { dfltVol: 96, min: 1 }) : 0,
+      clipSize: isInjector ? clipSizeOf(fitItem, loadedAmmo(slot, fitItem), { dfltVol: 96, min: 1 }) : 0,
       reloadMs: isInjector ? 10000 : 0,
       isInjector,
     });
@@ -2670,12 +2678,12 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       const turretFall = fitItem.get('falloff');
       const turretTrk  = fitItem.get('trackingSpeed');
 
-      const charge = chargeProfile(slot.ammo);
+      const charge = chargeProfile(loadedAmmo(slot, fitItem));
       if (charge && charge.total > 0) {
         // numShots (shots per clip before reload) isn't a stored attr — derive it from the module's
         // charge bay ÷ charge volume, same as any clip. reloadTime is engine-computed, so ship reload
         // bonuses (Jackdaw/Skua tactical destroyers, Angel Cartel projectile hulls, etc.) are baked in.
-        const numShots = clipSizeOf(fitItem, slot.ammo, { dfltVol: 0.0125, min: 1 });
+        const numShots = clipSizeOf(fitItem, loadedAmmo(slot, fitItem), { dfltVol: 0.0125, min: 1 });
         let reloadMs = 0;
         if (factorInReload && numShots > 0) {
           reloadMs = (fitItem.get('reloadTime') ?? 5000);
@@ -2712,7 +2720,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       });
 
       // Per-weapon graph data (turret hit math). Base volley = full damage per cycle, no hit mult.
-      const _charge = chargeProfile(slot.ammo);
+      const _charge = chargeProfile(loadedAmmo(slot, fitItem));
       if (_charge && _charge.total > 0) {
         // cycleMs is final here (charge modifiers applied), so this is the cycle the weapon
         // actually fires at — the one spool advances on.
@@ -2726,7 +2734,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
           optimalSigRadius: fitItem.get('optimalSigRadius') ?? 40000,
           spoolMax: fitItem.get('damageMultiplierBonusMax') ?? 0,
           spoolPerCycle: fitItem.get('damageMultiplierBonusPerCycle') ?? 0,
-          numShots: clipSizeOf(fitItem, slot.ammo, { dfltVol: 0.0125, min: 1 }),
+          numShots: clipSizeOf(fitItem, loadedAmmo(slot, fitItem), { dfltVol: 0.0125, min: 1 }),
           reloadS: (fitItem.get('reloadTime') ?? 0) / 1000,
           delayS: (fitItem.get('moduleReactivationDelay') ?? 0) / 1000,
         });
@@ -2758,7 +2766,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
         }
       }
 
-      const charge = chargeProfile(slot.ammo);
+      const charge = chargeProfile(loadedAmmo(slot, fitItem));
       if (charge && charge.total > 0) {
         // ── Missile damage multiplier chain (engine leaves missileDamageMultiplier=1 because
         //    the contributing effects are charID-domain / eos-handled, not dogma modifiers).
