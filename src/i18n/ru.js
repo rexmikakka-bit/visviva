@@ -399,6 +399,7 @@ export default {
   "No active command bursts on this fit": "В этом фиттинге нет активных командных импульсов",
   "No boosters added": "Бустеры не добавлены",
   "No boosters found": "Бустеры не найдены",
+  "No longer in the game. Has no effect.": "Больше нет в игре. Не действует.",
   "No charge-compatible modules fitted": "Нет установленных модулей, принимающих заряды",
   "No cheaper equivalents found": "Более дешёвых аналогов не найдено",
   "No command fits applied": "Командные фиттинги не применены",

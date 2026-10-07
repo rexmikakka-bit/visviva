@@ -396,6 +396,7 @@ export default {
   "No active command bursts on this fit": "该装配没有激活的指挥爆发",
   "No boosters added": "未添加强化剂",
   "No boosters found": "未找到强化剂",
+  "No longer in the game. Has no effect.": "已从游戏中移除，无效果。",
   "No charge-compatible modules fitted": "未装配可装填弹药的装备",
   "No cheaper equivalents found": "未找到更便宜的等效物品",
   "No command fits applied": "未应用指挥装配",

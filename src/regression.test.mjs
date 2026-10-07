@@ -26,7 +26,7 @@ import SYSFX from './data/system-effects.json' with { type: 'json' };
 import { resolveTabs, sameTab, nextFitId } from './lib/fit-tabs.js';
 import { fmtResource, sig3, missileRangeTip } from './lib/fmt.js';
 import { differingAttributes, compareRows, sortCompareRows, derivedDirection, directionOf, filterLockedRows, derivedAttributes, bestFirstDirection, DERIVED_KEYS } from './lib/compare.js';
-import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits, backfillHullsFromTypes, canLoadCharge } from './lib/core.js';
+import { getCompatibleCharges, groupChargesForBrowser, defaultChargeFor, parseEFT, buildSlotsFromEFT, lookupShip, generateEmptySlots, reconcileRacks, isMicroJumpDrive, fitCostRatioOf, fitCostFits, variantCostFits, backfillHullsFromTypes, canLoadCharge, BOOSTER_DATA } from './lib/core.js';
 import { esiSkillsToAppSkills, esiSkillsToFullSkillMap, contractCharacter, UI_SCOPE } from './lib/esi.js';
 import { moduleGestureHistory } from './lib/module-gesture.js';
 
@@ -8336,6 +8336,23 @@ Nanofiber Internal Structure II
   const hi = buildSlotsFromEFT(lookupShip('Hurricane'), eft.mods, eft.subsystems).high.filter(s => s.typeID);
   check('charge', 'EFT import drops Hail from the T1 gun', String(hi.find(s => s.name === '425mm AutoCannon I')?.ammo), 'undefined');
   check('charge', 'and keeps it in the T2 gun', hi.find(s => s.name === '425mm AutoCannon II')?.ammo, 'Hail M');
+}
+
+// ─── BOOSTER CATALOGUE ──────────────────────────────────────────────────────────────────────────
+// The picker was a hand list. 24.01 deleted the expired Clash/Volatile boosters from the SDE, the
+// list kept offering them (no art, description or effect), and the new Harvest/Tetrimon/Chemal Tech
+// boosters were missing. It is derived from the bundle now; these pin that it stays that way.
+{
+  console.log('\nBOOSTER CATALOGUE');
+  const all = Object.values(BOOSTER_DATA).flatMap(s => Object.values(s).flat());
+  check('booster', 'every picker booster exists in the bundle', all.filter(n => !tid(n)).join(', '), '');
+  check('booster', 'expired Hallowed Volatile Booster is gone', all.includes('Hallowed Volatile Booster') ? 1 : 0, 0, 0);
+  check('booster', 'Harvest Webifier boosters in slot 16', BOOSTER_DATA[16]?.['Harvest Webifier']?.join(', '),
+    'Harvest Webifier Booster I, Harvest Webifier Booster II, Harvest Webifier Booster III, Harvest Webifier Booster IV');
+  check('booster', 'grades sort Synth to Strong', BOOSTER_DATA[1]?.Exile?.join(', '),
+    'Synth Exile Booster, Standard Exile Booster, Improved Exile Booster, Strong Exile Booster');
+  check('booster', 'no cerebral accelerators', all.some(n => /Accelerator/.test(n)) ? 1 : 0, 0, 0);
+  check('booster', 'slots offered', Object.keys(BOOSTER_DATA).join(','), '1,2,3,5,11,14,15,16,17');
 }
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
