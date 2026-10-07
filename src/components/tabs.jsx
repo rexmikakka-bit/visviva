@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor, loadedChargeCount } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { moduleGestureHistory } from '../lib/module-gesture.js';
@@ -1491,7 +1491,8 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       // Only confirmed live asking prices contribute; unknown values remain visible.
       modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,mod:s,
         abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
-      charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
+      // Priced by the LOAD, not one per gun: six autocannons with 120 rounds each are 720 rounds.
+      charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:loadedChargeCount(s,resolveAmmo(s))})).filter(s=>s.typeID),
       // Boosters are part of the FIT price; implants are not. The line between them is "does flying
       // this consume it". A booster is spent on the undock and its bonuses are already in every
       // number on this tab, so excluding it lets a 500M fit quote 380M while flying on 120M of

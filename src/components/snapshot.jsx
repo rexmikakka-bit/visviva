@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
-import { WARFARE_BUFF_UNIT } from "../lib/core.js";
+import { WARFARE_BUFF_UNIT, loadedChargeCount } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices, priceAsOf } from "../prices.js";
 import { fmtPriceAge } from "../lib/fmt.js";
@@ -451,7 +451,8 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         const value=abyssalValue(m,abyssalData);
         if(value.price==null)unknownAbyssals++;else{fit+=value.price;pricedAbyssals++;}
       }else if (m.typeID > 0) addFit(m.typeID);
-      if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id); }
+      // The whole load, not one round per gun — same count the Stats tab prices.
+      if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id, loadedChargeCount(m, id)); }
     }
     // Drones and fighters are priced by the UNIT, so the stack size counts: five Hobgoblin IIs are
     // five hulls, and a fighter's `qty` is SQUADRONS — six Templar IIs to a squadron. This block
