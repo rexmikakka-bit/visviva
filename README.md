@@ -24,6 +24,7 @@ Short how-tos for the parts of Axis that aren't obvious from a phone screen. If 
 - [Fleet boosts and other effects](docs/fleet-effects.md): command bursts, projected modules, boosters and system effects.
 - [Tags](docs/tags.md): group fits across hulls and find them again.
 - [Abyssal modules](docs/abyssals.md): import your rolls, find listings and fit specific modules.
+- [Shopping list](docs/shopping-list.md): collect the MutaMarket contracts a fit needs and copy or open them.
 
 Screenshots are taken from the app running in a desktop browser at phone size, so the notch and safe-area spacing look slightly different from a real device.
 
