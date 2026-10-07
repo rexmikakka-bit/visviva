@@ -1,4 +1,4 @@
-# Abyssal modules
+# Abyssal modules and Variations tab
 
 Import your own rolls, find more on MutaMarket, and fit the exact module you have or want, with every rolled stat compared against what's fitted.
 
