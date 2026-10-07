@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useDeferredValue } from "react";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { TYPES, tidByName, calcFitStats, computeFitCostRatios, peakRegen, PEAK_REGEN_AT_PCT, isT3Cruiser, t3cSlotLayout, usesTurretHardpoint, usesLauncherHardpoint } from "../calc.js";
-import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor, canLoadCharge } from "../lib/core.js";
+import { DMG, DOUBLE_TAP_MS, STATE_COLORS, STATE_GLOW, STATE_LABELS, cargoVolume, computeDisplayRows, defaultChargeFor, isAssaultDamageControl, isGroupableModule, isMicroJumpDrive, fmtN, gestureTarget, haptic, moduleByName, moduleTakesCharges, shipTraits, slotIcons, validStatesFor, canLoadCharge, loadedChargeCount } from "../lib/core.js";
 import { metaOf, META_COLORS } from "../lib/meta.js";
 import { weaponRacks, rankAmmo } from "../lib/ammo-compare.js";
 import { moduleGestureHistory } from '../lib/module-gesture.js';
@@ -1491,7 +1491,9 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
       // Only confirmed live asking prices contribute; unknown values remain visible.
       modules:allSlots.filter(s=>s?.typeID).map(s=>({typeID:s.typeID,qty:1,mod:s,
         abyssal:s.mutaplasmid!=null||metaOf(s.typeID,null)==='Abyssal'})),
-      charges:allSlots.filter(s=>s?.ammo).map(s=>({typeID:resolveAmmo(s),qty:1})).filter(s=>s.typeID),
+      // Priced by the LOAD, not one per gun: six autocannons with 120 rounds each are 720 rounds.
+      // A charge the module cannot load isn't loaded (the engine refuses it), so it isn't priced.
+      charges:allSlots.filter(s=>s?.ammo&&canLoadCharge(s.typeID,s.ammo)).map(s=>({typeID:resolveAmmo(s),qty:loadedChargeCount(s,resolveAmmo(s))})).filter(s=>s.typeID),
       // Boosters are part of the FIT price; implants are not. The line between them is "does flying
       // this consume it". A booster is spent on the undock and its bonuses are already in every
       // number on this tab, so excluding it lets a 500M fit quote 380M while flying on 120M of
@@ -1512,8 +1514,12 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         ...(fighters??[]).map(f=>{const tid=f.typeID??tidByName(f.name);
           return{typeID:tid,qty:(f.qty??1)*((tid!=null?TYPES[tid]?.attrs?.fighterSquadronMaxSize:0)||1)};}),
       ].filter(d=>d.typeID),
+      // The hold counts toward the FIT price for the same reason boosters do: it undocks with the
+      // ship and dies with it. Spare ammo, cap charges, a refit module — all of it is on the
+      // killmail. It stays out of `charges`, which is what is LOADED.
+      cargo:(cargoItems??[]).map(c=>({typeID:c.typeID??tidByName(c.name),qty:c.qty??1})).filter(c=>c.typeID&&c.qty>0),
     };
-  },[ship,slots,implants,boosters,drones,fighters]);
+  },[ship,slots,implants,boosters,drones,fighters,cargoItems]);
   const allPriceIDs=useMemo(()=>{const s=new Set();for(const g of Object.values(priceItems))for(const{typeID}of g)if(typeID)s.add(typeID);return[...s];},[priceItems]);
   const fitFingerprint=useMemo(()=>allPriceIDs.slice().sort((a,b)=>a-b).join(','),[allPriceIDs]);
   useEffect(()=>{
@@ -1528,7 +1534,8 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
   const groupTotals=useMemo(()=>{
     const sum=items=>items.reduce((acc,{typeID,qty,abyssal,mod})=>acc+(abyssal?(abyssalValue(mod,abyssalData).price??0):(prices?.get(typeID)??0))*qty,0);
     return{ship:sum(priceItems.ship),modules:sum(priceItems.modules),charges:sum(priceItems.charges),
-           boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),implants:sum(priceItems.implants)};
+           boosters:sum(priceItems.boosters),drones:sum(priceItems.drones),cargo:sum(priceItems.cargo),
+           implants:sum(priceItems.implants)};
   },[priceItems,prices,abyssalData]);
   const unknownAbyssals=priceItems.modules.filter(it=>it.abyssal&&abyssalValue(it.mod,abyssalData).price==null).length;
   // Recomputed off `prices` so a refresh that succeeds clears the marker: the age is a property of
@@ -2201,7 +2208,7 @@ function StatsTab({ship,slots,setSlots,skills,implants,boosters,drones,fighters,
         {isOpen("fitvalue")&&<>
           {priceAge&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.textMute}}>{t('Market prices are {age}.',{age:priceAge})}</div>}
           {(unknownAbyssals>0||abyssalData.loading||abyssalData.error)&&<div role="status" style={{padding:'5px 12px',fontSize:11,color:C.warning}}>{abyssalData.loading?t('Loading saved module details…'):abyssalData.error||t({one:'Known subtotal; {n} abyssal module has no confirmed value.',other:'Known subtotal; {n} abyssal modules have no confirmed value.'},{n:unknownAbyssals})}</div>}
-          {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
+          {[[t('Ship'),'ship'],[t('Modules'),'modules'],[t('Charges'),'charges'],[t('Drones'),'drones'],[t('Cargo'),'cargo'],[t('Boosters'),'boosters'],[t('Implants'),'implants']].map(([label,key],i,arr)=>{
             const val=groupTotals[key], items=priceBreakdown[key]??[], last=i===arr.length-1;
             const expandable=items.length>0&&!priceLoading;
             const open=expandable&&openPriceGroups[key];

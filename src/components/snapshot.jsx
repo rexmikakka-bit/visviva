@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { C } from "../theme.js";
 import { eveRender } from "../lib/icons.js";
 import { computeCommandBursts, computeProjectedReps, calcRangeFactor, tidByName, TYPES } from "../calc.js";
-import { WARFARE_BUFF_UNIT } from "../lib/core.js";
+import { WARFARE_BUFF_UNIT, loadedChargeCount } from "../lib/core.js";
 import { abyssalGrade } from "../lib/eft-export.js";
 import { getCachedPrices, fetchPrices, priceAsOf } from "../prices.js";
 import { fmtPriceAge } from "../lib/fmt.js";
@@ -407,7 +407,7 @@ function Projected({ links, incoming }) {
 
 // The card renders off-screen at a fixed 1140px so the exported image is consistent regardless of the
 // phone's viewport. The two columns stretch to equal height, so a tall loadout grows the whole card.
-function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, projected, skillLabel,abyssalData }) {
+function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClass, slots, cs, drones, fighters, implants, boosters, cargoItems, projected, skillLabel,abyssalData }) {
   const s = cs ?? {};
   const dmg = s.totalDps ?? {};
   const dmgTotal = (dmg.em ?? 0) + (dmg.th ?? 0) + (dmg.kin ?? 0) + (dmg.exp ?? 0);
@@ -451,7 +451,8 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
         const value=abyssalValue(m,abyssalData);
         if(value.price==null)unknownAbyssals++;else{fit+=value.price;pricedAbyssals++;}
       }else if (m.typeID > 0) addFit(m.typeID);
-      if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id); }
+      // The whole load, not one round per gun — same count the Stats tab prices.
+      if (m.ammo) { const nm = m.ammo.replace(/\s*\(\d+\)$/, ''); const id = tidByName(nm); if (id) addFit(id, loadedChargeCount(m, id)); }
     }
     // Drones and fighters are priced by the UNIT, so the stack size counts: five Hobgoblin IIs are
     // five hulls, and a fighter's `qty` is SQUADRONS — six Templar IIs to a squadron. This block
@@ -468,6 +469,9 @@ function FitCard({ cardRef, fitName, shipName, shipTypeID, shipFaction, shipClas
     // Implants survive the loss, aren't part of what you undocked, and a full high-grade set
     // outvalues most hulls — so they stay out of the headline and are listed separately.
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) addFit(id); } }
+    // The cargo hold is FIT value too, as on the Stats tab: it undocks with the ship and is on the
+    // killmail when it dies.
+    for (const c of (cargoItems ?? [])) { const id = c?.typeID > 0 ? c.typeID : (c?.name ? tidByName(c.name) : 0); if (id && (c.qty ?? 1) > 0) addFit(id, c.qty ?? 1); }
     const total = (ship ?? 0) + fit;
     // A snapshot is shared as an IMAGE and outlives the app state it was taken from, so an
     // unlabelled figure keeps asserting a current price for as long as the picture exists.
@@ -740,7 +744,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, pri
   useEffect(() => {
     let dead = false;
     const priceHub = (() => { try { return localStorage.getItem("axis_pricehub") ?? "Jita"; } catch { return "Jita"; } })();
-    const { shipTypeID, slots, drones, fighters, implants, boosters } = cardProps;
+    const { shipTypeID, slots, drones, fighters, implants, boosters, cargoItems } = cardProps;
     const ids = [];
     if (shipTypeID) ids.push(shipTypeID);
     for (const rack of ["high", "mid", "low", "rigs", "subsystems"]) for (const m of (slots?.[rack] ?? [])) {
@@ -751,6 +755,7 @@ function SnapshotModal({ onClose, cmdFits, projFits, fitsDB, skills, assist, pri
     for (const d of ([...(drones ?? []), ...(fighters ?? [])])) { if (d?.typeID > 0) ids.push(d.typeID); else if (d?.name) { const id = tidByName(d.name); if (id) ids.push(id); } }
     for (const i of (implants ?? [])) { if (i?.name && i.name !== "[Empty]") { const id = tidByName(i.name); if (id) ids.push(id); } }
     for (const b of (boosters ?? [])) { if (b?.name) { const id = tidByName(b.name); if (id) ids.push(id); } }
+    for (const c of (cargoItems ?? [])) { const id = c?.typeID > 0 ? c.typeID : (c?.name ? tidByName(c.name) : 0); if (id) ids.push(id); }
     fetchPrices(ids, priceHub, priceSource).then(() => { if (!dead) setPricesReady(true); }).catch(() => {});
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
