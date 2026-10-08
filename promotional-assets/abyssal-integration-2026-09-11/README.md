@@ -18,6 +18,13 @@ assets first. In particular, Android adaptive/circular masks can clip the corner
 badge and need a separate adaptive layout. Native mask/device verification has not
 been performed. These flat PNGs are not a complete adaptive or layered icon set.
 
+## Promotion ended (2026-10-08)
+
+Owen retired the badged icon after 1.26.7. The launcher assets (`assets/icon-only.png`,
+`assets/icon-foreground.png` and the Android `mipmap-*` launchers) were restored byte-for-byte from
+the standard icon at commit b74ed31. **Do not run `scripts/build-launcher-icons.mjs`** unless the
+promotion is wanted again: it still reads the badged master and would put the badge back.
+
 ## 1.25.2 launcher use
 
 Owen subsequently requested this artwork for both platform launcher icons, then explicitly
