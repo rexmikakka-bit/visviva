@@ -77,7 +77,7 @@ export default {
   "All sources cache for 1 hour per hub.": "どの取得元もハブごとに 1 時間キャッシュされます。",
   "Alpha": "アルファ",
   "Always open fits in a new tab": "フィットを常に新しいタブで開く",
-  "An in-game saved fitting": "ゲーム内に保存されたフィッティング",
+  "A saved fitting or a ship in your hangar": "保存されたフィッティング、またはハンガーの艦船",
   "Ancillary clip pool — tap to add it into the EHP total": "補助クリップのプール — タップで EHP 合計に加算",
   "Angular velocity — tap for transversal": "角速度 — タップでトランスバーサル",
   "Applied to this fit": "このフィットに適用中",

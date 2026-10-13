@@ -290,6 +290,15 @@ export function openContractWindow(characterId, contractId, signal) {
   return esiRequest(characterId, 'POST', `/ui/openwindow/contract/?contract_id=${Number(contractId)}`, undefined, { signal });
 }
 
+// Optional, requested on demand like UI_SCOPE. Only marks which hangar ship is being flown; the
+// ship's contents still come from assets. The scope must also be enabled on the registered
+// application at developers.eveonline.com, or SSO rejects the whole login.
+export const SHIP_SCOPE = 'esi-location.read_ship_type.v1';
+// { ship_item_id, ship_name, ship_type_id }
+export function getCharacterShip(characterId, signal) {
+  return esiRequest(characterId, 'GET', `/characters/${characterId}/ship/`, undefined, { signal });
+}
+
 // { skills: [{skill_id, trained_skill_level, active_skill_level, skillpoints_in_skill}], total_sp, unallocated_sp }
 export function getCharacterSkills(characterId) {
   return esiRequest(characterId, 'GET', `/characters/${characterId}/skills/`);

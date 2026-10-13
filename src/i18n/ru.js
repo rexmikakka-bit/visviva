@@ -78,7 +78,7 @@ export default {
   "All sources cache for 1 hour per hub.": "Все источники кешируются на 1 час для каждого хаба.",
   "Alpha": "Альфа",
   "Always open fits in a new tab": "Всегда открывать фиттинги в новой вкладке",
-  "An in-game saved fitting": "Фиттинг, сохранённый в игре",
+  "A saved fitting or a ship in your hangar": "Сохранённый фиттинг или корабль из ангара",
   "Ancillary clip pool — tap to add it into the EHP total": "Запас вспомогательного картриджа — нажмите, чтобы включить его в общий EHP",
   "Angular velocity — tap for transversal": "Угловая скорость — нажмите для трансверсали",
   "Applied to this fit": "Применено к этому фиттингу",

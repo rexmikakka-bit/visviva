@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { C } from "../theme.js";
 import * as esi from "../lib/esi.js";
 import { esiFittingToImportShape, slotsToEsiFitting } from "../lib/esi-fits.js";
-import { ESI_CLIENT_ID } from "../esi-config.js";
+import { scanShips, importShip } from "../lib/esi-ships.js";
+import { ASSET_SCOPE } from "../lib/abyssal-library.js";
+import { ESI_CLIENT_ID, ESI_SCOPES } from "../esi-config.js";
 import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
@@ -216,6 +218,7 @@ export function EsiImportModal({ onClose, onImport }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
+  const [source, setSource] = useState("fittings");
 
   const load = useCallback((characterId) => {
     if (!characterId) return;
@@ -253,10 +256,19 @@ export function EsiImportModal({ onClose, onImport }) {
       <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88vh", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div onScroll={dismissKeyboardOnScroll} style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>{t("Import from EVE")}</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>{t("Import from EVE")}</div>
+        {/* Same underline tabs as the slot sheet's State / Charge / Info row. */}
+        <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+          {[["fittings", t("Saved fittings")], ["ships", t("Ships")]].map(([k, label]) => (
+            <button key={k} onClick={() => setSource(k)} style={{ flex: 1, padding: "8px 0", fontSize: 11, fontWeight: 700, background: "none", border: "none", cursor: "pointer",
+              color: source === k ? C.accent : C.textMute, borderBottom: source === k ? `2px solid ${C.accent}` : "2px solid transparent" }}>{label}</button>
+          ))}
+        </div>
         {characters.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "24px 0" }}>{t("Connect a character in Settings → ESI first.")}</div>}
         <CharacterPicker characters={characters} activeId={activeId} onSwitch={switchActive} />
-        {loading && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("Loading saved fittings…")}</div>}
+        {source === "ships" && <ShipsPane character={characters.find(c => c.characterId === activeId)} onImport={onImport} onClose={onClose} />}
+        {source === "fittings" && <>
+        {loading &&<div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("Loading saved fittings…")}</div>}
         {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
         {fittings && fittings.length === 0 && <div style={{ fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" }}>{t("No saved fittings on this character.")}</div>}
         {fittings && fittings.length > 0 && (
@@ -280,12 +292,117 @@ export function EsiImportModal({ onClose, onImport }) {
             </div>
           </div>
         ))}
+        </>}
         <button onClick={sheet.dismiss} style={{ width: "100%", marginTop: 8, padding: 10, borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.textMute, fontSize: 13, cursor: "pointer" }}>
           {t("Cancel")}
         </button>
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Import from EVE > Ships: a hangar ship as it is actually fitted ───────────────────────────
+// Reads assets rather than saved fittings, so loaded charges stay in their own module and abyssal
+// rolls come across. Row layout is the saved-fittings list's, above.
+function ShipsPane({ character, onImport, onClose }) {
+  const [scan, setScan] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState(null);
+  const [importing, setImporting] = useState(null);   // item_id being imported
+  const [skipped, setSkipped] = useState(null);       // count left out of the last import
+  const [search, setSearch] = useState("");
+  const controller = useRef(null);
+  const allowed = character?.scopes?.includes(ASSET_SCOPE);
+  const seesShip = character?.scopes?.includes(esi.SHIP_SCOPE);
+  const scopeKey = `${character?.characterId}:${allowed}:${seesShip}`;
+
+  useEffect(() => {
+    setScan(null); setError(null); setSkipped(null);
+    if (!allowed) return;
+    const abort = new AbortController(); controller.current = abort;
+    scanShips(character, { signal: abort.signal, onProgress: setProgress })
+      .then(r => { if (!abort.signal.aborted) setScan(r); })
+      .catch(e => { if (e.name !== "AbortError") setError(friendlyError(e)); })
+      .finally(() => { if (!abort.signal.aborted) setProgress(null); });
+    return () => abort.abort();
+    // scopeKey stands for the character and the two scopes this reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
+
+  // Keep what the character already granted: a new login replaces the token's scopes outright.
+  const grant = (scope) => {
+    esi.setLastLoginError(null);
+    esi.beginLogin([...new Set([...ESI_SCOPES, ...(character?.scopes ?? []), ASSET_SCOPE, scope].filter(Boolean))]).catch(e => setError(friendlyError(e)));
+  };
+
+  const importOne = async (row) => {
+    if (importing) return;
+    setImporting(row.asset.item_id); setError(null); setSkipped(null);
+    try {
+      const parsed = await importShip(scan, row, { signal: controller.current?.signal });
+      onImport(parsed);
+      // Stay open when something was left out, so the pilot learns the fit is incomplete.
+      if (parsed.skipped.length) setSkipped(parsed.skipped.length); else onClose();
+    } catch (e) { if (e.name !== "AbortError") setError(friendlyError(e)); }
+    finally { setImporting(null); }
+  };
+
+  const note = { fontSize: 12, color: C.textMute, textAlign: "center", padding: "16px 0" };
+  if (!character) return null;
+  if (!allowed) return (
+    <div style={{ padding: "8px 0" }}>
+      <div style={{ fontSize: 11, color: C.textMute, lineHeight: 1.5, marginBottom: 10 }}>
+        {t("Import a ship from your hangar exactly as it is fitted, with each module's loaded charge and abyssal rolls. This needs permission to read {name}'s assets.", { name: character.characterName })}
+      </div>
+      <button onClick={() => grant(null)} style={{ width: "100%", padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+        {t("Connect with asset access")}
+      </button>
+      {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 10 }}>{error}</div>}
+    </div>
+  );
+
+  const hull = r => TYPES[r.asset.type_id]?.n ?? "";
+  const q = search.trim().toLowerCase();
+  const rows = scan?.rows ?? [];
+  const shown = q ? rows.filter(r => [r.name, hull(r), r.location].some(s => String(s ?? "").toLowerCase().includes(q))) : rows;
+
+  return (
+    <>
+      {progress && <div style={note}>{t("Reading assets… page {done} of {total}", { done: progress.done, total: progress.total })}</div>}
+      {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
+      {skipped != null && <div style={{ fontSize: 11, color: C.warning, marginBottom: 10, lineHeight: 1.5 }}>
+        {t({ one: "Imported, but {n} item couldn't be read and was left out.", other: "Imported, but {n} items couldn't be read and were left out." }, { n: skipped })}
+      </div>}
+      {scan?.flyingMissing && <div style={{ fontSize: 11, color: C.textMute, marginBottom: 10, lineHeight: 1.5 }}>
+        {t("You're flying {ship}, but it isn't in your assets yet. EVE updates them up to an hour late.", { ship: scan.flyingMissing.ship_name || TYPES[scan.flyingMissing.ship_type_id]?.n || "" })}
+      </div>}
+      {scan && rows.length === 0 && <div style={note}>{t("No assembled ships on this character.")}</div>}
+      {rows.length > 0 && <div style={{ marginBottom: 8 }}><SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search ships or locations…")} /></div>}
+      {rows.length > 0 && shown.length === 0 && <div style={note}>{t("No ship matches “{q}”.", { q: search.trim() })}</div>}
+      {shown.map(r => (
+        <div key={r.asset.item_id} onClick={() => importOne(r)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: C.surfaceAlt, border: `1px solid ${r.flying ? C.accentBorder : C.border}`, borderRadius: 8, marginBottom: 6, cursor: importing ? "default" : "pointer", opacity: importing && importing !== r.asset.item_id ? 0.5 : 1 }}>
+          <img src={eveIcon(r.asset.type_id, 32)} alt="" width={32} height={32}
+               style={{ width: 32, height: 32, borderRadius: 5, flexShrink: 0, background: C.surface }}
+               onError={e => { e.currentTarget.style.visibility = "hidden"; }} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name || hull(r)}</div>
+              {r.flying && <span style={{ fontSize: 9, fontWeight: 700, color: C.accent, background: C.accentLight, border: `1px solid ${C.accentBorder}`, borderRadius: 4, padding: "1px 5px", flexShrink: 0 }}>{t("Flying")}</span>}
+            </div>
+            <div style={{ fontSize: 10, color: C.textMute, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {importing === r.asset.item_id ? t("Importing…") : <>{r.name ? `${hull(r)} · ` : ""}{t({ one: "{n} module", other: "{n} modules" }, { n: r.modules })} · {r.location}</>}
+            </div>
+          </div>
+        </div>
+      ))}
+      {scan?.warnings?.length > 0 && <div style={{ fontSize: 10, color: C.textMute, marginTop: 4 }}>{t("Some names couldn't be loaded; IDs are shown instead.")}</div>}
+      {scan && !seesShip && (
+        <button onClick={() => grant(esi.SHIP_SCOPE)} style={{ width: "100%", marginTop: 6, padding: "8px 0", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          {t("Show which ship I'm flying")}
+        </button>
+      )}
+    </>
   );
 }
 

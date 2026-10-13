@@ -43,7 +43,8 @@ const NUMERIC_RANGES = [
 // -> { kind: 'cargo'|'drone'|'fighter'|'slot', section?, index? }, or null for "Invalid"/unknown.
 // The index matters: ESI lists items in no particular order, so without it a fit's modules land in
 // whatever order they happened to arrive rather than in the slots the pilot put them in.
-function parseFlag(flag) {
+// Also read by esi-ships.js: an asset's `location_flag` uses the same slot names.
+export function parseFlag(flag) {
   if (typeof flag === 'number' || /^\d+$/.test(String(flag))) {
     const n = Number(flag);
     const hit = NUMERIC_RANGES.find(([lo, hi]) => n >= lo && n <= hi);

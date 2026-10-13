@@ -78,7 +78,7 @@ export default {
   "All sources cache for 1 hour per hub.": "Toutes les sources sont mises en cache 1 heure par hub.",
   "Alpha": "Alpha",
   "Always open fits in a new tab": "Toujours ouvrir les fittings dans un nouvel onglet",
-  "An in-game saved fitting": "Un fitting enregistré dans le jeu",
+  "A saved fitting or a ship in your hangar": "Un fitting enregistré ou un vaisseau de votre hangar",
   "Ancillary clip pool — tap to add it into the EHP total": "Réserve du chargeur auxiliaire — touchez pour l'ajouter au total d'EHP",
   "Angular velocity — tap for transversal": "Vitesse angulaire — touchez pour la transversale",
   "Applied to this fit": "Appliqué à ce fitting",

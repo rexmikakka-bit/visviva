@@ -7098,6 +7098,68 @@ Nanofiber Internal Structure II
   try{await importAbyssals(scan,['9001'],[],{api,signal:abort.signal});}catch(e){cancelled=e.name==='AbortError';}
   check('abyssal','cancel stops before importing items',cancelled?1:0,1,0);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Import a hangar ship from assets. Unlike a saved fitting, assets say which charge is loaded in
+// which module (a second asset under the module's own slot flag) and carry abyssal rolls.
+{
+  console.log('\nESI SHIP IMPORT');
+  const { assembledShips, shipAssetsToImportShape, dynamicToMutated, scanShips, importShip } = await import('./lib/esi-ships.js');
+  const { buildFitEntry } = await import('./lib/fit-entry.js');
+  const { SHIP_SCOPE } = await import('./lib/esi.js');
+  const muta = (await import('./data/mutaplasmids.json', { with: { type: 'json' } })).default;
+  const S = 60003760, V = 5001;
+  const at = (item_id, name, flag, extra = {}) => ({ item_id, type_id: tid(name), location_id: V, location_type: 'item', location_flag: flag, is_singleton: true, quantity: 1, ...extra });
+  const rollOf = (mutator, source) => ({ source_type_id: tid(source), mutator_type_id: mutator,
+    dogma_attributes: Object.keys(muta[mutator].a).map((id, i) => ({ attribute_id: Number(id), value: 1.5 + i })) });
+  const assets = [
+    { item_id: V, type_id: tid('Vexor'), location_id: S, location_type: 'station', location_flag: 'Hangar', is_singleton: true, quantity: 1 },
+    { item_id: 5002, type_id: tid('Rifter'), location_id: S, location_type: 'station', location_flag: 'Hangar', is_singleton: false, quantity: 2 },
+    at(11, 'Heavy Electron Blaster II', 'HiSlot1'), at(12, 'Void M', 'HiSlot1', { is_singleton: false, quantity: 40 }),
+    at(13, 'Heavy Electron Blaster II', 'HiSlot0'), at(14, 'Null M', 'HiSlot0', { is_singleton: false, quantity: 40 }),
+    { ...at(15, 'Damage Control II', 'MedSlot0'), type_id: muta[47699].r },
+    at(16, 'Damage Control II', 'LoSlot0'),
+    at(17, 'Hammerhead II', 'DroneBay', { is_singleton: false, quantity: 3 }),
+    { ...at(18, 'Hammerhead II', 'DroneBay'), type_id: muta[60472].r },
+    at(19, 'Void M', 'Cargo', { is_singleton: false, quantity: 500 }),
+    at(20, 'Medium Secure Container', 'Cargo'),
+    { ...at(21, 'Damage Control II', 'Cargo'), location_id: 20 },
+    at(22, 'Nitrogen Fuel Block', 'SpecializedFuelBay', { is_singleton: false, quantity: 10 }),
+  ];
+  check('esiship', 'only assembled hulls are listed', assembledShips(assets).map(a => a.item_id).join(','), String(V));
+  const web = dynamicToMutated(assets[6], rollOf(47699, 'Stasis Webifier II'));
+  const drone = dynamicToMutated(assets[9], rollOf(60472, 'Hammerhead II'));
+  check('esiship', 'roll resolves to the base module', web?.name, 'Stasis Webifier II');
+  check('esiship', 'roll keeps raw attribute values', web?.mutations?.[Object.keys(web.mutations)[1]], 2.5, 0);
+  check('esiship', 'a roll for another result type is refused', dynamicToMutated({ type_id: 1 }, rollOf(47699, 'Stasis Webifier II')) === null ? 1 : 0, 1, 0);
+  const shape = shipAssetsToImportShape(assets[0], assets, { name: 'Gate camp', mutated: { 15: web, 18: drone } });
+  check('esiship', 'the ship name becomes the fit name', shape.fitName, 'Gate camp');
+  check('esiship', 'each charge stays with its own gun', shape.mods.filter(m => m.slot === 'high').map(m => m.charge).join(','), 'Null M,Void M');
+  check('esiship', 'the abyssal web is fitted with its roll', shape.mods.find(m => m.slot === 'mid')?.mutaplasmid, 47699, 0);
+  check('esiship', 'plain and rolled drones stay separate', shape.drones.map(d => `${d.qty}${d.mutaplasmid ? 'r' : ''}`).join(','), '3,1r');
+  check('esiship', 'cargo excludes container contents and other holds', shape.cargo.map(c => c.name).join(','), 'Void M');
+  const entry = buildFitEntry(shape, { id: 1 });
+  check('esiship', 'loaded charge survives the slot build', entry.slots.high[1].ammo, 'Void M');
+  check('esiship', 'the roll survives the slot build', entry.slots.mid[0].mutations ? 1 : 0, 1, 0);
+  const unresolved = shipAssetsToImportShape(assets[0], assets, {});
+  check('esiship', 'an unread roll is skipped, not imported unrolled', unresolved.mods.some(m => m.slot === 'mid') ? 1 : 0, 0, 0);
+  check('esiship', 'skipped items are reported', unresolved.skipped.length, 2, 0);
+
+  const character = { characterId: 1001, characterName: 'Pilot', scopes: [ASSET_SCOPE, SHIP_SCOPE] };
+  const api = { names: async () => [{ item_id: V, name: 'Gate camp' }], station: async () => ({ name: 'Jita IV - Moon 4' }),
+    system: async () => ({ name: 'Jita' }), ship: async () => ({ ship_item_id: V, ship_name: 'Gate camp', ship_type_id: tid('Vexor') }),
+    dynamic: async a => a.item_id === 15 ? rollOf(47699, 'Stasis Webifier II') : rollOf(60472, 'Hammerhead II') };
+  const assetAPI = { assets: async () => ({ items: assets, pages: 1 }) };
+  const scan = await scanShips(character, { api, assetAPI });
+  check('esiship', 'the flown ship is marked', scan.rows[0]?.flying ? 1 : 0, 1, 0);
+  check('esiship', 'the ship row names its station', scan.rows[0]?.location, 'Jita IV - Moon 4');
+  check('esiship', 'fitted modules are counted without charges', scan.rows[0]?.modules, 4, 0);
+  const noShip = await scanShips({ ...character, scopes: [ASSET_SCOPE] }, { api: { ...api, ship: async () => { throw new Error('no scope'); } }, assetAPI });
+  check('esiship', 'without the ship scope nothing is marked', noShip.rows.some(r => r.flying) ? 1 : 0, 0, 0);
+  const imported = await importShip(scan, scan.rows[0], { api });
+  check('esiship', 'import resolves every roll', imported.skipped.length, 0, 0);
+  check('esiship', 'import fits the rolled web', imported.mods.find(m => m.slot === 'mid')?.name, 'Stasis Webifier II');
+}
 // Owned browsing must preserve every physical item and the existing market paths.
 {
   const base={itemId:'one',typeID:5975,name:'Example',slot:'mid',characterId:1,characterName:'Alt',locationId:'10',location:'Jita / Stock'};

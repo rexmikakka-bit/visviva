@@ -100,6 +100,25 @@ public client / PKCE. Two of its settings are mirrored in this repo and must sta
 
 Changing the client ID or either callback is a re-registration, not an edit.
 
+## Import a hangar ship (Import from EVE → Ships)
+
+Reads the character's assets (`esi-assets.read_assets.v1`, the scope My Abyssals already asks for)
+instead of its saved fittings. A fitted module is an asset whose `location_id` is the ship's
+`item_id` and whose `location_flag` is the slot (`HiSlot0`, `MedSlot3`, ... the same strings as a
+saved fitting). A **loaded charge is a second asset under the same flag**, so unlike a saved fitting
+the import knows which charge is in which module. Mutated modules and drones are resolved through
+`/dogma/dynamic/items/` like My Abyssals. If a roll can't be read, that item is skipped and the sheet
+says so. It is never imported as its unrolled base.
+
+`esi-location.read_ship_type.v1` (`SHIP_SCOPE`) is optional and only adds the "Flying" marker. It
+**has to be enabled on the registered application** before the "Show which ship I'm flying" button
+can work. If it isn't, SSO rejects that login. Assets can lag by up to an hour, so a ship you
+boarded recently may be missing. The sheet says so instead of showing an empty list.
+
+Not imported: items inside containers in cargo, specialised holds (fuel, ore, fleet hangar), and
+cargo types the dogma bundle doesn't know (containers, fuel blocks). Code: `lib/esi-ships.js`;
+fixtures in the suite's "ESI SHIP IMPORT" section.
+
 ## My Abyssals
 
 Open an empty module slot and choose **My Abyssals**. Connect a character with

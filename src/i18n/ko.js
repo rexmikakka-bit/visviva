@@ -76,7 +76,7 @@ export default {
   "All sources cache for 1 hour per hub.": "모든 출처는 허브별로 1시간 동안 캐시됩니다.",
   "Alpha": "알파",
   "Always open fits in a new tab": "피팅을 항상 새 탭에서 열기",
-  "An in-game saved fitting": "게임 내에 저장된 피팅",
+  "A saved fitting or a ship in your hangar": "저장된 피팅 또는 격납고의 함선",
   "Ancillary clip pool — tap to add it into the EHP total": "보조 클립 총량 — 탭하면 EHP 합계에 포함됩니다",
   "Angular velocity — tap for transversal": "각속도 — 탭하면 트랜스버설",
   "Applied to this fit": "이 피팅에 적용됨",

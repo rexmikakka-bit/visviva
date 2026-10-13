@@ -837,7 +837,7 @@ export default function App(){
         importFit(parsed);
         setPriceBanner({kind:"success",msg:t('Imported "{name}"',{name:parsed.fitName})});setTimeout(()=>setPriceBanner(null),3000);
       }},
-      {icon:IconCharacter,label:t("From EVE Character"),sub:t("An in-game saved fitting"),onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
+      {icon:IconCharacter,label:t("From EVE Character"),sub:t("A saved fitting or a ship in your hangar"),onSelect:()=>{setShowImportChooser(false);setShowEsiImport(true);}},
     ]}/>}
     {showExportChooser&&<ChooserSheet title={t("Export Fit")} onClose={()=>setShowExportChooser(false)} options={[
       {icon:IconClipboard,label:t("To EFT"),sub:t("Copy to clipboard"),onSelect:()=>{setShowExportChooser(false);setShowExportFit(true);}},

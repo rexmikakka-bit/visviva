@@ -75,7 +75,7 @@ export default {
   "All sources cache for 1 hour per hub.": "所有来源均按枢纽缓存 1 小时。",
   "Alpha": "紫玛",
   "Always open fits in a new tab": "始终在新标签页中打开装配",
-  "An in-game saved fitting": "游戏内保存的装配",
+  "A saved fitting or a ship in your hangar": "已保存的装配或机库中的舰船",
   "Ancillary clip pool — tap to add it into the EHP total": "辅助弹夹储量——点击可计入 EHP 总量",
   "Angular velocity — tap for transversal": "角速度——点击查看横向速度",
   "Applied to this fit": "已应用于此装配",

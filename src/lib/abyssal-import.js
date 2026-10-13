@@ -26,7 +26,7 @@ export async function retryESI(request,signal){
     }finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
   }
 }
-async function publicJSON(path,signal){
+export async function publicJSON(path,signal){
   const resp=await fetch(`https://esi.evetech.net/latest${path}`,{signal});
   if(!resp.ok)throw Object.assign(new Error(`ESI request failed (${resp.status})`),{status:resp.status,retryAfter:resp.headers.get('Retry-After')});
   return resp.json();
@@ -35,7 +35,9 @@ const defaultAPI={assets:getCharacterAssetsPage,names:getCharacterAssetNames,
   dynamic:(a,signal)=>publicJSON(`/dogma/dynamic/items/${a.type_id}/${a.item_id}/`,signal),
   station:(id,signal)=>publicJSON(`/universe/stations/${id}/`,signal)};
 
-export async function scanAbyssals(character,{signal,onProgress=()=>{},api=defaultAPI}={}){
+// Every page, or a throw. A partial list would read as "this item is gone", so it is never returned.
+// Shared with the hangar-ship import (esi-ships.js).
+export async function fetchAllAssets(character,{signal,onProgress=()=>{},api=defaultAPI}={}){
   if(!character?.scopes?.includes(ASSET_SCOPE))throw new Error('Asset access is required. Connect this character again.');
   let assets=[],pages=1;
   for(let page=1;page<=pages;page++){
@@ -46,6 +48,11 @@ export async function scanAbyssals(character,{signal,onProgress=()=>{},api=defau
     pages=result.pages;assets.push(...result.items);
   }
   if(new Set(assets.map(a=>a.item_id)).size!==assets.length)throw new Error('Asset pages overlap. Please scan again.');
+  return assets;
+}
+
+export async function scanAbyssals(character,{signal,onProgress=()=>{},api=defaultAPI}={}){
+  const assets=await fetchAllAssets(character,{signal,onProgress,api});
   const candidates=abyssalAssets(assets),byId=new Map(assets.map(a=>[a.item_id,a])),containers=new Set(),stations=new Set();
   for(const item of candidates){
     let node=item;const visited=new Set();
