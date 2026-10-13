@@ -7156,6 +7156,20 @@ Nanofiber Internal Structure II
   check('esiship', 'fitted modules are counted without charges', scan.rows[0]?.modules, 4, 0);
   const noShip = await scanShips({ ...character, scopes: [ASSET_SCOPE] }, { api: { ...api, ship: async () => { throw new Error('no scope'); } }, assetAPI });
   check('esiship', 'without the ship scope nothing is marked', noShip.rows.some(r => r.flying) ? 1 : 0, 0, 0);
+  // A ship docked in a citadel: the root location is a structure ID, which only STRUCTURE_SCOPE names.
+  const { STRUCTURE_SCOPE } = await import('./lib/esi.js');
+  const citadel = 1053256943697, stranger = 1053256940000;
+  const docked = [...assets,
+    { item_id: 5101, type_id: tid('Vagabond'), location_id: citadel, location_type: 'item', location_flag: 'Hangar', is_singleton: true, quantity: 1 },
+    { item_id: 5102, type_id: tid('Sabre'), location_id: stranger, location_type: 'item', location_flag: 'Hangar', is_singleton: true, quantity: 1 }];
+  const structureAPI = { ...api, structure: async (c, id) => { if (id !== citadel) throw Object.assign(new Error('Forbidden'), { status: 403 }); return { name: 'J150633 - Predator Den' }; } };
+  const named = await scanShips({ ...character, scopes: [ASSET_SCOPE, STRUCTURE_SCOPE] }, { api: structureAPI, assetAPI: { assets: async () => ({ items: docked, pages: 1 }) } });
+  const locOf = id => named.rows.find(r => r.asset.item_id === id)?.location;
+  check('esiship', 'a citadel on the ACL is named', locOf(5101), 'J150633 - Predator Den');
+  check('esiship', 'a 403 citadel does not stop the others', locOf(5102), `Structure #${stranger}`);
+  check('esiship', 'unnamed citadels are counted', named.unnamedStructures, 1, 0);
+  const unscoped = await scanShips({ ...character, scopes: [ASSET_SCOPE] }, { api: structureAPI, assetAPI: { assets: async () => ({ items: docked, pages: 1 }) } });
+  check('esiship', 'without the structure scope citadels stay unnamed', unscoped.unnamedStructures, 2, 0);
   const imported = await importShip(scan, scan.rows[0], { api });
   check('esiship', 'import resolves every roll', imported.skipped.length, 0, 0);
   check('esiship', 'import fits the rolled web', imported.mods.find(m => m.slot === 'mid')?.name, 'Stasis Webifier II');

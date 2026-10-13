@@ -299,6 +299,15 @@ export function getCharacterShip(characterId, signal) {
   return esiRequest(characterId, 'GET', `/characters/${characterId}/ship/`, undefined, { signal });
 }
 
+// Optional, for the same reason and with the same registration requirement. Names a citadel the
+// character is on the access list of ("J150633 - Predator Den"); without it a ship docked in one
+// shows a bare structure ID. Any other structure answers 403.
+export const STRUCTURE_SCOPE = 'esi-universe.read_structures.v1';
+// { name, owner_id, solar_system_id, type_id, position }
+export function getStructure(characterId, structureId, signal) {
+  return esiRequest(characterId, 'GET', `/universe/structures/${structureId}/`, undefined, { signal });
+}
+
 // { skills: [{skill_id, trained_skill_level, active_skill_level, skillpoints_in_skill}], total_sp, unallocated_sp }
 export function getCharacterSkills(characterId) {
   return esiRequest(characterId, 'GET', `/characters/${characterId}/skills/`);

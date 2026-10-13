@@ -110,9 +110,14 @@ the import knows which charge is in which module. Mutated modules and drones are
 `/dogma/dynamic/items/` like My Abyssals. If a roll can't be read, that item is skipped and the sheet
 says so. It is never imported as its unrolled base.
 
-`esi-location.read_ship_type.v1` (`SHIP_SCOPE`) is optional and only adds the "Flying" marker. It
-**has to be enabled on the registered application** before the "Show which ship I'm flying" button
-can work. If it isn't, SSO rejects that login. Assets can lag by up to an hour, so a ship you
+Two optional scopes, requested together from one button above the list. Both **have to be enabled
+on the registered application** first. If either isn't, SSO rejects that login:
+
+- `esi-location.read_ship_type.v1` (`SHIP_SCOPE`) only adds the "Flying" marker.
+- `esi-universe.read_structures.v1` (`STRUCTURE_SCOPE`) names the citadels the ships are docked in
+  (`/universe/structures/{id}/`, e.g. "J150633 - Predator Den", which makes both the system and the
+  citadel searchable). It only answers for structures the character is on the access list of. A
+  403 leaves that one as "Structure #id" and moves on to the next. Assets can lag by up to an hour, so a ship you
 boarded recently may be missing. The sheet says so instead of showing an empty list.
 
 Not imported: items inside containers in cargo, specialised holds (fuel, ore, fleet hangar), and

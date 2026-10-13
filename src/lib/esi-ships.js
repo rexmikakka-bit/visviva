@@ -18,7 +18,7 @@ import { lookupShip } from './core.js';
 import { parseFlag } from './esi-fits.js';
 import { assetLocation, ASSET_SCOPE } from './abyssal-library.js';
 import { fetchAllAssets, retryESI, publicJSON } from './abyssal-import.js';
-import { getCharacterAssetNames, getCharacterShip, SHIP_SCOPE } from './esi.js';
+import { getCharacterAssetNames, getCharacterShip, getStructure, SHIP_SCOPE, STRUCTURE_SCOPE } from './esi.js';
 import mutators from '../data/mutaplasmids.json' with { type: 'json' };
 import dronesData from '../data/drones.json' with { type: 'json' };
 
@@ -121,6 +121,7 @@ export function shipAssetsToImportShape(ship, assets, { name, mutated = {} } = {
 const defaultAPI = {
   names: getCharacterAssetNames,
   ship: getCharacterShip,
+  structure: getStructure,
   dynamic: (a, signal) => publicJSON(`/dogma/dynamic/items/${a.type_id}/${a.item_id}/`, signal),
   station: (id, signal) => publicJSON(`/universe/stations/${id}/`, signal),
   system: (id, signal) => publicJSON(`/universe/systems/${id}/`, signal),
@@ -138,8 +139,11 @@ export async function scanShips(character, { signal, onProgress = () => {}, api 
     try { flying = await retryESI(s => api.ship(character.characterId, s), signal); }
     catch (e) { if (e.name === 'AbortError') throw e; }
   }
-  // Ships are named; so are the containers and carriers a ship may sit inside.
-  const ids = new Set(ships.map(s => s.item_id)), stations = new Set(), systems = new Set();
+  onProgress({ stage: 'names' });
+  // Ships are named; so are the containers and carriers a ship may sit inside. A root that is
+  // neither a station nor a system is a player structure (a citadel), which only STRUCTURE_SCOPE
+  // can name.
+  const ids = new Set(ships.map(s => s.item_id)), stations = new Set(), systems = new Set(), structures = new Set();
   for (const s of ships) {
     let node = s; const seen = new Set();
     while (!seen.has(node.location_id)) {
@@ -148,6 +152,7 @@ export async function scanShips(character, { signal, onProgress = () => {}, api 
       if (!parent) {
         if (node.location_type === 'station') stations.add(node.location_id);
         else if (node.location_type === 'solar_system') systems.add(node.location_id);
+        else structures.add(node.location_id);
         break;
       }
       ids.add(parent.item_id); node = parent;
@@ -167,6 +172,17 @@ export async function scanShips(character, { signal, onProgress = () => {}, api 
       catch (e) { if (e.name === 'AbortError') throw e; warnings.push(e.message); break; }
     }
   }
+  // One at a time and never fatal: a 403 is just a citadel this character is not on the ACL of,
+  // which says nothing about the next one.
+  const canNameStructures = character.scopes.includes(STRUCTURE_SCOPE);
+  if (canNameStructures) {
+    for (const id of structures) {
+      try { places[id] = (await retryESI(s => api.structure(character.characterId, id, s), signal)).name; }
+      catch (e) { if (e.name === 'AbortError') throw e; }
+    }
+  }
+  const unnamedStructures = [...structures].filter(id => !places[id]).length;
+  for (const id of structures) places[id] ??= `Structure #${id}`;
   const rows = ships.map(s => ({
     asset: s, name: names[s.item_id] ?? null, location: assetLocation(s, byId, { ...places, ...names }),
     flying: flying?.ship_item_id === s.item_id, modules: shipContents(s, assets).filter(a => parseFlag(a.location_flag)?.kind === 'slot' && TYPES[a.type_id]?.c !== CAT_CHARGE).length,
@@ -176,7 +192,7 @@ export async function scanShips(character, { signal, onProgress = () => {}, api 
   rows.sort((a, b) => (b.flying - a.flying) || a.location.localeCompare(b.location) || shown(a).localeCompare(shown(b)));
   // ESI caches assets for up to an hour, so the ship being flown can be missing from them.
   const flyingMissing = flying && !rows.some(r => r.flying) ? flying : null;
-  return { character, assets, rows, flyingMissing, warnings };
+  return { character, assets, rows, flyingMissing, warnings, unnamedStructures, canNameStructures };
 }
 
 // Resolves the ship's rolls, then builds the import. A roll that cannot be read is skipped and

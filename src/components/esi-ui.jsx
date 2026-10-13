@@ -9,7 +9,7 @@ import { tidByName, TYPES } from "../calc.js";
 import { eveIcon } from "../lib/icons.js";
 import { byNewestFitting } from "../lib/fit-order.js";
 import { useSheetDrag, sheetTransform, SheetGrabber, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
-import { SheetSearchBar } from "./ui.jsx";
+import { SheetSearchBar, useVisualViewport } from "./ui.jsx";
 import { t } from "../lib/i18n.js";
 
 // Friendlier text for the handful of failure modes the rest of this file needs to show inline.
@@ -219,6 +219,8 @@ export function EsiImportModal({ onClose, onImport }) {
   const [error, setError] = useState(null);
   const [search, setSearch] = useState("");
   const [source, setSource] = useState("fittings");
+  const vv = useVisualViewport();
+  const frame = vv ? { top: 0, height: vv.height, left: 0, right: 0 } : { inset: 0 };
 
   const load = useCallback((characterId) => {
     if (!characterId) return;
@@ -250,10 +252,13 @@ export function EsiImportModal({ onClose, onImport }) {
     : (fittings ?? [])).slice().sort(byNewestFitting);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={sheet.dismiss}>
+    // Sized to the strip the keyboard leaves, as the tag sheet is (FittingsScreen). On the layout
+    // viewport a search narrowed to a few rows left the whole sheet, search box included, under the
+    // keyboard. maxHeight is a percentage of that strip for the same reason: 88vh is taller than it.
+    <div style={{ position: "fixed", ...frame, zIndex: 200, display: "flex", alignItems: "flex-end" }} onClick={sheet.dismiss}>
       {/* The grabber sits OUTSIDE the scroller: it is the sheet's own control, and a handle that
           scrolls off with the fit list stops being reachable exactly when the sheet is longest. */}
-      <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88vh", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
+      <div ref={sheet.sheetRef} style={{ width: "100%", maxHeight: "88%", boxSizing: "border-box", background: C.surface, borderRadius: "16px 16px 0 0", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 32px rgba(0,0,0,.5)", ...sheetTransform(sheet) }} onClick={e => e.stopPropagation()}>
         <SheetGrabber grabHandlers={sheet.grabHandlers}/>
         <div onScroll={dismissKeyboardOnScroll} style={{ overflowY: "auto", padding: "6px 20px 20px" }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>{t("Import from EVE")}</div>
@@ -315,7 +320,8 @@ function ShipsPane({ character, onImport, onClose }) {
   const controller = useRef(null);
   const allowed = character?.scopes?.includes(ASSET_SCOPE);
   const seesShip = character?.scopes?.includes(esi.SHIP_SCOPE);
-  const scopeKey = `${character?.characterId}:${allowed}:${seesShip}`;
+  const namesStructures = character?.scopes?.includes(esi.STRUCTURE_SCOPE);
+  const scopeKey = `${character?.characterId}:${allowed}:${seesShip}:${namesStructures}`;
 
   useEffect(() => {
     setScan(null); setError(null); setSkipped(null);
@@ -326,14 +332,14 @@ function ShipsPane({ character, onImport, onClose }) {
       .catch(e => { if (e.name !== "AbortError") setError(friendlyError(e)); })
       .finally(() => { if (!abort.signal.aborted) setProgress(null); });
     return () => abort.abort();
-    // scopeKey stands for the character and the two scopes this reads.
+    // scopeKey stands for the character and the three scopes this reads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scopeKey]);
 
   // Keep what the character already granted: a new login replaces the token's scopes outright.
-  const grant = (scope) => {
+  const grant = (extra = []) => {
     esi.setLastLoginError(null);
-    esi.beginLogin([...new Set([...ESI_SCOPES, ...(character?.scopes ?? []), ASSET_SCOPE, scope].filter(Boolean))]).catch(e => setError(friendlyError(e)));
+    esi.beginLogin([...new Set([...ESI_SCOPES, ...(character?.scopes ?? []), ASSET_SCOPE, ...extra])]).catch(e => setError(friendlyError(e)));
   };
 
   const importOne = async (row) => {
@@ -355,7 +361,7 @@ function ShipsPane({ character, onImport, onClose }) {
       <div style={{ fontSize: 11, color: C.textMute, lineHeight: 1.5, marginBottom: 10 }}>
         {t("Import a ship from your hangar exactly as it is fitted, with each module's loaded charge and abyssal rolls. This needs permission to read {name}'s assets.", { name: character.characterName })}
       </div>
-      <button onClick={() => grant(null)} style={{ width: "100%", padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+      <button onClick={() => grant()} style={{ width: "100%", padding: "10px 0", background: C.accent, border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
         {t("Connect with asset access")}
       </button>
       {error && <div style={{ fontSize: 11, color: C.danger, marginTop: 10 }}>{error}</div>}
@@ -365,11 +371,20 @@ function ShipsPane({ character, onImport, onClose }) {
   const hull = r => TYPES[r.asset.type_id]?.n ?? "";
   const q = search.trim().toLowerCase();
   const rows = scan?.rows ?? [];
+  // Both optional scopes in one login, offered above the list where a long hangar can't bury it.
+  // Citadel names are only offered when there is a citadel to name.
+  const more = scan ? [...(seesShip ? [] : [esi.SHIP_SCOPE]), ...(namesStructures || !scan.unnamedStructures ? [] : [esi.STRUCTURE_SCOPE])] : [];
   const shown = q ? rows.filter(r => [r.name, hull(r), r.location].some(s => String(s ?? "").toLowerCase().includes(q))) : rows;
 
   return (
     <>
-      {progress && <div style={note}>{t("Reading assets… page {done} of {total}", { done: progress.done, total: progress.total })}</div>}
+      {/* A big hangar takes a while; the ring says the app has not frozen. Same ring as the effects
+          picker's loading state. */}
+      {!scan && !error && <div style={{ ...note, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <span className="vv-spin" aria-hidden="true" style={{ display: "inline-block", flexShrink: 0, width: 14, height: 14, border: `2px solid ${C.border}`, borderTopColor: C.accent, borderRadius: "50%" }} />
+        {progress?.stage === "scan" ? t("Reading assets… page {done} of {total}", { done: progress.done, total: progress.total })
+          : progress?.stage === "names" ? t("Looking up names and locations…") : t("Reading assets…")}
+      </div>}
       {error && <div style={{ fontSize: 11, color: C.danger, marginBottom: 10 }}>{error}</div>}
       {skipped != null && <div style={{ fontSize: 11, color: C.warning, marginBottom: 10, lineHeight: 1.5 }}>
         {t({ one: "Imported, but {n} item couldn't be read and was left out.", other: "Imported, but {n} items couldn't be read and were left out." }, { n: skipped })}
@@ -378,6 +393,11 @@ function ShipsPane({ character, onImport, onClose }) {
         {t("You're flying {ship}, but it isn't in your assets yet. EVE updates them up to an hour late.", { ship: scan.flyingMissing.ship_name || TYPES[scan.flyingMissing.ship_type_id]?.n || "" })}
       </div>}
       {scan && rows.length === 0 && <div style={note}>{t("No assembled ships on this character.")}</div>}
+      {more.length > 0 && (
+        <button onClick={() => grant(more)} style={{ width: "100%", marginBottom: 8, padding: "8px 0", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+          {more.length === 2 ? t("Show citadel names and the ship I'm flying") : more[0] === esi.SHIP_SCOPE ? t("Show which ship I'm flying") : t("Show citadel names")}
+        </button>
+      )}
       {rows.length > 0 && <div style={{ marginBottom: 8 }}><SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search ships or locations…")} /></div>}
       {rows.length > 0 && shown.length === 0 && <div style={note}>{t("No ship matches “{q}”.", { q: search.trim() })}</div>}
       {shown.map(r => (
@@ -397,11 +417,6 @@ function ShipsPane({ character, onImport, onClose }) {
         </div>
       ))}
       {scan?.warnings?.length > 0 && <div style={{ fontSize: 10, color: C.textMute, marginTop: 4 }}>{t("Some names couldn't be loaded; IDs are shown instead.")}</div>}
-      {scan && !seesShip && (
-        <button onClick={() => grant(esi.SHIP_SCOPE)} style={{ width: "100%", marginTop: 6, padding: "8px 0", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          {t("Show which ship I'm flying")}
-        </button>
-      )}
     </>
   );
 }
