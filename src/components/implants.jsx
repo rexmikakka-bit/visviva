@@ -4,7 +4,7 @@ import { eveIcon } from "../lib/icons.js";
 import { ItemDetailSheet, BottomSheet, InfoButton, SheetSearchBar } from "./ui.jsx";
 import { haptic, implantSetMembers, applyImplantSet, implantData, searchImplants } from "../lib/core.js";
 import { dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
-import { useBackHandler } from "../lib/use-back-handler.js";
+import { useSwipeBack } from "../lib/use-swipe-back.js";
 import { nameMatchesQuery } from "../lib/jargon.js";
 // An implant restored from a saved fit or an EFT paste carries only a NAME — the picker is the only
 // path that records a typeID — so the detail sheet has to resolve one or it opens on "no data".
@@ -139,8 +139,9 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
     return a.localeCompare(b);
   }),[groups]);
   const drillItems=drill?groups[drill]??[]:[];
-  // Same contract as the module browser: Back leaves the group before it closes the picker.
-  useBackHandler(()=>{haptic();setDrill(null);},!!drill);
+  // Same contract as the module browser: Back, and a swipe right, leave the group before Back closes
+  // the picker.
+  const backSwipe=useSwipeBack(()=>{haptic();setDrill(null);},!!drill);
 
   const allItems=Object.values(groups).flat();
   // Same matcher the cross-slot search uses, so "eo 601" finds an EO-601 in both places.
@@ -166,7 +167,7 @@ function ImplantPicker({slot,current,onSelect,onSelectSet,onClear,onClose}){
       </div>
     )}
     {drill
-      ? drillItems.map(item=><ItemRow key={item.typeID} item={item}/>)
+      ? <div {...backSwipe} style={{minHeight:"100%"}}>{drillItems.map(item=><ItemRow key={item.typeID} item={item}/>)}</div>
       : <>
     {current&&current!=="[Empty]"&&(
       <div style={{padding:"10px 14px 0"}}>

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTabSwipe, slideClass } from "../lib/use-tab-swipe.js";
+import { useSwipeBack } from "../lib/use-swipe-back.js";
 import { C } from "../theme.js";
 import { eveIcon } from "../lib/icons.js";
 import { BottomSheet, ItemDetailSheet, InfoButton, mutaLabel, SheetSearchBar } from "./ui.jsx";
@@ -191,6 +192,9 @@ function BoosterPickerSheet({onAdd,onClose}){
   const searchResults=search.trim().length>1?allBoosters.filter(n=>n.toLowerCase().includes(search.toLowerCase())):null;
 
   const back=()=>{if(catDrill)setCatDrill(null);else if(slotDrill)setSlotDrill(null);};
+  // Swipe right and Android Back climb a level, as in the module browser. Same condition as the
+  // breadcrumb's Back button below.
+  const backSwipe=useSwipeBack(back,!!(slotDrill||catDrill));
   // The category half of the breadcrumb is a BOOSTER FAMILY name out of BOOSTER_DATA ("Blue Pill",
   // "Exile") — an item name, so it stays English like every other one.
   const breadcrumb=[slotDrill?t("Slot {n}",{n:slotDrill}):null,catDrill].filter(Boolean).join(' > ');
@@ -214,6 +218,8 @@ function BoosterPickerSheet({onAdd,onClose}){
     <div style={{padding:"8px 14px",borderBottom:`1px solid ${C.border}`}}>
       <SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search boosters...")}/>
     </div>
+    {/* minHeight so a swipe on the empty space below a short list still counts. */}
+    <div {...backSwipe} style={{minHeight:"100%"}}>
     {breadcrumb&&(
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* The guillemet stays outside the key so a translator cannot drop it. */}
@@ -275,6 +281,7 @@ function BoosterPickerSheet({onAdd,onClose}){
         <InfoBtn name={drugName}/>
       </div>
     ))}
+    </div>
   </BottomSheet>
   {/* A SIBLING of the picker, not a child — nesting it would put a second sheet inside the one
       being scrolled, and the picker stays mounted underneath so closing the card returns you to

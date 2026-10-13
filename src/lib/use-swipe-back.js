@@ -17,6 +17,13 @@ export function useSwipeBack(goBack, enabled) {
   // Registered by the SHEET's component rather than the <BottomSheet> it renders, which is what puts
   // climbing the path above the sheet's own dismiss — see back-button.js on layering.
   useBackHandler(goBack, enabled);
+  return useSwipeGesture(goBack, enabled);
+}
+
+// The swipe alone, for the one caller whose Android Back already exists and does MORE than its
+// Back arrows: the Fits tab, where Back at the root of the ship browser returns to the open fit but
+// no arrow is drawn, so the swipe must stay off there. Everywhere else, take useSwipeBack.
+export function useSwipeGesture(goBack, enabled) {
   const nav = useRef({ x: 0, y: 0, axis: null });
   return {
     onTouchStart: e => { const pt = e.touches[0]; if (pt) nav.current = { x: pt.clientX, y: pt.clientY, axis: null }; },

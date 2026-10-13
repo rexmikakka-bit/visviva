@@ -17,6 +17,7 @@ import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { BACK_SCREEN } from "../lib/back-button.js";
 import { useBackHandler } from "../lib/use-back-handler.js";
+import { useSwipeGesture } from "../lib/use-swipe-back.js";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
 import { t } from "../lib/i18n.js";
 
@@ -959,6 +960,15 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
     }
     return false;
   },true,BACK_SCREEN);
+  // Swipe right does what each view's Back arrow does, and only where one is drawn: Android Back
+  // above also leaves the root of the browser for the open fit, which has no arrow, so the swipe
+  // cannot simply share that handler. These views sit outside the Fit sub-tabs' own swipe.
+  const arrowBack=()=>{
+    if(view==="tag"){setTagEditing(false);setBrowsePath([]);setView("browse");haptic("light");}
+    else if(view==="fits"){setView("browse");haptic("light");}
+    else if(view==="browse"&&browsePath.length)leaveNode();
+  };
+  const browseSwipe=useSwipeGesture(arrowBack,view==="tag"||view==="fits"||(view==="browse"&&browsePath.length>0));
 
   // The + on the tab strip drops you here with the next open already destined for a new tab, which
   // is invisible until it happens. Rendered on all three list views because any of them can be where
@@ -976,7 +986,7 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
     </div>
   ):null;
 
-  if(view==="browse")return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+  if(view==="browse")return(<div {...browseSwipe} style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
     {newTabHint}
     {browsePath.length>0&&(
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
@@ -1099,7 +1109,7 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
   if(view==="tag"){
     const tagged=selectedTag?fitsWithTag(fitsDB,selectedTag):[];
     const color=colorForTag(selectedTag,tagColors);
-    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    return(<div {...browseSwipe} style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {newTabHint}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* A tag cuts across the hull tree rather than sitting in it, so there is no "one level up"
@@ -1156,7 +1166,7 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
 
   if(view==="fits"){
     const fits=fitsDB[selectedShip]||[];
-    return(<div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    return(<div {...browseSwipe} style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {newTabHint}
       <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:`1px solid ${C.border}`,background:C.surfaceAlt}}>
         {/* The ship's fit list is one more level of the browse hierarchy, so it gets the same two

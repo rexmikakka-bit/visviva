@@ -10,6 +10,7 @@ import { abyssalSourceTree, abyssalBrowseLevel, mergeLinkedCharacters, CHARACTER
 import { MARKET_SOURCE } from '../lib/variation-items.js';
 import { PRICE_MIN, PRICE_STOPS, priceAtStop, stopAtPrice, parsePriceMillions } from '../lib/market-settings.js';
 import { FORGE_REGION_ID } from '../lib/mutamarket.js';
+import { useSwipeBack } from '../lib/use-swipe-back.js';
 
 // Settings' switch track and thumb, in the source sheet's compact, borderless row.
 function MarketSwitch({label,on,onChange}){
@@ -117,6 +118,8 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
   // `abyssalBrowseLevel` returns after a disconnect removes a node that had no saved rolls.
   const drilled=breadcrumb[0]??null;
   const containers=tree.flatMap(n=>n.children);
+  // Swipe right and Android Back climb a level, under the same condition as the Back button.
+  const backSwipe=useSwipeBack(()=>setPath(p=>p.slice(0,-1)),!words.length&&path.length>0);
   const found=words.length?containers.filter(g=>words.every(w=>`${g.name} ${g.subtitle}`.toLowerCase().includes(w))):[];
   const input={...button,width:'100%',minWidth:0,boxSizing:'border-box',background:C.surface,fontWeight:500,color:C.text,padding:'8px 9px',fontSize:16};
 
@@ -137,7 +140,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
         {!found.length&&<p style={{fontSize:12,color:C.textMute}}>{t('No saved modules match this slot or search.')}</p>}
       </>}
 
-      {!words.length&&path.length>0&&<>
+      {!words.length&&path.length>0&&<div {...backSwipe}>
         <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 0'}}>
           <button onClick={()=>setPath(p=>p.slice(0,-1))} style={{background:'none',border:'none',color:C.accent,fontSize:14,fontWeight:700,cursor:'pointer',padding:0,flexShrink:0}}>‹ {t('Back')}</button>
           <span style={{fontSize:12,color:C.textMute,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{breadcrumb.map(n=>n.name).join(' / ')}</span>
@@ -167,7 +170,7 @@ export function AbyssalSources({records,selection,onChange,onClose,Sheet,market,
             <button style={button} onClick={()=>setConfirmDrop(drilled.id)}>
               {drilled.linked?t('Disconnect character'):t('Remove saved rolls')}</button>
           </div>)}
-      </>}
+      </div>}
 
       {!words.length&&path.length===0&&<>
         {choice('owned',t('My Abyssals'),t('All saved containers'))}

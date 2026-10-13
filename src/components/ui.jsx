@@ -2575,6 +2575,9 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
     const g=groupChargesForBrowser(getCompatibleCharges(mod)).find(g=>g.items.some(i=>i.name===mod.ammo));
     return(g&&g.items.length>1)?g.family:null;
   });
+  // Swipe right and Android Back leave the family for the charge list, as the browsers do. Only on
+  // the Charge tab, where the family's Back row is drawn.
+  const chargeSwipe=useSwipeBack(()=>setChargeFamily(null),tab==="charge"&&chargeFamily!=null);
   const[rahQuery,setRahQuery]=useState("");
   const[rahOpen,setRahOpen]=useState(false);
   const _modTakesCharges=moduleTakesCharges(mod.typeID,mod.name);
@@ -2720,7 +2723,7 @@ function ModuleMenu({mod,groupCount=1,onClose,onUpdateMod,onUpdateModLive,onRepl
               </div>);
             })}
           </div>);
-          return(<div>
+          return(<div {...chargeSwipe}>
             <div onClick={()=>setChargeFamily(null)} style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,cursor:"pointer"}}>
               {/* The chevron stays outside the key so a translator cannot drop it. */}
               <span style={{color:C.accent,fontSize:14,fontWeight:700}}>&#8249; {t("Back")}</span>
