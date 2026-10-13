@@ -371,9 +371,16 @@ function ShipsPane({ character, onImport, onClose }) {
   const hull = r => TYPES[r.asset.type_id]?.n ?? "";
   const q = search.trim().toLowerCase();
   const rows = scan?.rows ?? [];
-  // Both optional scopes in one login, offered above the list where a long hangar can't bury it.
-  // Citadel names are only offered when there is a citadel to name.
-  const more = scan ? [...(seesShip ? [] : [esi.SHIP_SCOPE]), ...(namesStructures || !scan.unnamedStructures ? [] : [esi.STRUCTURE_SCOPE])] : [];
+  // Above the list, where a long hangar can't bury them. One scope per button, so a scope that is not
+  // yet enabled on the registered application only breaks its own button.
+  const flyingRow = rows.find(r => r.flying);
+  const importActive = () => {
+    if (!seesShip) return grant([esi.SHIP_SCOPE]);
+    if (flyingRow) return importOne(flyingRow);
+    // flyingMissing already explains itself above the list; otherwise the lookup itself failed.
+    if (!scan.flyingMissing) setError(t("Couldn't tell which ship you're flying. Try again in a moment."));
+  };
+  const offerCitadels = scan && !namesStructures && scan.unnamedStructures > 0;
   const shown = q ? rows.filter(r => [r.name, hull(r), r.location].some(s => String(s ?? "").toLowerCase().includes(q))) : rows;
 
   return (
@@ -393,12 +400,20 @@ function ShipsPane({ character, onImport, onClose }) {
         {t("You're flying {ship}, but it isn't in your assets yet. EVE updates them up to an hour late.", { ship: scan.flyingMissing.ship_name || TYPES[scan.flyingMissing.ship_type_id]?.n || "" })}
       </div>}
       {scan && rows.length === 0 && <div style={note}>{t("No assembled ships on this character.")}</div>}
-      {more.length > 0 && (
-        <button onClick={() => grant(more)} style={{ width: "100%", marginBottom: 8, padding: "8px 0", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-          {more.length === 2 ? t("Show citadel names and the ship I'm flying") : more[0] === esi.SHIP_SCOPE ? t("Show which ship I'm flying") : t("Show citadel names")}
-        </button>
-      )}
       {rows.length > 0 && <div style={{ marginBottom: 8 }}><SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search ships or locations…")} /></div>}
+      {/* Under the search field rather than after the list: a big hangar buried it at the bottom. */}
+      {scan && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button onClick={importActive} disabled={!!importing} style={{ flex: 1, padding: "8px 0", background: "transparent", border: `1px solid ${C.accentBorder}`, borderRadius: 8, color: C.accent, fontSize: 12, fontWeight: 700, cursor: importing ? "default" : "pointer" }}>
+            {t("Import active ship")}
+          </button>
+          {offerCitadels && (
+            <button onClick={() => grant([esi.STRUCTURE_SCOPE])} style={{ flex: 1, padding: "8px 0", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 8, color: C.textMid, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+              {t("Show citadel names")}
+            </button>
+          )}
+        </div>
+      )}
       {rows.length > 0 && shown.length === 0 && <div style={note}>{t("No ship matches “{q}”.", { q: search.trim() })}</div>}
       {shown.map(r => (
         <div key={r.asset.item_id} onClick={() => importOne(r)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: C.surfaceAlt, border: `1px solid ${r.flying ? C.accentBorder : C.border}`, borderRadius: 8, marginBottom: 6, cursor: importing ? "default" : "pointer", opacity: importing && importing !== r.asset.item_id ? 0.5 : 1 }}>
