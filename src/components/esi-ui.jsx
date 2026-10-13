@@ -308,6 +308,12 @@ export function EsiImportModal({ onClose, onImport }) {
 }
 
 // ─── Import from EVE > Ships: a hangar ship as it is actually fitted ───────────────────────────
+// Off until esi-location.read_ship_type.v1 and esi-universe.read_structures.v1 are enabled on the
+// registered application at developers.eveonline.com. Until then SSO answers "invalid_scope" and the
+// login fails, so "Import active ship" and "Show citadel names" stay hidden. Flip this to true once
+// both are enabled; nothing else needs to change.
+const OPTIONAL_SCOPES_REGISTERED = false;
+
 // Reads assets rather than saved fittings, so loaded charges stay in their own module and abyssal
 // rolls come across. Row layout is the saved-fittings list's, above.
 function ShipsPane({ character, onImport, onClose }) {
@@ -402,7 +408,7 @@ function ShipsPane({ character, onImport, onClose }) {
       {scan && rows.length === 0 && <div style={note}>{t("No assembled ships on this character.")}</div>}
       {rows.length > 0 && <div style={{ marginBottom: 8 }}><SheetSearchBar value={search} onChange={setSearch} placeholder={t("Search ships or locations…")} /></div>}
       {/* Under the search field rather than after the list: a big hangar buried it at the bottom. */}
-      {scan && (
+      {OPTIONAL_SCOPES_REGISTERED && scan && (
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button onClick={importActive} disabled={!!importing} style={{ flex: 1, padding: "8px 0", background: "transparent", border: `1px solid ${C.accentBorder}`, borderRadius: 8, color: C.accent, fontSize: 12, fontWeight: 700, cursor: importing ? "default" : "pointer" }}>
             {t("Import active ship")}
