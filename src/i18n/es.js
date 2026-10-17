@@ -78,6 +78,8 @@ export default {
   "Alpha": "Alfa",
   "Always open fits in a new tab": "Abrir siempre los fittings en una pestaña nueva",
   "A saved fitting or a ship in your hangar": "Un fitting guardado o una nave de tu hangar",
+  "Pre-release": "Prelanzamiento",
+  "This ship is not in EVE yet, so it cannot be saved to your in-game fittings": "Esta nave aún no está en EVE, así que no se puede guardar en tus fittings del juego",
   "Ancillary clip pool — tap to add it into the EHP total": "Reserva del cargador auxiliar — toca para sumarla al total de EHP",
   "Angular velocity — tap for transversal": "Velocidad angular — toca para ver la transversal",
   "Applied to this fit": "Aplicado a este fitting",

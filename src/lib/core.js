@@ -16,6 +16,7 @@ import mutaplasmidData  from "../data/mutaplasmids.json" with { type: "json" };
 import TYPE_ICONS       from "../data/type-icons.json" with { type: "json" };
 import { calcFitStats, computeCommandBursts, computeProjectedReps, calcRangeFactor, getModuleStats, layerEHP, peakRegen, calcAlignTime, calcLockTime, stackingPenalty, rangeFactor, calcTurretCTH, calcTurretMult, calcMissileFactor, SKILL_DEFAULTS, TYPES, tidByName, boosterSideEffectsFor, isT3Cruiser, subsystemsForHull, t3cSlotLayout, T3C_SUBSYSTEM_GROUPS, ATTR_ID_TO_NAME, simulateCapTrace, fitCostClassOf } from "../calc.js";
 import { DAMAGE_PROFILES } from "../data/damage-profiles.js";
+import { PRERELEASE_TRAITS } from "../data/prerelease-ships.js";
 import { isValidCharge } from "../dogma-engine.js";
 import { classifyHull } from "./ship-taxonomy.js";
 import { t } from "./i18n.js";
@@ -287,6 +288,7 @@ Promise.all([import('../data-bundle.js'), import('../data/ship-traits.json')]).t
   // list pre-rebalance bonuses there. The generated file reads the same invtraits/invtypes rows
   // pyfa itself reads, so it is current by construction.
   Object.assign(shipTraits, _traitsMod.default ?? _traitsMod ?? {});
+  Object.assign(shipTraits, PRERELEASE_TRAITS);
   // Variations for module groups gaining newer faction/navy members (grouped by group+size,
   // since the precomputed bundle predates them). Override so existing members (e.g. T2 MGC) gain
   // the new siblings; each affected group's full variation list is rebuilt from current type data.

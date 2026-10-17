@@ -78,6 +78,8 @@ export default {
   "Alpha": "アルファ",
   "Always open fits in a new tab": "フィットを常に新しいタブで開く",
   "A saved fitting or a ship in your hangar": "保存されたフィッティング、またはハンガーの艦船",
+  "Pre-release": "リリース前",
+  "This ship is not in EVE yet, so it cannot be saved to your in-game fittings": "この艦船はまだEVEに実装されていないため、ゲーム内のフィッティングに保存できません",
   "Ancillary clip pool — tap to add it into the EHP total": "補助クリップのプール — タップで EHP 合計に加算",
   "Angular velocity — tap for transversal": "角速度 — タップでトランスバーサル",
   "Applied to this fit": "このフィットに適用中",

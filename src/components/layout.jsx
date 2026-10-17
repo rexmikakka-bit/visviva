@@ -10,6 +10,7 @@ import { useBackHandler } from "../lib/use-back-handler.js";
 import { t } from "../lib/i18n.js";
 import { MenuGlyph, IconPlus, IconImport, IconExport, IconSnapshot, IconPrice, IconBasket, IconFeedback, IconSettings } from "./glyphs.jsx";
 import * as esi from "../lib/esi.js";
+import { isPrereleaseShip } from "../data/prerelease-ships.js";
 // The one copy of the app mark. Generated from assets/icon-only.png by scripts/build-icons.mjs, as
 // is the favicon, so the header, the browser tab and the installed app icon cannot drift apart.
 import appMark from "../assets/app-mark.png";
@@ -323,7 +324,10 @@ export function AppHeader({onHamburger,activeFit,onShipInfo,skillCheck,onSkillGa
             slicing through the text. */}
         <div style={{fontSize:12,color:C.textMid,marginTop:1,lineHeight:1.4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                      maxHeight:collapsed?0:20,opacity:collapsed?0:1,
-                     transition:"max-height .2s ease, opacity .15s ease"}}>{subLabel}</div>
+                     transition:"max-height .2s ease, opacity .15s ease"}}>
+          {/* Leads rather than trails, so the ellipsis eats the hull class and never the disclaimer. */}
+          {isPrereleaseShip(ship.typeID)&&<span style={{color:C.warning,fontWeight:600}}>{t("Pre-release")} · </span>}
+          {subLabel}</div>
       </div>
       <div style={{display:"flex",alignItems:"center",gap:8}}>
         {activeFit?.ship&&skillCheck&&

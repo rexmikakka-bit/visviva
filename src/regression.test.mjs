@@ -8430,6 +8430,80 @@ Nanofiber Internal Structure II
   check('booster', 'no cerebral accelerators', all.some(n => /Accelerator/.test(n)) ? 1 : 0, 0, 0);
   check('booster', 'slots offered', Object.keys(BOOSTER_DATA).join(','), '1,2,3,5,11,14,15,16,17');
 }
+
+// ─── PRE-RELEASE AT HULLS ───────────────────────────────────────────────────────────────────────
+// Herald and Penitence (data/prerelease-ships.js), hand-built from CCP's preview screenshots. Not in
+// eve.db 3579973. Numbers are from pyfa v2.69.3's eos (its own hand-built copies, custom effects
+// 100100-100209), run through oracle_batch.py with that release's clone + db swapped in, 2026-10-17.
+// One deliberate divergence: pyfa's Penitence scan resolution is 330 mm, the screenshot's is 300.
+// Delete this section along with prerelease-ships.js once CCP ships the hulls.
+{
+  console.log('\nPRE-RELEASE AT HULLS');
+  const { isPrereleaseShip, PRERELEASE_TRAITS } = await import('./data/prerelease-ships.js');
+  const { slotsToEsiFitting } = await import('./lib/esi-fits.js');
+  const P = (name, state = 'active', ammo) => ({ typeID: tid(name), state, ammo });
+  const run = (ship, slots, drones = []) => calcFitStats({ typeID: tid(ship), name: ship }, { ...EMPTY, ...slots },
+    drones.map(d => ({ ...d, typeID: tid(d.name) })), null, {});
+  const res = r => [r.em, r.th, r.kin, r.exp].map(v => v.toFixed(1)).join('/');
+
+  const hb = run('Herald', {});
+  check('prerelease', 'Herald hull EHP', hb.totalEHP, 8294.34);
+  check('prerelease', 'Herald armor resists (4%/lvl AF bonus)', res(hb.resists.armor), '60.0/48.0/70.0/84.0');
+  check('prerelease', 'Herald shield resists', res(hb.resists.shield), '0.0/20.0/55.0/87.5');
+  check('prerelease', 'Herald scan resolution', hb.scanRes, 812.5);
+  check('prerelease', 'Herald lock range km', hb.targetRange, 86.25);
+  const hp = run('Herald', {
+    high: [P('Small Focused Pulse Laser II', 'active', 'Conflagration S'), P('Small Focused Pulse Laser II', 'active', 'Scorch S')],
+    mid: [P('5MN Microwarpdrive II'), P('Tracking Disruptor II', 'active', 'Optimal Range Disruption Script'), P('Warp Scrambler II'), P('Stasis Webifier II'), P('Small Capacitor Booster II', 'active', 'Navy Cap Booster 200')],
+    low: [P('Assault Damage Control II'), P('Small Armor Repairer II'), P('Heat Sink II'), P('Multispectrum Energized Membrane II', 'online'), P('400mm Steel Plates II', 'online')],
+    rigs: [P('Small Energy Collision Accelerator II', 'online'), P('Small Energy Burst Aerator II', 'online')],
+  }, [{ name: 'Acolyte II', qty: 2, active: true }]);
+  check('prerelease', 'Herald weapon DPS (40% dmg AF, 5% ROF AF)', hp.weaponDps.total, 421.10);
+  check('prerelease', 'Herald weapon volley', hp.weaponVolley.total, 614.76);
+  check('prerelease', 'Herald fitted EHP (ADC fits)', hp.totalEHP, 62824.69);
+  check('prerelease', 'Herald armor rep EHP/s', hp.armorRepEhpS, 316.05);
+  check('prerelease', 'Herald MWD speed', hp.maxVelocityAB ?? hp.maxVelocity, 3372.23);
+
+  const pb = run('Penitence', {});
+  check('prerelease', 'Penitence hull EHP', pb.totalEHP, 23438.53);
+  check('prerelease', 'Penitence armor resists (20% role)', res(pb.resists.armor), '60.0/48.0/70.0/84.0');
+  check('prerelease', 'Penitence scan res (screenshot 300 mm, not pyfa 330)', pb.scanRes, 375);
+  check('prerelease', 'Penitence lock range km', pb.targetRange, 138.125);
+  check('prerelease', 'Penitence velocity', pb.maxVelocity, 287.5);
+  const pf = run('Penitence', {
+    high: [P('Heavy Energy Neutralizer II'), P('Heavy Energy Nosferatu II'), P('Warp Disruption Field Generator II', 'active', 'Focused Warp Disruption Script'), P('Cynosural Field Generator I', 'online'), P('Medium Energy Neutralizer II')],
+    mid: [P('50MN Microwarpdrive II'), P('Guidance Disruptor II', 'active', 'Missile Range Disruption Script'), P('Large Cap Battery II', 'online'), P('Warp Disruptor II'), P('Stasis Webifier II'), P('Medium Capacitor Booster II', 'active', 'Navy Cap Booster 800')],
+    low: [P('Damage Control II'), P('1600mm Steel Plates II', 'online'), P('Multispectrum Energized Membrane II', 'online'), P('Drone Damage Amplifier II', 'online'), P('Explosive Armor Hardener II'), P('Medium Armor Repairer II'), P('Reactive Armor Hardener')],
+    rigs: [P('Medium Trimark Armor Pump II', 'online'), P('Medium Trimark Armor Pump II', 'online')],
+  }, [{ name: 'Hammerhead II', qty: 5, active: true }]);
+  check('prerelease', 'Penitence drone DPS (25%/lvl AC)', pf.totalDps.total, 429.46);
+  check('prerelease', 'Penitence fitted EHP', pf.totalEHP, 106552.21);
+  check('prerelease', 'Penitence armor rep EHP/s', pf.armorRepEhpS, 250.80);
+  check('prerelease', 'Penitence MWD speed', pf.maxVelocityAB ?? pf.maxVelocity, 1708.93);
+
+  // Fitting allowances: added to the modules' canFitShipType lists, not by refiling the hulls.
+  const allows = (mod, ship) => Object.entries(TYPES[tid(mod)].a).some(([k, v]) => /^canFitShipType\d+$/.test(k) && v === tid(ship));
+  check('prerelease', 'Herald may fit Assault Damage Control II', allows('Assault Damage Control II', 'Herald') ? 1 : 0, 1, 0);
+  check('prerelease', 'Penitence may fit WDFG II', allows('Warp Disruption Field Generator II', 'Penitence') ? 1 : 0, 1, 0);
+  check('prerelease', 'Penitence may fit Cynosural Field Generator I', allows('Cynosural Field Generator I', 'Penitence') ? 1 : 0, 1, 0);
+  check('prerelease', 'Penitence may NOT fit the covert cyno', allows('Covert Cynosural Field Generator I', 'Penitence') ? 1 : 0, 0, 0);
+  check('prerelease', 'Herald may NOT fit a WDFG', allows('Warp Disruption Field Generator II', 'Herald') ? 1 : 0, 0, 0);
+  check('prerelease', 'ADC keeps its Assault Frigate group', TYPES[tid('Assault Damage Control II')].a.canFitShipGroup02, 324, 0);
+
+  // Filed by their stated classes, not pyfa's Assault Frigate / HIC.
+  const tree = buildShipTaxonomy();
+  const pathOf = (nodes, name, path = []) => { for (const n of nodes) { if (n.ships?.some(s => s.name === name)) return [...path, n.label].join(' > ');
+    const r = n.children && pathOf(n.children, name, [...path, n.label]); if (r) return r; } return null; };
+  check('prerelease', 'Herald browser path', pathOf(tree, 'Herald'), 'Frigates > Advanced Frigates > Electronic Attack Ships > Amarr');
+  check('prerelease', 'Penitence browser path', pathOf(tree, 'Penitence'), 'Cruisers > Advanced Cruisers > Combat Recon Ships > Amarr');
+  check('prerelease', 'Penitence slots', ['hiSlots', 'medSlots', 'lowSlots', 'rigSlots', 'turrets', 'launchers'].map(k => lookupShip('Penitence')[k]).join('/'), '5/6/7/2/2/4');
+
+  check('prerelease', 'flagged by name and typeID', [isPrereleaseShip('Herald'), isPrereleaseShip(tid('Penitence')), isPrereleaseShip('Sentinel')].join(','), 'true,true,false');
+  check('prerelease', 'traits carry the notice', /^PRE-RELEASE/.test(PRERELEASE_TRAITS[tid('Herald')]?.desc ?? '') ? 1 : 0, 1, 0);
+  let thrown = '';
+  try { slotsToEsiFitting(tid('Herald'), 'T', { ...EMPTY, high: [P('Small Focused Pulse Laser II')], services: [] }, [], [], []); } catch (e) { thrown = e.message; }
+  check('prerelease', 'export to EVE refused', /not in EVE yet/.test(thrown) ? 1 : 0, 1, 0);
+}
 console.log('\n' + '─'.repeat(72));
 if (failures.length === 0) {
   console.log(`ALL ${passed} REGRESSION CHECKS PASSED`);

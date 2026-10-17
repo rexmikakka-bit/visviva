@@ -79,6 +79,8 @@ export default {
   "Alpha": "Альфа",
   "Always open fits in a new tab": "Всегда открывать фиттинги в новой вкладке",
   "A saved fitting or a ship in your hangar": "Сохранённый фиттинг или корабль из ангара",
+  "Pre-release": "Предрелиз",
+  "This ship is not in EVE yet, so it cannot be saved to your in-game fittings": "Этого корабля ещё нет в EVE, поэтому его нельзя сохранить во внутриигровые фиттинги",
   "Ancillary clip pool — tap to add it into the EHP total": "Запас вспомогательного картриджа — нажмите, чтобы включить его в общий EHP",
   "Angular velocity — tap for transversal": "Угловая скорость — нажмите для трансверсали",
   "Applied to this fit": "Применено к этому фиттингу",

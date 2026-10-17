@@ -16,6 +16,8 @@ import { InfoButton, ItemPrice, ModifierBreakdown, ResistBars, SheetSearchBar, T
 import { GraphTab } from "./GraphTab.jsx";
 import { useSheetDrag, sheetTransform, SheetGrabber, SHEET_EXIT_MS, dismissKeyboardOnScroll } from "../lib/use-sheet-drag.jsx";
 import { BACK_SCREEN } from "../lib/back-button.js";
+import { isPrereleaseShip } from "../data/prerelease-ships.js";
+import { PrereleaseBadge } from "./source-badge.jsx";
 import { useBackHandler } from "../lib/use-back-handler.js";
 import { useSwipeGesture } from "../lib/use-swipe-back.js";
 import { IconPencil, IconCopy, IconClose, IconTag } from "./glyphs.jsx";
@@ -588,6 +590,7 @@ export function ShipInfoSheet({ship, cs, onClose}) {
                          opacity:1-collapse,height:(1-collapse)*14,overflow:'hidden',
                          whiteSpace:'nowrap',textOverflow:'ellipsis'}}>
               {[ship?.race, ship?.hullClass ?? ship?.groupName].filter(Boolean).join(' • ')}
+              {isPrereleaseShip(ship?.typeID)&&<span style={{color:C.warning}}> • {t("Pre-release")}</span>}
             </div>
             {/* Shrinks toward a header-bar-sized title rather than scrolling away, so the collapsed
                 hero still says which ship you are reading about. */}
@@ -1059,7 +1062,7 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
           // own compact row.
           return(<div key={`ship:${rr.ship}:${i}`} onClick={()=>{if(newFitIntent){setNewFitIntent?.(false);createNewFit(rr.ship);return;}setSelectedShip(rr.ship);setView("fits");}} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:C.surface,border:`1px solid ${C.border}`,borderRadius:8,marginBottom:4,cursor:"pointer"}}>
             <img src={eveIcon((Object.values(shipsByClass||{}).flat().find(s=>s.name===rr.ship)||{}).typeID,32)} style={{width:28,height:28,borderRadius:4,objectFit:'contain',background:'#1a1a2e',flexShrink:0}} onError={e=>{e.target.style.background=rr.color;e.target.style.display='block';}} alt=""/>
-            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.hull}</div></div>
+            <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{rr.ship}</div><div style={{fontSize:10,color:C.textMute,marginTop:1}}>{rr.hull}{isPrereleaseShip(rr.ship)&&<span style={{marginLeft:6}}><PrereleaseBadge/></span>}</div></div>
             <span style={{fontSize:10,color:C.textMute,background:C.border,borderRadius:99,padding:"1px 7px",fontWeight:600,flexShrink:0}}>{t("ship")}</span>
             <InfoButton title={t("{name} info",{name:rr.ship})} onClick={e=>{e.stopPropagation();setInfoShip(rr.ship);}}/>
           </div>);
@@ -1092,6 +1095,7 @@ export function FittingsScreen({recents,undo,undoDepth,redo,redoDepth,activeFit,
             <div style={{display:'flex',alignItems:'center',gap:5}}>
               {(raceIcons??{})[String(s.raceID)]&&<img src={raceIcons[String(s.raceID)]} style={{width:14,height:14,objectFit:'contain',flexShrink:0}} alt=""/>}
               <span style={{fontSize:13,fontWeight:600,color:selectedShip===s.name?C.accent:C.text,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{s.name}</span>
+              {isPrereleaseShip(s.typeID)&&<span style={{flexShrink:0}}><PrereleaseBadge/></span>}
             </div>
             <div style={{fontSize:10,color:C.textMute,marginTop:2}}>{sfits.length>0?t({one:"{n} fit",other:"{n} fits"},{n:sfits.length}):t("No fits")}</div>
           </div>

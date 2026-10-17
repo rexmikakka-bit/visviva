@@ -11,7 +11,10 @@ import ATTRS_DATA   from './data/dogma-attrs.json'   with { type: 'json' };
 import SYSFX_DATA   from './data/system-effects.json' with { type: 'json' };
 
 import { initEngine } from './dogma-engine.js';
+import { applyPrereleaseShips } from './data/prerelease-ships.js';
 
+// Hand-written hulls CCP has announced but not shipped. Raw bundles, so it has to come first.
+applyPrereleaseShips(TYPES_DATA, EFFECTS_DATA, ATTRS_DATA);
 initEngine(TYPES_DATA, EFFECTS_DATA, ATTRS_DATA, SYSFX_DATA.effects);
 
 export * from './dogma-engine.js';
