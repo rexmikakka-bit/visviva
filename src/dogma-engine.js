@@ -91,7 +91,19 @@ export function initEngine(types, effects, attrs, systemEffects) {
   initEngine.duplicateModifiersDropped = _dupDropped;
 }
 
-export const typeIDByName = (name) => TYPE_BY_NAME[name] ?? null;
+// Exact match first, then with apostrophes straightened: CCP renamed "Zorya’s" (curly) to "Zorya's"
+// in build 3624425, and pasted text follows whichever build wrote it. Same rule as calc.js tidByName.
+const _straight = s => String(s).replace(/[‘’ʼ]/g, "'");
+let _straightByName = null;
+export const typeIDByName = (name) => {
+  if (name == null) return null;
+  if (TYPE_BY_NAME[name] != null) return TYPE_BY_NAME[name];
+  if (!_straightByName) {
+    _straightByName = {};
+    for (const [n, tid] of Object.entries(TYPE_BY_NAME)) _straightByName[_straight(n)] ??= tid;
+  }
+  return _straightByName[_straight(name)] ?? null;
+};
 export { TYPES, AID };
 
 // ─── Attribute metadata helpers ─────────────────────────────────────────────────

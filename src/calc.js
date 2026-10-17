@@ -425,7 +425,23 @@ function getNameIdx() {
   }
   return _nameIdx;
 }
-export function tidByName(name) { return getNameIdx()[name] ?? null; }
+// CCP spells a few names with a curly apostrophe in one build and a straight one in the next: build
+// 3579973 shipped "Zorya’s Ultratidal Entropic Disintegrator" (and Horm’s, Sarikusa’s), and 3624425
+// renamed all three to "Zorya's". Pasted text follows whichever build wrote it, so an EFT fit from
+// the newer pyfa or the game silently lost those modules. Exact match first; then match with every
+// apostrophe straightened.
+const straightApostrophes = s => String(s).replace(/[‘’ʼ]/g, "'");
+let _straightIdx = null;
+export function tidByName(name) {
+  const idx = getNameIdx();
+  if (name == null) return null;
+  if (idx[name] != null) return idx[name];
+  if (!_straightIdx) {
+    _straightIdx = {};
+    for (const [n, tid] of Object.entries(idx)) _straightIdx[straightApostrophes(n)] ??= tid;
+  }
+  return _straightIdx[straightApostrophes(name)] ?? null;
+}
 
 // ── Skill catalog + fit skill requirements ──────────────────────────────────
 // THREE DIFFERENT sets of skills matter, and conflating them is the trap here:

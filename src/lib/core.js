@@ -952,7 +952,13 @@ function parseEFT(text){
     const implantSlot=IMPLANT_NAME_TO_SLOT.get(modName);
     if(implantSlot)implantNames.push({slot:implantSlot,name:modName});
   }
-  return{shipName,fitName,ship,mods,drones,fighters,cargo,implantNames,boosterNames,subsystems};
+  // tidByName forgives a straight-vs-curly apostrophe (CCP has renamed between the two), so every
+  // name goes back out spelled the way our data spells it: later lookups, prices and the fit
+  // library all key on the canonical name.
+  const canon=n=>{const id=n==null?null:tidByName(n);return(id!=null&&TYPES[id]?.n)||n;};
+  const canonAll=list=>list.map(x=>({...x,name:canon(x.name),...(x.charge?{charge:canon(x.charge)}:{})}));
+  return{shipName,fitName,ship,mods:canonAll(mods),drones:canonAll(drones),fighters:canonAll(fighters),cargo:canonAll(cargo),
+         implantNames:canonAll(implantNames),boosterNames:boosterNames.map(canon),subsystems:canonAll(subsystems)};
 }
 
 // Determine a module's slot (high/med/low/rig/service) from its dogma effects when it's not in

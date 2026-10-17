@@ -8431,6 +8431,22 @@ Nanofiber Internal Structure II
   check('booster', 'slots offered', Object.keys(BOOSTER_DATA).join(','), '1,2,3,5,11,14,15,16,17');
 }
 
+// ─── APOSTROPHE RENAMES ─────────────────────────────────────────────────────────────────────────
+// Build 3624425 (pyfa 2.69.3) renamed "Zorya’s", "Horm’s" and "Sarikusa’s" to a straight apostrophe.
+// Our bundle (3579973) has the curly one, and an EFT paste from the newer pyfa or the game dropped
+// those modules without a word. Either spelling has to import, under our canonical name.
+{
+  console.log('\nAPOSTROPHE RENAMES');
+  check('apos', 'straight apostrophe resolves', tid("Zorya's Ultratidal Entropic Disintegrator"), tid('Zorya’s Ultratidal Entropic Disintegrator'), 0);
+  check('apos', 'unknown names still miss', tid("Nobody's Module") === null ? 1 : 0, 1, 0);
+  for (const a of ["'", '’']) {
+    const p = parseEFT(`[Revelation, test]\n\nHorm${a}s Capital Energy Neutralizer\nZorya${a}s Ultratidal Entropic Disintegrator, Baryon Exotic Plasma XL\n`);
+    const hi = (buildSlotsFromEFT(lookupShip(p.shipName), p.mods, p.subsystems).high ?? []).filter(m => m.typeID).map(m => m.name);
+    check('apos', `EFT with ${a === "'" ? 'straight' : 'curly'} apostrophes imports both, canonically named`, hi.join(' | '),
+      'Horm’s Capital Energy Neutralizer | Zorya’s Ultratidal Entropic Disintegrator');
+  }
+}
+
 // ─── PRE-RELEASE AT HULLS ───────────────────────────────────────────────────────────────────────
 // Herald and Penitence (data/prerelease-ships.js), hand-built from CCP's preview screenshots. Not in
 // eve.db 3579973. Numbers are from pyfa v2.69.3's eos (its own hand-built copies, custom effects
