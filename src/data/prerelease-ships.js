@@ -9,6 +9,12 @@
 // initEngine(), so the engine, the ship browser (backfillHullsFromTypes files any category-6 type by
 // its group name) and lookupShip()'s shipFromDogma() all see these as ordinary hulls.
 //
+// ⚠️ pyfa 2.69.3's eve.db (build 3624425) already CONTAINS a Herald and a Penitence: pyfa's own hand
+// copies, with bonuses as eos effects 100100-100209 that carry no modifier data (17 inert effects in
+// a build-bundle dry run). Regenerating from that db would make the name check below retire OUR hulls
+// in favour of bonus-less ones. Until CCP ships the real types, build-bundle.py must drop pyfa's two
+// (typeIDs 1000000/1000001), or stay on 3579973. Nothing else in 3624425 changes a value we use.
+//
 // It retires itself: a hull is skipped, along with its fitting allowances and bonus effects, as soon
 // as the real bundle carries a type with the same name. Once CCP's data has both ships, delete this
 // file and its three call sites (dogma-engine-init.js, core.js shipTraits merge, PRERELEASE_TYPE_IDS
