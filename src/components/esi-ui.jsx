@@ -308,11 +308,11 @@ export function EsiImportModal({ onClose, onImport }) {
 }
 
 // ─── Import from EVE > Ships: a hangar ship as it is actually fitted ───────────────────────────
-// Off until esi-location.read_ship_type.v1 and esi-universe.read_structures.v1 are enabled on the
-// registered application at developers.eveonline.com. Until then SSO answers "invalid_scope" and the
-// login fails, so "Import active ship" and "Show citadel names" stay hidden. Flip this to true once
-// both are enabled; nothing else needs to change.
-const OPTIONAL_SCOPES_REGISTERED = false;
+// esi-location.read_ship_type.v1 and esi-universe.read_structures.v1 must be enabled on the
+// registered application at developers.eveonline.com, or SSO answers "invalid_scope" and the login
+// fails. Both were enabled 2026-10-17. Set this back to false to hide "Import active ship" and
+// "Show citadel names" if either is ever removed there.
+const OPTIONAL_SCOPES_REGISTERED = true;
 
 // Reads assets rather than saved fittings, so loaded charges stay in their own module and abyssal
 // rolls come across. Row layout is the saved-fittings list's, above.

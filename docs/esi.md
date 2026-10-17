@@ -110,11 +110,14 @@ the import knows which charge is in which module. Mutated modules and drones are
 `/dogma/dynamic/items/` like My Abyssals. If a roll can't be read, that item is skipped and the sheet
 says so. It is never imported as its unrolled base.
 
-Two optional scopes, requested together from one button above the list. Both **have to be enabled
-on the registered application** first. If either isn't, SSO rejects that login:
+Two optional scopes, each behind its own button under the search field. Both **have to be enabled
+on the registered application**, or SSO rejects the login with `invalid_scope`. They were enabled on
+2026-10-17. Until then the buttons were hidden behind `OPTIONAL_SCOPES_REGISTERED` in `esi-ui.jsx`,
+and setting that constant back to false hides them again:
 
-- `esi-location.read_ship_type.v1` (`SHIP_SCOPE`) only adds the "Flying" marker.
-- `esi-universe.read_structures.v1` (`STRUCTURE_SCOPE`) names the citadels the ships are docked in
+- `esi-location.read_ship_type.v1` (`SHIP_SCOPE`): "Import active ship" asks for it if it is
+  missing, then imports the ship you are flying. It also adds the "Flying" marker.
+- `esi-universe.read_structures.v1` (`STRUCTURE_SCOPE`): "Show citadel names" names the citadels the ships are docked in
   (`/universe/structures/{id}/`, e.g. "J150633 - Predator Den", which makes both the system and the
   citadel searchable). It only answers for structures the character is on the access list of. A
   403 leaves that one as "Structure #id" and moves on to the next. Assets can lag by up to an hour, so a ship you
