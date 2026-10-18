@@ -313,7 +313,28 @@ export function runCapSim(modules, capCapacity, capRechargeMs, { tMaxMs = 6 * 60
   let cap = startingCap ?? capCapacity;
   let capLowest = cap, capLowestPre = cap, tLast = 0, died = false;
   // Scheduled activations, and injectors pulled out of the schedule awaiting a use for their charge.
-  const state = modules.map(m => ({ ...m, next: 0, shots: 0 }));
+  //
+  // Identical modules are STAGGERED, as eos's reset() does (fit.py runs the sim with stagger=True):
+  // two Heavy Energy Nosferatu II on a 10 s cycle become one entry firing every 5 s, not two firing
+  // together. Turrets opt out (pyfa's disableStagger, keyed on the turret hardpoint), and injectors
+  // are never staggered — they are spent on demand from the reserve below. A clip-fed module is
+  // staggered by offsetting each copy's start instead, since splitting its cycle would break reloads.
+  const state = [];
+  const groups = new Map();
+  for (const m0 of modules) {
+    // eos schedules whole milliseconds: fit.py hands every drain over as int(fullCycleTime).
+    const m = m0.isInjector ? m0 : { ...m0, cycleMs: Math.trunc(m0.cycleMs) };
+    const key = [m.cycleMs, m.capNeedGJ, m.clipSize || 0, !!m.noStagger, m.reloadMs || 0, !!m.isInjector].join('|');
+    const g = groups.get(key);
+    if (g) g.n++; else groups.set(key, { m, n: 1 });
+  }
+  for (const { m, n } of groups.values()) {
+    if (m.isInjector) { for (let i = 0; i < n; i++) state.push({ ...m, next: 0, shots: 0 }); continue; }
+    if (m.noStagger) { state.push({ ...m, capNeedGJ: m.capNeedGJ * n, next: 0, shots: 0 }); continue; }
+    if (!m.clipSize) { state.push({ ...m, cycleMs: Math.trunc(m.cycleMs / n), next: 0, shots: 0 }); continue; }
+    const step = (m.cycleMs * m.clipSize + (m.reloadMs || 0)) / (n * m.clipSize);
+    for (let i = 0; i < n; i++) state.push({ ...m, next: i * step, shots: 0 });
+  }
   const awaiting = [];
   const amountOf = (inj) => -inj.capNeedGJ;  // injectors carry a NEGATIVE capNeedGJ
 
@@ -327,8 +348,15 @@ export function runCapSim(modules, capCapacity, capRechargeMs, { tMaxMs = 6 * 60
   };
   const take = (inj, tNow) => { awaiting.splice(awaiting.indexOf(inj), 1); fire(inj, tNow); };
 
+  // pyfa's schedule is a heap of [t, duration, capNeed, shot, clipSize, reload, isInjector] lists, so
+  // simultaneous activations break ties on the rest of that tuple: shorter cycle first, then smaller
+  // need — a nos (negative need) before a repairer on the same cycle. With only positive needs the
+  // order at a tie cannot move the lowest point; once a fill shares a tick with a drain, it does.
+  const order = (a, b) => (a.next - b.next) || (a.cycleMs - b.cycleMs) || (a.capNeedGJ - b.capNeedGJ)
+    || (a.shots - b.shots) || ((a.clipSize || 0) - (b.clipSize || 0)) || ((a.reloadMs || 0) - (b.reloadMs || 0))
+    || ((a.isInjector ? 1 : 0) - (b.isInjector ? 1 : 0));
   for (let iter = 0; iter < 400000 && state.length; iter++) {
-    state.sort((a, b) => a.next - b.next);
+    state.sort(order);
     const m = state[0];
     const tNow = m.next;
     if (tNow >= tMaxMs) break;
@@ -2451,7 +2479,12 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
 
   for (const { slot, fitItem } of modItems) {
     if (!fitItem || !isActive(slot.state)) continue;
-    const cn = fitItem.get('capacitorNeed') ?? 0;
+    // An active nos costs nothing and hands back its powerTransferAmount every cycle. pyfa models that
+    // by forcing capacitorNeed to −amount (Effect 6197, the 'module' branch), so the nos rides the
+    // ordinary drain path as a negative need. It assumes the target has cap to give, as pyfa does.
+    const cn = fitItem.groupName === 'Energy Nosferatu'
+      ? -(fitItem.get('powerTransferAmount') ?? 0)
+      : (fitItem.get('capacitorNeed') ?? 0);
     // NOTE: Controlled Bursts (Effect 287, skill filter = Gunnery) does NOT apply to T2 turrets:
     // Gunnery is not in their direct required-skills list, and the dogma filter checks direct
     // requirements only. Verified against Pyfa: its cap drain matches ours without CB applied.
@@ -2494,6 +2527,8 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       // model treats ancillary reps as continuously cycling (no reload gap): its displayed cap
       // delta and "Lasts" time both reverse-calculate to unaveraged AAR drain. Match that.
       capDrainPS += cn / (ctDrain / 1000);
+    } else if (cn < 0) {
+      capFillPS += -cn / (ctDrain / 1000);
     }
     capModules.push({
       cycleMs: Math.max(1, ctDrain),
@@ -2503,6 +2538,7 @@ function _calcFitStats(ship, slots, drones = [], skills = SKILL_DEFAULTS, opts =
       clipSize: isInjector ? clipSizeOf(fitItem, loadedAmmo(slot, fitItem), { dfltVol: 96, min: 1 }) : 0,
       reloadMs: isInjector ? 10000 : 0,
       isInjector,
+      noStagger: usesTurretHardpoint(fitItem.effectIDs),
     });
   }
   // Projected energy neutralizers: continuous external cap drain (affects cap delta and stability).

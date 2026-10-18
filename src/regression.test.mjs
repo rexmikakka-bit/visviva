@@ -5578,7 +5578,9 @@ Agency 'Overclocker' SB7 Dose III
   // models, and t=12 is eos's own first injection to the last decimal.
   const injections = r.events.filter(([, c], i) => i > 0 && c > r.events[i - 1][1]);
   check('oni-cap', 'first injection deferred to t=12s', injections[0]?.[0], 12, 0);
-  check('oni-cap', 'cap after that injection', injections[0]?.[1], 1529.0044961882006, 1e-9);
+  // eos's getCapSimData() value. This used to read 1529.0044961882006, which was OUR number: the
+  // lasers ran on 2890.177 ms, where eos schedules int(fullCycleTime) = 2890 ms.
+  check('oni-cap', 'cap after that injection', injections[0]?.[1], 1529.005137477524, 1e-9);
   check('oni-cap', 'seven injections in the run', injections.length, 7, 0);
   check('oni-cap', 'run ends with the capacitor empty', r.died ? 1 : 0, 1, 0);
 
@@ -5587,6 +5589,30 @@ Agency 'Overclocker' SB7 Dose III
   const trace = simulateCapTrace(cs.capModules, cs.capCapacity, cs.capRechargeMs, { tMaxSec: 300, sampleDt: 0.5 });
   check('oni-cap', 'graph ends exactly when the cap does', trace[trace.length - 1][0], cs.capTime, 0);
   check('oni-cap', 'graph ends at zero cap', trace[trace.length - 1][1], 0, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENERGY NOSFERATU ON THE CAPACITOR — an active nos costs nothing, so the cap loop's "no cap need,
+// skip it" test dropped it and the nos did nothing for its own ship. eos forces capacitorNeed to
+// −powerTransferAmount (Effect 6197's 'module' branch), so it is a negative drain like any other.
+// The stability levels also pin the two simulator rules that only show once a fill shares a tick
+// with a drain: identical modules are STAGGERED (fit.py runs capSim with stagger=True), and ties
+// break on (cycle, need), so a nos lands before a repairer on the same cycle. Values from eos at
+// c9671de / 3579973.
+{
+  console.log('\nENERGY NOSFERATU ON THE CAPACITOR');
+  const run = (ship, slots) => calcFitStats({ typeID: tid(ship), name: ship }, { rigs: [], ...slots }, [], SKILLS_ALL_V, {});
+  const rifter = run('Rifter', { high: [M('Small Energy Nosferatu II', 'active')], mid: [M('1MN Afterburner II', 'active')],
+                                 low: [M('Small Armor Repairer II', 'active')] });
+  check('nos-cap', 'Rifter nos fill GJ/s (10 GJ / 2.5 s)', rifter.capFillPS, 4, 1e-9);
+  check('nos-cap', 'Rifter cap delta (pyfa 2.7111)', rifter.capDelta, 2.711111111111112, 1e-9);
+  check('nos-cap', 'Rifter stable % (pyfa 54.6656)', rifter.capLevel * 100, 54.665553923193876, 1e-9);
+  const curse = run('Curse', { high: [M('Heavy Energy Nosferatu II', 'active'), M('Heavy Energy Nosferatu II', 'active')],
+                               mid: [M('10MN Afterburner II', 'active'), M('Tracking Disruptor II', 'active')],
+                               low: [M('Medium Armor Repairer II', 'active')] });
+  check('nos-cap', 'Curse two bonused nos fill GJ/s', curse.capFillPS, 48, 1e-9);
+  check('nos-cap', 'Curse cap delta (pyfa 44.4892)', curse.capDelta, 44.48924349881797, 1e-9);
+  check('nos-cap', 'Curse stable % (pyfa 89.4832, staggered)', curse.capLevel * 100, 89.48323985052458, 1e-9);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
